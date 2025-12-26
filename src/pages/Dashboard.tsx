@@ -246,36 +246,38 @@ const Dashboard = () => {
               const status = statusConfig[unit.status] || statusConfig.offline;
               const isOnline = unit.status !== "offline" && unit.last_reading_at;
               return (
-                <Card key={unit.id} className="unit-card">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-xl ${status.bgColor} flex items-center justify-center`}>
-                          <Thermometer className={`w-6 h-6 ${status.color}`} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-foreground">{unit.name}</h3>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${status.bgColor} ${status.color}`}>{status.label}</span>
+                <Link key={unit.id} to={`/units/${unit.id}`}>
+                  <Card className="unit-card card-hover cursor-pointer">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-12 h-12 rounded-xl ${status.bgColor} flex items-center justify-center`}>
+                            <Thermometer className={`w-6 h-6 ${status.color}`} />
                           </div>
-                          <p className="text-sm text-muted-foreground">{unit.area.site.name} · {unit.area.name}</p>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-foreground">{unit.name}</h3>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${status.bgColor} ${status.color}`}>{status.label}</span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">{unit.area.site.name} · {unit.area.name}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6">
+                          <div className="text-right hidden sm:block">
+                            <div className={`temp-display text-xl font-semibold ${unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high ? "text-alarm" : status.color}`}>
+                              {formatTemp(unit.last_temp_reading)}
+                            </div>
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              {isOnline ? <Wifi className="w-3 h-3 text-safe" /> : <WifiOff className="w-3 h-3" />}
+                              {getTimeAgo(unit.last_reading_at)}
+                            </div>
+                          </div>
+                          <ChevronRight className="w-5 h-5 text-muted-foreground" />
                         </div>
                       </div>
-                      <div className="flex items-center gap-6">
-                        <div className="text-right hidden sm:block">
-                          <div className={`temp-display text-xl font-semibold ${unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high ? "text-alarm" : status.color}`}>
-                            {formatTemp(unit.last_temp_reading)}
-                          </div>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            {isOnline ? <Wifi className="w-3 h-3 text-safe" /> : <WifiOff className="w-3 h-3" />}
-                            {getTimeAgo(unit.last_reading_at)}
-                          </div>
-                        </div>
-                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                </Link>
               );
             })}
           </div>
