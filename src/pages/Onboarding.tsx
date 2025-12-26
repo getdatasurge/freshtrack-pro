@@ -18,6 +18,19 @@ import {
   ArrowLeft
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  organizationNameSchema,
+  organizationSlugSchema,
+  siteNameSchema,
+  addressSchema,
+  citySchema,
+  stateSchema,
+  postalCodeSchema,
+  areaNameSchema,
+  areaDescriptionSchema,
+  unitNameSchema,
+  validateInput,
+} from "@/lib/validation";
 
 type Step = "organization" | "site" | "area" | "unit" | "complete";
 
@@ -137,16 +150,26 @@ const Onboarding = () => {
   };
 
   const handleCreateOrganization = async () => {
-    if (!data.organization.name.trim()) {
-      toast({ title: "Please enter an organization name", variant: "destructive" });
+    // Validate organization name
+    const nameResult = validateInput(organizationNameSchema, data.organization.name);
+    if (!nameResult.success) {
+      toast({ title: (nameResult as { success: false; error: string }).error, variant: "destructive" });
+      return;
+    }
+
+    // Validate slug if provided
+    const slugToUse = data.organization.slug || generateSlug(data.organization.name);
+    const slugResult = validateInput(organizationSlugSchema, slugToUse);
+    if (!slugResult.success) {
+      toast({ title: (slugResult as { success: false; error: string }).error, variant: "destructive" });
       return;
     }
 
     setIsLoading(true);
     try {
       const { data: orgId, error } = await supabase.rpc("create_organization_with_owner", {
-        p_name: data.organization.name,
-        p_slug: data.organization.slug || generateSlug(data.organization.name),
+        p_name: (nameResult as { success: true; data: string }).data,
+        p_slug: (slugResult as { success: true; data: string }).data,
         p_timezone: data.organization.timezone,
       });
 
@@ -162,19 +185,44 @@ const Onboarding = () => {
   };
 
   const handleCreateSite = async () => {
-    if (!data.site.name.trim()) {
-      toast({ title: "Please enter a site name", variant: "destructive" });
+    // Validate site name
+    const nameResult = validateInput(siteNameSchema, data.site.name);
+    if (!nameResult.success) {
+      toast({ title: (nameResult as { success: false; error: string }).error, variant: "destructive" });
+      return;
+    }
+
+    // Validate optional fields
+    const addressResult = validateInput(addressSchema, data.site.address);
+    const cityResult = validateInput(citySchema, data.site.city);
+    const stateResult = validateInput(stateSchema, data.site.state);
+    const postalResult = validateInput(postalCodeSchema, data.site.postalCode);
+
+    if (!addressResult.success) {
+      toast({ title: (addressResult as { success: false; error: string }).error, variant: "destructive" });
+      return;
+    }
+    if (!cityResult.success) {
+      toast({ title: (cityResult as { success: false; error: string }).error, variant: "destructive" });
+      return;
+    }
+    if (!stateResult.success) {
+      toast({ title: (stateResult as { success: false; error: string }).error, variant: "destructive" });
+      return;
+    }
+    if (!postalResult.success) {
+      toast({ title: (postalResult as { success: false; error: string }).error, variant: "destructive" });
       return;
     }
 
     setIsLoading(true);
     try {
       const { data: siteId, error } = await supabase.rpc("create_site_for_org", {
-        p_name: data.site.name,
-        p_address: data.site.address || null,
-        p_city: data.site.city || null,
-        p_state: data.site.state || null,
-        p_postal_code: data.site.postalCode || null,
+        p_name: nameResult.data,
+        p_address: addressResult.data || null,
+        p_city: cityResult.data || null,
+        p_state: stateResult.data || null,
+        p_postal_code: postalResult.data || null,
       });
 
       if (error) throw error;
@@ -189,8 +237,17 @@ const Onboarding = () => {
   };
 
   const handleCreateArea = async () => {
-    if (!data.area.name.trim()) {
-      toast({ title: "Please enter an area name", variant: "destructive" });
+    // Validate area name
+    const nameResult = validateInput(areaNameSchema, data.area.name);
+    if (!nameResult.success) {
+      toast({ title: (nameResult as { success: false; error: string }).error, variant: "destructive" });
+      return;
+    }
+
+    // Validate description
+    const descResult = validateInput(areaDescriptionSchema, data.area.description);
+    if (!descResult.success) {
+      toast({ title: (descResult as { success: false; error: string }).error, variant: "destructive" });
       return;
     }
 
@@ -198,8 +255,8 @@ const Onboarding = () => {
     try {
       const { data: areaId, error } = await supabase.rpc("create_area_for_site", {
         p_site_id: createdIds.siteId,
-        p_name: data.area.name,
-        p_description: data.area.description || null,
+        p_name: (nameResult as { success: true; data: string }).data,
+        p_description: (descResult as { success: true; data: string | undefined }).data || null,
       });
 
       if (error) throw error;
@@ -214,8 +271,10 @@ const Onboarding = () => {
   };
 
   const handleCreateUnit = async () => {
-    if (!data.unit.name.trim()) {
-      toast({ title: "Please enter a unit name", variant: "destructive" });
+    // Validate unit name
+    const nameResult = validateInput(unitNameSchema, data.unit.name);
+    if (!nameResult.success) {
+      toast({ title: (nameResult as { success: false; error: string }).error, variant: "destructive" });
       return;
     }
 
@@ -223,7 +282,7 @@ const Onboarding = () => {
     try {
       const { data: unitId, error } = await supabase.rpc("create_unit_for_area", {
         p_area_id: createdIds.areaId,
-        p_name: data.unit.name,
+        p_name: (nameResult as { success: true; data: string }).data,
         p_unit_type: data.unit.type as "fridge" | "freezer" | "walk_in_cooler" | "walk_in_freezer" | "display_case" | "blast_chiller",
       });
 
