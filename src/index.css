@@ -2,95 +2,149 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+/* 
+  FrostGuard Design System
+  Industrial monitoring meets modern SaaS
+  Cold blues, clean whites, temperature-status colors
 */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Core palette - Cold industrial blues */
+    --background: 210 25% 97%;
+    --foreground: 215 25% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 215 25% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 215 25% 12%;
 
-    --primary: 222.2 47.4% 11.2%;
+    /* Primary - Deep navy blue (trust, professionalism) */
+    --primary: 215 65% 20%;
     --primary-foreground: 210 40% 98%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary - Cool slate */
+    --secondary: 210 18% 92%;
+    --secondary-foreground: 215 25% 25%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Muted - Soft gray */
+    --muted: 210 18% 94%;
+    --muted-foreground: 215 16% 47%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent - Cyan/teal (ice, cold) */
+    --accent: 192 85% 45%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Status Colors */
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --safe: 152 69% 40%;
+    --safe-foreground: 0 0% 100%;
 
-    --radius: 0.5rem;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
 
-    --sidebar-background: 0 0% 98%;
+    --alarm: 0 84% 60%;
+    --alarm-foreground: 0 0% 100%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    --excursion: 25 95% 53%;
+    --excursion-foreground: 0 0% 100%;
 
-    --sidebar-primary: 240 5.9% 10%;
+    --offline: 215 16% 47%;
+    --offline-foreground: 0 0% 100%;
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    /* UI Elements */
+    --border: 214 22% 88%;
+    --input: 214 22% 88%;
+    --ring: 192 85% 45%;
 
-    --sidebar-accent: 240 4.8% 95.9%;
+    --radius: 0.625rem;
 
-    --sidebar-accent-foreground: 240 5.9% 10%;
+    /* Chart colors */
+    --chart-1: 192 85% 45%;
+    --chart-2: 215 65% 35%;
+    --chart-3: 152 69% 40%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 0 72% 51%;
 
-    --sidebar-border: 220 13% 91%;
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(215 65% 20%) 0%, hsl(215 65% 30%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(192 85% 45%) 0%, hsl(192 85% 55%) 100%);
+    --gradient-frost: linear-gradient(180deg, hsl(210 25% 97%) 0%, hsl(210 30% 94%) 100%);
+    --gradient-ice: linear-gradient(135deg, hsl(192 85% 95%) 0%, hsl(210 85% 95%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(215 65% 15%) 0%, hsl(215 65% 25%) 50%, hsl(192 85% 35%) 100%);
 
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(215 25% 12% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(215 25% 12% / 0.08), 0 2px 4px -2px hsl(215 25% 12% / 0.05);
+    --shadow-lg: 0 10px 15px -3px hsl(215 25% 12% / 0.1), 0 4px 6px -4px hsl(215 25% 12% / 0.05);
+    --shadow-xl: 0 20px 25px -5px hsl(215 25% 12% / 0.1), 0 8px 10px -6px hsl(215 25% 12% / 0.05);
+    --shadow-glow: 0 0 40px hsl(192 85% 45% / 0.2);
+    --shadow-card: 0 1px 3px 0 hsl(215 25% 12% / 0.08), 0 1px 2px -1px hsl(215 25% 12% / 0.08);
+
+    /* Sidebar */
+    --sidebar-background: 215 25% 15%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 192 85% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 25% 22%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 215 25% 22%;
+    --sidebar-ring: 192 85% 45%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 215 25% 9%;
+    --foreground: 210 40% 96%;
 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 215 25% 12%;
+    --card-foreground: 210 40% 96%;
 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 215 25% 12%;
+    --popover-foreground: 210 40% 96%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 192 85% 50%;
+    --primary-foreground: 215 25% 9%;
 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 215 22% 18%;
+    --secondary-foreground: 210 40% 96%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 215 22% 18%;
+    --muted-foreground: 215 20% 60%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 192 85% 50%;
+    --accent-foreground: 215 25% 9%;
 
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 62% 50%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --safe: 152 69% 45%;
+    --safe-foreground: 0 0% 100%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 0 0% 100%;
+
+    --alarm: 0 84% 55%;
+    --alarm-foreground: 0 0% 100%;
+
+    --border: 215 22% 20%;
+    --input: 215 22% 20%;
+    --ring: 192 85% 50%;
+
+    --gradient-primary: linear-gradient(135deg, hsl(192 85% 50%) 0%, hsl(192 85% 40%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(215 25% 6%) 0%, hsl(215 25% 12%) 50%, hsl(192 50% 20%) 100%);
+
+    --sidebar-background: 215 25% 7%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 192 85% 50%;
+    --sidebar-primary-foreground: 215 25% 9%;
+    --sidebar-accent: 215 25% 14%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 215 25% 14%;
   }
 }
 
@@ -99,7 +153,226 @@ All colors MUST be HSL.
     @apply border-border;
   }
 
-  body {
-    @apply bg-background text-foreground;
+  html {
+    @apply scroll-smooth;
   }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Typography */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+  }
+
+  /* Temperature display */
+  .temp-display {
+    @apply font-mono tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* Glass effect */
+  .glass {
+    @apply bg-card/80 backdrop-blur-md border border-border/50;
+  }
+
+  .glass-dark {
+    @apply bg-sidebar-background/90 backdrop-blur-md border border-sidebar-border/50;
+  }
+
+  /* Glow effects */
+  .glow-accent {
+    box-shadow: 0 0 20px hsl(var(--accent) / 0.3);
+  }
+
+  .glow-safe {
+    box-shadow: 0 0 20px hsl(var(--safe) / 0.4);
+  }
+
+  .glow-warning {
+    box-shadow: 0 0 20px hsl(var(--warning) / 0.4);
+  }
+
+  .glow-alarm {
+    box-shadow: 0 0 20px hsl(var(--alarm) / 0.4);
+  }
+
+  /* Status pulse animations */
+  .pulse-safe {
+    animation: pulse-safe 2s ease-in-out infinite;
+  }
+
+  .pulse-warning {
+    animation: pulse-warning 1.5s ease-in-out infinite;
+  }
+
+  .pulse-alarm {
+    animation: pulse-alarm 1s ease-in-out infinite;
+  }
+
+  /* Gradient text */
+  .text-gradient-primary {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+
+  .text-gradient-accent {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-accent);
+  }
+
+  /* Hide scrollbar but allow scroll */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Temperature status backgrounds */
+  .bg-status-ok {
+    @apply bg-safe/10 border-safe/30;
+  }
+
+  .bg-status-warning {
+    @apply bg-warning/10 border-warning/30;
+  }
+
+  .bg-status-alarm {
+    @apply bg-alarm/10 border-alarm/30;
+  }
+
+  .bg-status-offline {
+    @apply bg-muted border-border;
+  }
+}
+
+@layer components {
+  /* Card hover effect */
+  .card-hover {
+    @apply transition-all duration-300;
+  }
+
+  .card-hover:hover {
+    @apply shadow-lg -translate-y-0.5;
+  }
+
+  /* Stat card */
+  .stat-card {
+    @apply relative overflow-hidden rounded-xl border bg-card p-6 shadow-card;
+  }
+
+  .stat-card::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: var(--gradient-ice);
+  }
+
+  .stat-card:hover::before {
+    @apply opacity-50;
+  }
+
+  /* Unit card */
+  .unit-card {
+    @apply relative rounded-xl border bg-card p-4 shadow-card transition-all duration-200;
+  }
+
+  .unit-card:hover {
+    @apply shadow-md border-accent/50;
+  }
+
+  /* Temperature badge */
+  .temp-badge {
+    @apply inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-sm font-semibold;
+  }
+
+  .temp-badge-ok {
+    @apply bg-safe/15 text-safe;
+  }
+
+  .temp-badge-warning {
+    @apply bg-warning/15 text-warning;
+  }
+
+  .temp-badge-alarm {
+    @apply bg-alarm/15 text-alarm;
+  }
+
+  .temp-badge-offline {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  /* Hero section */
+  .hero-gradient {
+    background: var(--gradient-hero);
+  }
+
+  /* Navigation active state */
+  .nav-active {
+    @apply bg-accent/10 text-accent font-medium;
+  }
+}
+
+/* Keyframes */
+@keyframes pulse-safe {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--safe) / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px hsl(var(--safe) / 0);
+  }
+}
+
+@keyframes pulse-warning {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--warning) / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px hsl(var(--warning) / 0);
+  }
+}
+
+@keyframes pulse-alarm {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--alarm) / 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 10px hsl(var(--alarm) / 0);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted)) 0%,
+    hsl(var(--card)) 50%,
+    hsl(var(--muted)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
 }
