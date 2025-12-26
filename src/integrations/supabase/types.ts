@@ -984,53 +984,7 @@ export type Database = {
       }
     }
     Views: {
-      profiles_safe: {
-        Row: {
-          avatar_url: string | null
-          created_at: string | null
-          email: string | null
-          full_name: string | null
-          id: string | null
-          notification_preferences: Json | null
-          organization_id: string | null
-          phone: string | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Insert: {
-          avatar_url?: string | null
-          created_at?: string | null
-          email?: never
-          full_name?: string | null
-          id?: string | null
-          notification_preferences?: Json | null
-          organization_id?: string | null
-          phone?: never
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          avatar_url?: string | null
-          created_at?: string | null
-          email?: never
-          full_name?: string | null
-          id?: string | null
-          notification_preferences?: Json | null
-          organization_id?: string | null
-          phone?: never
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "profiles_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+      [_ in never]: never
     }
     Functions: {
       can_view_all_audit_logs: {
