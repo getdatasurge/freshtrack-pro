@@ -197,10 +197,10 @@ const Settings = () => {
         .eq("organization_id", profileData.organization_id);
 
       if (usersData) {
-        // Get profiles for these users
+        // Get profiles for these users using the secure view that masks contact info for non-admins
         const userIds = usersData.map(u => u.user_id);
         const { data: profilesData } = await supabase
-          .from("profiles")
+          .from("profiles_safe")
           .select("user_id, email, full_name")
           .in("user_id", userIds);
 
