@@ -85,11 +85,43 @@ const Auth = () => {
     setIsLoading(false);
   };
 
+  const checkPasswordBreach = async (password: string): Promise<{ breached: boolean; count: number }> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('check-password-breach', {
+        body: { password },
+      });
+      
+      if (error) {
+        console.error('Password breach check failed:', error);
+        return { breached: false, count: 0 }; // Fail open if service is down
+      }
+      
+      return data as { breached: boolean; count: number };
+    } catch (err) {
+      console.error('Password breach check error:', err);
+      return { breached: false, count: 0 };
+    }
+  };
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm("signup")) return;
 
     setIsLoading(true);
+    
+    // Check password against HaveIBeenPwned database
+    const breachResult = await checkPasswordBreach(signUpForm.password);
+    if (breachResult.breached) {
+      toast({
+        title: "Password compromised",
+        description: `This password has appeared in ${breachResult.count.toLocaleString()} data breaches. Please choose a different password for your security.`,
+        variant: "destructive",
+      });
+      setErrors(prev => ({ ...prev, password: "This password has been found in data breaches. Please choose a stronger, unique password." }));
+      setIsLoading(false);
+      return;
+    }
+    
     const redirectUrl = `${window.location.origin}/dashboard`;
 
     const { error } = await supabase.auth.signUp({
@@ -104,11 +136,21 @@ const Auth = () => {
     });
 
     if (error) {
-      toast({
-        title: "Sign up failed",
-        description: error.message,
-        variant: "destructive",
-      });
+      // Handle leaked password error from Supabase (if HIBP is enabled server-side)
+      if (error.message.includes('leaked') || error.message.includes('pwned')) {
+        toast({
+          title: "Password compromised",
+          description: "This password has been found in a data breach. Please choose a different password.",
+          variant: "destructive",
+        });
+        setErrors(prev => ({ ...prev, password: "This password has been found in data breaches." }));
+      } else {
+        toast({
+          title: "Sign up failed",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     } else {
       toast({
         title: "Account created!",
