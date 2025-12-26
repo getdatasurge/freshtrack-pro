@@ -11,6 +11,7 @@ import Sites from "./pages/Sites";
 import SiteDetail from "./pages/SiteDetail";
 import AreaDetail from "./pages/AreaDetail";
 import ManualLog from "./pages/ManualLog";
+import Alerts from "./pages/Alerts";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/sites/:siteId" element={<SiteDetail />} />
           <Route path="/sites/:siteId/areas/:areaId" element={<AreaDetail />} />
           <Route path="/manual-log" element={<ManualLog />} />
+          <Route path="/alerts" element={<Alerts />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

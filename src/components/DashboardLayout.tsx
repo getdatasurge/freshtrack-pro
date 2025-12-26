@@ -25,12 +25,13 @@ interface DashboardLayoutProps {
   backHref?: string;
 }
 
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, AlertCircle } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
   { href: "/sites", label: "Sites", icon: MapPin },
   { href: "/manual-log", label: "Log Temps", icon: ClipboardList },
+  { href: "/alerts", label: "Alerts", icon: AlertCircle },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
