@@ -197,10 +197,10 @@ const Settings = () => {
         .eq("organization_id", profileData.organization_id);
 
       if (usersData) {
-        // Get profiles for these users using the secure view that masks contact info for non-admins
+        // Get profiles for these users using the profiles table with proper RLS
         const userIds = usersData.map(u => u.user_id);
         const { data: profilesData } = await supabase
-          .from("profiles_safe")
+          .from("profiles")
           .select("user_id, email, full_name")
           .in("user_id", userIds);
 
