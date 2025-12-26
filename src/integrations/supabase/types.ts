@@ -987,6 +987,40 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_area_for_site: {
+        Args: { p_description?: string; p_name: string; p_site_id: string }
+        Returns: string
+      }
+      create_organization_with_owner: {
+        Args: {
+          p_compliance_mode?: Database["public"]["Enums"]["compliance_mode"]
+          p_name: string
+          p_slug: string
+          p_timezone?: string
+        }
+        Returns: string
+      }
+      create_site_for_org: {
+        Args: {
+          p_address?: string
+          p_city?: string
+          p_name: string
+          p_postal_code?: string
+          p_state?: string
+          p_timezone?: string
+        }
+        Returns: string
+      }
+      create_unit_for_area: {
+        Args: {
+          p_area_id: string
+          p_name: string
+          p_temp_limit_high?: number
+          p_temp_limit_low?: number
+          p_unit_type?: Database["public"]["Enums"]["unit_type"]
+        }
+        Returns: string
+      }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
