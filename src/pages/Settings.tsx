@@ -623,7 +623,12 @@ const Settings = () => {
                                     <span className="text-xs text-muted-foreground ml-2">(You)</span>
                                   )}
                                 </p>
-                                <p className="text-sm text-muted-foreground">{user.email}</p>
+                                {/* Only show email to admins/owners or if it's the current user */}
+                                {(canManageUsers || isCurrentUser) ? (
+                                  <p className="text-sm text-muted-foreground">{user.email}</p>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground italic">Contact info hidden</p>
+                                )}
                               </div>
                             </div>
                           </TableCell>

@@ -987,6 +987,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_view_contact_details: {
+        Args: { _target_org_id: string; _viewer_id: string }
+        Returns: boolean
+      }
       create_area_for_site: {
         Args: { p_description?: string; p_name: string; p_site_id: string }
         Returns: string
