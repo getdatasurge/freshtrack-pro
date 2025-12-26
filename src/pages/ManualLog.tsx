@@ -27,6 +27,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { Session } from "@supabase/supabase-js";
+import { temperatureSchema, notesSchema, validateInput } from "@/lib/validation";
 
 interface UnitForLogging {
   id: string;
@@ -124,23 +125,35 @@ const ManualLog = () => {
   };
 
   const handleSubmit = async () => {
-    if (!selectedUnit || !temperature) {
-      toast({ title: "Please enter a temperature", variant: "destructive" });
+    if (!selectedUnit) {
+      toast({ title: "Please select a unit", variant: "destructive" });
       return;
     }
 
+    // Validate temperature
     const temp = parseFloat(temperature);
-    if (isNaN(temp)) {
-      toast({ title: "Invalid temperature value", variant: "destructive" });
+    const tempResult = validateInput(temperatureSchema, temp);
+    if (!tempResult.success) {
+      toast({ title: (tempResult as { success: false; error: string }).error, variant: "destructive" });
+      return;
+    }
+
+    // Validate notes
+    const notesResult = validateInput(notesSchema, notes);
+    if (!notesResult.success) {
+      toast({ title: (notesResult as { success: false; error: string }).error, variant: "destructive" });
       return;
     }
 
     setIsSubmitting(true);
+    const validatedTemp = (tempResult as { success: true; data: number }).data;
+    const validatedNotes = (notesResult as { success: true; data: string | undefined }).data?.trim() || null;
+    
     const logEntry = {
       id: crypto.randomUUID(),
       unit_id: selectedUnit.id,
-      temperature: temp,
-      notes: notes.trim() || null,
+      temperature: validatedTemp,
+      notes: validatedNotes,
       logged_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
     };
