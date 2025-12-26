@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -28,9 +28,11 @@ import {
   Crown,
   User,
   Eye,
-  Trash2
+  Trash2,
+  CreditCard
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
+import { BillingTab } from "@/components/billing/BillingTab";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 type ComplianceMode = Database["public"]["Enums"]["compliance_mode"];
@@ -110,6 +112,20 @@ const Settings = () => {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<AppRole>("staff");
+
+  const [searchParams] = useSearchParams();
+  const defaultTab = searchParams.get("tab") || "organization";
+
+  useEffect(() => {
+    // Check for success/canceled params from Stripe
+    const success = searchParams.get("success");
+    const canceled = searchParams.get("canceled");
+    if (success === "true") {
+      toast.success("Subscription activated successfully!");
+    } else if (canceled === "true") {
+      toast.info("Checkout canceled");
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -323,6 +339,7 @@ const Settings = () => {
 
   const canManageUsers = userRole === "owner" || userRole === "admin";
   const canEditOrg = userRole === "owner" || userRole === "admin";
+  const canManageBilling = userRole === "owner";
 
   if (isLoading) {
     return (
@@ -336,11 +353,15 @@ const Settings = () => {
 
   return (
     <DashboardLayout title="Settings">
-      <Tabs defaultValue="organization" className="space-y-6">
-        <TabsList className="grid w-full max-w-md grid-cols-3">
+      <Tabs defaultValue={defaultTab} className="space-y-6">
+        <TabsList className="grid w-full max-w-lg grid-cols-4">
           <TabsTrigger value="organization" className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <span className="hidden sm:inline">Organization</span>
+          </TabsTrigger>
+          <TabsTrigger value="billing" className="flex items-center gap-2">
+            <CreditCard className="w-4 h-4" />
+            <span className="hidden sm:inline">Billing</span>
           </TabsTrigger>
           <TabsTrigger value="notifications" className="flex items-center gap-2">
             <Bell className="w-4 h-4" />
@@ -434,6 +455,16 @@ const Settings = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Billing Tab */}
+        <TabsContent value="billing">
+          {organization && (
+            <BillingTab 
+              organizationId={organization.id} 
+              canManageBilling={canManageBilling} 
+            />
+          )}
         </TabsContent>
 
         {/* Notifications Tab */}
