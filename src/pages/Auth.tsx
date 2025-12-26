@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Thermometer, Mail, Lock, User, Loader2 } from "lucide-react";
+import { Thermometer, Mail, Lock, User, Loader2, Eye, EyeOff } from "lucide-react";
 import { Link } from "react-router-dom";
 import { z } from "zod";
 
@@ -23,44 +23,93 @@ const Auth = () => {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
 
+  // Reset password mode state
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetForm, setResetForm] = useState({ newPassword: "", confirmPassword: "" });
+
+  // Password visibility states
+  const [showSignInPassword, setShowSignInPassword] = useState(false);
+  const [showSignUpPassword, setShowSignUpPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [signInForm, setSignInForm] = useState({ email: "", password: "" });
   const [signUpForm, setSignUpForm] = useState({ email: "", password: "", fullName: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Password strength calculator
+  const getPasswordStrength = (password: string) => {
+    let score = 0;
+    if (password.length >= 8) score++;
+    if (password.length >= 12) score++;
+    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+    if (/\d/.test(password)) score++;
+    if (/[!@#$%^&*(),.?":{}|<>]/.test(password)) score++;
+
+    if (score <= 1) return { level: "Weak", color: "bg-red-500", textColor: "text-red-500", width: "25%" };
+    if (score <= 2) return { level: "Fair", color: "bg-yellow-500", textColor: "text-yellow-500", width: "50%" };
+    if (score <= 3) return { level: "Good", color: "bg-blue-500", textColor: "text-blue-500", width: "75%" };
+    return { level: "Strong", color: "bg-green-500", textColor: "text-green-500", width: "100%" };
+  };
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // If we're in reset mode and have a session, show reset form instead of redirecting
+      if (searchParams.get("mode") === "reset" && session?.user) {
+        setShowResetPassword(true);
+        return;
+      }
       if (session?.user) {
         navigate("/dashboard");
       }
     });
 
+    // Also check on initial load
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (searchParams.get("mode") === "reset" && session?.user) {
+        setShowResetPassword(true);
+        return;
+      }
       if (session?.user) {
         navigate("/dashboard");
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
-  const validateForm = (type: "signin" | "signup") => {
+  const validateForm = (type: "signin" | "signup" | "reset") => {
     const newErrors: Record<string, string> = {};
-    const form = type === "signin" ? signInForm : signUpForm;
 
-    try {
-      emailSchema.parse(form.email);
-    } catch (e) {
-      if (e instanceof z.ZodError) newErrors.email = e.errors[0].message;
-    }
+    if (type === "reset") {
+      try {
+        passwordSchema.parse(resetForm.newPassword);
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          newErrors.newPassword = err.errors[0].message;
+        }
+      }
+      if (resetForm.newPassword !== resetForm.confirmPassword) {
+        newErrors.confirmPassword = "Passwords do not match";
+      }
+    } else {
+      const form = type === "signin" ? signInForm : signUpForm;
 
-    try {
-      passwordSchema.parse(form.password);
-    } catch (e) {
-      if (e instanceof z.ZodError) newErrors.password = e.errors[0].message;
-    }
+      try {
+        emailSchema.parse(form.email);
+      } catch (e) {
+        if (e instanceof z.ZodError) newErrors.email = e.errors[0].message;
+      }
 
-    if (type === "signup" && !signUpForm.fullName.trim()) {
-      newErrors.fullName = "Full name is required";
+      try {
+        passwordSchema.parse(form.password);
+      } catch (e) {
+        if (e instanceof z.ZodError) newErrors.password = e.errors[0].message;
+      }
+
+      if (type === "signup" && !signUpForm.fullName.trim()) {
+        newErrors.fullName = "Full name is required";
+      }
     }
 
     setErrors(newErrors);
@@ -129,7 +178,7 @@ const Auth = () => {
       
       if (error) {
         console.error('Password breach check failed:', error);
-        return { breached: false, count: 0 }; // Fail open if service is down
+        return { breached: false, count: 0 };
       }
       
       return data as { breached: boolean; count: number };
@@ -137,6 +186,43 @@ const Auth = () => {
       console.error('Password breach check error:', err);
       return { breached: false, count: 0 };
     }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validateForm("reset")) return;
+
+    setIsLoading(true);
+
+    // Check for breached passwords
+    const breachResult = await checkPasswordBreach(resetForm.newPassword);
+    if (breachResult.breached) {
+      setErrors({
+        newPassword: `This password has been exposed in ${breachResult.count.toLocaleString()} data breaches. Please choose a different password.`
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({
+      password: resetForm.newPassword
+    });
+
+    if (error) {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Password updated",
+        description: "Your password has been successfully updated.",
+      });
+      setShowResetPassword(false);
+      navigate("/dashboard");
+    }
+    setIsLoading(false);
   };
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -172,7 +258,6 @@ const Auth = () => {
     });
 
     if (error) {
-      // Handle leaked password error from Supabase (if HIBP is enabled server-side)
       if (error.message.includes('leaked') || error.message.includes('pwned')) {
         toast({
           title: "Password compromised",
@@ -195,6 +280,99 @@ const Auth = () => {
     }
     setIsLoading(false);
   };
+
+  const signUpStrength = getPasswordStrength(signUpForm.password);
+  const resetStrength = getPasswordStrength(resetForm.newPassword);
+
+  // Show Reset Password UI
+  if (showResetPassword) {
+    return (
+      <div className="min-h-screen bg-gradient-frost flex flex-col items-center justify-center p-4">
+        <Link to="/" className="flex items-center gap-2 mb-8">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-primary flex items-center justify-center">
+            <Thermometer className="w-6 h-6 text-white" />
+          </div>
+          <span className="text-2xl font-bold text-foreground">FrostGuard</span>
+        </Link>
+
+        <Card className="w-full max-w-md shadow-lg">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">Set New Password</CardTitle>
+            <CardDescription>
+              Enter your new password below
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleResetPassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-password">New Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="new-password"
+                    type={showNewPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    className="pl-10 pr-10"
+                    value={resetForm.newPassword}
+                    onChange={(e) => setResetForm({ ...resetForm, newPassword: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {resetForm.newPassword && (
+                  <div className="space-y-1">
+                    <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${resetStrength.color} transition-all duration-300`}
+                        style={{ width: resetStrength.width }}
+                      />
+                    </div>
+                    <p className={`text-xs ${resetStrength.textColor}`}>
+                      Password strength: {resetStrength.level}
+                    </p>
+                  </div>
+                )}
+                {errors.newPassword && <p className="text-sm text-destructive">{errors.newPassword}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    id="confirm-password"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    className="pl-10 pr-10"
+                    value={resetForm.confirmPassword}
+                    onChange={(e) => setResetForm({ ...resetForm, confirmPassword: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {errors.confirmPassword && <p className="text-sm text-destructive">{errors.confirmPassword}</p>}
+              </div>
+
+              <Button type="submit" className="w-full bg-accent hover:bg-accent/90" disabled={isLoading}>
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Update Password
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-frost flex flex-col items-center justify-center p-4">
@@ -242,12 +420,19 @@ const Auth = () => {
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="signin-password"
-                      type="password"
+                      type={showSignInPassword ? "text" : "password"}
                       placeholder="••••••••"
-                      className="pl-10"
+                      className="pl-10 pr-10"
                       value={signInForm.password}
                       onChange={(e) => setSignInForm({ ...signInForm, password: e.target.value })}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowSignInPassword(!showSignInPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showSignInPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
                   {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
                 </div>
@@ -303,13 +488,33 @@ const Auth = () => {
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="signup-password"
-                      type="password"
+                      type={showSignUpPassword ? "text" : "password"}
                       placeholder="Min. 8 characters"
-                      className="pl-10"
+                      className="pl-10 pr-10"
                       value={signUpForm.password}
                       onChange={(e) => setSignUpForm({ ...signUpForm, password: e.target.value })}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowSignUpPassword(!showSignUpPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {showSignUpPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
                   </div>
+                  {signUpForm.password && (
+                    <div className="space-y-1">
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${signUpStrength.color} transition-all duration-300`}
+                          style={{ width: signUpStrength.width }}
+                        />
+                      </div>
+                      <p className={`text-xs ${signUpStrength.textColor}`}>
+                        Password strength: {signUpStrength.level}
+                      </p>
+                    </div>
+                  )}
                   {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
                 </div>
                 <Button type="submit" className="w-full bg-accent hover:bg-accent/90" disabled={isLoading}>
