@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           acknowledged_at: string | null
           acknowledged_by: string | null
+          acknowledgment_notes: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
           created_at: string
           escalation_level: number
@@ -37,6 +38,7 @@ export type Database = {
         Insert: {
           acknowledged_at?: string | null
           acknowledged_by?: string | null
+          acknowledgment_notes?: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
           created_at?: string
           escalation_level?: number
@@ -56,6 +58,7 @@ export type Database = {
         Update: {
           acknowledged_at?: string | null
           acknowledged_by?: string | null
+          acknowledgment_notes?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
           created_at?: string
           escalation_level?: number

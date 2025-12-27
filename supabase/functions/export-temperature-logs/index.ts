@@ -10,7 +10,7 @@ interface ExportRequest {
   site_id?: string;
   start_date: string; // ISO date
   end_date: string; // ISO date
-  report_type: "daily" | "exceptions";
+  report_type: "daily" | "exceptions" | "manual";
 }
 
 Deno.serve(async (req) => {
@@ -138,6 +138,26 @@ Deno.serve(async (req) => {
       .gte("completed_at", start_date)
       .lte("completed_at", end_date);
 
+    // Get alerts with acknowledgment data
+    const { data: alerts } = await supabase
+      .from("alerts")
+      .select("unit_id, title, alert_type, severity, status, triggered_at, acknowledged_at, acknowledged_by, acknowledgment_notes, resolved_at, resolved_by, temp_reading, temp_limit")
+      .in("unit_id", unitIds)
+      .gte("triggered_at", start_date)
+      .lte("triggered_at", end_date);
+
+    // Get acknowledger names
+    const acknowledgerIds = [...new Set((alerts || []).filter((a: any) => a.acknowledged_by).map((a: any) => a.acknowledged_by))];
+    const { data: acknowledgerProfiles } = await supabase
+      .from("profiles")
+      .select("user_id, full_name, email")
+      .in("user_id", acknowledgerIds);
+
+    const acknowledgerMap: Record<string, string> = {};
+    (acknowledgerProfiles || []).forEach((p: any) => {
+      acknowledgerMap[p.user_id] = p.full_name || p.email;
+    });
+
     // Get event logs for gaps
     const { data: events } = await supabase
       .from("event_logs")
@@ -204,8 +224,8 @@ Deno.serve(async (req) => {
       });
 
     } else if (report_type === "exceptions") {
-      // Exception-Only Report
-      csv = "Date,Time,Unit Name,Site,Event Type,Details,Temperature (°F),Limit (°F),Action Taken,Logged By\n";
+      // Exception-Only Report with alerts and acknowledgments
+      csv = "Date,Time,Unit Name,Site,Event Type,Details,Temperature (°F),Limit (°F),Severity,Status,Acknowledged By,Acknowledged At,Acknowledgment Notes,Action Taken\n";
 
       // Out of range readings
       (sensorReadings || []).forEach((r: any) => {
@@ -216,7 +236,7 @@ Deno.serve(async (req) => {
         if (!outOfRange) return;
 
         const datetime = new Date(r.recorded_at);
-        csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",Temperature Excursion,Sensor reading out of range,${r.temperature},${unit.temp_limit_high},,Automated\n`;
+        csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",Temperature Excursion,Sensor reading out of range,${r.temperature},${unit.temp_limit_high},warning,,,,,\n`;
       });
 
       // Out of range manual logs
@@ -226,7 +246,19 @@ Deno.serve(async (req) => {
         if (l.is_in_range) return;
 
         const datetime = new Date(l.logged_at);
-        csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",Manual Log Excursion,"${(l.notes || "").replace(/"/g, '""')}",${l.temperature},${unit.temp_limit_high},,"${loggerMap[l.logged_by] || l.logged_by}"\n`;
+        csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",Manual Log Excursion,"${(l.notes || "").replace(/"/g, '""')}",${l.temperature},${unit.temp_limit_high},warning,,,,,\n`;
+      });
+
+      // Alerts with acknowledgment data
+      (alerts || []).forEach((a: any) => {
+        const unit = unitMap[a.unit_id];
+        if (!unit) return;
+        const datetime = new Date(a.triggered_at);
+        const ackAt = a.acknowledged_at ? new Date(a.acknowledged_at).toISOString() : "";
+        const ackBy = a.acknowledged_by ? (acknowledgerMap[a.acknowledged_by] || a.acknowledged_by) : "";
+        const ackNotes = (a.acknowledgment_notes || "").replace(/"/g, '""');
+        
+        csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",Alert: ${a.alert_type},"${a.title}",${a.temp_reading || ""},${a.temp_limit || unit.temp_limit_high},${a.severity},${a.status},"${ackBy}","${ackAt}","${ackNotes}",\n`;
       });
 
       // State changes
@@ -237,9 +269,9 @@ Deno.serve(async (req) => {
         const data = e.event_data as any;
         
         if (e.event_type === "unit_state_change") {
-          csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",State Change,"${data.from_status} -> ${data.to_status}: ${data.reason || ""}",${data.temp_reading || ""},${unit.temp_limit_high},,System\n`;
+          csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",State Change,"${data.from_status} -> ${data.to_status}: ${data.reason || ""}",${data.temp_reading || ""},${unit.temp_limit_high},info,,,,\n`;
         } else if (e.event_type === "missed_manual_log") {
-          csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",Missed Manual Log,"${data.hours_overdue} hours overdue",,${unit.temp_limit_high},,System\n`;
+          csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",Missed Manual Log,"${data.hours_overdue} hours overdue",,${unit.temp_limit_high},warning,,,,\n`;
         }
       });
 
@@ -248,7 +280,18 @@ Deno.serve(async (req) => {
         const unit = unitMap[ca.unit_id];
         if (!unit) return;
         const datetime = new Date(ca.completed_at);
-        csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",Corrective Action,"${(ca.root_cause || "").replace(/"/g, '""')}",,"${unit.temp_limit_high}","${(ca.action_taken || "").replace(/"/g, '""')}","${loggerMap[ca.created_by] || ca.created_by}"\n`;
+        csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}",Corrective Action,"${(ca.root_cause || "").replace(/"/g, '""')}",,"${unit.temp_limit_high}",info,resolved,,,"${(ca.action_taken || "").replace(/"/g, '""')}"\n`;
+      });
+
+    } else if (report_type === "manual") {
+      // Manual logs only report
+      csv = "Date,Time,Unit Name,Site,Area,Temperature (°F),In Range,Logged By,Notes\n";
+
+      (manualLogs || []).forEach((l: any) => {
+        const unit = unitMap[l.unit_id];
+        if (!unit) return;
+        const datetime = new Date(l.logged_at);
+        csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}","${unit.area.name}",${l.temperature},${l.is_in_range ? "Yes" : "No"},"${loggerMap[l.logged_by] || l.logged_by}","${(l.notes || "").replace(/"/g, '""')}"\n`;
       });
     }
 
