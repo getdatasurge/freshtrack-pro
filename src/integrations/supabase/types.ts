@@ -1169,6 +1169,44 @@ export type Database = {
           },
         ]
       }
+      unit_settings_history: {
+        Row: {
+          changed_at: string
+          changed_by: string
+          changes: Json
+          created_at: string
+          id: string
+          note: string | null
+          unit_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by: string
+          changes: Json
+          created_at?: string
+          id?: string
+          note?: string | null
+          unit_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          note?: string | null
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_settings_history_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       units: {
         Row: {
           area_id: string
