@@ -96,37 +96,43 @@ const UnitAlertsBanner = ({ alerts, onLogTemp, onAcknowledge }: UnitAlertsBanner
           return (
             <div
               key={alert.id}
-              className={`flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 p-3 rounded-lg ${
+              className={`flex flex-col gap-2 p-3 rounded-lg ${
                 isCritical ? "bg-alarm/10" : "bg-warning/10"
               }`}
             >
-              {/* Icon + Title */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+              {/* Header: Icon + Title + Severity */}
+              <div className="flex items-start gap-2">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
                   isCritical ? "bg-alarm/20" : "bg-warning/20"
                 }`}>
                   <Icon className={`w-4 h-4 ${isCritical ? "text-alarm" : "text-warning"}`} />
                 </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-sm text-foreground">{alert.title}</span>
-                  <Badge 
-                    variant="outline" 
-                    className={`text-xs ${
-                      isCritical 
-                        ? "border-alarm/50 text-alarm bg-alarm/5" 
-                        : "border-warning/50 text-warning bg-warning/5"
-                    }`}
-                  >
-                    {alert.severity}
-                  </Badge>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm text-foreground">{alert.title}</span>
+                    <Badge 
+                      variant="outline" 
+                      className={`text-xs flex-shrink-0 ${
+                        isCritical 
+                          ? "border-alarm/50 text-alarm bg-alarm/5" 
+                          : "border-warning/50 text-warning bg-warning/5"
+                      }`}
+                    >
+                      {alert.severity}
+                    </Badge>
+                  </div>
+                  {/* Reason text - wraps fully, no truncation */}
+                  <p className="text-sm text-muted-foreground mt-1 break-words leading-relaxed" style={{ overflowWrap: "anywhere" }}>
+                    {alert.message}
+                  </p>
                 </div>
               </div>
 
-              {/* Clear condition + Actions */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1 sm:justify-between pl-10 sm:pl-0">
-                <p className="text-xs text-muted-foreground">
+              {/* Footer: Clear condition + Actions */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between pl-10">
+                <p className="text-xs text-muted-foreground break-words" style={{ overflowWrap: "anywhere" }}>
                   <span className="text-foreground/60">Clears when:</span>{" "}
-                  {config.clearText}
+                  {alert.clearCondition || config.clearText}
                 </p>
                 <div className="flex gap-2 flex-shrink-0">
                   {showLogButton && onLogTemp && (
