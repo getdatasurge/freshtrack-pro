@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -22,7 +22,6 @@ import {
   Thermometer
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import AddressAutocomplete from "@/components/AddressAutocomplete";
 
 interface Site {
   id: string;
@@ -146,20 +145,11 @@ const Sites = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="address">Address</Label>
-                  <AddressAutocomplete
+                  <Input
                     id="address"
+                    placeholder="123 Main Street"
                     value={formData.address}
-                    onChange={(address) => setFormData((prev) => ({ ...prev, address }))}
-                    onPlaceSelect={(components) => {
-                      setFormData((prev) => ({
-                        ...prev,
-                        address: components.address,
-                        city: components.city,
-                        state: components.state,
-                        postal_code: components.postalCode,
-                      }));
-                    }}
-                    placeholder="Start typing an address..."
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
