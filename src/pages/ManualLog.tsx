@@ -414,6 +414,26 @@ const ManualLog = () => {
                 )}
               </div>
 
+              {/* Corrective Action - Required when out of range */}
+              {temperature && (parseFloat(temperature) > selectedUnit.temp_limit_high || 
+                (selectedUnit.temp_limit_low !== null && parseFloat(temperature) < selectedUnit.temp_limit_low)) && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                  <label className="text-sm font-medium text-destructive mb-2 block">
+                    Corrective Action Required *
+                  </label>
+                  <Textarea
+                    placeholder="Describe the corrective action taken (e.g., 'Adjusted thermostat, discarded affected items, notified manager')"
+                    value={correctiveAction}
+                    onChange={(e) => setCorrectiveAction(e.target.value)}
+                    rows={3}
+                    className="border-destructive/30 focus:border-destructive"
+                  />
+                  <p className="text-xs text-destructive/80 mt-2">
+                    Temperature is out of range. You must document the corrective action before submitting.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-medium text-foreground mb-2 block">
                   Notes (optional)
