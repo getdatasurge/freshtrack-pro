@@ -487,13 +487,17 @@ const Alerts = () => {
                   className={`${alert.status === "active" ? "border-alarm/30" : ""}`}
                 >
                   <CardContent className="p-4">
-                    <div className="flex items-start gap-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                      {/* Icon */}
                       <div className={`w-10 h-10 rounded-lg ${severity.bgColor} flex items-center justify-center flex-shrink-0`}>
                         <Icon className={`w-5 h-5 ${severity.color}`} />
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0 space-y-2">
+                        {/* Title row */}
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="space-y-1 min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <h3 className="font-semibold text-foreground">{alert.title}</h3>
                               <Badge className={`${severity.bgColor} ${severity.color} border-0`}>
@@ -511,22 +515,12 @@ const Alerts = () => {
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-sm text-muted-foreground mt-1">
+                            <p className="text-sm text-muted-foreground">
                               {alert.site_name} · {alert.area_name} · {alert.unit_name}
                             </p>
-                            {alert.message && (
-                              <p className="text-sm text-muted-foreground mt-1">{alert.message}</p>
-                            )}
-                            {alert.temp_reading !== null && (
-                              <p className="text-sm mt-1">
-                                <span className="text-alarm font-semibold">{alert.temp_reading}°F</span>
-                                {alert.temp_limit && (
-                                  <span className="text-muted-foreground"> (limit: {alert.temp_limit}°F)</span>
-                                )}
-                              </p>
-                            )}
                           </div>
-                          <div className="text-right flex-shrink-0">
+                          
+                          <div className="text-left sm:text-right flex-shrink-0">
                             <p className="text-xs text-muted-foreground">{getTimeAgo(alert.triggered_at)}</p>
                             {alert.acknowledged_at && (
                               <p className="text-xs text-safe mt-1">
@@ -537,9 +531,26 @@ const Alerts = () => {
                           </div>
                         </div>
 
+                        {/* Message - fully wrapped, no truncation */}
+                        {alert.message && (
+                          <p className="text-sm text-muted-foreground break-words leading-relaxed" style={{ overflowWrap: "anywhere" }}>
+                            {alert.message}
+                          </p>
+                        )}
+
+                        {/* Temperature info */}
+                        {alert.temp_reading !== null && (
+                          <p className="text-sm">
+                            <span className="text-alarm font-semibold">{alert.temp_reading}°F</span>
+                            {alert.temp_limit && (
+                              <span className="text-muted-foreground"> (limit: {alert.temp_limit}°F)</span>
+                            )}
+                          </p>
+                        )}
+
                         {/* Action Buttons */}
                         {alert.status === "active" && (
-                          <div className="flex gap-2 mt-3">
+                          <div className="flex flex-wrap gap-2 pt-1">
                             {showLogButton && (
                               <Button
                                 size="sm"
@@ -576,10 +587,11 @@ const Alerts = () => {
                           </div>
                         )}
 
+                        {/* Acknowledged state */}
                         {alert.status === "acknowledged" && (
-                          <div className="mt-3 space-y-2">
+                          <div className="space-y-2 pt-1">
                             {alert.acknowledgment_notes && (
-                              <div className="p-2 rounded bg-muted/50 text-sm">
+                              <div className="p-2 rounded bg-muted/50 text-sm break-words" style={{ overflowWrap: "anywhere" }}>
                                 <span className="text-muted-foreground">Notes: </span>
                                 {alert.acknowledgment_notes}
                               </div>

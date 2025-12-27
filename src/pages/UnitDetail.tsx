@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
+import UnitAlertsBanner from "@/components/unit/UnitAlertsBanner";
 import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,6 +78,15 @@ interface EventLog {
   recorded_at: string;
 }
 
+interface UnitAlert {
+  id: string;
+  type: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  message: string;
+  clearCondition: string;
+}
+
 const statusConfig: Record<string, { color: string; bgColor: string; label: string }> = {
   ok: { color: "text-safe", bgColor: "bg-safe/10", label: "OK" },
   excursion: { color: "text-excursion", bgColor: "bg-excursion/10", label: "Excursion" },
@@ -95,6 +105,7 @@ const UnitDetail = () => {
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [manualLogs, setManualLogs] = useState<ManualLog[]>([]);
   const [events, setEvents] = useState<EventLog[]>([]);
+  const [unitAlerts, setUnitAlerts] = useState<UnitAlert[]>([]);
   const [timeRange, setTimeRange] = useState("24h");
   const [isExporting, setIsExporting] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -182,11 +193,78 @@ const UnitDetail = () => {
         .limit(50);
 
       setEvents(eventsData || []);
+
+      // Load active alerts for this unit
+      const { data: alertsData } = await supabase
+        .from("alerts")
+        .select("id, title, message, alert_type, severity, status")
+        .eq("unit_id", unitId)
+        .eq("status", "active")
+        .order("severity", { ascending: true });
+
+      // Build alerts from DB + computed status
+      const alerts: UnitAlert[] = [];
+
+      // Add DB alerts
+      if (alertsData) {
+        alertsData.forEach((a) => {
+          alerts.push({
+            id: a.id,
+            type: a.alert_type,
+            severity: a.severity as "critical" | "warning" | "info",
+            title: a.title,
+            message: a.message || "",
+            clearCondition: getAlertClearCondition(a.alert_type),
+          });
+        });
+      }
+
+      // Add computed alerts based on unit status
+      if (unitData.status === "manual_required" && !alerts.some(a => a.type === "missed_manual_entry")) {
+        alerts.push({
+          id: "computed-manual",
+          type: "MANUAL_REQUIRED",
+          severity: "critical",
+          title: "Manual Log Required",
+          message: "Temperature log is overdue",
+          clearCondition: "Log a temperature reading",
+        });
+      }
+
+      if (unitData.status === "offline" && !alerts.some(a => a.type === "monitoring_interrupted")) {
+        alerts.push({
+          id: "computed-offline",
+          type: "OFFLINE",
+          severity: "warning",
+          title: "Sensor Offline",
+          message: "No recent sensor data received",
+          clearCondition: "Sensor comes back online",
+        });
+      }
+
+      setUnitAlerts(alerts);
     } catch (error) {
       console.error("Error loading unit:", error);
       toast({ title: "Failed to load unit data", variant: "destructive" });
     }
     setIsLoading(false);
+  };
+
+  const getAlertClearCondition = (alertType: string): string => {
+    switch (alertType) {
+      case "missed_manual_entry":
+        return "Log a temperature reading";
+      case "monitoring_interrupted":
+        return "Sensor comes back online";
+      case "alarm_active":
+        return "Temperature returns to range";
+      case "low_battery":
+        return "Replace or charge battery";
+      case "door_open":
+        return "Close the door";
+      default:
+        return "Condition resolved";
+    }
   };
 
   const exportToCSV = async (reportType: "daily" | "exceptions" = "daily") => {
@@ -370,6 +448,14 @@ const UnitDetail = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Alerts Banner */}
+        {unitAlerts.length > 0 && (
+          <UnitAlertsBanner
+            alerts={unitAlerts}
+            onLogTemp={() => setModalOpen(true)}
+          />
+        )}
 
         {/* Device Readiness */}
         <DeviceReadinessCard
