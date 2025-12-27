@@ -243,15 +243,27 @@ const ManualLog = () => {
     const hours = getTimeSinceLog(unit.last_manual_log, unit.manual_log_cadence);
     
     // Manual required status takes priority
-    if (unit.status === "manual_required") {
-      return { status: "required", label: "REQUIRED", color: "text-alarm" };
+    if (unit.status === "manual_required" || unit.status === "monitoring_interrupted" || unit.status === "offline") {
+      return { status: "required", label: "REQUIRED", color: "text-alarm", urgent: true };
     }
     
-    if (hours === null) return { status: "never", label: "Never logged", color: "text-warning" };
-    if (hours < cadenceHours * 0.75) return { status: "ok", label: `${Math.floor(hours)}h ago`, color: "text-safe" };
-    if (hours < cadenceHours) return { status: "due", label: "Due soon", color: "text-excursion" };
-    return { status: "overdue", label: "Overdue", color: "text-alarm" };
+    if (hours === null) return { status: "never", label: "Never logged", color: "text-warning", urgent: true };
+    if (hours < cadenceHours * 0.75) return { status: "ok", label: `${Math.floor(hours)}h ago`, color: "text-safe", urgent: false };
+    if (hours < cadenceHours) return { status: "due", label: "Due soon", color: "text-excursion", urgent: false };
+    return { status: "overdue", label: "Overdue", color: "text-alarm", urgent: true };
   };
+
+  const formatCadence = (seconds: number) => {
+    const hours = seconds / 3600;
+    if (hours < 1) return `${Math.round(seconds / 60)} min`;
+    if (hours === 1) return "1 hour";
+    return `${hours} hours`;
+  };
+
+  const unitsRequiringLog = units.filter(u => {
+    const status = getLogStatus(u);
+    return status.urgent;
+  });
 
   if (isLoading) {
     return (
@@ -266,7 +278,7 @@ const ManualLog = () => {
   return (
     <DashboardLayout title="Manual Temperature Log">
       {/* Offline/Sync Status Bar */}
-      <div className="flex items-center justify-between mb-6 p-3 rounded-lg bg-card border border-border">
+      <div className="flex items-center justify-between mb-4 p-3 rounded-lg bg-card border border-border">
         <div className="flex items-center gap-3">
           {isOnline ? (
             <div className="flex items-center gap-2 text-safe">
@@ -303,6 +315,54 @@ const ManualLog = () => {
         )}
       </div>
 
+      {/* Manual Logging Required Alert */}
+      {unitsRequiringLog.length > 0 && (
+        <Card className="mb-6 border-alarm/50 bg-alarm/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2 text-alarm">
+              <AlertTriangle className="w-5 h-5" />
+              Manual Logging Required ({unitsRequiringLog.length} units)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <p className="text-sm text-muted-foreground mb-3">
+              The following units require immediate manual temperature logs due to sensor issues or missed log intervals.
+            </p>
+            <div className="grid gap-2">
+              {unitsRequiringLog.slice(0, 3).map((unit) => {
+                const logStatus = getLogStatus(unit);
+                return (
+                  <div
+                    key={unit.id}
+                    className="flex items-center justify-between p-3 rounded-lg bg-background cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => setSelectedUnit(unit)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Thermometer className="w-4 h-4 text-alarm" />
+                      <div>
+                        <span className="font-medium text-foreground">{unit.name}</span>
+                        <p className="text-xs text-muted-foreground">{unit.area.site.name}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <Badge variant="destructive" className="mb-1">{logStatus.label}</Badge>
+                      <p className="text-xs text-muted-foreground">
+                        Every {formatCadence(unit.manual_log_cadence)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+              {unitsRequiringLog.length > 3 && (
+                <p className="text-xs text-muted-foreground text-center pt-1">
+                  +{unitsRequiringLog.length - 3} more units need logging
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Units Grid */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {units.map((unit) => {
@@ -337,9 +397,14 @@ const ManualLog = () => {
                   )}
                 </div>
                 <div className="mt-3 flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground capitalize">
-                    {unit.unit_type.replace(/_/g, " ")}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground capitalize">
+                      {unit.unit_type.replace(/_/g, " ")}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      · Every {formatCadence(unit.manual_log_cadence)}
+                    </span>
+                  </div>
                   <div className={`flex items-center gap-1 text-xs ${logStatus.color}`}>
                     {logStatus.status === "ok" ? (
                       <Check className="w-3 h-3" />
@@ -364,8 +429,25 @@ const ManualLog = () => {
         </Card>
       )}
 
-      {/* Log Entry Dialog */}
-      <Dialog open={!!selectedUnit} onOpenChange={() => setSelectedUnit(null)}>
+      {/* Log Entry Dialog - Prevent silent dismissal */}
+      <Dialog 
+        open={!!selectedUnit} 
+        onOpenChange={(open) => {
+          if (!open && !isOnline) {
+            // Prevent silent dismissal when offline - require confirmation
+            const confirmed = window.confirm(
+              "You are offline. Are you sure you want to close without logging? The unit may require a temperature log."
+            );
+            if (!confirmed) return;
+          }
+          if (!open) {
+            setSelectedUnit(null);
+            setTemperature("");
+            setNotes("");
+            setCorrectiveAction("");
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -376,16 +458,40 @@ const ManualLog = () => {
 
           {selectedUnit && (
             <div className="space-y-4 pt-2">
+              {/* Unit Info with Status */}
               <div className="p-3 rounded-lg bg-muted/50">
-                <p className="font-semibold text-foreground">{selectedUnit.name}</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-semibold text-foreground">{selectedUnit.name}</p>
+                  {(selectedUnit.status === "manual_required" || selectedUnit.status === "monitoring_interrupted" || selectedUnit.status === "offline") && (
+                    <Badge variant="destructive" className="text-xs">
+                      {selectedUnit.status === "offline" ? "Sensor Offline" : "Manual Required"}
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   {selectedUnit.area.site.name} · {selectedUnit.area.name}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Limit: ≤{selectedUnit.temp_limit_high}°F
-                  {selectedUnit.temp_limit_low !== null && ` / ≥${selectedUnit.temp_limit_low}°F`}
-                </p>
+                <div className="flex items-center gap-4 mt-2 text-xs">
+                  <span className="text-muted-foreground">
+                    Limit: ≤{selectedUnit.temp_limit_high}°F
+                    {selectedUnit.temp_limit_low !== null && ` / ≥${selectedUnit.temp_limit_low}°F`}
+                  </span>
+                  <span className="text-muted-foreground border-l border-border pl-4">
+                    <Clock className="w-3 h-3 inline mr-1" />
+                    Log every {formatCadence(selectedUnit.manual_log_cadence)}
+                  </span>
+                </div>
               </div>
+
+              {/* Offline Warning */}
+              {!isOnline && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-warning/10 border border-warning/20">
+                  <WifiOff className="w-4 h-4 text-warning flex-shrink-0" />
+                  <p className="text-xs text-warning">
+                    You are offline. Log will be saved locally and synced when connection is restored.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="text-sm font-medium text-foreground mb-2 block">
