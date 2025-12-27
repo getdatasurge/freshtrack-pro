@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { AlertRules, DEFAULT_ALERT_RULES, computeOfflineTriggerMs, computeManualTriggerMinutes } from "./useAlertRules";
 
 export interface UnitStatusInfo {
   id: string;
@@ -29,6 +30,7 @@ export interface ComputedUnitStatus {
   manualIntervalMinutes: number;
   manualOverdueMinutes: number;
   minutesSinceReading: number | null;
+  offlineThresholdMs: number;
   
   // Status labels
   statusLabel: string;
@@ -36,14 +38,19 @@ export interface ComputedUnitStatus {
   statusBgColor: string;
 }
 
-// Threshold for considering a sensor offline (10 minutes)
-const SENSOR_OFFLINE_THRESHOLD_MS = 10 * 60 * 1000;
+// Default threshold for backward compatibility (10 minutes)
+const DEFAULT_SENSOR_OFFLINE_THRESHOLD_MS = 10 * 60 * 1000;
 
-export function computeUnitStatus(unit: UnitStatusInfo): ComputedUnitStatus {
+export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): ComputedUnitStatus {
   const now = Date.now();
+  const effectiveRules = rules || DEFAULT_ALERT_RULES;
   
-  // Manual log cadence in minutes
-  const manualIntervalMinutes = unit.manual_log_cadence / 60;
+  // Calculate offline threshold from rules
+  const offlineThresholdMs = computeOfflineTriggerMs(effectiveRules);
+  
+  // Manual log interval from rules (with grace period)
+  const manualTriggerMinutes = computeManualTriggerMinutes(effectiveRules);
+  const manualIntervalMinutes = effectiveRules.manual_interval_minutes;
   
   // Time since last manual log
   let minutesSinceManualLog: number | null = null;
@@ -57,16 +64,16 @@ export function computeUnitStatus(unit: UnitStatusInfo): ComputedUnitStatus {
     minutesSinceReading = Math.floor((now - new Date(unit.last_reading_at).getTime()) / 60000);
   }
   
-  // Sensor online status
+  // Sensor online status using configurable threshold
   const sensorOnline = unit.last_reading_at !== null && 
-    (now - new Date(unit.last_reading_at).getTime()) < SENSOR_OFFLINE_THRESHOLD_MS;
+    (now - new Date(unit.last_reading_at).getTime()) < offlineThresholdMs;
   
-  // Manual required: no log ever OR log older than interval
+  // Manual required: no log ever OR log older than interval + grace
   const manualRequired = 
     minutesSinceManualLog === null || 
-    minutesSinceManualLog >= manualIntervalMinutes;
+    minutesSinceManualLog >= manualTriggerMinutes;
   
-  // How many minutes overdue
+  // How many minutes overdue (beyond the required interval)
   const manualOverdueMinutes = minutesSinceManualLog !== null 
     ? Math.max(0, minutesSinceManualLog - manualIntervalMinutes)
     : manualIntervalMinutes; // If never logged, consider fully overdue
@@ -126,24 +133,25 @@ export function computeUnitStatus(unit: UnitStatusInfo): ComputedUnitStatus {
     manualIntervalMinutes,
     manualOverdueMinutes,
     minutesSinceReading,
+    offlineThresholdMs,
     statusLabel,
     statusColor,
     statusBgColor,
   };
 }
 
-export function useUnitStatus(unit: UnitStatusInfo | null): ComputedUnitStatus | null {
+export function useUnitStatus(unit: UnitStatusInfo | null, rules?: AlertRules): ComputedUnitStatus | null {
   return useMemo(() => {
     if (!unit) return null;
-    return computeUnitStatus(unit);
-  }, [unit]);
+    return computeUnitStatus(unit, rules);
+  }, [unit, rules]);
 }
 
-export function useUnitsStatus(units: UnitStatusInfo[]): Array<UnitStatusInfo & { computed: ComputedUnitStatus }> {
+export function useUnitsStatus(units: UnitStatusInfo[], rulesMap?: Map<string, AlertRules>): Array<UnitStatusInfo & { computed: ComputedUnitStatus }> {
   return useMemo(() => {
     return units.map(unit => ({
       ...unit,
-      computed: computeUnitStatus(unit),
+      computed: computeUnitStatus(unit, rulesMap?.get(unit.id)),
     }));
-  }, [units]);
+  }, [units, rulesMap]);
 }

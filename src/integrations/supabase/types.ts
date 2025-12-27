@@ -14,6 +14,88 @@ export type Database = {
   }
   public: {
     Tables: {
+      alert_rules: {
+        Row: {
+          created_at: string
+          door_open_critical_minutes: number | null
+          door_open_max_mask_minutes_per_day: number | null
+          door_open_warning_minutes: number | null
+          excursion_confirm_minutes_door_closed: number | null
+          excursion_confirm_minutes_door_open: number | null
+          expected_reading_interval_seconds: number | null
+          id: string
+          manual_grace_minutes: number | null
+          manual_interval_minutes: number | null
+          max_excursion_minutes: number | null
+          offline_trigger_additional_minutes: number | null
+          offline_trigger_multiplier: number | null
+          organization_id: string | null
+          site_id: string | null
+          unit_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          door_open_critical_minutes?: number | null
+          door_open_max_mask_minutes_per_day?: number | null
+          door_open_warning_minutes?: number | null
+          excursion_confirm_minutes_door_closed?: number | null
+          excursion_confirm_minutes_door_open?: number | null
+          expected_reading_interval_seconds?: number | null
+          id?: string
+          manual_grace_minutes?: number | null
+          manual_interval_minutes?: number | null
+          max_excursion_minutes?: number | null
+          offline_trigger_additional_minutes?: number | null
+          offline_trigger_multiplier?: number | null
+          organization_id?: string | null
+          site_id?: string | null
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          door_open_critical_minutes?: number | null
+          door_open_max_mask_minutes_per_day?: number | null
+          door_open_warning_minutes?: number | null
+          excursion_confirm_minutes_door_closed?: number | null
+          excursion_confirm_minutes_door_open?: number | null
+          expected_reading_interval_seconds?: number | null
+          id?: string
+          manual_grace_minutes?: number | null
+          manual_interval_minutes?: number | null
+          max_excursion_minutes?: number | null
+          offline_trigger_additional_minutes?: number | null
+          offline_trigger_multiplier?: number | null
+          organization_id?: string | null
+          site_id?: string | null
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_rules_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_rules_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_rules_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: true
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alerts: {
         Row: {
           acknowledged_at: string | null
@@ -1032,6 +1114,7 @@ export type Database = {
         }
         Returns: string
       }
+      get_effective_alert_rules: { Args: { p_unit_id: string }; Returns: Json }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,10 +30,13 @@ import {
   User,
   Eye,
   Trash2,
-  CreditCard
+  CreditCard,
+  AlertTriangle
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
+import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
+import { useOrgAlertRules, AlertRulesRow } from "@/hooks/useAlertRules";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 type ComplianceMode = Database["public"]["Enums"]["compliance_mode"];
@@ -88,6 +92,21 @@ const timezones = [
   { value: "Asia/Tokyo", label: "Tokyo (JST)" },
   { value: "Australia/Sydney", label: "Sydney (AEST)" },
 ];
+
+// Alert Rules Tab Component
+function AlertRulesTab({ organizationId, canEdit }: { organizationId: string; canEdit: boolean }) {
+  const { data: orgRules, refetch } = useOrgAlertRules(organizationId);
+
+  return (
+    <AlertRulesEditor
+      scope={{ organization_id: organizationId }}
+      scopeLabel="Organization Defaults"
+      existingRules={orgRules || null}
+      onSave={refetch}
+      canEdit={canEdit}
+    />
+  );
+}
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -354,10 +373,14 @@ const Settings = () => {
   return (
     <DashboardLayout title="Settings">
       <Tabs defaultValue={defaultTab} className="space-y-6">
-        <TabsList className="grid w-full max-w-lg grid-cols-4">
+        <TabsList className="grid w-full max-w-2xl grid-cols-5">
           <TabsTrigger value="organization" className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <span className="hidden sm:inline">Organization</span>
+          </TabsTrigger>
+          <TabsTrigger value="alerts" className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            <span className="hidden sm:inline">Alert Rules</span>
           </TabsTrigger>
           <TabsTrigger value="billing" className="flex items-center gap-2">
             <CreditCard className="w-4 h-4" />
@@ -455,6 +478,13 @@ const Settings = () => {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Alert Rules Tab */}
+        <TabsContent value="alerts">
+          {organization && (
+            <AlertRulesTab organizationId={organization.id} canEdit={canEditOrg} />
+          )}
         </TabsContent>
 
         {/* Billing Tab */}
