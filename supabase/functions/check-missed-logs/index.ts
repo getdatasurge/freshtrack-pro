@@ -55,15 +55,32 @@ Deno.serve(async (req) => {
 
     const now = Date.now();
     const alertsCreated: { unitId: string; unitName: string; alertType: string }[] = [];
-    const OFFLINE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes no data = offline
+
 
     for (const unit of (allUnits || []) as any[]) {
       const orgId = getOrgId(unit);
       const lastReadingTime = unit.last_reading_at ? new Date(unit.last_reading_at).getTime() : null;
       const timeSinceReading = lastReadingTime ? now - lastReadingTime : Infinity;
 
+      // Get effective alert rules for this unit
+      const { data: alertRules } = await supabase
+        .rpc("get_effective_alert_rules", { p_unit_id: unit.id });
+
+      const rules = alertRules || {
+        expected_reading_interval_seconds: 60,
+        offline_trigger_multiplier: 2,
+        offline_trigger_additional_minutes: 2,
+        manual_interval_minutes: unit.manual_log_cadence / 60,
+        manual_grace_minutes: 0,
+      };
+
+      // Calculate offline threshold from configurable rules
+      const offlineThresholdMs = 
+        (rules.expected_reading_interval_seconds * rules.offline_trigger_multiplier * 1000) +
+        (rules.offline_trigger_additional_minutes * 60 * 1000);
+
       // Check for offline units (no heartbeat)
-      if (timeSinceReading > OFFLINE_THRESHOLD_MS || !lastReadingTime) {
+      if (timeSinceReading > offlineThresholdMs || !lastReadingTime) {
         // Check if we already have an active monitoring_interrupted alert
         const { data: existingOfflineAlert } = await supabase
           .from("alerts")
