@@ -205,6 +205,35 @@ const ManualLog = () => {
           });
         }
 
+        // Immediately update local state to reflect the new log
+        setUnits(prevUnits => prevUnits.map(u => {
+          if (u.id === selectedUnit.id) {
+            return {
+              ...u,
+              last_manual_log: logEntry.logged_at,
+              // If log is in range and unit was manual_required, switch to restoring
+              status: (!isOutOfRange && (u.status === "manual_required" || u.status === "monitoring_interrupted")) 
+                ? "restoring" 
+                : u.status,
+            };
+          }
+          return u;
+        }));
+
+        // Resolve any existing missed_manual_entry alerts for this unit
+        if (!isOutOfRange) {
+          await supabase
+            .from("alerts")
+            .update({
+              status: "resolved",
+              resolved_at: new Date().toISOString(),
+              resolved_by: session.user.id,
+            })
+            .eq("unit_id", selectedUnit.id)
+            .eq("alert_type", "missed_manual_entry")
+            .in("status", ["active", "acknowledged"]);
+        }
+
         toast({ title: "Temperature logged successfully" });
       } else {
         await saveLogOffline(logEntry);
@@ -218,6 +247,7 @@ const ManualLog = () => {
       setTemperature("");
       setNotes("");
       setCorrectiveAction("");
+      // Reload to get fresh data from server
       loadUnits();
     } catch (error) {
       console.error("Error saving log:", error);
@@ -298,21 +328,32 @@ const ManualLog = () => {
             </Badge>
           )}
         </div>
-        {pendingCount > 0 && isOnline && (
+        <div className="flex items-center gap-2">
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            onClick={syncPendingLogs}
-            disabled={isSyncing}
+            onClick={loadUnits}
+            disabled={isLoading}
+            title="Refresh units"
           >
-            {isSyncing ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <RefreshCw className="w-4 h-4 mr-2" />
-            )}
-            Sync Now
+            <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
           </Button>
-        )}
+          {pendingCount > 0 && isOnline && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={syncPendingLogs}
+              disabled={isSyncing}
+            >
+              {isSyncing ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              Sync Now
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Manual Logging Required Alert */}

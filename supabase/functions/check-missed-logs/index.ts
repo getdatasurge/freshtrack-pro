@@ -35,112 +35,149 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    console.log("Checking for missed manual logs...");
+    console.log("Checking for missed manual logs and offline units...");
 
-    // Get all units that require manual logging
-    const { data: units, error: unitsError } = await supabase
+    // Get all active units
+    const { data: allUnits, error: allUnitsError } = await supabase
       .from("units")
       .select(`
-        id, name, status, manual_log_cadence,
+        id, name, status, manual_log_cadence, last_reading_at,
         area:areas!inner(
           site:sites!inner(organization_id, timezone)
         )
       `)
-      .eq("is_active", true)
-      .in("status", ["manual_required", "monitoring_interrupted"]);
+      .eq("is_active", true);
 
-    if (unitsError) {
-      console.error("Error fetching units:", unitsError);
-      throw unitsError;
+    if (allUnitsError) {
+      console.error("Error fetching units:", allUnitsError);
+      throw allUnitsError;
     }
 
     const now = Date.now();
-    const alertsCreated: { unitId: string; unitName: string }[] = [];
+    const alertsCreated: { unitId: string; unitName: string; alertType: string }[] = [];
+    const OFFLINE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes no data = offline
 
-    for (const unit of (units || []) as any[]) {
+    for (const unit of (allUnits || []) as any[]) {
       const orgId = getOrgId(unit);
-      
-      // Get organization's compliance mode
-      const { data: org } = await supabase
-        .from("organizations")
-        .select("compliance_mode")
-        .eq("id", orgId)
-        .maybeSingle();
+      const lastReadingTime = unit.last_reading_at ? new Date(unit.last_reading_at).getTime() : null;
+      const timeSinceReading = lastReadingTime ? now - lastReadingTime : Infinity;
 
-      // HACCP mode requires logs every 2 hours, standard every 4 hours
-      const cadenceSeconds = org?.compliance_mode === "haccp" 
-        ? 2 * 60 * 60 // 2 hours
-        : unit.manual_log_cadence || 4 * 60 * 60; // default 4 hours
-
-      const cadenceMs = cadenceSeconds * 1000;
-
-      // Get the most recent manual log for this unit
-      const { data: lastLog } = await supabase
-        .from("manual_temperature_logs")
-        .select("logged_at")
-        .eq("unit_id", unit.id)
-        .order("logged_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const lastLogTime = lastLog?.logged_at ? new Date(lastLog.logged_at).getTime() : 0;
-      const timeSinceLog = now - lastLogTime;
-
-      // Check if log is overdue
-      if (timeSinceLog > cadenceMs) {
-        // Check if we already have an active alert for this
-        const { data: existingAlert } = await supabase
+      // Check for offline units (no heartbeat)
+      if (timeSinceReading > OFFLINE_THRESHOLD_MS || !lastReadingTime) {
+        // Check if we already have an active monitoring_interrupted alert
+        const { data: existingOfflineAlert } = await supabase
           .from("alerts")
           .select("id")
           .eq("unit_id", unit.id)
-          .eq("alert_type", "missed_manual_entry")
+          .eq("alert_type", "monitoring_interrupted")
           .in("status", ["active", "acknowledged"])
           .maybeSingle();
 
-        if (!existingAlert) {
-          const hoursOverdue = Math.floor(timeSinceLog / (60 * 60 * 1000));
-          const severity = hoursOverdue >= 8 ? "critical" : hoursOverdue >= 4 ? "warning" : "info";
+        if (!existingOfflineAlert) {
+          const minutesOffline = lastReadingTime ? Math.floor(timeSinceReading / 60000) : 0;
+          const severity = minutesOffline > 60 ? "critical" : minutesOffline > 30 ? "warning" : "info";
 
-          // Create alert
           const { error: alertError } = await supabase.from("alerts").insert({
             unit_id: unit.id,
-            title: `${unit.name}: Missed Manual Log`,
-            message: `No manual temperature log for ${hoursOverdue} hours. Manual logging is required when monitoring is interrupted.`,
-            alert_type: "missed_manual_entry",
+            title: `${unit.name}: Sensor Offline`,
+            message: lastReadingTime 
+              ? `No sensor data for ${minutesOffline} minutes. Manual logging required.`
+              : "Sensor has never reported data. Check device pairing.",
+            alert_type: "monitoring_interrupted",
             severity,
           });
 
-          if (alertError) {
-            console.error(`Error creating alert for unit ${unit.id}:`, alertError);
-            continue;
+          if (!alertError) {
+            alertsCreated.push({ unitId: unit.id, unitName: unit.name, alertType: "monitoring_interrupted" });
+            console.log(`Created offline alert for unit ${unit.name}`);
           }
+        }
+      }
 
-          alertsCreated.push({ unitId: unit.id, unitName: unit.name });
+      // Check for missed manual logs (only for units that require manual logging)
+      if (unit.status === "manual_required" || unit.status === "monitoring_interrupted" || unit.status === "offline") {
+        // Get organization's compliance mode
+        const { data: org } = await supabase
+          .from("organizations")
+          .select("compliance_mode")
+          .eq("id", orgId)
+          .maybeSingle();
 
-          // Log the missed log event
-          await supabase.from("event_logs").insert({
-            organization_id: orgId,
-            unit_id: unit.id,
-            event_type: "missed_manual_log",
-            actor_type: "system",
-            event_data: {
-              hours_overdue: hoursOverdue,
-              last_log_at: lastLog?.logged_at || null,
-              cadence_hours: cadenceSeconds / 3600,
-            },
-          });
+        // HACCP mode requires logs every 2 hours, standard every 4 hours
+        const cadenceSeconds = org?.compliance_mode === "haccp" 
+          ? 2 * 60 * 60 // 2 hours
+          : unit.manual_log_cadence || 4 * 60 * 60; // default 4 hours
 
-          console.log(`Created missed log alert for unit ${unit.name}`);
+        const cadenceMs = cadenceSeconds * 1000;
+
+        // Get the most recent manual log for this unit
+        const { data: lastLog } = await supabase
+          .from("manual_temperature_logs")
+          .select("logged_at")
+          .eq("unit_id", unit.id)
+          .order("logged_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const lastLogTime = lastLog?.logged_at ? new Date(lastLog.logged_at).getTime() : 0;
+        const timeSinceLog = now - lastLogTime;
+
+        // Check if log is overdue
+        if (timeSinceLog > cadenceMs) {
+          // Check if we already have an active alert for this
+          const { data: existingAlert } = await supabase
+            .from("alerts")
+            .select("id")
+            .eq("unit_id", unit.id)
+            .eq("alert_type", "missed_manual_entry")
+            .in("status", ["active", "acknowledged"])
+            .maybeSingle();
+
+          if (!existingAlert) {
+            const hoursOverdue = Math.floor(timeSinceLog / (60 * 60 * 1000));
+            const severity = hoursOverdue >= 8 ? "critical" : hoursOverdue >= 4 ? "warning" : "info";
+
+            // Create alert
+            const { error: alertError } = await supabase.from("alerts").insert({
+              unit_id: unit.id,
+              title: `${unit.name}: Missed Manual Log`,
+              message: `No manual temperature log for ${hoursOverdue} hours. Manual logging is required when monitoring is interrupted.`,
+              alert_type: "missed_manual_entry",
+              severity,
+            });
+
+            if (alertError) {
+              console.error(`Error creating alert for unit ${unit.id}:`, alertError);
+              continue;
+            }
+
+            alertsCreated.push({ unitId: unit.id, unitName: unit.name, alertType: "missed_manual_entry" });
+
+            // Log the missed log event
+            await supabase.from("event_logs").insert({
+              organization_id: orgId,
+              unit_id: unit.id,
+              event_type: "missed_manual_log",
+              actor_type: "system",
+              event_data: {
+                hours_overdue: hoursOverdue,
+                last_log_at: lastLog?.logged_at || null,
+                cadence_hours: cadenceSeconds / 3600,
+              },
+            });
+
+            console.log(`Created missed log alert for unit ${unit.name}`);
+          }
         }
       }
     }
 
-    console.log(`Checked ${(units || []).length} units, created ${alertsCreated.length} alerts`);
+    console.log(`Checked ${(allUnits || []).length} units, created ${alertsCreated.length} alerts`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        checked: (units || []).length,
+        checked: (allUnits || []).length,
         alerts_created: alertsCreated,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
