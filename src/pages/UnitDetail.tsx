@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { computeUnitStatus, UnitStatusInfo } from "@/hooks/useUnitStatus";
 import DashboardLayout from "@/components/DashboardLayout";
 import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
 import UnitAlertsBanner from "@/components/unit/UnitAlertsBanner";
@@ -54,8 +53,6 @@ interface UnitData {
   temp_limit_low: number | null;
   last_temp_reading: number | null;
   last_reading_at: string | null;
-  last_manual_log_at: string | null;
-  manual_log_cadence: number;
   area: { id: string; name: string; site: { id: string; name: string } };
 }
 
@@ -137,12 +134,12 @@ const UnitDetail = () => {
   const loadUnitData = async () => {
     setIsLoading(true);
     try {
-      // Load unit details with all fields needed for alert computation
+      // Load unit details
       const { data: unitData, error: unitError } = await supabase
         .from("units")
         .select(`
           id, name, unit_type, status, temp_limit_high, temp_limit_low,
-          last_temp_reading, last_reading_at, last_manual_log_at, manual_log_cadence,
+          last_temp_reading, last_reading_at,
           area:areas!inner(id, name, site:sites!inner(id, name))
         `)
         .eq("id", unitId)
@@ -153,25 +150,14 @@ const UnitDetail = () => {
         return;
       }
 
-      const unitForState: UnitData = {
-        id: unitData.id,
-        name: unitData.name,
-        unit_type: unitData.unit_type,
-        status: unitData.status,
-        temp_limit_high: unitData.temp_limit_high,
-        temp_limit_low: unitData.temp_limit_low,
-        last_temp_reading: unitData.last_temp_reading,
-        last_reading_at: unitData.last_reading_at,
-        last_manual_log_at: unitData.last_manual_log_at,
-        manual_log_cadence: unitData.manual_log_cadence,
+      setUnit({
+        ...unitData,
         area: {
           id: unitData.area.id,
           name: unitData.area.name,
           site: { id: unitData.area.site.id, name: unitData.area.site.name },
         },
-      };
-
-      setUnit(unitForState);
+      });
 
       const fromDate = getTimeRangeDate().toISOString();
 
@@ -208,87 +194,53 @@ const UnitDetail = () => {
 
       setEvents(eventsData || []);
 
-      // Compute alerts using the shared source of truth
-      const unitForComputation: UnitStatusInfo = {
-        id: unitData.id,
-        name: unitData.name,
-        unit_type: unitData.unit_type,
-        status: unitData.status,
-        temp_limit_high: unitData.temp_limit_high,
-        temp_limit_low: unitData.temp_limit_low,
-        manual_log_cadence: unitData.manual_log_cadence,
-        last_manual_log_at: unitData.last_manual_log_at,
-        last_reading_at: unitData.last_reading_at,
-        last_temp_reading: unitData.last_temp_reading,
-        area: {
-          name: unitData.area.name,
-          site: { name: unitData.area.site.name },
-        },
-      };
+      // Load active alerts for this unit
+      const { data: alertsData } = await supabase
+        .from("alerts")
+        .select("id, title, message, alert_type, severity, status")
+        .eq("unit_id", unitId)
+        .eq("status", "active")
+        .order("severity", { ascending: true });
 
-      const computed = computeUnitStatus(unitForComputation);
+      // Build alerts from DB + computed status
       const alerts: UnitAlert[] = [];
 
-      // MANUAL_REQUIRED - CRITICAL (from shared computation)
-      if (computed.manualRequired) {
-        const overdueHours = Math.floor(computed.manualOverdueMinutes / 60);
-        const overdueMinutes = computed.manualOverdueMinutes % 60;
+      // Add DB alerts
+      if (alertsData) {
+        alertsData.forEach((a) => {
+          alerts.push({
+            id: a.id,
+            type: a.alert_type,
+            severity: a.severity as "critical" | "warning" | "info",
+            title: a.title,
+            message: a.message || "",
+            clearCondition: getAlertClearCondition(a.alert_type),
+          });
+        });
+      }
+
+      // Add computed alerts based on unit status
+      if (unitData.status === "manual_required" && !alerts.some(a => a.type === "missed_manual_entry")) {
         alerts.push({
-          id: `${unitData.id}-MANUAL_REQUIRED`,
+          id: "computed-manual",
           type: "MANUAL_REQUIRED",
           severity: "critical",
           title: "Manual Log Required",
-          message: computed.minutesSinceManualLog === null
-            ? "No manual log has ever been recorded for this unit"
-            : `Manual log is ${overdueHours}h ${overdueMinutes}m overdue`,
+          message: "Temperature log is overdue",
           clearCondition: "Log a temperature reading",
         });
       }
 
-      // OFFLINE - WARNING (from shared computation, independent of manual)
-      if (!computed.sensorOnline) {
+      if (unitData.status === "offline" && !alerts.some(a => a.type === "monitoring_interrupted")) {
         alerts.push({
-          id: `${unitData.id}-OFFLINE`,
+          id: "computed-offline",
           type: "OFFLINE",
           severity: "warning",
           title: "Sensor Offline",
-          message: computed.minutesSinceReading === null
-            ? "No sensor data has ever been received"
-            : `Last sensor reading was ${computed.minutesSinceReading} minutes ago`,
+          message: "No recent sensor data received",
           clearCondition: "Sensor comes back online",
         });
       }
-
-      // ALARM_ACTIVE - CRITICAL
-      if (unitData.status === "alarm_active") {
-        alerts.push({
-          id: `${unitData.id}-ALARM_ACTIVE`,
-          type: "ALARM_ACTIVE",
-          severity: "critical",
-          title: "Temperature Alarm",
-          message: `Temperature at ${unitData.last_temp_reading?.toFixed(1) || "--"}°F exceeds limit of ${unitData.temp_limit_high}°F`,
-          clearCondition: "Temperature returns to range",
-        });
-      }
-
-      // EXCURSION - WARNING
-      if (unitData.status === "excursion") {
-        alerts.push({
-          id: `${unitData.id}-EXCURSION`,
-          type: "EXCURSION",
-          severity: "warning",
-          title: "Temperature Excursion",
-          message: `Temperature at ${unitData.last_temp_reading?.toFixed(1) || "--"}°F is out of range`,
-          clearCondition: "Temperature returns to range",
-        });
-      }
-
-      // Sort: critical first
-      alerts.sort((a, b) => {
-        if (a.severity === "critical" && b.severity !== "critical") return -1;
-        if (a.severity !== "critical" && b.severity === "critical") return 1;
-        return 0;
-      });
 
       setUnitAlerts(alerts);
     } catch (error) {
@@ -298,10 +250,22 @@ const UnitDetail = () => {
     setIsLoading(false);
   };
 
-  // Callback to refresh data after logging a temp
-  const handleLogSuccess = useCallback(() => {
-    loadUnitData();
-  }, [unitId, timeRange]);
+  const getAlertClearCondition = (alertType: string): string => {
+    switch (alertType) {
+      case "missed_manual_entry":
+        return "Log a temperature reading";
+      case "monitoring_interrupted":
+        return "Sensor comes back online";
+      case "alarm_active":
+        return "Temperature returns to range";
+      case "low_battery":
+        return "Replace or charge battery";
+      case "door_open":
+        return "Close the door";
+      default:
+        return "Condition resolved";
+    }
+  };
 
   const exportToCSV = async (reportType: "daily" | "exceptions" = "daily") => {
     if (!unit) return;
@@ -683,12 +647,12 @@ const UnitDetail = () => {
               status: unit.status,
               temp_limit_high: unit.temp_limit_high,
               temp_limit_low: unit.temp_limit_low,
-              manual_log_cadence: unit.manual_log_cadence,
-              area: { name: unit.area.name, site: { name: unit.area.site.name } },
+              manual_log_cadence: 14400, // Default 4 hours
+              area: unit.area,
             }}
             open={modalOpen}
             onOpenChange={setModalOpen}
-            onSuccess={handleLogSuccess}
+            onSuccess={loadUnitData}
             session={session}
           />
         )}
