@@ -350,23 +350,24 @@ const Dashboard = () => {
                       const showLogButton = alert.type === "MANUAL_REQUIRED";
                       
                       return (
-                        <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg bg-background hover:bg-muted/50 transition-colors">
-                          <Link to={`/units/${alert.unit_id}`} className="flex items-center gap-3 flex-1">
-                            <div className="w-10 h-10 rounded-lg bg-alarm/10 flex items-center justify-center">
+                        <div key={alert.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg bg-background hover:bg-muted/50 transition-colors">
+                          <Link to={`/units/${alert.unit_id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 rounded-lg bg-alarm/10 flex items-center justify-center flex-shrink-0">
                               <Thermometer className="w-5 h-5 text-alarm" />
                             </div>
-                            <div>
-                              <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-medium text-foreground">{alert.unit_name}</span>
                                 <Badge variant="destructive" className="text-xs">{alert.type === "MANUAL_REQUIRED" ? "Log Required" : "Alarm"}</Badge>
                               </div>
                               <p className="text-xs text-muted-foreground">{alert.site_name} · {alert.area_name}</p>
+                              {/* Show message on mobile and desktop - no truncation */}
+                              <p className="text-xs text-muted-foreground mt-1 break-words leading-relaxed">
+                                {alert.message}
+                              </p>
                             </div>
                           </Link>
-                          <div className="flex items-center gap-4">
-                            <div className="text-right hidden sm:block">
-                              <p className="text-xs text-muted-foreground max-w-32 truncate">{alert.message}</p>
-                            </div>
+                          <div className="flex items-center gap-2 flex-shrink-0 pl-13 sm:pl-0">
                             {showLogButton && (
                               <Button
                                 size="sm"
@@ -406,29 +407,30 @@ const Dashboard = () => {
                     .slice(0, 5)
                     .map((alert) => {
                       return (
-                        <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg bg-background hover:bg-muted/50 transition-colors">
-                          <Link to={`/units/${alert.unit_id}`} className="flex items-center gap-3 flex-1">
-                            <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+                        <div key={alert.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg bg-background hover:bg-muted/50 transition-colors">
+                          <Link to={`/units/${alert.unit_id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
                               {alert.type === "OFFLINE" ? (
                                 <WifiOff className="w-5 h-5 text-warning" />
                               ) : (
                                 <Thermometer className="w-5 h-5 text-warning" />
                               )}
                             </div>
-                            <div>
-                              <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-medium text-foreground">{alert.unit_name}</span>
                                 <Badge variant="secondary" className="text-xs bg-warning/10 text-warning border-0">
                                   {alert.type === "OFFLINE" ? "Offline" : "Excursion"}
                                 </Badge>
                               </div>
                               <p className="text-xs text-muted-foreground">{alert.site_name} · {alert.area_name}</p>
+                              {/* Show message - no truncation, fully wrapping */}
+                              <p className="text-xs text-muted-foreground mt-1 break-words leading-relaxed">
+                                {alert.message}
+                              </p>
                             </div>
                           </Link>
-                          <div className="flex items-center gap-4">
-                            <div className="text-right hidden sm:block">
-                              <p className="text-xs text-muted-foreground max-w-32 truncate">{alert.message}</p>
-                            </div>
+                          <div className="flex items-center gap-2 flex-shrink-0 pl-13 sm:pl-0">
                             <Link to={`/units/${alert.unit_id}`}>
                               <ChevronRight className="w-5 h-5 text-muted-foreground" />
                             </Link>
