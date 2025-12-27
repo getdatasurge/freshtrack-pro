@@ -11,3 +11,15 @@ verify_jwt = false
 
 [functions.stripe-portal]
 verify_jwt = true
+
+[functions.process-unit-states]
+verify_jwt = false
+
+[functions.sensor-simulator]
+verify_jwt = true
+
+[functions.check-missed-logs]
+verify_jwt = false
+
+[functions.export-temperature-logs]
+verify_jwt = true
