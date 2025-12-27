@@ -372,6 +372,125 @@ export type Database = {
           },
         ]
       }
+      escalation_contacts: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: string
+          is_active: boolean
+          name: string
+          notification_channels: string[]
+          organization_id: string
+          phone: string | null
+          priority: number
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          notification_channels?: string[]
+          organization_id: string
+          phone?: string | null
+          priority?: number
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          notification_channels?: string[]
+          organization_id?: string
+          phone?: string | null
+          priority?: number
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "escalation_contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      escalation_policies: {
+        Row: {
+          acknowledge_stops_notifications: boolean
+          created_at: string
+          critical_owner_delay_minutes: number | null
+          critical_primary_delay_minutes: number
+          critical_secondary_delay_minutes: number | null
+          id: string
+          organization_id: string | null
+          quiet_hours_behavior: string | null
+          quiet_hours_enabled: boolean
+          quiet_hours_end: string | null
+          quiet_hours_start: string | null
+          repeat_notification_interval_minutes: number | null
+          site_id: string | null
+          updated_at: string
+          warning_primary_delay_minutes: number
+          warning_secondary_delay_minutes: number | null
+        }
+        Insert: {
+          acknowledge_stops_notifications?: boolean
+          created_at?: string
+          critical_owner_delay_minutes?: number | null
+          critical_primary_delay_minutes?: number
+          critical_secondary_delay_minutes?: number | null
+          id?: string
+          organization_id?: string | null
+          quiet_hours_behavior?: string | null
+          quiet_hours_enabled?: boolean
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          repeat_notification_interval_minutes?: number | null
+          site_id?: string | null
+          updated_at?: string
+          warning_primary_delay_minutes?: number
+          warning_secondary_delay_minutes?: number | null
+        }
+        Update: {
+          acknowledge_stops_notifications?: boolean
+          created_at?: string
+          critical_owner_delay_minutes?: number | null
+          critical_primary_delay_minutes?: number
+          critical_secondary_delay_minutes?: number | null
+          id?: string
+          organization_id?: string | null
+          quiet_hours_behavior?: string | null
+          quiet_hours_enabled?: boolean
+          quiet_hours_end?: string | null
+          quiet_hours_start?: string | null
+          repeat_notification_interval_minutes?: number | null
+          site_id?: string | null
+          updated_at?: string
+          warning_primary_delay_minutes?: number
+          warning_secondary_delay_minutes?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "escalation_policies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "escalation_policies_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: true
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_logs: {
         Row: {
           actor_id: string | null
@@ -485,6 +604,50 @@ export type Database = {
             columns: ["site_id"]
             isOneToOne: false
             referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inspector_sessions: {
+        Row: {
+          allowed_site_ids: string[] | null
+          created_at: string
+          created_by: string
+          expires_at: string
+          id: string
+          is_active: boolean
+          last_used_at: string | null
+          organization_id: string
+          token: string
+        }
+        Insert: {
+          allowed_site_ids?: string[] | null
+          created_at?: string
+          created_by: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          organization_id: string
+          token?: string
+        }
+        Update: {
+          allowed_site_ids?: string[] | null
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          organization_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inspector_sessions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -733,6 +896,60 @@ export type Database = {
           },
         ]
       }
+      pilot_feedback: {
+        Row: {
+          alert_fatigue_rating: number | null
+          created_at: string
+          id: string
+          logging_speed_rating: number | null
+          notes: string | null
+          organization_id: string
+          report_usefulness_rating: number | null
+          site_id: string | null
+          submitted_by: string
+          week_start: string
+        }
+        Insert: {
+          alert_fatigue_rating?: number | null
+          created_at?: string
+          id?: string
+          logging_speed_rating?: number | null
+          notes?: string | null
+          organization_id: string
+          report_usefulness_rating?: number | null
+          site_id?: string | null
+          submitted_by: string
+          week_start: string
+        }
+        Update: {
+          alert_fatigue_rating?: number | null
+          created_at?: string
+          id?: string
+          logging_speed_rating?: number | null
+          notes?: string | null
+          organization_id?: string
+          report_usefulness_rating?: number | null
+          site_id?: string | null
+          submitted_by?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pilot_feedback_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pilot_feedback_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -960,6 +1177,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          last_manual_log_at: string | null
           last_reading_at: string | null
           last_status_change: string | null
           last_temp_reading: number | null
@@ -984,6 +1202,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          last_manual_log_at?: string | null
           last_reading_at?: string | null
           last_status_change?: string | null
           last_temp_reading?: number | null
@@ -1008,6 +1227,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          last_manual_log_at?: string | null
           last_reading_at?: string | null
           last_status_change?: string | null
           last_temp_reading?: number | null
@@ -1140,7 +1360,7 @@ export type Database = {
         | "sensor_fault"
         | "door_open"
         | "calibration_due"
-      app_role: "owner" | "admin" | "manager" | "staff" | "viewer"
+      app_role: "owner" | "admin" | "manager" | "staff" | "viewer" | "inspector"
       compliance_mode: "standard" | "haccp"
       device_status: "active" | "inactive" | "pairing" | "fault" | "low_battery"
       notification_channel: "push" | "email" | "sms"
@@ -1311,7 +1531,7 @@ export const Constants = {
         "door_open",
         "calibration_due",
       ],
-      app_role: ["owner", "admin", "manager", "staff", "viewer"],
+      app_role: ["owner", "admin", "manager", "staff", "viewer", "inspector"],
       compliance_mode: ["standard", "haccp"],
       device_status: ["active", "inactive", "pairing", "fault", "low_battery"],
       notification_channel: ["push", "email", "sms"],

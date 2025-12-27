@@ -78,6 +78,7 @@ const roleConfig: Record<AppRole, { label: string; icon: React.ElementType; colo
   manager: { label: "Manager", icon: Users, color: "bg-primary/15 text-primary border-primary/30" },
   staff: { label: "Staff", icon: User, color: "bg-safe/15 text-safe border-safe/30" },
   viewer: { label: "Viewer", icon: Eye, color: "bg-muted text-muted-foreground border-border" },
+  inspector: { label: "Inspector", icon: Eye, color: "bg-accent/15 text-accent border-accent/30" },
 };
 
 const timezones = [

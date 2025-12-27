@@ -15,6 +15,8 @@ import Alerts from "./pages/Alerts";
 import UnitDetail from "./pages/UnitDetail";
 import Settings from "./pages/Settings";
 import Reports from "./pages/Reports";
+import Inspector from "./pages/Inspector";
+import PilotSetup from "./pages/PilotSetup";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -38,6 +40,8 @@ const App = () => (
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/inspector" element={<Inspector />} />
+          <Route path="/pilot-setup" element={<PilotSetup />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
