@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.export-temperature-logs]
 verify_jwt = false
+
+[functions.process-escalations]
+verify_jwt = false
