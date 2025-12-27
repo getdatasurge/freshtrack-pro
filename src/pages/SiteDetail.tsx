@@ -21,8 +21,17 @@ import {
   Loader2,
   Thermometer,
   MapPin,
-  Pencil
+  Pencil,
+  Download,
+  AlertTriangle,
+  FileText,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 
 interface Area {
@@ -58,6 +67,7 @@ const SiteDetail = () => {
     postal_code: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     if (siteId) {
@@ -172,6 +182,41 @@ const SiteDetail = () => {
     setIsSubmitting(false);
   };
 
+  const handleExport = async (reportType: "daily" | "exceptions") => {
+    if (!siteId) return;
+    setIsExporting(true);
+
+    try {
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000); // Last 7 days
+
+      const { data, error } = await supabase.functions.invoke("export-temperature-logs", {
+        body: {
+          site_id: siteId,
+          start_date: startDate.toISOString().split("T")[0],
+          end_date: endDate.toISOString().split("T")[0],
+          report_type: reportType,
+        },
+      });
+
+      if (error) throw error;
+
+      const blob = new Blob([data], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `frostguard-site-${reportType}-${site?.name?.replace(/\s+/g, "_") || "export"}-${startDate.toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      toast({ title: `${reportType === "daily" ? "Daily" : "Exception"} report exported` });
+    } catch (error) {
+      console.error("Export error:", error);
+      toast({ title: "Export failed", variant: "destructive" });
+    }
+    setIsExporting(false);
+  };
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -196,7 +241,7 @@ const SiteDetail = () => {
     <DashboardLayout showBack backHref="/sites">
       <div className="space-y-6">
         {/* Site Header */}
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center">
               <MapPin className="w-7 h-7 text-primary" />
@@ -208,12 +253,35 @@ const SiteDetail = () => {
               </p>
             </div>
           </div>
-          <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Pencil className="w-4 h-4 mr-2" />
-                Edit Site
-              </Button>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={isExporting}>
+                  {isExporting ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport("daily")}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Daily Temperature Log (7 days)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("exceptions")}>
+                  <AlertTriangle className="w-4 h-4 mr-2" />
+                  Exception Report (7 days)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -324,8 +392,9 @@ const SiteDetail = () => {
                     </Button>
                   </div>
                 </div>
-              </DialogContent>
-            </Dialog>
+            </DialogContent>
+          </Dialog>
+          </div>
           </div>
 
           {areas.length > 0 ? (

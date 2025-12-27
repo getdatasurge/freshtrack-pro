@@ -179,59 +179,35 @@ const UnitDetail = () => {
     setIsLoading(false);
   };
 
-  const exportToCSV = async () => {
+  const exportToCSV = async (reportType: "daily" | "exceptions" = "daily") => {
     if (!unit) return;
     setIsExporting(true);
 
     try {
-      const fromDate = getTimeRangeDate().toISOString();
-      
-      // Get all readings for export
-      const { data: allReadings } = await supabase
-        .from("sensor_readings")
-        .select("temperature, humidity, recorded_at")
-        .eq("unit_id", unitId)
-        .gte("recorded_at", fromDate)
-        .order("recorded_at", { ascending: true });
+      const startDate = getTimeRangeDate().toISOString().split("T")[0];
+      const endDate = new Date().toISOString().split("T")[0];
 
-      const { data: allManualLogs } = await supabase
-        .from("manual_temperature_logs")
-        .select("temperature, notes, logged_at")
-        .eq("unit_id", unitId)
-        .gte("logged_at", fromDate)
-        .order("logged_at", { ascending: true });
-
-      // Build CSV content
-      let csv = "Temperature Log Report\n";
-      csv += `Unit: ${unit.name}\n`;
-      csv += `Location: ${unit.area.site.name} - ${unit.area.name}\n`;
-      csv += `Type: ${unit.unit_type.replace(/_/g, " ")}\n`;
-      csv += `Limits: High ${unit.temp_limit_high}°F${unit.temp_limit_low ? `, Low ${unit.temp_limit_low}°F` : ""}\n`;
-      csv += `Report Period: ${timeRange}\n`;
-      csv += `Generated: ${format(new Date(), "PPpp")}\n\n`;
-
-      csv += "SENSOR READINGS\n";
-      csv += "Timestamp,Temperature (°F),Humidity (%)\n";
-      (allReadings || []).forEach((r) => {
-        csv += `${format(new Date(r.recorded_at), "yyyy-MM-dd HH:mm:ss")},${r.temperature},${r.humidity || ""}\n`;
+      const { data, error } = await supabase.functions.invoke("export-temperature-logs", {
+        body: {
+          unit_id: unit.id,
+          start_date: startDate,
+          end_date: endDate,
+          report_type: reportType,
+        },
       });
 
-      csv += "\nMANUAL LOGS\n";
-      csv += "Timestamp,Temperature (°F),Notes\n";
-      (allManualLogs || []).forEach((l) => {
-        csv += `${format(new Date(l.logged_at), "yyyy-MM-dd HH:mm:ss")},${l.temperature},"${(l.notes || "").replace(/"/g, '""')}"\n`;
-      });
+      if (error) throw error;
 
-      // Download
-      const blob = new Blob([csv], { type: "text/csv" });
+      // Download the CSV
+      const blob = new Blob([data], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${unit.name.replace(/\s+/g, "_")}_temperature_log_${format(new Date(), "yyyy-MM-dd")}.csv`;
+      a.download = `frostguard-${reportType}-${unit.name.replace(/\s+/g, "_")}-${startDate}.csv`;
       a.click();
       URL.revokeObjectURL(url);
 
-      toast({ title: "Report exported successfully" });
+      toast({ title: `${reportType === "daily" ? "Daily" : "Exception"} report exported` });
     } catch (error) {
       console.error("Export error:", error);
       toast({ title: "Export failed", variant: "destructive" });
@@ -311,14 +287,28 @@ const UnitDetail = () => {
                 <SelectItem value="30d">Last 30 days</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" onClick={exportToCSV} disabled={isExporting}>
-              {isExporting ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Download className="w-4 h-4 mr-2" />
-              )}
-              Export
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => exportToCSV("daily")} 
+                disabled={isExporting}
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                Daily Log
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => exportToCSV("exceptions")} 
+                disabled={isExporting}
+              >
+                <AlertTriangle className="w-4 h-4 mr-2" />
+                Exceptions
+              </Button>
+            </div>
           </div>
         </div>
 
