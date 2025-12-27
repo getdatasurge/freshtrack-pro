@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
+import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,27 +24,28 @@ import {
   Bell,
   BellOff,
   Battery,
-  Wifi,
   WifiOff,
   ArrowUpCircle,
   Check,
-  X,
+  ClipboardEdit,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
+import { UnitStatusInfo } from "@/hooks/useUnitStatus";
+import { computeUnitAlerts } from "@/hooks/useUnitAlerts";
 
-type AlertType = Database["public"]["Enums"]["alert_type"];
-type AlertSeverity = Database["public"]["Enums"]["alert_severity"];
-type AlertStatus = Database["public"]["Enums"]["alert_status"];
+type DBAlertType = Database["public"]["Enums"]["alert_type"];
+type DBAlertSeverity = Database["public"]["Enums"]["alert_severity"];
+type DBAlertStatus = Database["public"]["Enums"]["alert_status"];
 
-interface Alert {
+interface DBAlert {
   id: string;
   title: string;
   message: string | null;
-  alert_type: AlertType;
-  severity: AlertSeverity;
-  status: AlertStatus;
+  alert_type: DBAlertType;
+  severity: DBAlertSeverity;
+  status: DBAlertStatus;
   escalation_level: number;
   temp_reading: number | null;
   temp_limit: number | null;
@@ -62,7 +64,29 @@ interface Alert {
   };
 }
 
-const alertTypeConfig: Record<AlertType, { icon: typeof AlertTriangle; label: string }> = {
+// Unified alert type that works for both DB and computed alerts
+interface UnifiedAlert {
+  id: string;
+  title: string;
+  message: string | null;
+  alertType: string;
+  severity: "critical" | "warning" | "info";
+  status: "active" | "acknowledged" | "resolved";
+  unit_id: string;
+  unit_name: string;
+  site_name: string;
+  area_name: string;
+  temp_reading: number | null;
+  temp_limit: number | null;
+  triggered_at: string;
+  acknowledged_at: string | null;
+  acknowledgment_notes: string | null;
+  isComputed: boolean;
+  dbAlertId?: string;
+  escalation_level?: number;
+}
+
+const alertTypeConfig: Record<string, { icon: typeof AlertTriangle; label: string }> = {
   alarm_active: { icon: Thermometer, label: "Temperature Alarm" },
   monitoring_interrupted: { icon: WifiOff, label: "Monitoring Interrupted" },
   missed_manual_entry: { icon: Clock, label: "Missed Manual Entry" },
@@ -70,9 +94,13 @@ const alertTypeConfig: Record<AlertType, { icon: typeof AlertTriangle; label: st
   sensor_fault: { icon: AlertTriangle, label: "Sensor Fault" },
   door_open: { icon: AlertTriangle, label: "Door Open" },
   calibration_due: { icon: AlertTriangle, label: "Calibration Due" },
+  MANUAL_REQUIRED: { icon: Clock, label: "Manual Logging Required" },
+  OFFLINE: { icon: WifiOff, label: "Sensor Offline" },
+  EXCURSION: { icon: Thermometer, label: "Temperature Excursion" },
+  ALARM_ACTIVE: { icon: Thermometer, label: "Temperature Alarm" },
 };
 
-const severityConfig: Record<AlertSeverity, { color: string; bgColor: string }> = {
+const severityConfig: Record<string, { color: string; bgColor: string }> = {
   info: { color: "text-accent", bgColor: "bg-accent/10" },
   warning: { color: "text-warning", bgColor: "bg-warning/10" },
   critical: { color: "text-alarm", bgColor: "bg-alarm/10" },
@@ -83,8 +111,9 @@ const Alerts = () => {
   const { toast } = useToast();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
+  const [units, setUnits] = useState<UnitStatusInfo[]>([]);
+  const [unifiedAlerts, setUnifiedAlerts] = useState<UnifiedAlert[]>([]);
+  const [selectedAlert, setSelectedAlert] = useState<UnifiedAlert | null>(null);
   const [showResolveDialog, setShowResolveDialog] = useState(false);
   const [showAcknowledgeDialog, setShowAcknowledgeDialog] = useState(false);
   const [acknowledgmentNotes, setAcknowledgmentNotes] = useState("");
@@ -92,6 +121,10 @@ const Alerts = () => {
   const [rootCause, setRootCause] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("active");
+
+  // Log temp modal state
+  const [selectedUnit, setSelectedUnit] = useState<LogTempUnit | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -108,13 +141,26 @@ const Alerts = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (session?.user) loadAlerts();
+    if (session?.user) loadAlertsAndUnits();
   }, [session]);
 
-  const loadAlerts = async () => {
+  const loadAlertsAndUnits = useCallback(async () => {
+    if (!session?.user) return;
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("organization_id")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (!profile?.organization_id) {
+        navigate("/onboarding");
+        return;
+      }
+
+      // Load DB alerts
+      const { data: alertsData, error: alertsError } = await supabase
         .from("alerts")
         .select(`
           id, title, message, alert_type, severity, status, escalation_level,
@@ -122,37 +168,159 @@ const Alerts = () => {
           acknowledgment_notes, resolved_at,
           unit:units!inner(
             id, name,
-            area:areas!inner(name, site:sites!inner(name))
+            area:areas!inner(name, site:sites!inner(name, organization_id))
           )
         `)
         .order("triggered_at", { ascending: false })
         .limit(100);
 
-      if (error) throw error;
+      if (alertsError) throw alertsError;
 
-      const formatted = (data || []).map((a: any) => ({
-        ...a,
-        unit: {
-          id: a.unit.id,
-          name: a.unit.name,
-          area: {
-            name: a.unit.area.name,
-            site: { name: a.unit.area.site.name },
+      const formattedDbAlerts: DBAlert[] = (alertsData || [])
+        .filter((a: any) => a.unit?.area?.site?.organization_id === profile.organization_id)
+        .map((a: any) => ({
+          ...a,
+          unit: {
+            id: a.unit.id,
+            name: a.unit.name,
+            area: {
+              name: a.unit.area.name,
+              site: { name: a.unit.area.site.name },
+            },
           },
-        },
+        }));
+
+      // Load units for computed alerts
+      const { data: unitsData } = await supabase
+        .from("units")
+        .select(`
+          id, name, unit_type, status, temp_limit_high, temp_limit_low, manual_log_cadence,
+          last_temp_reading, last_reading_at,
+          area:areas!inner(name, site:sites!inner(name, organization_id))
+        `)
+        .eq("is_active", true);
+
+      const filteredUnits = (unitsData || []).filter(
+        (u: any) => u.area?.site?.organization_id === profile.organization_id
+      );
+
+      const unitIds = filteredUnits.map((u: any) => u.id);
+      const { data: manualLogs } = await supabase
+        .from("manual_temperature_logs")
+        .select("unit_id, logged_at")
+        .in("unit_id", unitIds)
+        .order("logged_at", { ascending: false });
+
+      const latestLogByUnit: Record<string, string> = {};
+      manualLogs?.forEach((log) => {
+        if (!latestLogByUnit[log.unit_id]) {
+          latestLogByUnit[log.unit_id] = log.logged_at;
+        }
+      });
+
+      const formattedUnits: UnitStatusInfo[] = filteredUnits.map((u: any) => ({
+        id: u.id,
+        name: u.name,
+        unit_type: u.unit_type,
+        status: u.status,
+        temp_limit_high: u.temp_limit_high,
+        temp_limit_low: u.temp_limit_low,
+        manual_log_cadence: u.manual_log_cadence,
+        last_manual_log_at: latestLogByUnit[u.id] || null,
+        last_reading_at: u.last_reading_at,
+        last_temp_reading: u.last_temp_reading,
+        area: { name: u.area.name, site: { name: u.area.site.name } },
       }));
 
-      setAlerts(formatted);
+      setUnits(formattedUnits);
+
+      // Compute alerts from unit status
+      const computedAlertsSummary = computeUnitAlerts(formattedUnits);
+
+      // Merge DB alerts and computed alerts into unified format
+      const unified: UnifiedAlert[] = [];
+      const seenAlerts = new Set<string>();
+
+      // Add computed alerts first (they represent current state)
+      for (const computed of computedAlertsSummary.alerts) {
+        const key = `${computed.unit_id}-${computed.type}`;
+        seenAlerts.add(key);
+        unified.push({
+          id: computed.id,
+          title: computed.title,
+          message: computed.message,
+          alertType: computed.type,
+          severity: computed.severity,
+          status: "active",
+          unit_id: computed.unit_id,
+          unit_name: computed.unit_name,
+          site_name: computed.site_name,
+          area_name: computed.area_name,
+          temp_reading: null,
+          temp_limit: null,
+          triggered_at: computed.created_at,
+          acknowledged_at: null,
+          acknowledgment_notes: null,
+          isComputed: true,
+        });
+      }
+
+      // Add DB alerts that aren't covered by computed alerts
+      for (const dbAlert of formattedDbAlerts) {
+        const computedKey = `${dbAlert.unit.id}-${dbAlert.alert_type.toUpperCase()}`;
+        if (seenAlerts.has(computedKey) && dbAlert.status === "active") continue;
+
+        unified.push({
+          id: dbAlert.id,
+          title: dbAlert.title,
+          message: dbAlert.message,
+          alertType: dbAlert.alert_type,
+          severity: dbAlert.severity,
+          status: dbAlert.status === "escalated" ? "active" : dbAlert.status,
+          unit_id: dbAlert.unit.id,
+          unit_name: dbAlert.unit.name,
+          site_name: dbAlert.unit.area.site.name,
+          area_name: dbAlert.unit.area.name,
+          temp_reading: dbAlert.temp_reading,
+          temp_limit: dbAlert.temp_limit,
+          triggered_at: dbAlert.triggered_at,
+          acknowledged_at: dbAlert.acknowledged_at,
+          acknowledgment_notes: dbAlert.acknowledgment_notes,
+          isComputed: false,
+          dbAlertId: dbAlert.id,
+          escalation_level: dbAlert.escalation_level,
+        });
+      }
+
+      // Sort by status (active first), then severity (critical first), then date
+      unified.sort((a, b) => {
+        if (a.status !== b.status) {
+          const statusOrder = { active: 0, acknowledged: 1, resolved: 2 };
+          return statusOrder[a.status] - statusOrder[b.status];
+        }
+        if (a.severity !== b.severity) {
+          const sevOrder = { critical: 0, warning: 1, info: 2 };
+          return sevOrder[a.severity] - sevOrder[b.severity];
+        }
+        return new Date(b.triggered_at).getTime() - new Date(a.triggered_at).getTime();
+      });
+
+      setUnifiedAlerts(unified);
     } catch (error) {
       console.error("Error loading alerts:", error);
       toast({ title: "Failed to load alerts", variant: "destructive" });
     }
     setIsLoading(false);
-  };
+  }, [session, navigate, toast]);
 
   const handleAcknowledge = async () => {
     if (!selectedAlert || !acknowledgmentNotes.trim()) {
       toast({ title: "Please provide acknowledgment notes", variant: "destructive" });
+      return;
+    }
+
+    if (selectedAlert.isComputed) {
+      toast({ title: "Computed alerts cannot be acknowledged - resolve the underlying issue", variant: "destructive" });
       return;
     }
 
@@ -166,7 +334,7 @@ const Alerts = () => {
           acknowledged_by: session!.user.id,
           acknowledgment_notes: acknowledgmentNotes.trim(),
         })
-        .eq("id", selectedAlert.id);
+        .eq("id", selectedAlert.dbAlertId || selectedAlert.id);
 
       if (error) throw error;
 
@@ -174,7 +342,7 @@ const Alerts = () => {
       setShowAcknowledgeDialog(false);
       setSelectedAlert(null);
       setAcknowledgmentNotes("");
-      loadAlerts();
+      loadAlertsAndUnits();
     } catch (error) {
       console.error("Error acknowledging alert:", error);
       toast({ title: "Failed to acknowledge", variant: "destructive" });
@@ -182,7 +350,7 @@ const Alerts = () => {
     setIsSubmitting(false);
   };
 
-  const openAcknowledgeDialog = (alert: Alert) => {
+  const openAcknowledgeDialog = (alert: UnifiedAlert) => {
     setSelectedAlert(alert);
     setAcknowledgmentNotes("");
     setShowAcknowledgeDialog(true);
@@ -200,8 +368,8 @@ const Alerts = () => {
       const { error: actionError } = await supabase
         .from("corrective_actions")
         .insert({
-          alert_id: selectedAlert.id,
-          unit_id: selectedAlert.unit.id,
+          alert_id: selectedAlert.isComputed ? null : (selectedAlert.dbAlertId || selectedAlert.id),
+          unit_id: selectedAlert.unit_id,
           action_taken: correctiveAction,
           root_cause: rootCause || null,
           created_by: session!.user.id,
@@ -209,29 +377,52 @@ const Alerts = () => {
 
       if (actionError) throw actionError;
 
-      // Update alert status
-      const { error: alertError } = await supabase
-        .from("alerts")
-        .update({
-          status: "resolved",
-          resolved_at: new Date().toISOString(),
-          resolved_by: session!.user.id,
-        })
-        .eq("id", selectedAlert.id);
+      // Update alert status if it's a DB alert
+      if (!selectedAlert.isComputed && selectedAlert.dbAlertId) {
+        const { error: alertError } = await supabase
+          .from("alerts")
+          .update({
+            status: "resolved",
+            resolved_at: new Date().toISOString(),
+            resolved_by: session!.user.id,
+          })
+          .eq("id", selectedAlert.dbAlertId);
 
-      if (alertError) throw alertError;
+        if (alertError) throw alertError;
+      }
 
       toast({ title: "Alert resolved with corrective action" });
       setShowResolveDialog(false);
       setSelectedAlert(null);
       setCorrectiveAction("");
       setRootCause("");
-      loadAlerts();
+      loadAlertsAndUnits();
     } catch (error) {
       console.error("Error resolving alert:", error);
       toast({ title: "Failed to resolve", variant: "destructive" });
     }
     setIsSubmitting(false);
+  };
+
+  const handleLogTemp = (alert: UnifiedAlert) => {
+    const unit = units.find(u => u.id === alert.unit_id);
+    if (!unit) return;
+    
+    setSelectedUnit({
+      id: unit.id,
+      name: unit.name,
+      unit_type: unit.unit_type,
+      status: unit.status,
+      temp_limit_high: unit.temp_limit_high,
+      temp_limit_low: unit.temp_limit_low,
+      manual_log_cadence: unit.manual_log_cadence,
+      area: unit.area,
+    });
+    setModalOpen(true);
+  };
+
+  const handleLogSuccess = () => {
+    loadAlertsAndUnits();
   };
 
   const getTimeAgo = (dateStr: string) => {
@@ -243,15 +434,15 @@ const Alerts = () => {
     return `${Math.floor(diffHours / 24)}d ago`;
   };
 
-  const filteredAlerts = alerts.filter((a) => {
-    if (activeTab === "active") return a.status === "active" || a.status === "escalated";
+  const filteredAlerts = unifiedAlerts.filter((a) => {
+    if (activeTab === "active") return a.status === "active";
     if (activeTab === "acknowledged") return a.status === "acknowledged";
     if (activeTab === "resolved") return a.status === "resolved";
     return true;
   });
 
-  const activeCount = alerts.filter((a) => a.status === "active" || a.status === "escalated").length;
-  const acknowledgedCount = alerts.filter((a) => a.status === "acknowledged").length;
+  const activeCount = unifiedAlerts.filter((a) => a.status === "active").length;
+  const acknowledgedCount = unifiedAlerts.filter((a) => a.status === "acknowledged").length;
 
   if (isLoading) {
     return (
@@ -285,14 +476,15 @@ const Alerts = () => {
         <TabsContent value={activeTab} className="space-y-3">
           {filteredAlerts.length > 0 ? (
             filteredAlerts.map((alert) => {
-              const typeConfig = alertTypeConfig[alert.alert_type];
-              const severity = severityConfig[alert.severity];
+              const typeConfig = alertTypeConfig[alert.alertType] || alertTypeConfig.sensor_fault;
+              const severity = severityConfig[alert.severity] || severityConfig.warning;
               const Icon = typeConfig?.icon || AlertTriangle;
+              const showLogButton = alert.alertType === "MANUAL_REQUIRED" || alert.alertType === "missed_manual_entry";
 
               return (
                 <Card
                   key={alert.id}
-                  className={`${alert.status === "active" || alert.status === "escalated" ? "border-alarm/30" : ""}`}
+                  className={`${alert.status === "active" ? "border-alarm/30" : ""}`}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-start gap-4">
@@ -307,15 +499,20 @@ const Alerts = () => {
                               <Badge className={`${severity.bgColor} ${severity.color} border-0`}>
                                 {alert.severity}
                               </Badge>
-                              {alert.escalation_level > 1 && (
+                              {alert.escalation_level && alert.escalation_level > 1 && (
                                 <Badge variant="outline" className="text-warning border-warning">
                                   <ArrowUpCircle className="w-3 h-3 mr-1" />
                                   Level {alert.escalation_level}
                                 </Badge>
                               )}
+                              {alert.isComputed && (
+                                <Badge variant="outline" className="text-muted-foreground">
+                                  Live
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-sm text-muted-foreground mt-1">
-                              {alert.unit.area.site.name} · {alert.unit.area.name} · {alert.unit.name}
+                              {alert.site_name} · {alert.area_name} · {alert.unit_name}
                             </p>
                             {alert.message && (
                               <p className="text-sm text-muted-foreground mt-1">{alert.message}</p>
@@ -341,17 +538,30 @@ const Alerts = () => {
                         </div>
 
                         {/* Action Buttons */}
-                        {(alert.status === "active" || alert.status === "escalated") && (
+                        {alert.status === "active" && (
                           <div className="flex gap-2 mt-3">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => openAcknowledgeDialog(alert)}
-                              disabled={isSubmitting}
-                            >
-                              <Bell className="w-4 h-4 mr-1" />
-                              Acknowledge
-                            </Button>
+                            {showLogButton && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-warning/50 text-warning hover:bg-warning/10"
+                                onClick={() => handleLogTemp(alert)}
+                              >
+                                <ClipboardEdit className="w-4 h-4 mr-1" />
+                                Log Temp
+                              </Button>
+                            )}
+                            {!alert.isComputed && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => openAcknowledgeDialog(alert)}
+                                disabled={isSubmitting}
+                              >
+                                <Bell className="w-4 h-4 mr-1" />
+                                Acknowledge
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               className="bg-safe hover:bg-safe/90 text-safe-foreground"
@@ -440,7 +650,7 @@ const Alerts = () => {
               <div className="p-3 rounded-lg bg-muted/50">
                 <p className="font-semibold text-foreground">{selectedAlert.title}</p>
                 <p className="text-sm text-muted-foreground">
-                  {selectedAlert.unit.area.site.name} · {selectedAlert.unit.name}
+                  {selectedAlert.site_name} · {selectedAlert.unit_name}
                 </p>
               </div>
 
@@ -507,7 +717,7 @@ const Alerts = () => {
               <div className="p-3 rounded-lg bg-muted/50">
                 <p className="font-semibold text-foreground">{selectedAlert.title}</p>
                 <p className="text-sm text-muted-foreground">
-                  {selectedAlert.unit.area.site.name} · {selectedAlert.unit.name}
+                  {selectedAlert.site_name} · {selectedAlert.unit_name}
                 </p>
                 {selectedAlert.temp_reading !== null && (
                   <p className="text-sm mt-1">
@@ -562,6 +772,15 @@ const Alerts = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Log Temp Modal */}
+      <LogTempModal
+        unit={selectedUnit}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        onSuccess={handleLogSuccess}
+        session={session}
+      />
     </DashboardLayout>
   );
 };

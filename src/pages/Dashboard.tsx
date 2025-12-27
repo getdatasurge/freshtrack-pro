@@ -26,6 +26,7 @@ import {
 import { Session } from "@supabase/supabase-js";
 import { formatDistanceToNow } from "date-fns";
 import { computeUnitStatus, UnitStatusInfo } from "@/hooks/useUnitStatus";
+import { useUnitAlerts, ComputedAlert } from "@/hooks/useUnitAlerts";
 
 interface DashboardStats {
   totalUnits: number;
@@ -166,22 +167,12 @@ const Dashboard = () => {
       });
 
       setUnits(unitsWithComputed);
-
-      // Filter units requiring action using computed status
-      const actionUnits = unitsWithComputed.filter(u => u.computed.actionRequired);
-      setUnitsRequiringAction(actionUnits);
-
-      // Calculate stats using computed status
-      const okCount = unitsWithComputed.filter(u => 
-        !u.computed.actionRequired && u.status === "ok"
-      ).length;
-      
-      const alertCount = unitsWithComputed.filter(u => u.computed.actionRequired).length;
+      setUnitsRequiringAction(unitsWithComputed.filter(u => u.computed.actionRequired));
 
       setStats({
         totalUnits: unitsWithComputed.length,
-        unitsOk: okCount,
-        unitsWithAlerts: alertCount,
+        unitsOk: 0, // Will be computed by useUnitAlerts
+        unitsWithAlerts: 0, // Will be computed by useUnitAlerts
         totalSites: sitesCount || 0,
       });
     } catch (error) {
@@ -189,6 +180,9 @@ const Dashboard = () => {
     }
     setIsLoading(false);
   }, [session, navigate]);
+
+  // Use unified alert computation - single source of truth
+  const alertsSummary = useUnitAlerts(units);
 
   const formatTemp = (temp: number | null) => {
     if (temp === null) return "--";
@@ -297,7 +291,7 @@ const Dashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">All OK</p>
-                <p className="text-3xl font-bold text-safe">{stats.unitsOk}</p>
+                <p className="text-3xl font-bold text-safe">{alertsSummary.unitsOk}</p>
               </div>
               <div className="w-12 h-12 rounded-xl bg-safe/10 flex items-center justify-center">
                 <CheckCircle2 className="w-6 h-6 text-safe" />
@@ -310,10 +304,10 @@ const Dashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Alerts</p>
-                <p className={`text-3xl font-bold ${stats.unitsWithAlerts > 0 ? "text-alarm" : "text-foreground"}`}>{stats.unitsWithAlerts}</p>
+                <p className={`text-3xl font-bold ${alertsSummary.totalCount > 0 ? "text-alarm" : "text-foreground"}`}>{alertsSummary.totalCount}</p>
               </div>
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stats.unitsWithAlerts > 0 ? "bg-alarm/10" : "bg-muted"}`}>
-                <AlertTriangle className={`w-6 h-6 ${stats.unitsWithAlerts > 0 ? "text-alarm" : "text-muted-foreground"}`} />
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${alertsSummary.totalCount > 0 ? "bg-alarm/10" : "bg-muted"}`}>
+                <AlertTriangle className={`w-6 h-6 ${alertsSummary.totalCount > 0 ? "text-alarm" : "text-muted-foreground"}`} />
               </div>
             </div>
           </CardContent>
@@ -333,77 +327,120 @@ const Dashboard = () => {
         </Card>
       </div>
 
-      {/* Units Requiring Action */}
-      {unitsRequiringAction.length > 0 && (
-        <Card className="mb-6 border-warning/50 bg-warning/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2 text-warning">
-              <AlertCircle className="w-5 h-5" />
-              Action Required ({unitsRequiringAction.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-2">
-              {unitsRequiringAction.slice(0, 5).map((unit) => {
-                const status = statusConfig[unit.status] || statusConfig.offline;
-                const showLogButton = unit.computed.manualRequired || 
-                  ["manual_required", "monitoring_interrupted", "offline"].includes(unit.status);
-                
-                return (
-                  <div key={unit.id} className="flex items-center justify-between p-3 rounded-lg bg-background hover:bg-muted/50 transition-colors">
-                    <Link to={`/units/${unit.id}`} className="flex items-center gap-3 flex-1">
-                      <div className={`w-10 h-10 rounded-lg ${status.bgColor} flex items-center justify-center`}>
-                        <Thermometer className={`w-5 h-5 ${status.color}`} />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-foreground">{unit.name}</span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${status.bgColor} ${status.color}`}>
-                            {unit.computed.manualRequired ? "Log Required" : status.label}
-                          </span>
+      {/* Units Requiring Action - grouped by severity */}
+      {alertsSummary.totalCount > 0 && (
+        <>
+          {/* Critical Alerts (Manual Required, Alarm Active) */}
+          {alertsSummary.criticalCount > 0 && (
+            <Card className="mb-4 border-alarm/50 bg-alarm/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2 text-alarm">
+                  <AlertCircle className="w-5 h-5" />
+                  Critical ({alertsSummary.criticalCount})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-2">
+                  {alertsSummary.alerts
+                    .filter(a => a.severity === "critical")
+                    .slice(0, 5)
+                    .map((alert) => {
+                      const unit = units.find(u => u.id === alert.unit_id);
+                      if (!unit) return null;
+                      const showLogButton = alert.type === "MANUAL_REQUIRED";
+                      
+                      return (
+                        <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg bg-background hover:bg-muted/50 transition-colors">
+                          <Link to={`/units/${alert.unit_id}`} className="flex items-center gap-3 flex-1">
+                            <div className="w-10 h-10 rounded-lg bg-alarm/10 flex items-center justify-center">
+                              <Thermometer className="w-5 h-5 text-alarm" />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-foreground">{alert.unit_name}</span>
+                                <Badge variant="destructive" className="text-xs">{alert.type === "MANUAL_REQUIRED" ? "Log Required" : "Alarm"}</Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{alert.site_name} · {alert.area_name}</p>
+                            </div>
+                          </Link>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right hidden sm:block">
+                              <p className="text-xs text-muted-foreground max-w-32 truncate">{alert.message}</p>
+                            </div>
+                            {showLogButton && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-alarm/50 text-alarm hover:bg-alarm/10"
+                                onClick={(e) => handleLogTemp(unit, e)}
+                              >
+                                <ClipboardEdit className="w-4 h-4 mr-1" />
+                                Log
+                              </Button>
+                            )}
+                            <Link to={`/units/${alert.unit_id}`}>
+                              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                            </Link>
+                          </div>
                         </div>
-                        <p className="text-xs text-muted-foreground">{unit.area.site.name} · {unit.area.name}</p>
-                      </div>
-                    </Link>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right hidden sm:block">
-                        <div className={`font-semibold ${status.color}`}>
-                          {formatTemp(unit.last_temp_reading)}
+                      );
+                    })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Warning Alerts (Offline, Excursion) */}
+          {alertsSummary.warningCount > 0 && (
+            <Card className="mb-6 border-warning/50 bg-warning/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2 text-warning">
+                  <WifiOff className="w-5 h-5" />
+                  Warnings ({alertsSummary.warningCount})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-2">
+                  {alertsSummary.alerts
+                    .filter(a => a.severity === "warning")
+                    .slice(0, 5)
+                    .map((alert) => {
+                      return (
+                        <div key={alert.id} className="flex items-center justify-between p-3 rounded-lg bg-background hover:bg-muted/50 transition-colors">
+                          <Link to={`/units/${alert.unit_id}`} className="flex items-center gap-3 flex-1">
+                            <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
+                              {alert.type === "OFFLINE" ? (
+                                <WifiOff className="w-5 h-5 text-warning" />
+                              ) : (
+                                <Thermometer className="w-5 h-5 text-warning" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-foreground">{alert.unit_name}</span>
+                                <Badge variant="secondary" className="text-xs bg-warning/10 text-warning border-0">
+                                  {alert.type === "OFFLINE" ? "Offline" : "Excursion"}
+                                </Badge>
+                              </div>
+                              <p className="text-xs text-muted-foreground">{alert.site_name} · {alert.area_name}</p>
+                            </div>
+                          </Link>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right hidden sm:block">
+                              <p className="text-xs text-muted-foreground max-w-32 truncate">{alert.message}</p>
+                            </div>
+                            <Link to={`/units/${alert.unit_id}`}>
+                              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                            </Link>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Clock className="w-3 h-3" />
-                          {getTimeAgo(unit.last_reading_at)}
-                        </div>
-                      </div>
-                      {showLogButton && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-warning/50 text-warning hover:bg-warning/10"
-                          onClick={(e) => handleLogTemp(unit, e)}
-                        >
-                          <ClipboardEdit className="w-4 h-4 mr-1" />
-                          Log
-                        </Button>
-                      )}
-                      <Link to={`/units/${unit.id}`}>
-                        <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })}
-              {unitsRequiringAction.length > 5 && (
-                <Link to="/alerts">
-                  <Button variant="ghost" className="w-full text-warning">
-                    View all {unitsRequiringAction.length} units requiring action
-                    <ChevronRight className="w-4 h-4 ml-2" />
-                  </Button>
-                </Link>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                      );
+                    })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
       {/* Units List */}
