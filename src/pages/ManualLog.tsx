@@ -33,9 +33,11 @@ interface UnitForLogging {
   id: string;
   name: string;
   unit_type: string;
+  status: string;
   temp_limit_high: number;
   temp_limit_low: number | null;
   last_manual_log: string | null;
+  manual_log_cadence: number;
   area: { name: string; site: { name: string } };
 }
 
@@ -49,6 +51,7 @@ const ManualLog = () => {
   const [selectedUnit, setSelectedUnit] = useState<UnitForLogging | null>(null);
   const [temperature, setTemperature] = useState("");
   const [notes, setNotes] = useState("");
+  const [correctiveAction, setCorrectiveAction] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -83,11 +86,11 @@ const ManualLog = () => {
         return;
       }
 
-      // Get units
+      // Get units - prioritize manual_required status
       const { data: unitsData } = await supabase
         .from("units")
         .select(`
-          id, name, unit_type, temp_limit_high, temp_limit_low,
+          id, name, unit_type, status, temp_limit_high, temp_limit_low, manual_log_cadence,
           area:areas!inner(name, site:sites!inner(name, organization_id))
         `)
         .eq("is_active", true);
@@ -111,11 +114,19 @@ const ManualLog = () => {
           id: u.id,
           name: u.name,
           unit_type: u.unit_type,
+          status: u.status,
           temp_limit_high: u.temp_limit_high,
           temp_limit_low: u.temp_limit_low,
+          manual_log_cadence: u.manual_log_cadence || 14400,
           last_manual_log: logsByUnit[u.id] || null,
           area: { name: u.area.name, site: { name: u.area.site.name } },
-        }));
+        }))
+        // Sort: manual_required first, then by last log time
+        .sort((a: UnitForLogging, b: UnitForLogging) => {
+          if (a.status === "manual_required" && b.status !== "manual_required") return -1;
+          if (b.status === "manual_required" && a.status !== "manual_required") return 1;
+          return 0;
+        });
 
       setUnits(filtered);
     } catch (error) {
@@ -145,8 +156,21 @@ const ManualLog = () => {
       return;
     }
 
-    setIsSubmitting(true);
+    // Check if out of range and require corrective action
     const validatedTemp = (tempResult as { success: true; data: number }).data;
+    const isOutOfRange = validatedTemp > selectedUnit.temp_limit_high || 
+      (selectedUnit.temp_limit_low !== null && validatedTemp < selectedUnit.temp_limit_low);
+    
+    if (isOutOfRange && !correctiveAction.trim()) {
+      toast({ 
+        title: "Corrective action required", 
+        description: "Temperature is out of range. Please describe the corrective action taken.",
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
     const validatedNotes = (notesResult as { success: true; data: string | undefined }).data?.trim() || null;
     
     const logEntry = {
@@ -160,20 +184,29 @@ const ManualLog = () => {
 
     try {
       if (isOnline && session) {
-        // Try to save directly to Supabase
+        // Save to Supabase
         const { error } = await supabase.from("manual_temperature_logs").insert({
           unit_id: logEntry.unit_id,
           temperature: logEntry.temperature,
           notes: logEntry.notes,
           logged_at: logEntry.logged_at,
           logged_by: session.user.id,
+          is_in_range: !isOutOfRange,
         });
 
         if (error) throw error;
 
+        // If out of range, also create corrective action record
+        if (isOutOfRange && correctiveAction.trim()) {
+          await supabase.from("corrective_actions").insert({
+            unit_id: selectedUnit.id,
+            action_taken: correctiveAction.trim(),
+            created_by: session.user.id,
+          });
+        }
+
         toast({ title: "Temperature logged successfully" });
       } else {
-        // Save offline
         await saveLogOffline(logEntry);
         toast({
           title: "Saved offline",
@@ -184,9 +217,9 @@ const ManualLog = () => {
       setSelectedUnit(null);
       setTemperature("");
       setNotes("");
+      setCorrectiveAction("");
       loadUnits();
     } catch (error) {
-      // Fallback to offline storage
       console.error("Error saving log:", error);
       await saveLogOffline(logEntry);
       toast({
@@ -199,17 +232,24 @@ const ManualLog = () => {
     setIsSubmitting(false);
   };
 
-  const getTimeSinceLog = (dateStr: string | null) => {
+  const getTimeSinceLog = (dateStr: string | null, cadenceSeconds: number) => {
     if (!dateStr) return null;
     const diffHours = (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60);
     return diffHours;
   };
 
   const getLogStatus = (unit: UnitForLogging) => {
-    const hours = getTimeSinceLog(unit.last_manual_log);
+    const cadenceHours = unit.manual_log_cadence / 3600;
+    const hours = getTimeSinceLog(unit.last_manual_log, unit.manual_log_cadence);
+    
+    // Manual required status takes priority
+    if (unit.status === "manual_required") {
+      return { status: "required", label: "REQUIRED", color: "text-alarm" };
+    }
+    
     if (hours === null) return { status: "never", label: "Never logged", color: "text-warning" };
-    if (hours < 4) return { status: "ok", label: `${Math.floor(hours)}h ago`, color: "text-safe" };
-    if (hours < 8) return { status: "due", label: "Due soon", color: "text-excursion" };
+    if (hours < cadenceHours * 0.75) return { status: "ok", label: `${Math.floor(hours)}h ago`, color: "text-safe" };
+    if (hours < cadenceHours) return { status: "due", label: "Due soon", color: "text-excursion" };
     return { status: "overdue", label: "Overdue", color: "text-alarm" };
   };
 
