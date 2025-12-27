@@ -325,15 +325,6 @@ const ManualLog = () => {
                   </div>
                 </div>
 
-                {/* Debug info in dev mode */}
-                {import.meta.env.DEV && (
-                  <div className="mt-2 p-2 bg-muted/30 rounded text-xs text-muted-foreground font-mono">
-                    <div>last_log: {unit.last_manual_log_at ? new Date(unit.last_manual_log_at).toLocaleString() : 'never'}</div>
-                    <div>mins_since: {computed.minutesSinceManualLog ?? 'null'}</div>
-                    <div>interval: {computed.manualIntervalMinutes}min</div>
-                    <div>required: {computed.manualRequired ? 'YES' : 'no'}</div>
-                  </div>
-                )}
               </CardContent>
             </Card>
           );
