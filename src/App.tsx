@@ -14,6 +14,7 @@ import ManualLog from "./pages/ManualLog";
 import Alerts from "./pages/Alerts";
 import UnitDetail from "./pages/UnitDetail";
 import Settings from "./pages/Settings";
+import Reports from "./pages/Reports";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +36,7 @@ const App = () => (
           <Route path="/units/:unitId" element={<UnitDetail />} />
           <Route path="/manual-log" element={<ManualLog />} />
           <Route path="/alerts" element={<Alerts />} />
+          <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
