@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
+import { SiteComplianceSettings } from "@/components/site/SiteComplianceSettings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,10 @@ interface SiteData {
   city: string | null;
   state: string | null;
   postal_code: string | null;
+  timezone: string;
+  compliance_mode: string;
+  manual_log_cadence_seconds: number;
+  corrective_action_required: boolean;
 }
 
 const SiteDetail = () => {
@@ -78,10 +83,10 @@ const SiteDetail = () => {
   const loadSiteData = async () => {
     setIsLoading(true);
     
-    // Load site
+    // Load site with compliance fields
     const { data: siteData, error: siteError } = await supabase
       .from("sites")
-      .select("id, name, address, city, state, postal_code")
+      .select("id, name, address, city, state, postal_code, timezone, compliance_mode, manual_log_cadence_seconds, corrective_action_required")
       .eq("id", siteId)
       .maybeSingle();
 
@@ -92,7 +97,13 @@ const SiteDetail = () => {
       return;
     }
 
-    setSite(siteData);
+    setSite({
+      ...siteData,
+      timezone: siteData.timezone || "America/New_York",
+      compliance_mode: siteData.compliance_mode || "fda_food_code",
+      manual_log_cadence_seconds: siteData.manual_log_cadence_seconds || 14400,
+      corrective_action_required: siteData.corrective_action_required ?? true,
+    });
     setEditFormData({
       name: siteData.name,
       address: siteData.address || "",
@@ -343,6 +354,19 @@ const SiteDetail = () => {
             </DialogContent>
           </Dialog>
         </div>
+
+        {/* Compliance Settings Section */}
+        {site && (
+          <SiteComplianceSettings
+            siteId={site.id}
+            siteName={site.name}
+            timezone={site.timezone}
+            complianceMode={site.compliance_mode}
+            manualLogCadenceSeconds={site.manual_log_cadence_seconds}
+            correctiveActionRequired={site.corrective_action_required}
+            onSettingsUpdated={loadSiteData}
+          />
+        )}
 
         {/* Areas Section */}
         <div className="space-y-4">
