@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
+import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -352,6 +353,17 @@ const UnitDetail = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Device Readiness */}
+        <DeviceReadinessCard
+          unitStatus={unit.status}
+          lastReadingAt={unit.last_reading_at}
+          // Future: pass actual device data when available
+          batteryLevel={null}
+          signalStrength={null}
+          lastHeartbeat={null}
+          deviceSerial={null}
+        />
 
         {/* Temperature Chart */}
         <Card>
