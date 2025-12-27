@@ -49,6 +49,8 @@ interface Alert {
   temp_limit: number | null;
   triggered_at: string;
   acknowledged_at: string | null;
+  acknowledged_by: string | null;
+  acknowledgment_notes: string | null;
   resolved_at: string | null;
   unit: {
     id: string;
@@ -84,6 +86,8 @@ const Alerts = () => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [showResolveDialog, setShowResolveDialog] = useState(false);
+  const [showAcknowledgeDialog, setShowAcknowledgeDialog] = useState(false);
+  const [acknowledgmentNotes, setAcknowledgmentNotes] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
   const [rootCause, setRootCause] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -114,7 +118,8 @@ const Alerts = () => {
         .from("alerts")
         .select(`
           id, title, message, alert_type, severity, status, escalation_level,
-          temp_reading, temp_limit, triggered_at, acknowledged_at, resolved_at,
+          temp_reading, temp_limit, triggered_at, acknowledged_at, acknowledged_by,
+          acknowledgment_notes, resolved_at,
           unit:units!inner(
             id, name,
             area:areas!inner(name, site:sites!inner(name))
@@ -145,7 +150,12 @@ const Alerts = () => {
     setIsLoading(false);
   };
 
-  const handleAcknowledge = async (alert: Alert) => {
+  const handleAcknowledge = async () => {
+    if (!selectedAlert || !acknowledgmentNotes.trim()) {
+      toast({ title: "Please provide acknowledgment notes", variant: "destructive" });
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const { error } = await supabase
@@ -154,18 +164,28 @@ const Alerts = () => {
           status: "acknowledged",
           acknowledged_at: new Date().toISOString(),
           acknowledged_by: session!.user.id,
+          acknowledgment_notes: acknowledgmentNotes.trim(),
         })
-        .eq("id", alert.id);
+        .eq("id", selectedAlert.id);
 
       if (error) throw error;
 
       toast({ title: "Alert acknowledged" });
+      setShowAcknowledgeDialog(false);
+      setSelectedAlert(null);
+      setAcknowledgmentNotes("");
       loadAlerts();
     } catch (error) {
       console.error("Error acknowledging alert:", error);
       toast({ title: "Failed to acknowledge", variant: "destructive" });
     }
     setIsSubmitting(false);
+  };
+
+  const openAcknowledgeDialog = (alert: Alert) => {
+    setSelectedAlert(alert);
+    setAcknowledgmentNotes("");
+    setShowAcknowledgeDialog(true);
   };
 
   const handleResolve = async () => {
@@ -326,7 +346,7 @@ const Alerts = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleAcknowledge(alert)}
+                              onClick={() => openAcknowledgeDialog(alert)}
                               disabled={isSubmitting}
                             >
                               <Bell className="w-4 h-4 mr-1" />
@@ -347,7 +367,13 @@ const Alerts = () => {
                         )}
 
                         {alert.status === "acknowledged" && (
-                          <div className="flex gap-2 mt-3">
+                          <div className="mt-3 space-y-2">
+                            {alert.acknowledgment_notes && (
+                              <div className="p-2 rounded bg-muted/50 text-sm">
+                                <span className="text-muted-foreground">Notes: </span>
+                                {alert.acknowledgment_notes}
+                              </div>
+                            )}
                             <Button
                               size="sm"
                               className="bg-safe hover:bg-safe/90 text-safe-foreground"
@@ -459,6 +485,77 @@ const Alerts = () => {
                     <Check className="w-4 h-4 mr-2" />
                   )}
                   Resolve Alert
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Acknowledge Dialog */}
+      <Dialog open={showAcknowledgeDialog} onOpenChange={setShowAcknowledgeDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bell className="w-5 h-5 text-accent" />
+              Acknowledge Alert
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedAlert && (
+            <div className="space-y-4 pt-2">
+              <div className="p-3 rounded-lg bg-muted/50">
+                <p className="font-semibold text-foreground">{selectedAlert.title}</p>
+                <p className="text-sm text-muted-foreground">
+                  {selectedAlert.unit.area.site.name} · {selectedAlert.unit.name}
+                </p>
+                {selectedAlert.temp_reading !== null && (
+                  <p className="text-sm mt-1">
+                    <span className="text-alarm font-semibold">{selectedAlert.temp_reading}°F</span>
+                    {selectedAlert.temp_limit && (
+                      <span className="text-muted-foreground"> (limit: {selectedAlert.temp_limit}°F)</span>
+                    )}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="ack-notes">Acknowledgment Notes *</Label>
+                <Textarea
+                  id="ack-notes"
+                  placeholder="Describe your acknowledgment (e.g., 'Investigating now', 'Aware of issue, monitoring closely')..."
+                  value={acknowledgmentNotes}
+                  onChange={(e) => setAcknowledgmentNotes(e.target.value)}
+                  rows={3}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Notes are required and will be included in compliance reports.
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setShowAcknowledgeDialog(false);
+                    setSelectedAlert(null);
+                    setAcknowledgmentNotes("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={handleAcknowledge}
+                  disabled={isSubmitting || !acknowledgmentNotes.trim()}
+                >
+                  {isSubmitting ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Check className="w-4 h-4 mr-2" />
+                  )}
+                  Acknowledge
                 </Button>
               </div>
             </div>
