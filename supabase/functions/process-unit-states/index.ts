@@ -150,6 +150,19 @@ Deno.serve(async (req) => {
               // Sensor resumed with good readings
               newStatus = "restoring";
               reason = "Monitoring resumed";
+              
+              // Resolve monitoring_interrupted alerts when sensor comes back
+              await supabase
+                .from("alerts")
+                .update({
+                  status: "resolved",
+                  resolved_at: new Date().toISOString(),
+                })
+                .eq("unit_id", unit.id)
+                .eq("alert_type", "monitoring_interrupted")
+                .in("status", ["active", "acknowledged"]);
+              
+              console.log(`Resolved monitoring_interrupted alerts for unit ${unit.name}`);
             }
           }
         }
@@ -179,20 +192,59 @@ Deno.serve(async (req) => {
           reason,
         });
 
-        // Create alert for critical state changes
-        if (["alarm_active", "monitoring_interrupted", "manual_required"].includes(newStatus)) {
+        // Create alert for critical state changes (deduplicated)
+        if (["alarm_active", "monitoring_interrupted", "manual_required", "offline"].includes(newStatus)) {
           const alertType = newStatus === "alarm_active" ? "alarm_active" : "monitoring_interrupted";
           const severity = newStatus === "alarm_active" ? "critical" : "warning";
 
-          await supabase.from("alerts").insert({
-            unit_id: unit.id,
-            title: `${unit.name}: ${newStatus.replace(/_/g, " ").toUpperCase()}`,
-            message: reason,
-            alert_type: alertType,
-            severity: severity,
-            temp_reading: unit.last_temp_reading,
-            temp_limit: unit.temp_limit_high,
-          });
+          // Check if alert already exists
+          const { data: existingAlert } = await supabase
+            .from("alerts")
+            .select("id")
+            .eq("unit_id", unit.id)
+            .eq("alert_type", alertType)
+            .in("status", ["active", "acknowledged"])
+            .maybeSingle();
+
+          if (!existingAlert) {
+            await supabase.from("alerts").insert({
+              unit_id: unit.id,
+              title: `${unit.name}: ${newStatus.replace(/_/g, " ").toUpperCase()}`,
+              message: reason,
+              alert_type: alertType,
+              severity: severity,
+              temp_reading: unit.last_temp_reading,
+              temp_limit: unit.temp_limit_high,
+            });
+            console.log(`Created ${alertType} alert for unit ${unit.name}`);
+          }
+        }
+
+        // Resolve alerts when status improves
+        if (newStatus === "ok" || newStatus === "restoring") {
+          // Resolve monitoring alerts
+          await supabase
+            .from("alerts")
+            .update({
+              status: "resolved",
+              resolved_at: new Date().toISOString(),
+            })
+            .eq("unit_id", unit.id)
+            .eq("alert_type", "monitoring_interrupted")
+            .in("status", ["active", "acknowledged"]);
+          
+          // Resolve temperature alarms if ok
+          if (newStatus === "ok") {
+            await supabase
+              .from("alerts")
+              .update({
+                status: "resolved",
+                resolved_at: new Date().toISOString(),
+              })
+              .eq("unit_id", unit.id)
+              .eq("alert_type", "alarm_active")
+              .in("status", ["active", "acknowledged"]);
+          }
         }
 
         // Log state change to event_logs
