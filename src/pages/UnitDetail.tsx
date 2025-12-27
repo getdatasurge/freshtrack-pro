@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
+import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import {
   Clock,
   FileText,
   Activity,
+  ClipboardEdit,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -39,6 +41,7 @@ import {
   ComposedChart,
 } from "recharts";
 import { format } from "date-fns";
+import { Session } from "@supabase/supabase-js";
 
 interface UnitData {
   id: string;
@@ -94,6 +97,12 @@ const UnitDetail = () => {
   const [events, setEvents] = useState<EventLog[]>([]);
   const [timeRange, setTimeRange] = useState("24h");
   const [isExporting, setIsExporting] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+  }, []);
 
   useEffect(() => {
     if (unitId) loadUnitData();
@@ -289,6 +298,14 @@ const UnitDetail = () => {
               </SelectContent>
             </Select>
             <div className="flex items-center gap-2">
+              <Button 
+                variant="default"
+                className="bg-accent hover:bg-accent/90"
+                onClick={() => setModalOpen(true)}
+              >
+                <ClipboardEdit className="w-4 h-4 mr-2" />
+                Log Temp
+              </Button>
               <Button 
                 variant="outline" 
                 onClick={() => exportToCSV("daily")} 
@@ -533,6 +550,26 @@ const UnitDetail = () => {
             )}
           </TabsContent>
         </Tabs>
+
+        {/* Log Temp Modal */}
+        {unit && (
+          <LogTempModal
+            unit={{
+              id: unit.id,
+              name: unit.name,
+              unit_type: unit.unit_type,
+              status: unit.status,
+              temp_limit_high: unit.temp_limit_high,
+              temp_limit_low: unit.temp_limit_low,
+              manual_log_cadence: 14400, // Default 4 hours
+              area: unit.area,
+            }}
+            open={modalOpen}
+            onOpenChange={setModalOpen}
+            onSuccess={loadUnitData}
+            session={session}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

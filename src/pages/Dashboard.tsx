@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
+import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,35 +20,18 @@ import {
   ClipboardList,
   AlertCircle,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  ClipboardEdit,
 } from "lucide-react";
 import { Session } from "@supabase/supabase-js";
 import { formatDistanceToNow } from "date-fns";
+import { computeUnitStatus, UnitStatusInfo } from "@/hooks/useUnitStatus";
 
 interface DashboardStats {
   totalUnits: number;
   unitsOk: number;
-  unitsInAlarm: number;
+  unitsWithAlerts: number;
   totalSites: number;
-}
-
-interface UnitWithDetails {
-  id: string;
-  name: string;
-  unit_type: string;
-  status: string;
-  last_temp_reading: number | null;
-  last_reading_at: string | null;
-  temp_limit_high: number;
-  temp_limit_low: number | null;
-  manual_log_cadence: number;
-  last_manual_log_at: string | null;
-  area: {
-    name: string;
-    site: {
-      name: string;
-    };
-  };
 }
 
 const statusConfig: Record<string, { color: string; bgColor: string; label: string; priority: number }> = {
@@ -67,11 +51,15 @@ const Dashboard = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalUnits: 0,
     unitsOk: 0,
-    unitsInAlarm: 0,
+    unitsWithAlerts: 0,
     totalSites: 0,
   });
-  const [units, setUnits] = useState<UnitWithDetails[]>([]);
-  const [unitsRequiringAction, setUnitsRequiringAction] = useState<UnitWithDetails[]>([]);
+  const [units, setUnits] = useState<(UnitStatusInfo & { computed: ReturnType<typeof computeUnitStatus> })[]>([]);
+  const [unitsRequiringAction, setUnitsRequiringAction] = useState<(UnitStatusInfo & { computed: ReturnType<typeof computeUnitStatus> })[]>([]);
+  
+  // Log temp modal state
+  const [selectedUnit, setSelectedUnit] = useState<LogTempUnit | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -97,12 +85,13 @@ const Dashboard = () => {
     }
   }, [session]);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
+    if (!session?.user) return;
     try {
       const { data: profile } = await supabase
         .from("profiles")
         .select("organization_id")
-        .eq("user_id", session!.user.id)
+        .eq("user_id", session.user.id)
         .maybeSingle();
 
       if (!profile?.organization_id) {
@@ -147,7 +136,7 @@ const Dashboard = () => {
         }
       });
 
-      const formattedUnits: UnitWithDetails[] = filteredUnits.map((u: any) => ({
+      const formattedUnits: UnitStatusInfo[] = filteredUnits.map((u: any) => ({
         id: u.id,
         name: u.name,
         unit_type: u.unit_type,
@@ -161,36 +150,45 @@ const Dashboard = () => {
         area: { name: u.area.name, site: { name: u.area.site.name } },
       }));
 
-      // Sort units by status priority
-      formattedUnits.sort((a, b) => {
+      // Compute status for each unit
+      const unitsWithComputed = formattedUnits.map(u => ({
+        ...u,
+        computed: computeUnitStatus(u),
+      }));
+
+      // Sort units by action required priority
+      unitsWithComputed.sort((a, b) => {
+        if (a.computed.actionRequired && !b.computed.actionRequired) return -1;
+        if (!a.computed.actionRequired && b.computed.actionRequired) return 1;
         const aPriority = statusConfig[a.status]?.priority || 99;
         const bPriority = statusConfig[b.status]?.priority || 99;
         return aPriority - bPriority;
       });
 
-      setUnits(formattedUnits);
+      setUnits(unitsWithComputed);
 
-      // Filter units requiring action
-      const actionStatuses = ["alarm_active", "excursion", "monitoring_interrupted", "manual_required", "offline"];
-      const actionUnits = formattedUnits.filter((u) => actionStatuses.includes(u.status));
+      // Filter units requiring action using computed status
+      const actionUnits = unitsWithComputed.filter(u => u.computed.actionRequired);
       setUnitsRequiringAction(actionUnits);
 
-      const okCount = formattedUnits.filter((u) => u.status === "ok").length;
-      const alarmCount = formattedUnits.filter((u) => 
-        ["alarm_active", "excursion", "monitoring_interrupted"].includes(u.status)
+      // Calculate stats using computed status
+      const okCount = unitsWithComputed.filter(u => 
+        !u.computed.actionRequired && u.status === "ok"
       ).length;
+      
+      const alertCount = unitsWithComputed.filter(u => u.computed.actionRequired).length;
 
       setStats({
-        totalUnits: formattedUnits.length,
+        totalUnits: unitsWithComputed.length,
         unitsOk: okCount,
-        unitsInAlarm: alarmCount,
+        unitsWithAlerts: alertCount,
         totalSites: sitesCount || 0,
       });
     } catch (error) {
       console.error("Error loading dashboard:", error);
     }
     setIsLoading(false);
-  };
+  }, [session, navigate]);
 
   const formatTemp = (temp: number | null) => {
     if (temp === null) return "--";
@@ -207,22 +205,15 @@ const Dashboard = () => {
     return `${Math.floor(diffHours / 24)}d ago`;
   };
 
-  const getComplianceBadge = (unit: UnitWithDetails) => {
-    const isInRange = unit.last_temp_reading !== null && 
-      unit.last_temp_reading <= unit.temp_limit_high &&
-      (unit.temp_limit_low === null || unit.last_temp_reading >= unit.temp_limit_low);
-    
-    const hasRecentLog = unit.last_manual_log_at && 
-      (Date.now() - new Date(unit.last_manual_log_at).getTime()) < unit.manual_log_cadence * 1000;
-
-    if (unit.status === "ok" && isInRange) {
+  const getComplianceBadge = (unit: UnitStatusInfo & { computed: ReturnType<typeof computeUnitStatus> }) => {
+    if (unit.status === "ok" && !unit.computed.actionRequired) {
       return (
         <Badge variant="outline" className="gap-1 text-safe border-safe/30 bg-safe/5">
           <ShieldCheck className="w-3 h-3" />
           Compliant
         </Badge>
       );
-    } else if (unit.status === "manual_required" || !hasRecentLog) {
+    } else if (unit.computed.manualRequired) {
       return (
         <Badge variant="outline" className="gap-1 text-warning border-warning/30 bg-warning/5">
           <ClipboardList className="w-3 h-3" />
@@ -240,20 +231,38 @@ const Dashboard = () => {
     return null;
   };
 
-  const getLastLogDisplay = (unit: UnitWithDetails) => {
+  const getLastLogDisplay = (unit: UnitStatusInfo) => {
     if (!unit.last_manual_log_at) {
       return <span className="text-muted-foreground">No logs</span>;
     }
     
-    const cadenceMs = unit.manual_log_cadence * 1000;
-    const timeSinceLog = Date.now() - new Date(unit.last_manual_log_at).getTime();
-    const isOverdue = timeSinceLog > cadenceMs;
+    const computed = computeUnitStatus(unit);
 
     return (
-      <span className={isOverdue ? "text-warning" : "text-muted-foreground"}>
+      <span className={computed.manualRequired ? "text-warning" : "text-muted-foreground"}>
         {formatDistanceToNow(new Date(unit.last_manual_log_at), { addSuffix: true })}
       </span>
     );
+  };
+
+  const handleLogTemp = (unit: UnitStatusInfo, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedUnit({
+      id: unit.id,
+      name: unit.name,
+      unit_type: unit.unit_type,
+      status: unit.status,
+      temp_limit_high: unit.temp_limit_high,
+      temp_limit_low: unit.temp_limit_low,
+      manual_log_cadence: unit.manual_log_cadence,
+      area: unit.area,
+    });
+    setModalOpen(true);
+  };
+
+  const handleLogSuccess = () => {
+    loadDashboardData();
   };
 
   if (isLoading) {
@@ -301,10 +310,10 @@ const Dashboard = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Alerts</p>
-                <p className={`text-3xl font-bold ${stats.unitsInAlarm > 0 ? "text-alarm" : "text-foreground"}`}>{stats.unitsInAlarm}</p>
+                <p className={`text-3xl font-bold ${stats.unitsWithAlerts > 0 ? "text-alarm" : "text-foreground"}`}>{stats.unitsWithAlerts}</p>
               </div>
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stats.unitsInAlarm > 0 ? "bg-alarm/10" : "bg-muted"}`}>
-                <AlertTriangle className={`w-6 h-6 ${stats.unitsInAlarm > 0 ? "text-alarm" : "text-muted-foreground"}`} />
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stats.unitsWithAlerts > 0 ? "bg-alarm/10" : "bg-muted"}`}>
+                <AlertTriangle className={`w-6 h-6 ${stats.unitsWithAlerts > 0 ? "text-alarm" : "text-muted-foreground"}`} />
               </div>
             </div>
           </CardContent>
@@ -337,37 +346,51 @@ const Dashboard = () => {
             <div className="grid gap-2">
               {unitsRequiringAction.slice(0, 5).map((unit) => {
                 const status = statusConfig[unit.status] || statusConfig.offline;
+                const showLogButton = unit.computed.manualRequired || 
+                  ["manual_required", "monitoring_interrupted", "offline"].includes(unit.status);
+                
                 return (
-                  <Link key={unit.id} to={`/units/${unit.id}`}>
-                    <div className="flex items-center justify-between p-3 rounded-lg bg-background hover:bg-muted/50 transition-colors cursor-pointer">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-lg ${status.bgColor} flex items-center justify-center`}>
-                          <Thermometer className={`w-5 h-5 ${status.color}`} />
+                  <div key={unit.id} className="flex items-center justify-between p-3 rounded-lg bg-background hover:bg-muted/50 transition-colors">
+                    <Link to={`/units/${unit.id}`} className="flex items-center gap-3 flex-1">
+                      <div className={`w-10 h-10 rounded-lg ${status.bgColor} flex items-center justify-center`}>
+                        <Thermometer className={`w-5 h-5 ${status.color}`} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-foreground">{unit.name}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${status.bgColor} ${status.color}`}>
+                            {unit.computed.manualRequired ? "Log Required" : status.label}
+                          </span>
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-foreground">{unit.name}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${status.bgColor} ${status.color}`}>
-                              {status.label}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">{unit.area.site.name} · {unit.area.name}</p>
+                        <p className="text-xs text-muted-foreground">{unit.area.site.name} · {unit.area.name}</p>
+                      </div>
+                    </Link>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right hidden sm:block">
+                        <div className={`font-semibold ${status.color}`}>
+                          {formatTemp(unit.last_temp_reading)}
+                        </div>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Clock className="w-3 h-3" />
+                          {getTimeAgo(unit.last_reading_at)}
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right hidden sm:block">
-                          <div className={`font-semibold ${status.color}`}>
-                            {formatTemp(unit.last_temp_reading)}
-                          </div>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Clock className="w-3 h-3" />
-                            {getTimeAgo(unit.last_reading_at)}
-                          </div>
-                        </div>
+                      {showLogButton && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-warning/50 text-warning hover:bg-warning/10"
+                          onClick={(e) => handleLogTemp(unit, e)}
+                        >
+                          <ClipboardEdit className="w-4 h-4 mr-1" />
+                          Log
+                        </Button>
+                      )}
+                      <Link to={`/units/${unit.id}`}>
                         <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                      </div>
+                      </Link>
                     </div>
-                  </Link>
+                  </div>
                 );
               })}
               {unitsRequiringAction.length > 5 && (
@@ -398,7 +421,7 @@ const Dashboard = () => {
           <div className="grid gap-3">
             {units.map((unit) => {
               const status = statusConfig[unit.status] || statusConfig.offline;
-              const isOnline = unit.status !== "offline" && unit.last_reading_at;
+              const isOnline = unit.computed.sensorOnline;
               return (
                 <Link key={unit.id} to={`/units/${unit.id}`}>
                   <Card className="unit-card card-hover cursor-pointer">
@@ -448,21 +471,32 @@ const Dashboard = () => {
         </div>
       ) : (
         <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center mb-4">
-              <Thermometer className="w-8 h-8 text-accent" />
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-4">
+              <Plus className="w-8 h-8 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">No Units Yet</h3>
-            <p className="text-muted-foreground text-center max-w-md mb-6">Add refrigeration units to start monitoring temperatures.</p>
+            <h3 className="text-lg font-semibold text-foreground mb-2">Get Started</h3>
+            <p className="text-muted-foreground text-center mb-4">
+              Add your first site and refrigeration units to begin monitoring
+            </p>
             <Link to="/sites">
-              <Button className="bg-accent hover:bg-accent/90 text-accent-foreground">
+              <Button className="bg-accent hover:bg-accent/90">
                 <Plus className="w-4 h-4 mr-2" />
-                Go to Sites
+                Add Site
               </Button>
             </Link>
           </CardContent>
         </Card>
       )}
+
+      {/* Log Temp Modal */}
+      <LogTempModal
+        unit={selectedUnit}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        onSuccess={handleLogSuccess}
+        session={session}
+      />
     </DashboardLayout>
   );
 };
