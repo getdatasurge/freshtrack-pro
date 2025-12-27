@@ -10,7 +10,7 @@ interface ExportRequest {
   site_id?: string;
   start_date: string; // ISO date
   end_date: string; // ISO date
-  report_type: "daily" | "exceptions" | "manual";
+  report_type: "daily" | "exceptions" | "manual" | "compliance";
 }
 
 Deno.serve(async (req) => {
@@ -70,12 +70,25 @@ Deno.serve(async (req) => {
       .eq("id", profile.organization_id)
       .maybeSingle();
 
+    // Get site compliance settings if needed
+    let siteSettings: Record<string, any> = {};
+    if (site_id) {
+      const { data: siteData } = await supabase
+        .from("sites")
+        .select("id, name, timezone, compliance_mode, manual_log_cadence_seconds, corrective_action_required")
+        .eq("id", site_id)
+        .maybeSingle();
+      if (siteData) {
+        siteSettings[siteData.id] = siteData;
+      }
+    }
+
     // Build units query
     let unitsQuery = supabase
       .from("units")
       .select(`
-        id, name, unit_type, temp_limit_high, temp_limit_low,
-        area:areas!inner(name, site:sites!inner(id, name, organization_id))
+        id, name, unit_type, temp_limit_high, temp_limit_low, manual_log_cadence,
+        area:areas!inner(name, site:sites!inner(id, name, organization_id, timezone, compliance_mode, manual_log_cadence_seconds, corrective_action_required))
       `)
       .eq("is_active", true);
 
@@ -293,15 +306,167 @@ Deno.serve(async (req) => {
         const datetime = new Date(l.logged_at);
         csv += `${datetime.toISOString().split("T")[0]},${datetime.toISOString().split("T")[1].substring(0, 8)},"${unit.name}","${unit.area.site.name}","${unit.area.name}",${l.temperature},${l.is_in_range ? "Yes" : "No"},"${loggerMap[l.logged_by] || l.logged_by}","${(l.notes || "").replace(/"/g, '""')}"\n`;
       });
+    } else if (report_type === "compliance") {
+      // Comprehensive compliance report
+      csv = "Section,Date,Time,Unit Name,Site,Area,Type,Temperature (°F),High Limit,Low Limit,In Range,Logged By,Alert Type,Severity,Status,Action Taken,Notes\n";
+
+      // All temperature readings (manual + sensor)
+      const allReadings: any[] = [];
+
+      (sensorReadings || []).forEach((r: any) => {
+        const unit = unitMap[r.unit_id];
+        if (!unit) return;
+        const inRange = r.temperature <= unit.temp_limit_high && 
+          (unit.temp_limit_low === null || r.temperature >= unit.temp_limit_low);
+        allReadings.push({
+          section: "Temperature Log",
+          datetime: new Date(r.recorded_at),
+          unit_name: unit.name,
+          site: unit.area.site.name,
+          area: unit.area.name,
+          type: "Sensor",
+          temperature: r.temperature,
+          high_limit: unit.temp_limit_high,
+          low_limit: unit.temp_limit_low || "",
+          in_range: inRange ? "Yes" : "No",
+          logged_by: "Automated",
+          alert_type: "",
+          severity: "",
+          status: "",
+          action_taken: "",
+          notes: "",
+        });
+      });
+
+      (manualLogs || []).forEach((l: any) => {
+        const unit = unitMap[l.unit_id];
+        if (!unit) return;
+        allReadings.push({
+          section: "Temperature Log",
+          datetime: new Date(l.logged_at),
+          unit_name: unit.name,
+          site: unit.area.site.name,
+          area: unit.area.name,
+          type: "Manual",
+          temperature: l.temperature,
+          high_limit: unit.temp_limit_high,
+          low_limit: unit.temp_limit_low || "",
+          in_range: l.is_in_range ? "Yes" : "No",
+          logged_by: loggerMap[l.logged_by] || l.logged_by,
+          alert_type: "",
+          severity: "",
+          status: "",
+          action_taken: "",
+          notes: (l.notes || "").replace(/"/g, '""'),
+        });
+      });
+
+      // Out of range flags
+      allReadings.forEach((r) => {
+        if (r.in_range === "No") {
+          r.section = "Exception";
+        }
+      });
+
+      // Add alerts
+      (alerts || []).forEach((a: any) => {
+        const unit = unitMap[a.unit_id];
+        if (!unit) return;
+        allReadings.push({
+          section: "Alert",
+          datetime: new Date(a.triggered_at),
+          unit_name: unit.name,
+          site: unit.area.site.name,
+          area: unit.area?.name || "",
+          type: "",
+          temperature: a.temp_reading || "",
+          high_limit: a.temp_limit || unit.temp_limit_high,
+          low_limit: unit.temp_limit_low || "",
+          in_range: "",
+          logged_by: "",
+          alert_type: a.alert_type,
+          severity: a.severity,
+          status: a.status,
+          action_taken: "",
+          notes: a.title,
+        });
+      });
+
+      // Add corrective actions
+      (correctiveActions || []).forEach((ca: any) => {
+        const unit = unitMap[ca.unit_id];
+        if (!unit) return;
+        allReadings.push({
+          section: "Corrective Action",
+          datetime: new Date(ca.completed_at),
+          unit_name: unit.name,
+          site: unit.area.site.name,
+          area: unit.area?.name || "",
+          type: "",
+          temperature: "",
+          high_limit: "",
+          low_limit: "",
+          in_range: "",
+          logged_by: loggerMap[ca.created_by] || ca.created_by,
+          alert_type: "",
+          severity: "",
+          status: "completed",
+          action_taken: (ca.action_taken || "").replace(/"/g, '""'),
+          notes: (ca.root_cause || "").replace(/"/g, '""'),
+        });
+      });
+
+      // Add missed manual log events
+      (events || []).forEach((e: any) => {
+        if (e.event_type !== "missed_manual_log") return;
+        const unit = unitMap[e.unit_id];
+        if (!unit) return;
+        const data = e.event_data as any;
+        allReadings.push({
+          section: "Missed Manual Log",
+          datetime: new Date(e.recorded_at),
+          unit_name: unit.name,
+          site: unit.area.site.name,
+          area: unit.area?.name || "",
+          type: "",
+          temperature: "",
+          high_limit: "",
+          low_limit: "",
+          in_range: "",
+          logged_by: "",
+          alert_type: "missed_manual_entry",
+          severity: "warning",
+          status: "",
+          action_taken: "",
+          notes: `${data.hours_overdue || "Unknown"} hours overdue`,
+        });
+      });
+
+      // Sort by datetime
+      allReadings.sort((a, b) => a.datetime.getTime() - b.datetime.getTime());
+
+      // Write rows
+      allReadings.forEach((r) => {
+        const date = r.datetime.toISOString().split("T")[0];
+        const time = r.datetime.toISOString().split("T")[1].substring(0, 8);
+        csv += `"${r.section}",${date},${time},"${r.unit_name}","${r.site}","${r.area}","${r.type}",${r.temperature},${r.high_limit},${r.low_limit},${r.in_range},"${r.logged_by}","${r.alert_type}","${r.severity}","${r.status}","${r.action_taken}","${r.notes}"\n`;
+      });
     }
 
     // Add header info
+    const reportTypeLabel = {
+      daily: "Daily Temperature Log",
+      exceptions: "Exception Report",
+      manual: "Manual Logs Report",
+      compliance: "Compliance Report",
+    }[report_type];
+
     const header = `# FrostGuard Temperature Report
 # Organization: ${org?.name || "Unknown"}
 # Compliance Mode: ${org?.compliance_mode?.toUpperCase() || "STANDARD"}
-# Report Type: ${report_type === "daily" ? "Daily Temperature Log" : "Exception Report"}
+# Report Type: ${reportTypeLabel}
 # Date Range: ${start_date} to ${end_date}
-# Generated: ${new Date().toISOString()}
+# Generated by FrostGuard on ${new Date().toISOString()}
 # Units Included: ${orgUnits.length}
 #
 `;

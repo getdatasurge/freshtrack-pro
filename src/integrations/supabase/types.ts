@@ -1055,12 +1055,15 @@ export type Database = {
         Row: {
           address: string | null
           city: string | null
+          compliance_mode: string | null
+          corrective_action_required: boolean | null
           country: string | null
           created_at: string
           id: string
           is_active: boolean
           latitude: number | null
           longitude: number | null
+          manual_log_cadence_seconds: number | null
           name: string
           organization_id: string
           postal_code: string | null
@@ -1071,12 +1074,15 @@ export type Database = {
         Insert: {
           address?: string | null
           city?: string | null
+          compliance_mode?: string | null
+          corrective_action_required?: boolean | null
           country?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
           latitude?: number | null
           longitude?: number | null
+          manual_log_cadence_seconds?: number | null
           name: string
           organization_id: string
           postal_code?: string | null
@@ -1087,12 +1093,15 @@ export type Database = {
         Update: {
           address?: string | null
           city?: string | null
+          compliance_mode?: string | null
+          corrective_action_required?: boolean | null
           country?: string | null
           created_at?: string
           id?: string
           is_active?: boolean
           latitude?: number | null
           longitude?: number | null
+          manual_log_cadence_seconds?: number | null
           name?: string
           organization_id?: string
           postal_code?: string | null

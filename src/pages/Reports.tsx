@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
+import { ComplianceReportCard } from "@/components/reports/ComplianceReportCard";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,7 +19,8 @@ import {
   CalendarIcon,
   Loader2,
   Filter,
-  Building2
+  Building2,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Session } from "@supabase/supabase-js";
@@ -128,7 +130,7 @@ const Reports = () => {
     }
   };
 
-  const handleExport = async (reportType: "daily" | "exceptions" | "manual") => {
+  const handleExport = async (reportType: "daily" | "exceptions" | "manual" | "compliance") => {
     if (!dateRange.from || !dateRange.to) {
       toast({
         title: "Date range required",
@@ -194,6 +196,13 @@ const Reports = () => {
   };
 
   const reportTypes = [
+    {
+      id: "compliance",
+      title: "Compliance Report",
+      description: "Complete audit-ready report with all logs, exceptions, and corrective actions",
+      icon: ShieldCheck,
+      color: "text-safe",
+    },
     {
       id: "daily",
       title: "Daily Temperature Logs",
@@ -343,8 +352,13 @@ const Reports = () => {
       </Card>
 
       {/* Report Types */}
-      <Tabs defaultValue="daily" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue="compliance" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="compliance" className="text-xs sm:text-sm">
+            <ShieldCheck className="w-4 h-4 mr-1 sm:mr-2" />
+            <span className="hidden sm:inline">Compliance</span>
+            <span className="sm:hidden">Comp.</span>
+          </TabsTrigger>
           <TabsTrigger value="daily" className="text-xs sm:text-sm">
             <FileText className="w-4 h-4 mr-1 sm:mr-2" />
             <span className="hidden sm:inline">Daily Logs</span>
@@ -396,7 +410,7 @@ const Reports = () => {
                     )}
                   </div>
                   <Button
-                    onClick={() => handleExport(report.id as "daily" | "exceptions" | "manual")}
+                    onClick={() => handleExport(report.id as "daily" | "exceptions" | "manual" | "compliance")}
                     disabled={isExporting || !dateRange.from || !dateRange.to}
                     className="w-full sm:w-auto"
                   >
@@ -432,7 +446,7 @@ const Reports = () => {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => handleExport(report.id as "daily" | "exceptions" | "manual")}
+                  onClick={() => handleExport(report.id as "daily" | "exceptions" | "manual" | "compliance")}
                   disabled={isExporting}
                 >
                   <Download className="w-4 h-4" />
