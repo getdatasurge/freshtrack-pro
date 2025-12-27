@@ -43,6 +43,8 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import { Session } from "@supabase/supabase-js";
+import { computeUnitAlerts, ComputedAlert } from "@/hooks/useUnitAlerts";
+import { UnitStatusInfo } from "@/hooks/useUnitStatus";
 
 interface UnitData {
   id: string;
@@ -53,6 +55,8 @@ interface UnitData {
   temp_limit_low: number | null;
   last_temp_reading: number | null;
   last_reading_at: string | null;
+  last_manual_log_at: string | null;
+  manual_log_cadence: number;
   area: { id: string; name: string; site: { id: string; name: string } };
 }
 
@@ -134,12 +138,12 @@ const UnitDetail = () => {
   const loadUnitData = async () => {
     setIsLoading(true);
     try {
-      // Load unit details
+      // Load unit details including fields needed for alert computation
       const { data: unitData, error: unitError } = await supabase
         .from("units")
         .select(`
           id, name, unit_type, status, temp_limit_high, temp_limit_low,
-          last_temp_reading, last_reading_at,
+          last_temp_reading, last_reading_at, last_manual_log_at, manual_log_cadence,
           area:areas!inner(id, name, site:sites!inner(id, name))
         `)
         .eq("id", unitId)
@@ -152,6 +156,8 @@ const UnitDetail = () => {
 
       setUnit({
         ...unitData,
+        last_manual_log_at: unitData.last_manual_log_at,
+        manual_log_cadence: unitData.manual_log_cadence,
         area: {
           id: unitData.area.id,
           name: unitData.area.name,
@@ -194,55 +200,39 @@ const UnitDetail = () => {
 
       setEvents(eventsData || []);
 
-      // Load active alerts for this unit
-      const { data: alertsData } = await supabase
-        .from("alerts")
-        .select("id, title, message, alert_type, severity, status")
-        .eq("unit_id", unitId)
-        .eq("status", "active")
-        .order("severity", { ascending: true });
+      // Use computeUnitAlerts - same source of truth as Alerts Center
+      // Build UnitStatusInfo from unit data
+      const unitStatusInfo: UnitStatusInfo = {
+        id: unitData.id,
+        name: unitData.name,
+        unit_type: unitData.unit_type,
+        status: unitData.status,
+        temp_limit_high: unitData.temp_limit_high,
+        temp_limit_low: unitData.temp_limit_low,
+        manual_log_cadence: unitData.manual_log_cadence,
+        last_manual_log_at: unitData.last_manual_log_at,
+        last_reading_at: unitData.last_reading_at,
+        last_temp_reading: unitData.last_temp_reading,
+        area: {
+          name: unitData.area.name,
+          site: { name: unitData.area.site.name },
+        },
+      };
 
-      // Build alerts from DB + computed status
-      const alerts: UnitAlert[] = [];
+      // Compute alerts using the same function as Alerts Center
+      const computedSummary = computeUnitAlerts([unitStatusInfo]);
+      
+      // Map computed alerts to UnitAlert format for the banner
+      const bannerAlerts: UnitAlert[] = computedSummary.alerts.map((a) => ({
+        id: a.id,
+        type: a.type,
+        severity: a.severity,
+        title: a.title,
+        message: a.message,
+        clearCondition: getAlertClearCondition(a.type),
+      }));
 
-      // Add DB alerts
-      if (alertsData) {
-        alertsData.forEach((a) => {
-          alerts.push({
-            id: a.id,
-            type: a.alert_type,
-            severity: a.severity as "critical" | "warning" | "info",
-            title: a.title,
-            message: a.message || "",
-            clearCondition: getAlertClearCondition(a.alert_type),
-          });
-        });
-      }
-
-      // Add computed alerts based on unit status
-      if (unitData.status === "manual_required" && !alerts.some(a => a.type === "missed_manual_entry")) {
-        alerts.push({
-          id: "computed-manual",
-          type: "MANUAL_REQUIRED",
-          severity: "critical",
-          title: "Manual Log Required",
-          message: "Temperature log is overdue",
-          clearCondition: "Log a temperature reading",
-        });
-      }
-
-      if (unitData.status === "offline" && !alerts.some(a => a.type === "monitoring_interrupted")) {
-        alerts.push({
-          id: "computed-offline",
-          type: "OFFLINE",
-          severity: "warning",
-          title: "Sensor Offline",
-          message: "No recent sensor data received",
-          clearCondition: "Sensor comes back online",
-        });
-      }
-
-      setUnitAlerts(alerts);
+      setUnitAlerts(bannerAlerts);
     } catch (error) {
       console.error("Error loading unit:", error);
       toast({ title: "Failed to load unit data", variant: "destructive" });
@@ -252,11 +242,17 @@ const UnitDetail = () => {
 
   const getAlertClearCondition = (alertType: string): string => {
     switch (alertType) {
+      case "MANUAL_REQUIRED":
       case "missed_manual_entry":
-        return "Log a temperature reading";
+        return "Log a manual temperature";
+      case "OFFLINE":
       case "monitoring_interrupted":
         return "Sensor comes back online";
+      case "ALARM_ACTIVE":
       case "alarm_active":
+        return "Temperature returns to range";
+      case "EXCURSION":
+      case "excursion":
         return "Temperature returns to range";
       case "low_battery":
         return "Replace or charge battery";
