@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
+import UnitSettingsSection from "@/components/unit/UnitSettingsSection";
 import UnitAlertsBanner from "@/components/unit/UnitAlertsBanner";
 import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
 import { Button } from "@/components/ui/button";
@@ -462,6 +463,16 @@ const UnitDetail = () => {
           signalStrength={null}
           lastHeartbeat={null}
           deviceSerial={null}
+        />
+
+        {/* Unit Settings (collapsed by default) */}
+        <UnitSettingsSection
+          unitId={unit.id}
+          unitType={unit.unit_type}
+          tempLimitLow={unit.temp_limit_low}
+          tempLimitHigh={unit.temp_limit_high}
+          notes={null}
+          onSettingsUpdated={loadUnitData}
         />
 
         {/* Temperature Chart */}
