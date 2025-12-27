@@ -22,4 +22,4 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.export-temperature-logs]
-verify_jwt = true
+verify_jwt = false
