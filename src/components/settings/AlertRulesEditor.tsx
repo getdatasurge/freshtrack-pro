@@ -35,7 +35,10 @@ type RuleField =
   | "door_open_critical_minutes"
   | "excursion_confirm_minutes_door_closed"
   | "excursion_confirm_minutes_door_open"
-  | "max_excursion_minutes";
+  | "max_excursion_minutes"
+  | "offline_warning_missed_checkins"
+  | "offline_critical_missed_checkins"
+  | "manual_log_missed_checkins_threshold";
 
 export function AlertRulesEditor({
   scope,
@@ -60,6 +63,10 @@ export function AlertRulesEditor({
   const [excursionConfirmMinutesDoorClosed, setExcursionConfirmMinutesDoorClosed] = useState<string>("");
   const [excursionConfirmMinutesDoorOpen, setExcursionConfirmMinutesDoorOpen] = useState<string>("");
   const [maxExcursionMinutes, setMaxExcursionMinutes] = useState<string>("");
+  // New missed check-in threshold fields
+  const [offlineWarningMissedCheckins, setOfflineWarningMissedCheckins] = useState<string>("");
+  const [offlineCriticalMissedCheckins, setOfflineCriticalMissedCheckins] = useState<string>("");
+  const [manualLogMissedCheckinsThreshold, setManualLogMissedCheckinsThreshold] = useState<string>("");
 
   const isOrgScope = !!scope.organization_id && !scope.site_id && !scope.unit_id;
 
@@ -76,6 +83,10 @@ export function AlertRulesEditor({
       setExcursionConfirmMinutesDoorClosed(existingRules.excursion_confirm_minutes_door_closed?.toString() || "");
       setExcursionConfirmMinutesDoorOpen(existingRules.excursion_confirm_minutes_door_open?.toString() || "");
       setMaxExcursionMinutes(existingRules.max_excursion_minutes?.toString() || "");
+      // New fields
+      setOfflineWarningMissedCheckins(existingRules.offline_warning_missed_checkins?.toString() || "");
+      setOfflineCriticalMissedCheckins(existingRules.offline_critical_missed_checkins?.toString() || "");
+      setManualLogMissedCheckinsThreshold(existingRules.manual_log_missed_checkins_threshold?.toString() || "");
     } else {
       // Clear form when no existing rules
       setManualIntervalMinutes("");
@@ -88,6 +99,10 @@ export function AlertRulesEditor({
       setExcursionConfirmMinutesDoorClosed("");
       setExcursionConfirmMinutesDoorOpen("");
       setMaxExcursionMinutes("");
+      // New fields
+      setOfflineWarningMissedCheckins("");
+      setOfflineCriticalMissedCheckins("");
+      setManualLogMissedCheckinsThreshold("");
     }
   }, [existingRules]);
 
@@ -117,6 +132,9 @@ export function AlertRulesEditor({
       excursion_confirm_minutes_door_closed: excursionConfirmMinutesDoorClosed,
       excursion_confirm_minutes_door_open: excursionConfirmMinutesDoorOpen,
       max_excursion_minutes: maxExcursionMinutes,
+      offline_warning_missed_checkins: offlineWarningMissedCheckins,
+      offline_critical_missed_checkins: offlineCriticalMissedCheckins,
+      manual_log_missed_checkins_threshold: manualLogMissedCheckinsThreshold,
     };
     return map[field];
   };
@@ -151,6 +169,10 @@ export function AlertRulesEditor({
       addIfChanged("excursion_confirm_minutes_door_closed", excursionConfirmMinutesDoorClosed, parseInt);
       addIfChanged("excursion_confirm_minutes_door_open", excursionConfirmMinutesDoorOpen, parseInt);
       addIfChanged("max_excursion_minutes", maxExcursionMinutes, parseInt);
+      // New fields
+      addIfChanged("offline_warning_missed_checkins", offlineWarningMissedCheckins, parseInt);
+      addIfChanged("offline_critical_missed_checkins", offlineCriticalMissedCheckins, parseInt);
+      addIfChanged("manual_log_missed_checkins_threshold", manualLogMissedCheckinsThreshold, parseInt);
 
       const { error } = await upsertAlertRules(scope, rules);
       
@@ -216,6 +238,9 @@ export function AlertRulesEditor({
         excursion_confirm_minutes_door_closed: setExcursionConfirmMinutesDoorClosed,
         excursion_confirm_minutes_door_open: setExcursionConfirmMinutesDoorOpen,
         max_excursion_minutes: setMaxExcursionMinutes,
+        offline_warning_missed_checkins: setOfflineWarningMissedCheckins,
+        offline_critical_missed_checkins: setOfflineCriticalMissedCheckins,
+        manual_log_missed_checkins_threshold: setManualLogMissedCheckinsThreshold,
       };
       setterMap[field]("");
 
@@ -267,6 +292,9 @@ export function AlertRulesEditor({
           "excursion_confirm_minutes_door_closed",
           "excursion_confirm_minutes_door_open",
           "max_excursion_minutes",
+          "offline_warning_missed_checkins",
+          "offline_critical_missed_checkins",
+          "manual_log_missed_checkins_threshold",
         ];
         fields.forEach((f) => {
           if (oldRules[f] !== null && oldRules[f] !== undefined) {
@@ -289,6 +317,10 @@ export function AlertRulesEditor({
       setExcursionConfirmMinutesDoorClosed("");
       setExcursionConfirmMinutesDoorOpen("");
       setMaxExcursionMinutes("");
+      // New fields
+      setOfflineWarningMissedCheckins("");
+      setOfflineCriticalMissedCheckins("");
+      setManualLogMissedCheckinsThreshold("");
       
       toast.success("Reset to defaults");
       onSave?.();
@@ -420,44 +452,43 @@ export function AlertRulesEditor({
 
         <Separator />
 
-        {/* Offline/Heartbeat Section */}
+        {/* Offline/Heartbeat Section - Missed Check-ins */}
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Wifi className="w-4 h-4 text-warning" />
-            Sensor Offline (Warning)
+            Sensor Offline Thresholds
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <FieldWithSource
-              label="Expected Reading Interval"
-              field="expected_reading_interval_seconds"
-              value={expectedReadingIntervalSeconds}
-              onChange={setExpectedReadingIntervalSeconds}
-              parentValue={parentRules?.expected_reading_interval_seconds}
-              defaultValue={DEFAULT_ALERT_RULES.expected_reading_interval_seconds}
-              unit="seconds"
+              label="Offline Warning After"
+              field="offline_warning_missed_checkins"
+              value={offlineWarningMissedCheckins}
+              onChange={setOfflineWarningMissedCheckins}
+              parentValue={parentRules?.offline_warning_missed_checkins}
+              defaultValue={DEFAULT_ALERT_RULES.offline_warning_missed_checkins}
+              unit="missed"
             />
             <FieldWithSource
-              label="Offline Multiplier"
-              field="offline_trigger_multiplier"
-              value={offlineTriggerMultiplier}
-              onChange={setOfflineTriggerMultiplier}
-              parentValue={parentRules?.offline_trigger_multiplier}
-              defaultValue={DEFAULT_ALERT_RULES.offline_trigger_multiplier}
-              unit="x"
-              step="0.5"
+              label="Offline Critical After"
+              field="offline_critical_missed_checkins"
+              value={offlineCriticalMissedCheckins}
+              onChange={setOfflineCriticalMissedCheckins}
+              parentValue={parentRules?.offline_critical_missed_checkins}
+              defaultValue={DEFAULT_ALERT_RULES.offline_critical_missed_checkins}
+              unit="missed"
             />
             <FieldWithSource
-              label="Additional Buffer"
-              field="offline_trigger_additional_minutes"
-              value={offlineTriggerAdditionalMinutes}
-              onChange={setOfflineTriggerAdditionalMinutes}
-              parentValue={parentRules?.offline_trigger_additional_minutes}
-              defaultValue={DEFAULT_ALERT_RULES.offline_trigger_additional_minutes}
-              unit="minutes"
+              label="Manual Log Required After"
+              field="manual_log_missed_checkins_threshold"
+              value={manualLogMissedCheckinsThreshold}
+              onChange={setManualLogMissedCheckinsThreshold}
+              parentValue={parentRules?.manual_log_missed_checkins_threshold}
+              defaultValue={DEFAULT_ALERT_RULES.manual_log_missed_checkins_threshold}
+              unit="missed"
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            Offline triggers after: (interval × multiplier) + buffer
+            Number of missed check-ins before triggering offline alerts. Manual logging only required when check-in threshold is met AND 4 hours since last reading.
           </p>
         </div>
 

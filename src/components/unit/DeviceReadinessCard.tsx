@@ -32,6 +32,10 @@ interface DeviceReadinessProps {
   doorLastChangedAt?: string | null;
   // Battery forecast
   batteryEstimatedDays?: number | null;
+  // Missed check-ins tracking
+  missedCheckins?: number;
+  lastCheckinAt?: string | null;
+  offlineSeverity?: "none" | "warning" | "critical";
 }
 
 const DeviceReadinessCard = ({
@@ -45,6 +49,9 @@ const DeviceReadinessCard = ({
   doorState,
   doorLastChangedAt,
   batteryEstimatedDays,
+  missedCheckins = 0,
+  lastCheckinAt,
+  offlineSeverity = "none",
 }: DeviceReadinessProps) => {
   // Use the unified sensor installation status
   const installationStatus = computeSensorInstallationStatus(device || null, lastReadingAt);

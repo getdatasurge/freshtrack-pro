@@ -26,9 +26,12 @@ export type Database = {
           id: string
           manual_grace_minutes: number | null
           manual_interval_minutes: number | null
+          manual_log_missed_checkins_threshold: number | null
           max_excursion_minutes: number | null
+          offline_critical_missed_checkins: number | null
           offline_trigger_additional_minutes: number | null
           offline_trigger_multiplier: number | null
+          offline_warning_missed_checkins: number | null
           organization_id: string | null
           site_id: string | null
           unit_id: string | null
@@ -45,9 +48,12 @@ export type Database = {
           id?: string
           manual_grace_minutes?: number | null
           manual_interval_minutes?: number | null
+          manual_log_missed_checkins_threshold?: number | null
           max_excursion_minutes?: number | null
+          offline_critical_missed_checkins?: number | null
           offline_trigger_additional_minutes?: number | null
           offline_trigger_multiplier?: number | null
+          offline_warning_missed_checkins?: number | null
           organization_id?: string | null
           site_id?: string | null
           unit_id?: string | null
@@ -64,9 +70,12 @@ export type Database = {
           id?: string
           manual_grace_minutes?: number | null
           manual_interval_minutes?: number | null
+          manual_log_missed_checkins_threshold?: number | null
           max_excursion_minutes?: number | null
+          offline_critical_missed_checkins?: number | null
           offline_trigger_additional_minutes?: number | null
           offline_trigger_multiplier?: number | null
+          offline_warning_missed_checkins?: number | null
           organization_id?: string | null
           site_id?: string | null
           unit_id?: string | null
@@ -1631,6 +1640,7 @@ export type Database = {
       units: {
         Row: {
           area_id: string
+          checkin_interval_minutes: number | null
           confirm_time_door_closed: number
           confirm_time_door_open: number
           consecutive_checkins: number | null
@@ -1664,6 +1674,7 @@ export type Database = {
         }
         Insert: {
           area_id: string
+          checkin_interval_minutes?: number | null
           confirm_time_door_closed?: number
           confirm_time_door_open?: number
           consecutive_checkins?: number | null
@@ -1697,6 +1708,7 @@ export type Database = {
         }
         Update: {
           area_id?: string
+          checkin_interval_minutes?: number | null
           confirm_time_door_closed?: number
           confirm_time_door_open?: number
           consecutive_checkins?: number | null

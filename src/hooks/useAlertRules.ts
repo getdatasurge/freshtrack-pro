@@ -13,6 +13,10 @@ export interface AlertRules {
   excursion_confirm_minutes_door_closed: number;
   excursion_confirm_minutes_door_open: number;
   max_excursion_minutes: number;
+  // New missed check-in thresholds (org-level)
+  offline_warning_missed_checkins: number;
+  offline_critical_missed_checkins: number;
+  manual_log_missed_checkins_threshold: number;
   source_unit: boolean;
   source_site: boolean;
   source_org: boolean;
@@ -34,26 +38,58 @@ export interface AlertRulesRow {
   excursion_confirm_minutes_door_closed: number | null;
   excursion_confirm_minutes_door_open: number | null;
   max_excursion_minutes: number | null;
+  // New missed check-in thresholds
+  offline_warning_missed_checkins: number | null;
+  offline_critical_missed_checkins: number | null;
+  manual_log_missed_checkins_threshold: number | null;
 }
 
 // Default values when no rules are configured
-// Using 5-minute check-in cadence with "miss 2" offline threshold
+// Using 5-minute check-in cadence with missed check-in thresholds
 export const DEFAULT_ALERT_RULES: AlertRules = {
   manual_interval_minutes: 240, // 4 hours (Standard mode)
   manual_grace_minutes: 0,
   expected_reading_interval_seconds: 300, // 5 minutes
-  offline_trigger_multiplier: 2.0,         // Miss 2 check-ins
-  offline_trigger_additional_minutes: 1,   // 1 minute buffer = 11 min total
+  offline_trigger_multiplier: 2.0,         // Legacy - kept for backward compatibility
+  offline_trigger_additional_minutes: 1,   // Legacy - kept for backward compatibility
   door_open_warning_minutes: 3,
   door_open_critical_minutes: 10,
   door_open_max_mask_minutes_per_day: 60,
   excursion_confirm_minutes_door_closed: 10,
   excursion_confirm_minutes_door_open: 20,
   max_excursion_minutes: 60,
+  // New missed check-in thresholds
+  offline_warning_missed_checkins: 1,      // Offline warning after 1 missed check-in
+  offline_critical_missed_checkins: 5,     // Offline critical after 5 missed check-ins
+  manual_log_missed_checkins_threshold: 5, // Manual logging required after 5 missed check-ins
   source_unit: false,
   source_site: false,
   source_org: false,
 };
+
+/**
+ * Compute missed check-ins based on last check-in time and interval
+ */
+export function computeMissedCheckins(lastCheckinAt: string | null, intervalMinutes: number): number {
+  if (!lastCheckinAt) return 0;
+  const elapsed = Date.now() - new Date(lastCheckinAt).getTime();
+  const intervalMs = intervalMinutes * 60 * 1000;
+  // Add 30-second buffer to avoid flapping
+  const bufferedElapsed = Math.max(0, elapsed - 30000);
+  return Math.max(0, Math.floor(bufferedElapsed / intervalMs) - 1);
+}
+
+/**
+ * Compute offline severity based on missed check-ins and thresholds
+ */
+export function computeOfflineSeverity(
+  missedCheckins: number, 
+  rules: AlertRules
+): "none" | "warning" | "critical" {
+  if (missedCheckins >= rules.offline_critical_missed_checkins) return "critical";
+  if (missedCheckins >= rules.offline_warning_missed_checkins) return "warning";
+  return "none";
+}
 
 /**
  * Compute offline trigger in milliseconds based on rules
