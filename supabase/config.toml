@@ -16,7 +16,7 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.sensor-simulator]
-verify_jwt = true
+verify_jwt = false
 
 [functions.check-missed-logs]
 verify_jwt = false
