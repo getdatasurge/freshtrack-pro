@@ -5,11 +5,63 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+type SimulatorAction = 
+  | "pair_sensor"
+  | "unpair_sensor"
+  | "set_online"
+  | "set_offline"
+  | "update_telemetry"
+  | "set_door_state"
+  | "inject"
+  | "start_streaming"
+  | "stop_streaming"
+  | "reset"
+  | "start" // Legacy - maps to pair + online + inject batch
+  | "stop"; // Legacy - maps to set_offline
+
 interface SimulatorRequest {
-  action: "start" | "stop" | "inject";
+  action: SimulatorAction;
   unit_id: string;
-  temperature?: number; // For inject action
-  interval_seconds?: number; // For start action, default 60
+  // For inject/streaming
+  temperature?: number;
+  humidity?: number;
+  // Telemetry
+  battery_level?: number;
+  signal_strength?: number;
+  // Door
+  door_state?: "open" | "closed";
+  door_sensor_present?: boolean;
+  // Streaming
+  interval_seconds?: number;
+  // Door cycle
+  door_cycle_enabled?: boolean;
+  door_cycle_open_seconds?: number;
+  door_cycle_closed_seconds?: number;
+}
+
+interface SimulatedDeviceConfig {
+  id: string;
+  unit_id: string;
+  organization_id: string;
+  device_id: string | null;
+  is_active: boolean;
+  sensor_paired: boolean;
+  sensor_online: boolean;
+  door_sensor_present: boolean;
+  battery_level: number;
+  signal_strength: number;
+  current_temperature: number;
+  current_humidity: number;
+  door_state: string;
+  door_open_since: string | null;
+  streaming_enabled: boolean;
+  streaming_interval_seconds: number;
+  last_heartbeat_at: string | null;
+  next_reading_at: string | null;
+  door_cycle_enabled: boolean;
+  door_cycle_open_seconds: number;
+  door_cycle_closed_seconds: number;
+  door_cycle_next_change_at: string | null;
 }
 
 Deno.serve(async (req) => {
@@ -22,7 +74,7 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // Auth check - get user from Authorization header if provided
+    // Auth check
     const authHeader = req.headers.get("Authorization");
     let userId: string | null = null;
     let organizationId: string | null = null;
@@ -37,7 +89,6 @@ Deno.serve(async (req) => {
       if (user) {
         userId = user.id;
 
-        // Get org and check role
         const { data: profile } = await supabase
           .from("profiles")
           .select("organization_id")
@@ -65,15 +116,15 @@ Deno.serve(async (req) => {
     }
 
     const body: SimulatorRequest = await req.json();
-    const { action, unit_id, temperature, interval_seconds = 60 } = body;
+    const { action, unit_id } = body;
 
-    console.log(`Sensor simulator: ${action} for unit ${unit_id}${temperature !== undefined ? ` at ${temperature}°F` : ""}`);
+    console.log(`[sensor-simulator] Action: ${action} for unit ${unit_id}`);
 
     // Get unit details
     const { data: unit, error: unitError } = await supabase
       .from("units")
       .select(`
-        id, name, unit_type, temp_limit_high, temp_limit_low,
+        id, name, unit_type, temp_limit_high, temp_limit_low, door_state,
         area:areas!inner(site:sites!inner(organization_id))
       `)
       .eq("id", unit_id)
@@ -91,74 +142,416 @@ Deno.serve(async (req) => {
       organizationId = unitData.area.site.organization_id;
     }
 
+    // Get or create simulated device config
+    let { data: simConfig } = await supabase
+      .from("simulated_devices")
+      .select("*")
+      .eq("unit_id", unit_id)
+      .maybeSingle();
+
     let result: any = {};
 
     switch (action) {
-      case "inject": {
-        // Inject a single reading
-        const tempToInject = temperature ?? generateNormalTemp(unitData.temp_limit_high, unitData.temp_limit_low);
+      case "pair_sensor": {
+        const serialNumber = `SIM-${unit_id.slice(0, 8).toUpperCase()}`;
         
-        const { error: insertError } = await supabase.from("sensor_readings").insert({
+        // Create device record
+        const { data: device, error: deviceError } = await supabase
+          .from("devices")
+          .insert({
+            serial_number: serialNumber,
+            unit_id: unit_id,
+            status: "inactive",
+            transmit_interval: 60,
+          })
+          .select()
+          .single();
+
+        if (deviceError) {
+          // Device might already exist
+          const { data: existingDevice } = await supabase
+            .from("devices")
+            .select("*")
+            .eq("serial_number", serialNumber)
+            .maybeSingle();
+          
+          if (!existingDevice) throw deviceError;
+          result.device = existingDevice;
+        } else {
+          result.device = device;
+        }
+
+        // Create or update simulated_devices config
+        const configData = {
           unit_id,
-          temperature: tempToInject,
-          humidity: Math.floor(Math.random() * 30 + 40), // 40-70%
-          door_open: false,
-          battery_level: 85 + Math.floor(Math.random() * 15),
-          signal_strength: -50 - Math.floor(Math.random() * 30),
-          source: "simulator",
-        });
-
-        if (insertError) throw insertError;
-
-        // Update unit's last reading
-        await supabase.from("units").update({
-          last_temp_reading: tempToInject,
-          last_reading_at: new Date().toISOString(),
-        }).eq("id", unit_id);
-
-        result = { 
-          message: "Reading injected", 
-          temperature: tempToInject,
-          timestamp: new Date().toISOString(),
+          organization_id: organizationId!,
+          device_id: result.device.id,
+          is_active: true,
+          sensor_paired: true,
+          sensor_online: false,
+          battery_level: body.battery_level ?? 100,
+          signal_strength: body.signal_strength ?? -50,
+          current_temperature: generateNormalTemp(unitData.temp_limit_high, unitData.temp_limit_low),
+          created_by: userId,
         };
 
-        // Log the simulation event
-        if (organizationId) {
-          await supabase.from("event_logs").insert({
-            organization_id: organizationId,
-            unit_id,
-            event_type: "sensor_simulation",
-            actor_id: userId,
-            actor_type: userId ? "user" : "system",
-            event_data: { action: "inject", temperature: tempToInject },
-          });
+        if (simConfig) {
+          await supabase
+            .from("simulated_devices")
+            .update({ ...configData, sensor_paired: true, device_id: result.device.id })
+            .eq("id", simConfig.id);
+        } else {
+          const { data: newConfig } = await supabase
+            .from("simulated_devices")
+            .insert(configData)
+            .select()
+            .single();
+          simConfig = newConfig;
         }
 
-        // Trigger process-unit-states to evaluate alerts
-        console.log("Triggering process-unit-states for alert evaluation...");
-        try {
-          const evalResult = await supabase.functions.invoke("process-unit-states");
-          console.log("process-unit-states result:", evalResult);
-          result.alertEvaluation = evalResult.data;
-        } catch (evalError) {
-          console.error("Error triggering process-unit-states:", evalError);
-          result.alertEvaluationError = String(evalError);
-        }
+        result.message = `Sensor paired with serial ${serialNumber}`;
+        result.serial_number = serialNumber;
+        
+        await logEvent(supabase, organizationId!, unit_id, userId, "pair_sensor", { serial_number: serialNumber });
         break;
       }
 
+      case "unpair_sensor": {
+        if (simConfig?.device_id) {
+          // Delete device
+          await supabase.from("devices").delete().eq("id", simConfig.device_id);
+        }
+        
+        // Delete simulated_devices config
+        if (simConfig) {
+          await supabase.from("simulated_devices").delete().eq("id", simConfig.id);
+        }
+
+        result.message = "Sensor unpaired - unit reset to 'Not Paired' state";
+        await logEvent(supabase, organizationId!, unit_id, userId, "unpair_sensor", {});
+        break;
+      }
+
+      case "set_online": {
+        if (!simConfig || !simConfig.sensor_paired) {
+          return new Response(
+            JSON.stringify({ error: "Sensor must be paired first" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const now = new Date().toISOString();
+        
+        // Update device as active
+        if (simConfig.device_id) {
+          await supabase.from("devices").update({
+            status: "active",
+            last_seen_at: now,
+          }).eq("id", simConfig.device_id);
+        }
+
+        // Update simulated config
+        await supabase.from("simulated_devices").update({
+          sensor_online: true,
+          last_heartbeat_at: now,
+        }).eq("id", simConfig.id);
+
+        // Inject initial reading to make unit appear online
+        await injectReading(supabase, simConfig as SimulatedDeviceConfig, unitData);
+
+        result.message = "Sensor online - heartbeat started";
+        await logEvent(supabase, organizationId!, unit_id, userId, "set_online", {});
+        
+        // Trigger alert evaluation
+        await triggerAlertEvaluation(supabase);
+        break;
+      }
+
+      case "set_offline": {
+        if (!simConfig) {
+          return new Response(
+            JSON.stringify({ error: "No simulation config found" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Update device as inactive
+        if (simConfig.device_id) {
+          await supabase.from("devices").update({
+            status: "inactive",
+          }).eq("id", simConfig.device_id);
+        }
+
+        // Update simulated config
+        await supabase.from("simulated_devices").update({
+          sensor_online: false,
+          streaming_enabled: false,
+        }).eq("id", simConfig.id);
+
+        // Set last reading to old time to trigger offline detection
+        const oldTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+        await supabase.from("units").update({
+          last_reading_at: oldTime,
+        }).eq("id", unit_id);
+
+        result.message = "Sensor offline - will trigger monitoring_interrupted alert";
+        await logEvent(supabase, organizationId!, unit_id, userId, "set_offline", {});
+        
+        await triggerAlertEvaluation(supabase);
+        break;
+      }
+
+      case "update_telemetry": {
+        if (!simConfig) {
+          return new Response(
+            JSON.stringify({ error: "No simulation config found" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const updates: Partial<SimulatedDeviceConfig> = {};
+        if (body.battery_level !== undefined) updates.battery_level = body.battery_level;
+        if (body.signal_strength !== undefined) updates.signal_strength = body.signal_strength;
+        if (body.door_sensor_present !== undefined) updates.door_sensor_present = body.door_sensor_present;
+
+        await supabase.from("simulated_devices").update(updates).eq("id", simConfig.id);
+
+        // If online, inject a reading with new telemetry
+        if (simConfig.sensor_online) {
+          const updatedConfig = { ...simConfig, ...updates } as SimulatedDeviceConfig;
+          await injectReading(supabase, updatedConfig, unitData);
+        }
+
+        result.message = "Telemetry updated";
+        result.updates = updates;
+        await logEvent(supabase, organizationId!, unit_id, userId, "update_telemetry", updates);
+        break;
+      }
+
+      case "set_door_state": {
+        if (!simConfig) {
+          return new Response(
+            JSON.stringify({ error: "No simulation config found" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const newDoorState = body.door_state || "closed";
+        const now = new Date().toISOString();
+        
+        const updates: any = {
+          door_state: newDoorState,
+          door_sensor_present: true,
+        };
+        
+        if (newDoorState === "open") {
+          updates.door_open_since = now;
+        } else {
+          updates.door_open_since = null;
+        }
+
+        await supabase.from("simulated_devices").update(updates).eq("id", simConfig.id);
+
+        // Inject reading with door state
+        if (simConfig.sensor_online || simConfig.sensor_paired) {
+          const updatedConfig = { ...simConfig, ...updates } as SimulatedDeviceConfig;
+          await injectReading(supabase, updatedConfig, unitData, true);
+        }
+
+        result.message = `Door set to ${newDoorState}`;
+        await logEvent(supabase, organizationId!, unit_id, userId, "set_door_state", { door_state: newDoorState });
+        
+        await triggerAlertEvaluation(supabase);
+        break;
+      }
+
+      case "inject": {
+        if (!simConfig) {
+          // Create a quick config for injection
+          const { data: newConfig } = await supabase
+            .from("simulated_devices")
+            .insert({
+              unit_id,
+              organization_id: organizationId!,
+              is_active: true,
+              sensor_paired: true,
+              sensor_online: true,
+              current_temperature: body.temperature ?? generateNormalTemp(unitData.temp_limit_high, unitData.temp_limit_low),
+              created_by: userId,
+            })
+            .select()
+            .single();
+          simConfig = newConfig;
+        }
+
+        // Update temperature if provided
+        if (body.temperature !== undefined) {
+          await supabase.from("simulated_devices").update({
+            current_temperature: body.temperature,
+          }).eq("id", simConfig.id);
+          simConfig.current_temperature = body.temperature;
+        }
+
+        if (body.humidity !== undefined) {
+          await supabase.from("simulated_devices").update({
+            current_humidity: body.humidity,
+          }).eq("id", simConfig.id);
+          simConfig.current_humidity = body.humidity;
+        }
+
+        await injectReading(supabase, simConfig as SimulatedDeviceConfig, unitData);
+
+        result.message = `Reading injected: ${simConfig.current_temperature}°F`;
+        result.temperature = simConfig.current_temperature;
+        await logEvent(supabase, organizationId!, unit_id, userId, "inject", { temperature: simConfig.current_temperature });
+        
+        await triggerAlertEvaluation(supabase);
+        break;
+      }
+
+      case "start_streaming": {
+        if (!simConfig || !simConfig.sensor_paired) {
+          return new Response(
+            JSON.stringify({ error: "Sensor must be paired first" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const interval = body.interval_seconds ?? 60;
+        const nextReading = new Date(Date.now() + interval * 1000).toISOString();
+
+        await supabase.from("simulated_devices").update({
+          streaming_enabled: true,
+          streaming_interval_seconds: interval,
+          sensor_online: true,
+          next_reading_at: nextReading,
+        }).eq("id", simConfig.id);
+
+        // Set device online
+        if (simConfig.device_id) {
+          await supabase.from("devices").update({
+            status: "active",
+            last_seen_at: new Date().toISOString(),
+          }).eq("id", simConfig.device_id);
+        }
+
+        // Inject first reading immediately
+        await injectReading(supabase, { ...simConfig, streaming_enabled: true, sensor_online: true } as SimulatedDeviceConfig, unitData);
+
+        result.message = `Streaming started - readings every ${interval}s`;
+        result.interval_seconds = interval;
+        await logEvent(supabase, organizationId!, unit_id, userId, "start_streaming", { interval_seconds: interval });
+        break;
+      }
+
+      case "stop_streaming": {
+        if (!simConfig) {
+          return new Response(
+            JSON.stringify({ error: "No simulation config found" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        await supabase.from("simulated_devices").update({
+          streaming_enabled: false,
+          next_reading_at: null,
+        }).eq("id", simConfig.id);
+
+        result.message = "Streaming stopped";
+        await logEvent(supabase, organizationId!, unit_id, userId, "stop_streaming", {});
+        break;
+      }
+
+      case "reset": {
+        // Full reset - remove all simulation data
+        if (simConfig?.device_id) {
+          await supabase.from("devices").delete().eq("id", simConfig.device_id);
+        }
+        if (simConfig) {
+          await supabase.from("simulated_devices").delete().eq("id", simConfig.id);
+        }
+
+        // Clear unit's simulated readings
+        await supabase.from("units").update({
+          last_reading_at: null,
+          last_temp_reading: null,
+          door_state: "unknown",
+        }).eq("id", unit_id);
+
+        result.message = "Simulation reset - unit returned to 'Not Paired' state";
+        await logEvent(supabase, organizationId!, unit_id, userId, "reset", {});
+        
+        await triggerAlertEvaluation(supabase);
+        break;
+      }
+
+      // Legacy actions for backwards compatibility
       case "start": {
-        // Inject multiple readings over time (simulated batch)
+        // Pair + set online + inject batch of readings
+        const serialNumber = `SIM-${unit_id.slice(0, 8).toUpperCase()}`;
+        
+        // Create or get device
+        let deviceId: string | null = null;
+        const { data: existingDevice } = await supabase
+          .from("devices")
+          .select("id")
+          .eq("serial_number", serialNumber)
+          .maybeSingle();
+
+        if (existingDevice) {
+          deviceId = existingDevice.id;
+        } else {
+          const { data: newDevice } = await supabase
+            .from("devices")
+            .insert({
+              serial_number: serialNumber,
+              unit_id,
+              status: "active",
+              transmit_interval: 60,
+              last_seen_at: new Date().toISOString(),
+            })
+            .select()
+            .single();
+          deviceId = newDevice?.id;
+        }
+
+        // Create or update config
+        const configData = {
+          unit_id,
+          organization_id: organizationId!,
+          device_id: deviceId,
+          is_active: true,
+          sensor_paired: true,
+          sensor_online: true,
+          streaming_enabled: false,
+          created_by: userId,
+        };
+
+        if (simConfig) {
+          await supabase.from("simulated_devices").update(configData).eq("id", simConfig.id);
+          simConfig = { ...simConfig, ...configData };
+        } else {
+          const { data: newConfig } = await supabase
+            .from("simulated_devices")
+            .insert(configData)
+            .select()
+            .single();
+          simConfig = newConfig;
+        }
+
+        // Inject batch of readings
         const readings = [];
         const now = Date.now();
+        const intervalSeconds = body.interval_seconds ?? 60;
         
         for (let i = 0; i < 5; i++) {
-          const tempToInject = generateNormalTemp(unitData.temp_limit_high, unitData.temp_limit_low);
-          const timestamp = new Date(now - (4 - i) * interval_seconds * 1000);
+          const temp = generateNormalTemp(unitData.temp_limit_high, unitData.temp_limit_low);
+          const timestamp = new Date(now - (4 - i) * intervalSeconds * 1000);
           
           readings.push({
             unit_id,
-            temperature: tempToInject,
+            device_id: deviceId,
+            temperature: temp,
             humidity: Math.floor(Math.random() * 30 + 40),
             door_open: false,
             battery_level: 85 + Math.floor(Math.random() * 15),
@@ -169,8 +562,7 @@ Deno.serve(async (req) => {
           });
         }
 
-        const { error: insertError } = await supabase.from("sensor_readings").insert(readings);
-        if (insertError) throw insertError;
+        await supabase.from("sensor_readings").insert(readings);
 
         const lastTemp = readings[readings.length - 1].temperature;
         await supabase.from("units").update({
@@ -183,74 +575,62 @@ Deno.serve(async (req) => {
           message: "Simulation started - 5 readings injected", 
           readings: readings.length,
           last_temperature: lastTemp,
+          serial_number: serialNumber,
         };
 
-        if (organizationId) {
-          await supabase.from("event_logs").insert({
-            organization_id: organizationId,
-            unit_id,
-            event_type: "sensor_simulation",
-            actor_id: userId,
-            actor_type: userId ? "user" : "system",
-            event_data: { action: "start", readings_count: readings.length },
-          });
-        }
-
-        // Trigger process-unit-states
-        try {
-          await supabase.functions.invoke("process-unit-states");
-        } catch (evalError) {
-          console.error("Error triggering process-unit-states:", evalError);
-        }
+        await logEvent(supabase, organizationId!, unit_id, userId, "start", { readings_count: readings.length });
+        await triggerAlertEvaluation(supabase);
         break;
       }
 
       case "stop": {
-        // Mark unit as not having recent data by setting last_reading_at to old time
-        const oldTime = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes ago
-        
+        // Legacy stop - set offline
+        if (simConfig) {
+          await supabase.from("simulated_devices").update({
+            sensor_online: false,
+            streaming_enabled: false,
+          }).eq("id", simConfig.id);
+
+          if (simConfig.device_id) {
+            await supabase.from("devices").update({ status: "inactive" }).eq("id", simConfig.device_id);
+          }
+        }
+
+        const oldTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
         await supabase.from("units").update({
-          last_reading_at: oldTime.toISOString(),
+          last_reading_at: oldTime,
         }).eq("id", unit_id);
 
         result = { 
           message: "Simulation stopped - data gap will be detected",
-          last_reading_at: oldTime.toISOString(),
+          last_reading_at: oldTime,
         };
 
-        if (organizationId) {
-          await supabase.from("event_logs").insert({
-            organization_id: organizationId,
-            unit_id,
-            event_type: "sensor_simulation",
-            actor_id: userId,
-            actor_type: userId ? "user" : "system",
-            event_data: { action: "stop" },
-          });
-        }
-
-        // Trigger process-unit-states
-        try {
-          await supabase.functions.invoke("process-unit-states");
-        } catch (evalError) {
-          console.error("Error triggering process-unit-states:", evalError);
-        }
+        await logEvent(supabase, organizationId!, unit_id, userId, "stop", {});
+        await triggerAlertEvaluation(supabase);
         break;
       }
 
       default:
         return new Response(
-          JSON.stringify({ error: "Invalid action. Use: start, stop, or inject" }),
+          JSON.stringify({ error: `Invalid action: ${action}` }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
     }
 
+    // Fetch updated config to return
+    const { data: finalConfig } = await supabase
+      .from("simulated_devices")
+      .select("*")
+      .eq("unit_id", unit_id)
+      .maybeSingle();
+
     return new Response(
-      JSON.stringify({ success: true, ...result }),
+      JSON.stringify({ success: true, ...result, config: finalConfig }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: any) {
-    console.error("Error in sensor-simulator:", error);
+    console.error("[sensor-simulator] Error:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -258,16 +638,118 @@ Deno.serve(async (req) => {
   }
 });
 
+async function injectReading(
+  supabase: any, 
+  config: SimulatedDeviceConfig, 
+  unitData: any,
+  forceDoorUpdate = false
+): Promise<void> {
+  const now = new Date().toISOString();
+  
+  // Look up device serial if we have device_id
+  let deviceSerial: string | null = null;
+  if (config.device_id) {
+    const { data: device } = await supabase
+      .from("devices")
+      .select("serial_number")
+      .eq("id", config.device_id)
+      .maybeSingle();
+    deviceSerial = device?.serial_number;
+  }
+
+  // Insert reading via direct insert (same as ingest-readings does)
+  const reading = {
+    unit_id: config.unit_id,
+    device_id: config.device_id,
+    temperature: config.current_temperature,
+    humidity: config.current_humidity,
+    battery_level: config.battery_level,
+    signal_strength: config.signal_strength,
+    door_open: config.door_sensor_present ? config.door_state === "open" : null,
+    source: "simulator",
+    recorded_at: now,
+    received_at: now,
+  };
+
+  await supabase.from("sensor_readings").insert(reading);
+
+  // Update unit
+  const unitUpdate: any = {
+    last_temp_reading: config.current_temperature,
+    last_reading_at: now,
+  };
+
+  if (config.door_sensor_present || forceDoorUpdate) {
+    unitUpdate.door_state = config.door_state;
+    unitUpdate.door_last_changed_at = now;
+  }
+
+  await supabase.from("units").update(unitUpdate).eq("id", config.unit_id);
+
+  // Update device last seen
+  if (config.device_id) {
+    await supabase.from("devices").update({
+      last_seen_at: now,
+      battery_level: config.battery_level,
+      status: "active",
+    }).eq("id", config.device_id);
+  }
+
+  // Update heartbeat in simulated config
+  await supabase.from("simulated_devices").update({
+    last_heartbeat_at: now,
+  }).eq("id", config.id);
+
+  // Insert door event if door state changed
+  if (config.door_sensor_present) {
+    const currentDoorState = unitData.door_state || "unknown";
+    if (config.door_state !== currentDoorState) {
+      await supabase.from("door_events").insert({
+        unit_id: config.unit_id,
+        state: config.door_state,
+        occurred_at: now,
+        source: "simulator",
+        metadata: { temperature: config.current_temperature, simulated: true },
+      });
+    }
+  }
+
+  console.log(`[sensor-simulator] Injected reading: unit=${config.unit_id}, temp=${config.current_temperature}°F, door=${config.door_state}`);
+}
+
+async function logEvent(
+  supabase: any,
+  orgId: string,
+  unitId: string,
+  userId: string | null,
+  action: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  await supabase.from("event_logs").insert({
+    organization_id: orgId,
+    unit_id: unitId,
+    event_type: "sensor_simulation",
+    actor_id: userId,
+    actor_type: userId ? "user" : "system",
+    event_data: { action, ...data, simulated: true },
+  });
+}
+
+async function triggerAlertEvaluation(supabase: any): Promise<void> {
+  try {
+    console.log("[sensor-simulator] Triggering process-unit-states...");
+    await supabase.functions.invoke("process-unit-states");
+  } catch (error) {
+    console.error("[sensor-simulator] Error triggering alert evaluation:", error);
+  }
+}
+
 function generateNormalTemp(highLimit: number, lowLimit: number | null): number {
-  // Generate a temperature that's typically in range
-  // Fridges: aim for 35-38°F, Freezers: aim for -5 to 0°F
   const isFreeze = lowLimit !== null && lowLimit < 10;
   
   if (isFreeze) {
-    // Freezer: target -5 to -2
     return Math.round((-5 + Math.random() * 3) * 10) / 10;
   } else {
-    // Fridge: target 35-38
     return Math.round((35 + Math.random() * 3) * 10) / 10;
   }
 }

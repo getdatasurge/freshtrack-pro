@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.ingest-readings]
 verify_jwt = false
+
+[functions.run-simulator-heartbeats]
+verify_jwt = false
