@@ -10,7 +10,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { format, subDays } from "date-fns";
+import { format as format_, subDays } from "date-fns";
 import { 
   Download, 
   FileText, 
@@ -130,7 +130,7 @@ const Reports = () => {
     }
   };
 
-  const handleExport = async (reportType: "daily" | "exceptions" | "manual" | "compliance") => {
+  const handleExport = async (reportType: "daily" | "exceptions" | "manual" | "compliance", format: "csv" | "pdf" = "csv") => {
     if (!dateRange.from || !dateRange.to) {
       toast({
         title: "Date range required",
@@ -149,9 +149,10 @@ const Reports = () => {
       }
 
       const requestBody: Record<string, unknown> = {
-        start_date: format(dateRange.from, "yyyy-MM-dd"),
-        end_date: format(dateRange.to, "yyyy-MM-dd"),
+        start_date: format_(dateRange.from, "yyyy-MM-dd"),
+        end_date: format_(dateRange.to, "yyyy-MM-dd"),
         report_type: reportType,
+        format,
       };
 
       if (selectedUnit !== "all") {
@@ -168,12 +169,14 @@ const Reports = () => {
         throw new Error(response.error.message);
       }
 
-      // Download the CSV
-      const blob = new Blob([response.data], { type: "text/csv" });
+      // Download the file
+      const contentType = format === "pdf" ? "text/html" : "text/csv";
+      const extension = format === "pdf" ? "html" : "csv";
+      const blob = new Blob([response.data], { type: contentType });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${reportType}-report-${format(dateRange.from, "yyyy-MM-dd")}-to-${format(dateRange.to, "yyyy-MM-dd")}.csv`;
+      a.download = `${reportType}-report-${format_(dateRange.from, "yyyy-MM-dd")}-to-${format_(dateRange.to, "yyyy-MM-dd")}.${extension}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -181,7 +184,7 @@ const Reports = () => {
 
       toast({
         title: "Export complete",
-        description: `${reportType.charAt(0).toUpperCase() + reportType.slice(1)} report downloaded.`,
+        description: `${reportType.charAt(0).toUpperCase() + reportType.slice(1)} report downloaded as ${format.toUpperCase()}.`,
       });
     } catch (error) {
       console.error("Export error:", error);
@@ -287,7 +290,7 @@ const Reports = () => {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateRange.from ? format(dateRange.from, "MMM d, yyyy") : "Select date"}
+                    {dateRange.from ? format_(dateRange.from, "MMM d, yyyy") : "Select date"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -314,7 +317,7 @@ const Reports = () => {
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateRange.to ? format(dateRange.to, "MMM d, yyyy") : "Select date"}
+                    {dateRange.to ? format_(dateRange.to, "MMM d, yyyy") : "Select date"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -344,7 +347,7 @@ const Reports = () => {
             )}
             {dateRange.from && dateRange.to && (
               <Badge variant="outline">
-                {format(dateRange.from, "MMM d")} - {format(dateRange.to, "MMM d, yyyy")}
+                {format_(dateRange.from, "MMM d")} - {format_(dateRange.to, "MMM d, yyyy")}
               </Badge>
             )}
           </div>
@@ -409,23 +412,41 @@ const Reports = () => {
                       <span>All sites and units included</span>
                     )}
                   </div>
-                  <Button
-                    onClick={() => handleExport(report.id as "daily" | "exceptions" | "manual" | "compliance")}
-                    disabled={isExporting || !dateRange.from || !dateRange.to}
-                    className="w-full sm:w-auto"
-                  >
-                    {isExporting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Exporting...
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4 mr-2" />
-                        Export CSV
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => handleExport(report.id as "daily" | "exceptions" | "manual" | "compliance", "csv")}
+                      disabled={isExporting || !dateRange.from || !dateRange.to}
+                      variant="outline"
+                    >
+                      {isExporting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Exporting...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4 mr-2" />
+                          CSV
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={() => handleExport(report.id as "daily" | "exceptions" | "manual" | "compliance", "pdf")}
+                      disabled={isExporting || !dateRange.from || !dateRange.to}
+                    >
+                      {isExporting ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Exporting...
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="w-4 h-4 mr-2" />
+                          PDF
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

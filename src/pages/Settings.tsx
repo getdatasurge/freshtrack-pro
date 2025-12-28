@@ -31,11 +31,13 @@ import {
   Eye,
   Trash2,
   CreditCard,
-  AlertTriangle
+  AlertTriangle,
+  Code2
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
 import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
+import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
 import { useOrgAlertRules, AlertRulesRow } from "@/hooks/useAlertRules";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
@@ -374,7 +376,7 @@ const Settings = () => {
   return (
     <DashboardLayout title="Settings">
       <Tabs defaultValue={defaultTab} className="space-y-6">
-        <TabsList className="grid w-full max-w-2xl grid-cols-5">
+        <TabsList className={`grid w-full max-w-2xl ${canManageUsers ? 'grid-cols-6' : 'grid-cols-5'}`}>
           <TabsTrigger value="organization" className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <span className="hidden sm:inline">Organization</span>
@@ -395,6 +397,12 @@ const Settings = () => {
             <Users className="w-4 h-4" />
             <span className="hidden sm:inline">Users</span>
           </TabsTrigger>
+          {canManageUsers && (
+            <TabsTrigger value="developer" className="flex items-center gap-2">
+              <Code2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Developer</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Organization Tab */}
@@ -766,6 +774,13 @@ const Settings = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Developer Tab (Admin Only) */}
+        {canManageUsers && (
+          <TabsContent value="developer">
+            <SensorSimulatorPanel />
+          </TabsContent>
+        )}
       </Tabs>
     </DashboardLayout>
   );
