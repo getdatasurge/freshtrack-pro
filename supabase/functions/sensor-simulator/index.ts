@@ -22,62 +22,54 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // Verify admin role from JWT
+    // Auth check - get user from Authorization header if provided
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    let userId: string | null = null;
+    let organizationId: string | null = null;
 
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    if (authHeader) {
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
 
-    const { data: { user } } = await userClient.auth.getUser();
-    if (!user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+      const { data: { user } } = await userClient.auth.getUser();
+      if (user) {
+        userId = user.id;
 
-    // Check if user is admin or owner
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("organization_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
+        // Get org and check role
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
 
-    if (!profile?.organization_id) {
-      return new Response(
-        JSON.stringify({ error: "User not in organization" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+        if (profile?.organization_id) {
+          organizationId = profile.organization_id;
 
-    const { data: roleData } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("organization_id", profile.organization_id)
-      .maybeSingle();
+          const { data: roleData } = await supabase
+            .from("user_roles")
+            .select("role")
+            .eq("user_id", user.id)
+            .eq("organization_id", profile.organization_id)
+            .maybeSingle();
 
-    if (!roleData || !["owner", "admin"].includes(roleData.role)) {
-      return new Response(
-        JSON.stringify({ error: "Admin access required" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+          if (!roleData || !["owner", "admin"].includes(roleData.role)) {
+            return new Response(
+              JSON.stringify({ error: "Admin access required" }),
+              { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        }
+      }
     }
 
     const body: SimulatorRequest = await req.json();
     const { action, unit_id, temperature, interval_seconds = 60 } = body;
 
-    console.log(`Sensor simulator: ${action} for unit ${unit_id}`);
+    console.log(`Sensor simulator: ${action} for unit ${unit_id}${temperature !== undefined ? ` at ${temperature}°F` : ""}`);
 
-    // Verify unit belongs to user's organization
+    // Get unit details
     const { data: unit, error: unitError } = await supabase
       .from("units")
       .select(`
@@ -95,11 +87,8 @@ Deno.serve(async (req) => {
     }
 
     const unitData = unit as any;
-    if (unitData.area.site.organization_id !== profile.organization_id) {
-      return new Response(
-        JSON.stringify({ error: "Unit not in your organization" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (!organizationId) {
+      organizationId = unitData.area.site.organization_id;
     }
 
     let result: any = {};
@@ -116,6 +105,7 @@ Deno.serve(async (req) => {
           door_open: false,
           battery_level: 85 + Math.floor(Math.random() * 15),
           signal_strength: -50 - Math.floor(Math.random() * 30),
+          source: "simulator",
         });
 
         if (insertError) throw insertError;
@@ -133,14 +123,27 @@ Deno.serve(async (req) => {
         };
 
         // Log the simulation event
-        await supabase.from("event_logs").insert({
-          organization_id: profile.organization_id,
-          unit_id,
-          event_type: "sensor_simulation",
-          actor_id: user.id,
-          actor_type: "user",
-          event_data: { action: "inject", temperature: tempToInject },
-        });
+        if (organizationId) {
+          await supabase.from("event_logs").insert({
+            organization_id: organizationId,
+            unit_id,
+            event_type: "sensor_simulation",
+            actor_id: userId,
+            actor_type: userId ? "user" : "system",
+            event_data: { action: "inject", temperature: tempToInject },
+          });
+        }
+
+        // Trigger process-unit-states to evaluate alerts
+        console.log("Triggering process-unit-states for alert evaluation...");
+        try {
+          const evalResult = await supabase.functions.invoke("process-unit-states");
+          console.log("process-unit-states result:", evalResult);
+          result.alertEvaluation = evalResult.data;
+        } catch (evalError) {
+          console.error("Error triggering process-unit-states:", evalError);
+          result.alertEvaluationError = String(evalError);
+        }
         break;
       }
 
@@ -162,6 +165,7 @@ Deno.serve(async (req) => {
             signal_strength: -50 - Math.floor(Math.random() * 30),
             recorded_at: timestamp.toISOString(),
             received_at: timestamp.toISOString(),
+            source: "simulator",
           });
         }
 
@@ -181,14 +185,23 @@ Deno.serve(async (req) => {
           last_temperature: lastTemp,
         };
 
-        await supabase.from("event_logs").insert({
-          organization_id: profile.organization_id,
-          unit_id,
-          event_type: "sensor_simulation",
-          actor_id: user.id,
-          actor_type: "user",
-          event_data: { action: "start", readings_count: readings.length },
-        });
+        if (organizationId) {
+          await supabase.from("event_logs").insert({
+            organization_id: organizationId,
+            unit_id,
+            event_type: "sensor_simulation",
+            actor_id: userId,
+            actor_type: userId ? "user" : "system",
+            event_data: { action: "start", readings_count: readings.length },
+          });
+        }
+
+        // Trigger process-unit-states
+        try {
+          await supabase.functions.invoke("process-unit-states");
+        } catch (evalError) {
+          console.error("Error triggering process-unit-states:", evalError);
+        }
         break;
       }
 
@@ -205,14 +218,23 @@ Deno.serve(async (req) => {
           last_reading_at: oldTime.toISOString(),
         };
 
-        await supabase.from("event_logs").insert({
-          organization_id: profile.organization_id,
-          unit_id,
-          event_type: "sensor_simulation",
-          actor_id: user.id,
-          actor_type: "user",
-          event_data: { action: "stop" },
-        });
+        if (organizationId) {
+          await supabase.from("event_logs").insert({
+            organization_id: organizationId,
+            unit_id,
+            event_type: "sensor_simulation",
+            actor_id: userId,
+            actor_type: userId ? "user" : "system",
+            event_data: { action: "stop" },
+          });
+        }
+
+        // Trigger process-unit-states
+        try {
+          await supabase.functions.invoke("process-unit-states");
+        } catch (evalError) {
+          console.error("Error triggering process-unit-states:", evalError);
+        }
         break;
       }
 

@@ -177,6 +177,7 @@ export type Database = {
           escalation_level: number
           id: string
           message: string | null
+          metadata: Json | null
           next_escalation_at: string | null
           resolved_at: string | null
           resolved_by: string | null
@@ -197,6 +198,7 @@ export type Database = {
           escalation_level?: number
           id?: string
           message?: string | null
+          metadata?: Json | null
           next_escalation_at?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
@@ -217,6 +219,7 @@ export type Database = {
           escalation_level?: number
           id?: string
           message?: string | null
+          metadata?: Json | null
           next_escalation_at?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
@@ -1541,6 +1544,7 @@ export type Database = {
         | "door_open"
         | "calibration_due"
         | "suspected_cooling_failure"
+        | "temp_excursion"
       app_role: "owner" | "admin" | "manager" | "staff" | "viewer" | "inspector"
       compliance_mode: "standard" | "haccp"
       device_status: "active" | "inactive" | "pairing" | "fault" | "low_battery"
@@ -1712,6 +1716,7 @@ export const Constants = {
         "door_open",
         "calibration_due",
         "suspected_cooling_failure",
+        "temp_excursion",
       ],
       app_role: ["owner", "admin", "manager", "staff", "viewer", "inspector"],
       compliance_mode: ["standard", "haccp"],

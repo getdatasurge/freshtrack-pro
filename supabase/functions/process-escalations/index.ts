@@ -105,10 +105,12 @@ function generateAlertEmailHtml(
     missed_manual_entry: 'Manual Logging Overdue',
     monitoring_interrupted: 'Sensor Offline',
     alarm_active: 'Temperature Alarm',
+    temp_excursion: 'Temperature Excursion',
     low_battery: 'Low Battery Warning',
     sensor_fault: 'Sensor Fault',
     door_open: 'Door Open Alert',
     calibration_due: 'Calibration Due',
+    suspected_cooling_failure: 'Suspected Cooling Failure',
   };
   
   const alertLabel = alertTypeLabels[alert.alert_type] || alert.alert_type;
