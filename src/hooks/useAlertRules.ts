@@ -37,12 +37,13 @@ export interface AlertRulesRow {
 }
 
 // Default values when no rules are configured
+// Using 5-minute check-in cadence with "miss 2" offline threshold
 export const DEFAULT_ALERT_RULES: AlertRules = {
   manual_interval_minutes: 240, // 4 hours (Standard mode)
   manual_grace_minutes: 0,
-  expected_reading_interval_seconds: 60,
-  offline_trigger_multiplier: 2.0,
-  offline_trigger_additional_minutes: 2,
+  expected_reading_interval_seconds: 300, // 5 minutes
+  offline_trigger_multiplier: 2.0,         // Miss 2 check-ins
+  offline_trigger_additional_minutes: 1,   // 1 minute buffer = 11 min total
   door_open_warning_minutes: 3,
   door_open_critical_minutes: 10,
   door_open_max_mask_minutes_per_day: 60,

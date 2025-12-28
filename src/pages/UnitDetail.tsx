@@ -214,7 +214,7 @@ const UnitDetail = () => {
       // Fetch device linked to this unit for installation status
       const { data: deviceData } = await supabase
         .from("devices")
-        .select("id, unit_id, last_seen_at, serial_number, battery_level, status")
+        .select("id, unit_id, last_seen_at, serial_number, battery_level, signal_strength, status")
         .eq("unit_id", unitId)
         .maybeSingle();
 
@@ -225,6 +225,7 @@ const UnitDetail = () => {
           last_seen_at: deviceData.last_seen_at,
           serial_number: deviceData.serial_number,
           battery_level: deviceData.battery_level,
+          signal_strength: deviceData.signal_strength,
           status: deviceData.status,
         });
       } else {
@@ -539,7 +540,7 @@ const UnitDetail = () => {
           lastReadingAt={unit.last_reading_at}
           device={device}
           batteryLevel={device?.battery_level}
-          signalStrength={null}
+          signalStrength={device?.signal_strength}
           lastHeartbeat={device?.last_seen_at}
           deviceSerial={device?.serial_number}
           doorState={(unit as any).door_state}

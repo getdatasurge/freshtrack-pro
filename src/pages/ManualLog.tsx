@@ -67,12 +67,13 @@ const ManualLog = () => {
         return;
       }
 
-      // Get units
+      // Get units including sensor reliability fields
       const { data: unitsData } = await supabase
         .from("units")
         .select(`
           id, name, unit_type, status, temp_limit_high, temp_limit_low, manual_log_cadence,
           last_temp_reading, last_reading_at,
+          sensor_reliable, manual_logging_enabled, consecutive_checkins,
           area:areas!inner(name, site:sites!inner(name, organization_id))
         `)
         .eq("is_active", true);
@@ -108,6 +109,9 @@ const ManualLog = () => {
           last_manual_log_at: logsByUnit[u.id] || null,
           last_reading_at: u.last_reading_at,
           last_temp_reading: u.last_temp_reading,
+          sensor_reliable: u.sensor_reliable,
+          manual_logging_enabled: u.manual_logging_enabled,
+          consecutive_checkins: u.consecutive_checkins,
           area: { name: u.area.name, site: { name: u.area.site.name } },
         }));
 

@@ -673,10 +673,36 @@ async function injectReading(
 
   await supabase.from("sensor_readings").insert(reading);
 
-  // Update unit
+  // Update unit with reading and reliability tracking
+  const { data: currentUnit } = await supabase
+    .from("units")
+    .select("last_checkin_at, consecutive_checkins")
+    .eq("id", config.unit_id)
+    .maybeSingle();
+
+  const lastCheckin = currentUnit?.last_checkin_at ? new Date(currentUnit.last_checkin_at) : null;
+  const nowTime = new Date(now);
+  
+  // Calculate consecutive check-ins (5-minute expected interval with 2.5x buffer)
+  const expectedIntervalMs = 300 * 1000; // 5 minutes
+  const threshold = expectedIntervalMs * 2.5;
+  
+  let newConsecutive = 1;
+  if (lastCheckin) {
+    const gap = nowTime.getTime() - lastCheckin.getTime();
+    if (gap <= threshold && gap > 0) {
+      newConsecutive = (currentUnit?.consecutive_checkins || 0) + 1;
+    }
+  }
+  
+  const sensorReliable = newConsecutive >= 2;
+
   const unitUpdate: any = {
     last_temp_reading: config.current_temperature,
     last_reading_at: now,
+    last_checkin_at: now,
+    consecutive_checkins: newConsecutive,
+    sensor_reliable: sensorReliable,
   };
 
   if (config.door_sensor_present || forceDoorUpdate) {
@@ -686,11 +712,12 @@ async function injectReading(
 
   await supabase.from("units").update(unitUpdate).eq("id", config.unit_id);
 
-  // Update device last seen
+  // Update device last seen and signal strength
   if (config.device_id) {
     await supabase.from("devices").update({
       last_seen_at: now,
       battery_level: config.battery_level,
+      signal_strength: config.signal_strength,
       status: "active",
     }).eq("id", config.device_id);
   }

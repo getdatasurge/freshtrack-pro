@@ -20,6 +20,7 @@ export interface DeviceInfo {
   last_seen_at: string | null;
   serial_number: string;
   battery_level: number | null;
+  signal_strength: number | null;
   status: string;
 }
 

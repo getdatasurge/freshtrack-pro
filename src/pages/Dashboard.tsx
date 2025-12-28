@@ -106,12 +106,13 @@ const Dashboard = () => {
         .select("*", { count: "exact", head: true })
         .eq("organization_id", profile.organization_id);
 
-      // Fetch units with area and site info
+      // Fetch units with area and site info, including sensor reliability fields
       const { data: unitsData } = await supabase
         .from("units")
         .select(`
           id, name, unit_type, status, last_temp_reading, last_reading_at, 
           temp_limit_high, temp_limit_low, manual_log_cadence,
+          sensor_reliable, manual_logging_enabled, consecutive_checkins,
           area:areas!inner(name, site:sites!inner(name, organization_id))
         `)
         .eq("is_active", true)
@@ -148,6 +149,9 @@ const Dashboard = () => {
         temp_limit_low: u.temp_limit_low,
         manual_log_cadence: u.manual_log_cadence,
         last_manual_log_at: latestLogByUnit[u.id] || null,
+        sensor_reliable: u.sensor_reliable,
+        manual_logging_enabled: u.manual_logging_enabled,
+        consecutive_checkins: u.consecutive_checkins,
         area: { name: u.area.name, site: { name: u.area.site.name } },
       }));
 
