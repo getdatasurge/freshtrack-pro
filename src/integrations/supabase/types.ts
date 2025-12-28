@@ -1311,6 +1311,112 @@ export type Database = {
           },
         ]
       }
+      simulated_devices: {
+        Row: {
+          battery_level: number | null
+          created_at: string | null
+          created_by: string | null
+          current_humidity: number | null
+          current_temperature: number | null
+          device_id: string | null
+          door_cycle_closed_seconds: number | null
+          door_cycle_enabled: boolean | null
+          door_cycle_next_change_at: string | null
+          door_cycle_open_seconds: number | null
+          door_open_since: string | null
+          door_sensor_present: boolean | null
+          door_state: string | null
+          id: string
+          is_active: boolean | null
+          last_heartbeat_at: string | null
+          next_reading_at: string | null
+          organization_id: string
+          sensor_online: boolean | null
+          sensor_paired: boolean | null
+          signal_strength: number | null
+          streaming_enabled: boolean | null
+          streaming_interval_seconds: number | null
+          unit_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          battery_level?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          current_humidity?: number | null
+          current_temperature?: number | null
+          device_id?: string | null
+          door_cycle_closed_seconds?: number | null
+          door_cycle_enabled?: boolean | null
+          door_cycle_next_change_at?: string | null
+          door_cycle_open_seconds?: number | null
+          door_open_since?: string | null
+          door_sensor_present?: boolean | null
+          door_state?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_heartbeat_at?: string | null
+          next_reading_at?: string | null
+          organization_id: string
+          sensor_online?: boolean | null
+          sensor_paired?: boolean | null
+          signal_strength?: number | null
+          streaming_enabled?: boolean | null
+          streaming_interval_seconds?: number | null
+          unit_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          battery_level?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          current_humidity?: number | null
+          current_temperature?: number | null
+          device_id?: string | null
+          door_cycle_closed_seconds?: number | null
+          door_cycle_enabled?: boolean | null
+          door_cycle_next_change_at?: string | null
+          door_cycle_open_seconds?: number | null
+          door_open_since?: string | null
+          door_sensor_present?: boolean | null
+          door_state?: string | null
+          id?: string
+          is_active?: boolean | null
+          last_heartbeat_at?: string | null
+          next_reading_at?: string | null
+          organization_id?: string
+          sensor_online?: boolean | null
+          sensor_paired?: boolean | null
+          signal_strength?: number | null
+          streaming_enabled?: boolean | null
+          streaming_interval_seconds?: number | null
+          unit_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "simulated_devices_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "simulated_devices_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "simulated_devices_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: true
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sites: {
         Row: {
           address: string | null
