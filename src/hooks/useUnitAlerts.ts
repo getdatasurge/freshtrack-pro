@@ -42,6 +42,9 @@ export interface ExtendedUnitStatusInfo extends UnitStatusInfo {
   door_open_grace_minutes?: number;
   battery_level?: number | null;
   battery_last_reported_at?: string | null;
+  // Sensor reliability (inherited from UnitStatusInfo but may be directly set)
+  sensor_reliable?: boolean;
+  manual_logging_enabled?: boolean;
 }
 
 /**
@@ -61,8 +64,12 @@ export function computeUnitAlerts(units: (UnitStatusInfo | ExtendedUnitStatusInf
     const doorState = extUnit.door_state || "unknown";
     const doorContext = doorState === "open" ? " (door open)" : doorState === "closed" ? " (door closed)" : "";
 
-    // MANUAL_REQUIRED - CRITICAL
-    if (computed.manualRequired) {
+    // Check sensor reliability for manual logging gating
+    const isSensorReliable = unit.sensor_reliable === true;
+    const isManualLoggingEnabled = unit.manual_logging_enabled !== false;
+
+    // MANUAL_REQUIRED - CRITICAL (only if sensor is reliable and manual logging is enabled)
+    if (computed.manualRequired && isSensorReliable && isManualLoggingEnabled) {
       alerts.push({
         id: `${unit.id}-MANUAL_REQUIRED`,
         unit_id: unit.id,

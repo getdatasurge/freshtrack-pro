@@ -446,6 +446,7 @@ export type Database = {
           last_seen_at: string | null
           mac_address: string | null
           serial_number: string
+          signal_strength: number | null
           status: Database["public"]["Enums"]["device_status"]
           transmit_interval: number
           unit_id: string | null
@@ -464,6 +465,7 @@ export type Database = {
           last_seen_at?: string | null
           mac_address?: string | null
           serial_number: string
+          signal_strength?: number | null
           status?: Database["public"]["Enums"]["device_status"]
           transmit_interval?: number
           unit_id?: string | null
@@ -482,6 +484,7 @@ export type Database = {
           last_seen_at?: string | null
           mac_address?: string | null
           serial_number?: string
+          signal_strength?: number | null
           status?: Database["public"]["Enums"]["device_status"]
           transmit_interval?: number
           unit_id?: string | null
@@ -1630,6 +1633,7 @@ export type Database = {
           area_id: string
           confirm_time_door_closed: number
           confirm_time_door_open: number
+          consecutive_checkins: number | null
           created_at: string
           door_last_changed_at: string | null
           door_open_grace_minutes: number | null
@@ -1637,16 +1641,19 @@ export type Database = {
           door_state: string | null
           id: string
           is_active: boolean
+          last_checkin_at: string | null
           last_manual_log_at: string | null
           last_reading_at: string | null
           last_status_change: string | null
           last_temp_reading: number | null
           make: string | null
           manual_log_cadence: number
+          manual_logging_enabled: boolean | null
           max_excursion_duration: number
           model: string | null
           name: string
           notes: string | null
+          sensor_reliable: boolean | null
           serial_number: string | null
           status: Database["public"]["Enums"]["unit_status"]
           temp_hysteresis: number
@@ -1659,6 +1666,7 @@ export type Database = {
           area_id: string
           confirm_time_door_closed?: number
           confirm_time_door_open?: number
+          consecutive_checkins?: number | null
           created_at?: string
           door_last_changed_at?: string | null
           door_open_grace_minutes?: number | null
@@ -1666,16 +1674,19 @@ export type Database = {
           door_state?: string | null
           id?: string
           is_active?: boolean
+          last_checkin_at?: string | null
           last_manual_log_at?: string | null
           last_reading_at?: string | null
           last_status_change?: string | null
           last_temp_reading?: number | null
           make?: string | null
           manual_log_cadence?: number
+          manual_logging_enabled?: boolean | null
           max_excursion_duration?: number
           model?: string | null
           name: string
           notes?: string | null
+          sensor_reliable?: boolean | null
           serial_number?: string | null
           status?: Database["public"]["Enums"]["unit_status"]
           temp_hysteresis?: number
@@ -1688,6 +1699,7 @@ export type Database = {
           area_id?: string
           confirm_time_door_closed?: number
           confirm_time_door_open?: number
+          consecutive_checkins?: number | null
           created_at?: string
           door_last_changed_at?: string | null
           door_open_grace_minutes?: number | null
@@ -1695,16 +1707,19 @@ export type Database = {
           door_state?: string | null
           id?: string
           is_active?: boolean
+          last_checkin_at?: string | null
           last_manual_log_at?: string | null
           last_reading_at?: string | null
           last_status_change?: string | null
           last_temp_reading?: number | null
           make?: string | null
           manual_log_cadence?: number
+          manual_logging_enabled?: boolean | null
           max_excursion_duration?: number
           model?: string | null
           name?: string
           notes?: string | null
+          sensor_reliable?: boolean | null
           serial_number?: string | null
           status?: Database["public"]["Enums"]["unit_status"]
           temp_hysteresis?: number

@@ -16,6 +16,10 @@ export interface UnitStatusInfo {
     name: string;
     site: { name: string };
   };
+  // Sensor reliability fields
+  sensor_reliable?: boolean;
+  manual_logging_enabled?: boolean;
+  consecutive_checkins?: number;
 }
 
 export interface ComputedUnitStatus {
@@ -68,10 +72,18 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
   const sensorOnline = unit.last_reading_at !== null && 
     (now - new Date(unit.last_reading_at).getTime()) < offlineThresholdMs;
   
-  // Manual required: no log ever OR log older than interval + grace
+  // Check if sensor is reliable (paired + 2 consecutive check-ins)
+  const isSensorReliable = unit.sensor_reliable === true;
+  const isManualLoggingEnabled = unit.manual_logging_enabled !== false;
+  
+  // Manual required: ONLY if
+  // 1. manual_logging_enabled is true (default true)
+  // 2. sensor is reliable (paired + 2 consecutive check-ins)
+  // 3. log is overdue
   const manualRequired = 
-    minutesSinceManualLog === null || 
-    minutesSinceManualLog >= manualTriggerMinutes;
+    isManualLoggingEnabled &&
+    isSensorReliable &&
+    (minutesSinceManualLog === null || minutesSinceManualLog >= manualTriggerMinutes);
   
   // How many minutes overdue (beyond the required interval)
   const manualOverdueMinutes = minutesSinceManualLog !== null 

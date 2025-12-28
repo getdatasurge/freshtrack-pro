@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
 
     const results: { unit_id: string; success: boolean; error?: string }[] = [];
     const unitUpdates: Map<string, { temp: number; time: string; doorOpen?: boolean }> = new Map();
-    const deviceBatteryUpdates: Map<string, { level: number | null; voltage: number | null; time: string }> = new Map();
+    const deviceBatteryUpdates: Map<string, { level: number | null; voltage: number | null; signalStrength: number | null; time: string }> = new Map();
 
     for (const reading of readings) {
       try {
@@ -79,10 +79,10 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Validate unit exists
+        // Validate unit exists and get reliability data
         const { data: unit, error: unitError } = await supabase
           .from("units")
-          .select("id, door_state")
+          .select("id, door_state, last_checkin_at, consecutive_checkins, sensor_reliable")
           .eq("id", reading.unit_id)
           .maybeSingle();
 
@@ -160,13 +160,14 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Track battery updates for devices
-        if (deviceId && (reading.battery_level !== undefined || reading.battery_voltage !== undefined)) {
+        // Track battery and signal updates for devices
+        if (deviceId && (reading.battery_level !== undefined || reading.battery_voltage !== undefined || reading.signal_strength !== undefined)) {
           const existingBattery = deviceBatteryUpdates.get(deviceId);
           if (!existingBattery || new Date(recordedAt) > new Date(existingBattery.time)) {
             deviceBatteryUpdates.set(deviceId, {
               level: reading.battery_level ?? null,
               voltage: reading.battery_voltage ?? null,
+              signalStrength: reading.signal_strength ?? null,
               time: recordedAt,
             });
           }
@@ -190,34 +191,72 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Batch update units with latest readings and door state
+    // Batch update units with latest readings, door state, and sensor reliability
     for (const [unitId, update] of unitUpdates) {
+      // Fetch current unit state for reliability calculation
+      const { data: currentUnit } = await supabase
+        .from("units")
+        .select("last_checkin_at, consecutive_checkins, sensor_reliable")
+        .eq("id", unitId)
+        .maybeSingle();
+
+      const now = new Date(update.time);
+      const lastCheckin = currentUnit?.last_checkin_at ? new Date(currentUnit.last_checkin_at) : null;
+      
+      // Calculate consecutive check-ins (5-minute expected interval with 2.5x buffer)
+      const expectedIntervalMs = 300 * 1000; // 5 minutes
+      const threshold = expectedIntervalMs * 2.5; // Allow some buffer
+      
+      let newConsecutive = 1;
+      if (lastCheckin) {
+        const gap = now.getTime() - lastCheckin.getTime();
+        if (gap <= threshold && gap > 0) {
+          newConsecutive = (currentUnit?.consecutive_checkins || 0) + 1;
+        }
+      }
+      
+      // Sensor becomes reliable after 2 consecutive check-ins
+      const sensorReliable = newConsecutive >= 2;
+
       const updateData: any = {
         last_temp_reading: update.temp,
         last_reading_at: update.time,
+        last_checkin_at: update.time,
+        consecutive_checkins: newConsecutive,
+        sensor_reliable: sensorReliable,
       };
       
       if (update.doorOpen !== undefined) {
         updateData.door_state = update.doorOpen ? "open" : "closed";
         updateData.door_last_changed_at = update.time;
+        // Door events also count as activity, reset consecutive counter if needed
+        if (newConsecutive === 0) {
+          updateData.consecutive_checkins = 1;
+        }
       }
       
       await supabase
         .from("units")
         .update(updateData)
         .eq("id", unitId);
+
+      console.log(`[ingest-readings] Unit ${unitId} reliability: consecutive=${newConsecutive}, reliable=${sensorReliable}`);
     }
 
-    // Batch update devices with battery info
+    // Batch update devices with battery and signal info
     for (const [deviceId, batteryUpdate] of deviceBatteryUpdates) {
       const updateData: any = {
         battery_last_reported_at: batteryUpdate.time,
+        last_seen_at: batteryUpdate.time,
       };
       if (batteryUpdate.level !== null) {
         updateData.battery_level = batteryUpdate.level;
       }
       if (batteryUpdate.voltage !== null) {
         updateData.battery_voltage = batteryUpdate.voltage;
+      }
+      if (batteryUpdate.signalStrength !== null) {
+        updateData.signal_strength = batteryUpdate.signalStrength;
       }
       
       await supabase
