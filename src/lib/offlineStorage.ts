@@ -111,3 +111,13 @@ export async function getAllLogs(): Promise<PendingManualLog[]> {
     tx.oncomplete = () => db.close();
   });
 }
+
+// Clear all offline storage (used on logout for session isolation)
+export async function clearOfflineStorage(): Promise<void> {
+  return new Promise((resolve) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => resolve(); // Resolve anyway to not block logout
+    request.onblocked = () => resolve();
+  });
+}

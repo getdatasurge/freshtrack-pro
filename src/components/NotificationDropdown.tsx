@@ -71,6 +71,23 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
   const [notifications, setNotifications] = useState<NotificationEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [orgId, setOrgId] = useState<string | null>(null);
+
+  // Load user's organization_id on mount
+  useEffect(() => {
+    const loadOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        setOrgId(data?.organization_id || null);
+      }
+    };
+    loadOrgId();
+  }, []);
 
   const loadNotifications = async () => {
     setIsLoading(true);
@@ -116,16 +133,19 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
     }
   }, [isOpen]);
 
-  // Real-time subscription for new alerts
+  // Real-time subscription for new alerts - scoped by organization_id
   useEffect(() => {
+    if (!orgId) return;
+
     const channel = supabase
-      .channel("alerts-realtime")
+      .channel(`alerts-realtime-${orgId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "alerts",
+          filter: `organization_id=eq.${orgId}`,
         },
         (payload) => {
           const alert = payload.new as any;
@@ -146,7 +166,7 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [navigate]);
+  }, [navigate, orgId]);
 
   const handleViewAll = () => {
     setIsOpen(false);

@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useState } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { 
@@ -18,6 +19,7 @@ import { cn } from "@/lib/utils";
 import ThemeToggle from "@/components/ThemeToggle";
 import BrandedLogo from "@/components/BrandedLogo";
 import NotificationDropdown from "@/components/NotificationDropdown";
+import { clearOfflineStorage } from "@/lib/offlineStorage";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -42,7 +44,9 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
   const [alertCount, setAlertCount] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -79,6 +83,8 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
       .maybeSingle();
 
     if (profile?.organization_id) {
+      setOrgId(profile.organization_id);
+      
       const { data: org } = await supabase
         .from("organizations")
         .select("name")
@@ -87,10 +93,11 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
       if (org) setOrgName(org.name);
 
-      // Get alert count
+      // Get alert count - explicitly filter by organization_id
       const { count } = await supabase
         .from("alerts")
         .select("*", { count: "exact", head: true })
+        .eq("organization_id", profile.organization_id)
         .eq("status", "active");
 
       setAlertCount(count || 0);
@@ -98,6 +105,18 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   };
 
   const handleSignOut = async () => {
+    // Clear React Query cache BEFORE signing out for session isolation
+    queryClient.clear();
+    
+    // Clear IndexedDB offline storage
+    await clearOfflineStorage();
+    
+    // Reset component state
+    setOrgId(null);
+    setOrgName("");
+    setAlertCount(0);
+    
+    // Sign out from Supabase
     await supabase.auth.signOut();
     toast({ title: "Signed out successfully" });
     navigate("/");

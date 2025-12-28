@@ -173,6 +173,7 @@ export type Database = {
           acknowledged_by: string | null
           acknowledgment_notes: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
+          area_id: string | null
           created_at: string
           escalation_level: number
           first_active_at: string | null
@@ -182,14 +183,18 @@ export type Database = {
           message: string | null
           metadata: Json | null
           next_escalation_at: string | null
+          organization_id: string
           resolved_at: string | null
           resolved_by: string | null
           severity: Database["public"]["Enums"]["alert_severity"]
+          site_id: string | null
+          source: string | null
           status: Database["public"]["Enums"]["alert_status"]
           temp_limit: number | null
           temp_reading: number | null
           title: string
           triggered_at: string
+          triggered_by_device_id: string | null
           unit_id: string
         }
         Insert: {
@@ -197,6 +202,7 @@ export type Database = {
           acknowledged_by?: string | null
           acknowledgment_notes?: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
+          area_id?: string | null
           created_at?: string
           escalation_level?: number
           first_active_at?: string | null
@@ -206,14 +212,18 @@ export type Database = {
           message?: string | null
           metadata?: Json | null
           next_escalation_at?: string | null
+          organization_id: string
           resolved_at?: string | null
           resolved_by?: string | null
           severity?: Database["public"]["Enums"]["alert_severity"]
+          site_id?: string | null
+          source?: string | null
           status?: Database["public"]["Enums"]["alert_status"]
           temp_limit?: number | null
           temp_reading?: number | null
           title: string
           triggered_at?: string
+          triggered_by_device_id?: string | null
           unit_id: string
         }
         Update: {
@@ -221,6 +231,7 @@ export type Database = {
           acknowledged_by?: string | null
           acknowledgment_notes?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
+          area_id?: string | null
           created_at?: string
           escalation_level?: number
           first_active_at?: string | null
@@ -230,17 +241,49 @@ export type Database = {
           message?: string | null
           metadata?: Json | null
           next_escalation_at?: string | null
+          organization_id?: string
           resolved_at?: string | null
           resolved_by?: string | null
           severity?: Database["public"]["Enums"]["alert_severity"]
+          site_id?: string | null
+          source?: string | null
           status?: Database["public"]["Enums"]["alert_status"]
           temp_limit?: number | null
           temp_reading?: number | null
           title?: string
           triggered_at?: string
+          triggered_by_device_id?: string | null
           unit_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "alerts_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alerts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alerts_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alerts_triggered_by_device_id_fkey"
+            columns: ["triggered_by_device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "alerts_unit_id_fkey"
             columns: ["unit_id"]
