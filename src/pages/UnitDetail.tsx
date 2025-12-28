@@ -154,6 +154,7 @@ const UnitDetail = () => {
         .select(`
           id, name, unit_type, status, temp_limit_high, temp_limit_low,
           last_temp_reading, last_reading_at, last_manual_log_at, manual_log_cadence,
+          notes, door_state, door_last_changed_at, door_sensor_enabled, door_open_grace_minutes,
           area:areas!inner(id, name, site:sites!inner(id, name))
         `)
         .eq("id", unitId)
@@ -541,6 +542,8 @@ const UnitDetail = () => {
           signalStrength={null}
           lastHeartbeat={device?.last_seen_at}
           deviceSerial={device?.serial_number}
+          doorState={(unit as any).door_state}
+          doorLastChangedAt={(unit as any).door_last_changed_at}
         />
 
         {/* Battery Health */}
@@ -554,7 +557,9 @@ const UnitDetail = () => {
           unitType={unit.unit_type}
           tempLimitLow={unit.temp_limit_low}
           tempLimitHigh={unit.temp_limit_high}
-          notes={null}
+          notes={(unit as any).notes}
+          doorSensorEnabled={(unit as any).door_sensor_enabled}
+          doorOpenGraceMinutes={(unit as any).door_open_grace_minutes}
           onSettingsUpdated={loadUnitData}
         />
 

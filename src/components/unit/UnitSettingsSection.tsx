@@ -24,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   Settings,
@@ -33,6 +34,7 @@ import {
   History,
   Loader2,
   Thermometer,
+  DoorOpen,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -42,6 +44,8 @@ interface UnitSettings {
   temp_limit_low: number | null;
   temp_limit_high: number;
   notes?: string | null;
+  door_sensor_enabled?: boolean;
+  door_open_grace_minutes?: number;
 }
 
 interface SettingsHistoryEntry {
@@ -50,8 +54,8 @@ interface SettingsHistoryEntry {
   changed_at: string;
   changes: {
     field: string;
-    old_value: string | number | null;
-    new_value: string | number | null;
+    old_value: string | number | boolean | null;
+    new_value: string | number | boolean | null;
   }[];
   note: string | null;
   profile?: { email: string; full_name: string | null } | null;
@@ -63,6 +67,8 @@ interface UnitSettingsSectionProps {
   tempLimitLow: number | null;
   tempLimitHigh: number;
   notes?: string | null;
+  doorSensorEnabled?: boolean;
+  doorOpenGraceMinutes?: number;
   onSettingsUpdated: () => void;
 }
 
@@ -81,6 +87,8 @@ export default function UnitSettingsSection({
   tempLimitLow,
   tempLimitHigh,
   notes,
+  doorSensorEnabled = false,
+  doorOpenGraceMinutes = 20,
   onSettingsUpdated,
 }: UnitSettingsSectionProps) {
   const { toast } = useToast();
@@ -98,6 +106,8 @@ export default function UnitSettingsSection({
   );
   const [editHighLimit, setEditHighLimit] = useState(tempLimitHigh.toString());
   const [editNotes, setEditNotes] = useState(notes || "");
+  const [editDoorSensorEnabled, setEditDoorSensorEnabled] = useState(doorSensorEnabled);
+  const [editDoorGraceMinutes, setEditDoorGraceMinutes] = useState(doorOpenGraceMinutes.toString());
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const formatTemp = (temp: number | null) => {
@@ -110,6 +120,8 @@ export default function UnitSettingsSection({
     setEditLowLimit(tempLimitLow !== null ? tempLimitLow.toString() : "");
     setEditHighLimit(tempLimitHigh.toString());
     setEditNotes(notes || "");
+    setEditDoorSensorEnabled(doorSensorEnabled);
+    setEditDoorGraceMinutes(doorOpenGraceMinutes.toString());
     setValidationError(null);
     setShowEditModal(true);
   };
@@ -117,6 +129,7 @@ export default function UnitSettingsSection({
   const validateAndSave = async () => {
     const lowVal = editLowLimit ? parseFloat(editLowLimit) : null;
     const highVal = parseFloat(editHighLimit);
+    const graceVal = parseInt(editDoorGraceMinutes) || 20;
 
     if (isNaN(highVal)) {
       setValidationError("High limit is required");
@@ -125,6 +138,11 @@ export default function UnitSettingsSection({
 
     if (lowVal !== null && lowVal >= highVal) {
       setValidationError("Low limit must be less than high limit");
+      return;
+    }
+
+    if (graceVal < 1 || graceVal > 60) {
+      setValidationError("Grace minutes must be between 1 and 60");
       return;
     }
 
@@ -165,6 +183,22 @@ export default function UnitSettingsSection({
         });
       }
 
+      if (editDoorSensorEnabled !== doorSensorEnabled) {
+        changes.push({
+          field: "door_sensor_enabled",
+          old_value: doorSensorEnabled,
+          new_value: editDoorSensorEnabled,
+        });
+      }
+
+      if (graceVal !== doorOpenGraceMinutes) {
+        changes.push({
+          field: "door_open_grace_minutes",
+          old_value: doorOpenGraceMinutes,
+          new_value: graceVal,
+        });
+      }
+
       if (changes.length === 0 && editNotes === (notes || "")) {
         toast({ title: "No changes to save" });
         setShowEditModal(false);
@@ -180,6 +214,8 @@ export default function UnitSettingsSection({
           temp_limit_low: lowVal,
           temp_limit_high: highVal,
           notes: editNotes || null,
+          door_sensor_enabled: editDoorSensorEnabled,
+          door_open_grace_minutes: graceVal,
         })
         .eq("id", unitId);
 
@@ -277,6 +313,10 @@ export default function UnitSettingsSection({
         return "Low Limit";
       case "temp_limit_high":
         return "High Limit";
+      case "door_sensor_enabled":
+        return "Door Sensor";
+      case "door_open_grace_minutes":
+        return "Door Grace Minutes";
       default:
         return field;
     }
@@ -286,6 +326,8 @@ export default function UnitSettingsSection({
     if (value === null || value === undefined) return "Not set";
     if (field === "unit_type") return unitTypeLabels[value] || value;
     if (field.includes("temp_limit")) return `${value}°F`;
+    if (field === "door_sensor_enabled") return value ? "Enabled" : "Disabled";
+    if (field === "door_open_grace_minutes") return `${value} min`;
     return String(value);
   };
 
@@ -317,7 +359,7 @@ export default function UnitSettingsSection({
           </CollapsibleTrigger>
           <CollapsibleContent>
             <CardContent className="pt-0 pb-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
                 <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
                   <Thermometer className="w-4 h-4 text-accent" />
                   <div>
@@ -341,6 +383,13 @@ export default function UnitSettingsSection({
                   <div>
                     <p className="text-xs text-muted-foreground">High Limit</p>
                     <p className="font-medium">{formatTemp(tempLimitHigh)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
+                  <DoorOpen className="w-4 h-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Door Sensor</p>
+                    <p className="font-medium">{doorSensorEnabled ? `On (${doorOpenGraceMinutes}m grace)` : "Off"}</p>
                   </div>
                 </div>
               </div>
@@ -391,12 +440,12 @@ export default function UnitSettingsSection({
                 <Input
                   type="number"
                   step="0.1"
-                  placeholder="e.g. 32"
+                  placeholder="e.g. 32 or -10"
                   value={editLowLimit}
                   onChange={(e) => setEditLowLimit(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Leave empty if not applicable
+                  Negative values for freezers
                 </p>
               </div>
               <div className="space-y-2">
@@ -409,6 +458,36 @@ export default function UnitSettingsSection({
                   onChange={(e) => setEditHighLimit(e.target.value)}
                 />
               </div>
+            </div>
+
+            <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <DoorOpen className="w-4 h-4 text-muted-foreground" />
+                  <Label>Door Sensor Enabled</Label>
+                </div>
+                <Switch
+                  checked={editDoorSensorEnabled}
+                  onCheckedChange={setEditDoorSensorEnabled}
+                />
+              </div>
+              
+              {editDoorSensorEnabled && (
+                <div className="space-y-2 pt-2 border-t border-border/50">
+                  <Label className="text-sm">Door Open Grace (minutes)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={editDoorGraceMinutes}
+                    onChange={(e) => setEditDoorGraceMinutes(e.target.value)}
+                    className="w-24"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Time before door-open masks temp excursions (1-60 min)
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">

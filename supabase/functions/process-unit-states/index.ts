@@ -15,6 +15,9 @@ interface UnitRow {
   temp_limit_low: number | null;
   temp_hysteresis: number;
   manual_log_cadence: number;
+  door_state: string | null;
+  door_last_changed_at: string | null;
+  door_open_grace_minutes: number;
   area: {
     site: {
       organization_id: string;
@@ -42,6 +45,8 @@ const DATA_GAP_THRESHOLD_MS = 4 * 60 * 1000;
 const EXCURSION_CONFIRM_TIME = 600; // 10 minutes
 // Readings needed to restore
 const READINGS_TO_RESTORE = 3;
+// Suspected cooling failure threshold (minutes)
+const COOLING_FAILURE_THRESHOLD_MINUTES = 45;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -55,12 +60,13 @@ Deno.serve(async (req) => {
 
     console.log("Processing unit states...");
 
-    // Get all active units
+    // Get all active units with door state
     const { data: units, error: unitsError } = await supabase
       .from("units")
       .select(`
         id, name, status, last_reading_at, last_temp_reading,
         temp_limit_high, temp_limit_low, temp_hysteresis, manual_log_cadence,
+        door_state, door_last_changed_at, door_open_grace_minutes,
         area:areas!inner(site:sites!inner(organization_id))
       `)
       .eq("is_active", true);
@@ -80,6 +86,15 @@ Deno.serve(async (req) => {
 
       const lastReadingTime = unit.last_reading_at ? new Date(unit.last_reading_at).getTime() : null;
       const timeSinceReading = lastReadingTime ? now - lastReadingTime : Infinity;
+
+      // Door state context
+      const doorState = unit.door_state || "unknown";
+      const doorGraceMinutes = unit.door_open_grace_minutes || 20;
+      const doorLastChanged = unit.door_last_changed_at ? new Date(unit.door_last_changed_at).getTime() : null;
+      const doorOpenDuration = doorState === "open" && doorLastChanged 
+        ? Math.floor((now - doorLastChanged) / 60000) 
+        : 0;
+      const isDoorOpenWithinGrace = doorState === "open" && doorOpenDuration < doorGraceMinutes;
 
       // Check for data gap - transition to MONITORING_INTERRUPTED
       if (timeSinceReading > DATA_GAP_THRESHOLD_MS) {
@@ -107,14 +122,80 @@ Deno.serve(async (req) => {
 
         if (isAboveLimit || isBelowLimit) {
           // Temperature out of range
-          if (currentStatus === "ok" || currentStatus === "restoring") {
+          // If door is open and within grace period, delay escalation
+          if (isDoorOpenWithinGrace && currentStatus === "ok") {
+            // Don't transition yet - door open grace
+            console.log(`Unit ${unit.name}: Temp out of range but door open (${doorOpenDuration}/${doorGraceMinutes}m grace)`);
+          } else if (currentStatus === "ok" || currentStatus === "restoring") {
             newStatus = "excursion";
-            reason = `Temperature ${temp}°F ${isAboveLimit ? "above" : "below"} limit`;
+            reason = `Temperature ${temp}°F ${isAboveLimit ? "above" : "below"} limit${doorState === "open" ? " (door open)" : ""}`;
           } else if (currentStatus === "excursion") {
             // Check if we should escalate to alarm
-            // For now, transition immediately for demo purposes
-            newStatus = "alarm_active";
-            reason = `Sustained temperature excursion: ${temp}°F`;
+            // If door is open and grace just expired, now transition
+            if (doorState === "open" && doorOpenDuration >= doorGraceMinutes) {
+              newStatus = "alarm_active";
+              reason = `Sustained temperature excursion: ${temp}°F (door open ${doorOpenDuration}m, grace expired)`;
+            } else if (doorState !== "open") {
+              // Door closed - normal escalation
+              newStatus = "alarm_active";
+              reason = `Sustained temperature excursion: ${temp}°F (door closed)`;
+            }
+          }
+
+          // Check for suspected cooling failure
+          // Conditions: door closed/unknown, temp out of range for 45+ minutes
+          if ((doorState === "closed" || doorState === "unknown") && 
+              (currentStatus === "excursion" || currentStatus === "alarm_active")) {
+            // Get readings from last 45 minutes
+            const coolingCheckTime = new Date(now - COOLING_FAILURE_THRESHOLD_MINUTES * 60 * 1000).toISOString();
+            const { data: recentReadings } = await supabase
+              .from("sensor_readings")
+              .select("temperature, recorded_at")
+              .eq("unit_id", unit.id)
+              .gte("recorded_at", coolingCheckTime)
+              .order("recorded_at", { ascending: false });
+
+            if (recentReadings && recentReadings.length >= 5) {
+              // Check if all readings are out of range
+              const allOutOfRange = recentReadings.every((r: { temperature: number }) => {
+                const above = r.temperature > highLimit;
+                const below = lowLimit !== null && r.temperature < lowLimit;
+                return above || below;
+              });
+
+              // Check trend - is temp flat or rising?
+              if (allOutOfRange && recentReadings.length >= 3) {
+                const newest = recentReadings[0].temperature;
+                const oldest = recentReadings[recentReadings.length - 1].temperature;
+                const isNotRecovering = isAboveLimit 
+                  ? (newest >= oldest - 0.5) // Not cooling down
+                  : (newest <= oldest + 0.5); // Not warming up
+
+                if (isNotRecovering) {
+                  // Create suspected cooling failure alert if not exists
+                  const { data: existingAlert } = await supabase
+                    .from("alerts")
+                    .select("id")
+                    .eq("unit_id", unit.id)
+                    .eq("alert_type", "suspected_cooling_failure")
+                    .in("status", ["active", "acknowledged"])
+                    .maybeSingle();
+
+                  if (!existingAlert) {
+                    await supabase.from("alerts").insert({
+                      unit_id: unit.id,
+                      title: `${unit.name}: Suspected Cooling Failure`,
+                      message: `Door closed; temp not recovering; possible cooling system issue. Current: ${temp}°F`,
+                      alert_type: "suspected_cooling_failure",
+                      severity: "warning",
+                      temp_reading: temp,
+                      temp_limit: highLimit,
+                    });
+                    console.log(`Created suspected_cooling_failure alert for unit ${unit.name}`);
+                  }
+                }
+              }
+            }
           }
         } else {
           // Temperature in range
@@ -126,6 +207,17 @@ Deno.serve(async (req) => {
             if (currentStatus === "excursion" || currentStatus === "alarm_active") {
               newStatus = "restoring";
               reason = "Temperature returning to range";
+              
+              // Resolve suspected cooling failure alert if exists
+              await supabase
+                .from("alerts")
+                .update({
+                  status: "resolved",
+                  resolved_at: new Date().toISOString(),
+                })
+                .eq("unit_id", unit.id)
+                .eq("alert_type", "suspected_cooling_failure")
+                .in("status", ["active", "acknowledged"]);
             } else if (currentStatus === "restoring") {
               // Check for 3 consecutive good readings
               const { data: recentReadings } = await supabase
@@ -207,9 +299,10 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
           if (!existingAlert) {
+            const doorContext = doorState !== "unknown" ? ` (door ${doorState})` : "";
             await supabase.from("alerts").insert({
               unit_id: unit.id,
-              title: `${unit.name}: ${newStatus.replace(/_/g, " ").toUpperCase()}`,
+              title: `${unit.name}: ${newStatus.replace(/_/g, " ").toUpperCase()}${doorContext}`,
               message: reason,
               alert_type: alertType,
               severity: severity,
@@ -244,6 +337,17 @@ Deno.serve(async (req) => {
               .eq("unit_id", unit.id)
               .eq("alert_type", "alarm_active")
               .in("status", ["active", "acknowledged"]);
+            
+            // Also resolve suspected cooling failure
+            await supabase
+              .from("alerts")
+              .update({
+                status: "resolved",
+                resolved_at: new Date().toISOString(),
+              })
+              .eq("unit_id", unit.id)
+              .eq("alert_type", "suspected_cooling_failure")
+              .in("status", ["active", "acknowledged"]);
           }
         }
 
@@ -258,6 +362,7 @@ Deno.serve(async (req) => {
             to_status: newStatus,
             reason,
             temp_reading: unit.last_temp_reading,
+            door_state: doorState,
           },
         });
       }

@@ -8,7 +8,8 @@ import {
   CheckCircle, 
   AlertTriangle, 
   XCircle,
-  Loader2,
+  DoorOpen,
+  DoorClosed,
   Link as LinkIcon
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -26,6 +27,11 @@ interface DeviceReadinessProps {
   signalStrength?: number | null;
   lastHeartbeat?: string | null;
   deviceSerial?: string | null;
+  // Door state
+  doorState?: "open" | "closed" | "unknown" | null;
+  doorLastChangedAt?: string | null;
+  // Battery forecast
+  batteryEstimatedDays?: number | null;
 }
 
 const DeviceReadinessCard = ({
@@ -36,6 +42,9 @@ const DeviceReadinessCard = ({
   signalStrength,
   lastHeartbeat,
   deviceSerial,
+  doorState,
+  doorLastChangedAt,
+  batteryEstimatedDays,
 }: DeviceReadinessProps) => {
   // Use the unified sensor installation status
   const installationStatus = computeSensorInstallationStatus(device || null, lastReadingAt);
@@ -86,8 +95,30 @@ const DeviceReadinessCard = ({
     return { label: "Weak", color: "text-alarm" };
   };
 
+  const getDoorStatus = (state: string | null | undefined, changedAt: string | null | undefined) => {
+    if (!state || state === "unknown") {
+      return { label: "Unknown", color: "text-muted-foreground", icon: DoorClosed, since: null };
+    }
+    if (state === "open") {
+      return { 
+        label: "Open", 
+        color: "text-warning", 
+        icon: DoorOpen,
+        since: changedAt ? formatDistanceToNow(new Date(changedAt), { addSuffix: false }) : null
+      };
+    }
+    return { 
+      label: "Closed", 
+      color: "text-safe", 
+      icon: DoorClosed,
+      since: changedAt ? formatDistanceToNow(new Date(changedAt), { addSuffix: false }) : null
+    };
+  };
+
   const batteryStatus = getBatteryStatus(batteryLevel ?? device?.battery_level);
   const signalStatus = getSignalStatus(signalStrength);
+  const doorStatus = getDoorStatus(doorState, doorLastChangedAt);
+  const DoorIcon = doorStatus.icon;
 
   const formatHeartbeat = (heartbeat: string | null | undefined, fallback: string | null) => {
     const timestamp = heartbeat || device?.last_seen_at || fallback;
@@ -99,6 +130,15 @@ const DeviceReadinessCard = ({
     }
   };
 
+  const formatEstimatedDays = (days: number | null | undefined) => {
+    if (days === null || days === undefined) return null;
+    if (days <= 7) return { text: `~${days}d remaining`, color: "text-alarm" };
+    if (days <= 30) return { text: `~${days}d remaining`, color: "text-warning" };
+    return { text: `~${days}d remaining`, color: "text-muted-foreground" };
+  };
+
+  const estimatedDaysDisplay = formatEstimatedDays(batteryEstimatedDays);
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -108,7 +148,7 @@ const DeviceReadinessCard = ({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           {/* Sensor Installation Status */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -127,9 +167,16 @@ const DeviceReadinessCard = ({
               Battery Level
             </p>
             {batteryLevel !== null && batteryLevel !== undefined ? (
-              <Badge className={`${batteryStatus.bg} ${batteryStatus.color} border-0`}>
-                {batteryStatus.label}
-              </Badge>
+              <div>
+                <Badge className={`${batteryStatus.bg} ${batteryStatus.color} border-0`}>
+                  {batteryStatus.label}
+                </Badge>
+                {estimatedDaysDisplay && (
+                  <p className={`text-xs mt-1 ${estimatedDaysDisplay.color}`}>
+                    {estimatedDaysDisplay.text}
+                  </p>
+                )}
+              </div>
             ) : (
               <span className="text-sm text-muted-foreground italic">No sensor paired</span>
             )}
@@ -148,6 +195,24 @@ const DeviceReadinessCard = ({
             ) : (
               <span className="text-sm text-muted-foreground italic">No sensor paired</span>
             )}
+          </div>
+
+          {/* Door State */}
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <DoorIcon className="w-3 h-3" />
+              Door State
+            </p>
+            <div>
+              <span className={`text-sm font-medium ${doorStatus.color}`}>
+                {doorStatus.label}
+              </span>
+              {doorStatus.since && doorState !== "unknown" && (
+                <p className="text-xs text-muted-foreground">
+                  for {doorStatus.since}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Last Heartbeat */}
