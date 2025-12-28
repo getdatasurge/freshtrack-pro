@@ -801,6 +801,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          accent_color: string | null
           compliance_mode: Database["public"]["Enums"]["compliance_mode"]
           created_at: string
           id: string
@@ -811,6 +812,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          accent_color?: string | null
           compliance_mode?: Database["public"]["Enums"]["compliance_mode"]
           created_at?: string
           id?: string
@@ -821,6 +823,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          accent_color?: string | null
           compliance_mode?: Database["public"]["Enums"]["compliance_mode"]
           created_at?: string
           id?: string
@@ -1007,6 +1010,7 @@ export type Database = {
           received_at: string
           recorded_at: string
           signal_strength: number | null
+          source: string | null
           temperature: number
           unit_id: string
         }
@@ -1019,6 +1023,7 @@ export type Database = {
           received_at?: string
           recorded_at?: string
           signal_strength?: number | null
+          source?: string | null
           temperature: number
           unit_id: string
         }
@@ -1031,6 +1036,7 @@ export type Database = {
           received_at?: string
           recorded_at?: string
           signal_strength?: number | null
+          source?: string | null
           temperature?: number
           unit_id?: string
         }

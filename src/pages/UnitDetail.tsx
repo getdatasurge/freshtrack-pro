@@ -6,6 +6,7 @@ import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
 import LastKnownGoodCard from "@/components/unit/LastKnownGoodCard";
 import UnitSettingsSection from "@/components/unit/UnitSettingsSection";
 import UnitAlertsBanner from "@/components/unit/UnitAlertsBanner";
+import BatteryHealthCard from "@/components/unit/BatteryHealthCard";
 import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -541,6 +542,11 @@ const UnitDetail = () => {
           lastHeartbeat={device?.last_seen_at}
           deviceSerial={device?.serial_number}
         />
+
+        {/* Battery Health */}
+        {device?.id && (
+          <BatteryHealthCard deviceId={device.id} />
+        )}
 
         {/* Unit Settings (collapsed by default) */}
         <UnitSettingsSection

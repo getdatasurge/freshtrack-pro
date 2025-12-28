@@ -17,6 +17,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
+import ThemeToggle from "@/components/ThemeToggle";
+import BrandedLogo from "@/components/BrandedLogo";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -29,6 +31,7 @@ import { ClipboardList, AlertCircle, FileBarChart } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
+  { href: "/organization", label: "Organization", icon: Building2 },
   { href: "/sites", label: "Sites", icon: MapPin },
   { href: "/manual-log", label: "Log Temps", icon: ClipboardList },
   { href: "/alerts", label: "Alerts", icon: AlertCircle },
@@ -125,20 +128,16 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 </Button>
               )}
               <Link to="/dashboard" className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-primary flex items-center justify-center">
-                  <Thermometer className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <span className="text-lg font-bold text-foreground">FrostGuard</span>
-                  {orgName && (
-                    <span className="hidden sm:inline text-sm text-muted-foreground ml-2">
-                      · {orgName}
-                    </span>
-                  )}
-                </div>
+                <BrandedLogo showText={true} size="md" />
+                {orgName && (
+                  <span className="hidden sm:inline text-sm text-muted-foreground">
+                    · {orgName}
+                  </span>
+                )}
               </Link>
             </div>
             <div className="flex items-center gap-2">
+              <ThemeToggle />
               <Link to="/alerts">
                 <Button variant="ghost" size="icon" className="relative">
                   <Bell className="w-5 h-5" />
