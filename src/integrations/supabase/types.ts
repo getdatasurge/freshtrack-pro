@@ -175,7 +175,10 @@ export type Database = {
           alert_type: Database["public"]["Enums"]["alert_type"]
           created_at: string
           escalation_level: number
+          first_active_at: string | null
           id: string
+          last_notified_at: string | null
+          last_notified_reason: string | null
           message: string | null
           metadata: Json | null
           next_escalation_at: string | null
@@ -196,7 +199,10 @@ export type Database = {
           alert_type: Database["public"]["Enums"]["alert_type"]
           created_at?: string
           escalation_level?: number
+          first_active_at?: string | null
           id?: string
+          last_notified_at?: string | null
+          last_notified_reason?: string | null
           message?: string | null
           metadata?: Json | null
           next_escalation_at?: string | null
@@ -217,7 +223,10 @@ export type Database = {
           alert_type?: Database["public"]["Enums"]["alert_type"]
           created_at?: string
           escalation_level?: number
+          first_active_at?: string | null
           id?: string
+          last_notified_at?: string | null
+          last_notified_reason?: string | null
           message?: string | null
           metadata?: Json | null
           next_escalation_at?: string | null
@@ -913,6 +922,133 @@ export type Database = {
             columns: ["alert_id"]
             isOneToOne: false
             referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_events: {
+        Row: {
+          alert_id: string | null
+          channel: string
+          created_at: string
+          event_type: string
+          id: string
+          organization_id: string
+          provider_message_id: string | null
+          reason: string | null
+          site_id: string | null
+          status: string
+          to_recipients: Json
+          unit_id: string | null
+        }
+        Insert: {
+          alert_id?: string | null
+          channel?: string
+          created_at?: string
+          event_type: string
+          id?: string
+          organization_id: string
+          provider_message_id?: string | null
+          reason?: string | null
+          site_id?: string | null
+          status: string
+          to_recipients?: Json
+          unit_id?: string | null
+        }
+        Update: {
+          alert_id?: string | null
+          channel?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          organization_id?: string
+          provider_message_id?: string | null
+          reason?: string | null
+          site_id?: string | null
+          status?: string
+          to_recipients?: Json
+          unit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_events_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_events_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_events_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_settings: {
+        Row: {
+          created_at: string
+          email_enabled: boolean
+          id: string
+          notify_alarm_active: boolean
+          notify_low_battery: boolean
+          notify_manual_required: boolean
+          notify_offline: boolean
+          notify_temp_excursion: boolean
+          notify_warnings: boolean
+          organization_id: string
+          recipients: string[]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email_enabled?: boolean
+          id?: string
+          notify_alarm_active?: boolean
+          notify_low_battery?: boolean
+          notify_manual_required?: boolean
+          notify_offline?: boolean
+          notify_temp_excursion?: boolean
+          notify_warnings?: boolean
+          organization_id: string
+          recipients?: string[]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email_enabled?: boolean
+          id?: string
+          notify_alarm_active?: boolean
+          notify_low_battery?: boolean
+          notify_manual_required?: boolean
+          notify_offline?: boolean
+          notify_temp_excursion?: boolean
+          notify_warnings?: boolean
+          organization_id?: string
+          recipients?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]

@@ -38,6 +38,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
 import { AlertRulesScopedEditor } from "@/components/settings/AlertRulesScopedEditor";
 import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
+import { NotificationSettingsCard } from "@/components/settings/NotificationSettingsCard";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 type ComplianceMode = Database["public"]["Enums"]["compliance_mode"];
@@ -493,12 +494,21 @@ const Settings = () => {
         </TabsContent>
 
         {/* Notifications Tab */}
-        <TabsContent value="notifications">
+        <TabsContent value="notifications" className="space-y-6">
+          {/* Org-level notification settings */}
+          {organization && (
+            <NotificationSettingsCard 
+              organizationId={organization.id} 
+              canEdit={canEditOrg} 
+            />
+          )}
+
+          {/* Personal notification preferences */}
           <Card>
             <CardHeader>
-              <CardTitle>Notification Preferences</CardTitle>
+              <CardTitle>Personal Notification Preferences</CardTitle>
               <CardDescription>
-                Choose how you want to receive alerts and updates.
+                Choose how you want to receive alerts and updates for your account.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">

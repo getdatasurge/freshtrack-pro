@@ -163,14 +163,16 @@ Deno.serve(async (req) => {
 
             if (!existingAlert) {
               const doorContext = doorState !== "unknown" ? ` (door ${doorState})` : "";
+              const nowIso = new Date().toISOString();
               const { data: alertData, error: alertError } = await supabase.from("alerts").insert({
                 unit_id: unit.id,
                 title: `${unit.name}: Temperature Excursion${doorContext}`,
                 message: reason,
                 alert_type: "temp_excursion",
-                severity: "warning",
+                severity: "critical", // Default to CRITICAL for temp excursions
                 temp_reading: temp,
                 temp_limit: isAboveLimit ? highLimit : lowLimit,
+                first_active_at: nowIso,
                 metadata: {
                   current_temp: temp,
                   low_limit: lowLimit,
@@ -183,7 +185,7 @@ Deno.serve(async (req) => {
               
               if (!alertError && alertData) {
                 newAlertIds.push(alertData.id);
-                console.log(`Created temp_excursion alert for unit ${unit.name}`);
+                console.log(`Created temp_excursion alert (CRITICAL) for unit ${unit.name}`);
               }
             }
           }
