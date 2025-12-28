@@ -248,8 +248,9 @@ function isInQuietHours(
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function logNotificationEvent(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: any,
   params: {
     organization_id: string;
     site_id?: string;
@@ -281,8 +282,9 @@ async function logNotificationEvent(
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getNotificationSettings(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: any,
   organizationId: string
 ): Promise<NotificationSettings> {
   const { data } = await supabaseAdmin
@@ -317,8 +319,9 @@ async function getNotificationSettings(
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getRecipients(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: any,
   organizationId: string,
   settings: NotificationSettings
 ): Promise<EligibleRecipient[]> {
@@ -343,15 +346,15 @@ async function getRecipients(
       .in("role", ["owner", "admin"]);
 
     if (roles && roles.length > 0) {
-      const userIds = roles.map(r => r.user_id);
+      const userIds = (roles as { user_id: string; role: string }[]).map(r => r.user_id);
       const { data: profiles } = await supabaseAdmin
         .from("profiles")
         .select("user_id, email, full_name")
         .in("user_id", userIds);
 
       if (profiles) {
-        for (const profile of profiles) {
-          const role = roles.find(r => r.user_id === profile.user_id);
+        for (const profile of profiles as { user_id: string; email: string; full_name: string | null }[]) {
+          const role = (roles as { user_id: string; role: string }[]).find(r => r.user_id === profile.user_id);
           recipients.push({
             email: profile.email,
             name: profile.full_name,
