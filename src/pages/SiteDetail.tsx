@@ -7,7 +7,7 @@ import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
 import { AlertRulesHistoryModal } from "@/components/settings/AlertRulesHistoryModal";
 import { useSiteAlertRules, useOrgAlertRules } from "@/hooks/useAlertRules";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   FileText,
   History,
+  LayoutGrid,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -65,6 +66,7 @@ const SiteDetail = () => {
   const { toast } = useToast();
   const [site, setSite] = useState<SiteData | null>(null);
   const [areas, setAreas] = useState<Area[]>([]);
+  const [totalUnits, setTotalUnits] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -145,6 +147,7 @@ const SiteDetail = () => {
         unitsCount: a.units?.length || 0,
       }));
       setAreas(formatted);
+      setTotalUnits(formatted.reduce((sum, area) => sum + area.unitsCount, 0));
     }
 
     setIsLoading(false);
@@ -239,11 +242,16 @@ const SiteDetail = () => {
     setIsExporting(false);
   };
 
+  const formatAddress = () => {
+    const parts = [site?.address, site?.city, site?.state, site?.postal_code].filter(Boolean);
+    return parts.length > 0 ? parts.join(", ") : "No address set";
+  };
+
   if (isLoading) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-accent" />
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       </DashboardLayout>
     );
@@ -252,238 +260,283 @@ const SiteDetail = () => {
   if (!site) {
     return (
       <DashboardLayout>
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">Site not found</p>
-        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <MapPin className="w-12 h-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">Site not found</p>
+          </CardContent>
+        </Card>
       </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout showBack backHref="/sites">
-      <div className="space-y-6">
-        {/* Site Header */}
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center">
-              <MapPin className="w-7 h-7 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">{site.name}</h1>
-              <p className="text-muted-foreground">
-                {[site.address, site.city, site.state, site.postal_code].filter(Boolean).join(", ") || "No address set"}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" disabled={isExporting}>
-                  {isExporting ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4 mr-2" />
-                  )}
-                  Export
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExport("daily")}>
-                  <FileText className="w-4 h-4 mr-2" />
-                  Daily Temperature Log (7 days)
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExport("exceptions")}>
-                  <AlertTriangle className="w-4 h-4 mr-2" />
-                  Exception Report (7 days)
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Pencil className="w-4 h-4 mr-2" />
-                  Edit
-                </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Edit Site</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-name">Site Name *</Label>
-                  <Input
-                    id="edit-name"
-                    value={editFormData.name}
-                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                  />
+      <div className="space-y-4">
+        {/* Site Header Card */}
+        <Card>
+          <CardHeader className="pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <MapPin className="w-6 h-6 text-primary" />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-address">Address</Label>
-                  <Input
-                    id="edit-address"
-                    value={editFormData.address}
-                    onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-city">City</Label>
-                    <Input
-                      id="edit-city"
-                      value={editFormData.city}
-                      onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-state">State</Label>
-                    <Input
-                      id="edit-state"
-                      value={editFormData.state}
-                      onChange={(e) => setEditFormData({ ...editFormData, state: e.target.value })}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-postal">Postal Code</Label>
-                  <Input
-                    id="edit-postal"
-                    value={editFormData.postal_code}
-                    onChange={(e) => setEditFormData({ ...editFormData, postal_code: e.target.value })}
-                  />
-                </div>
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleUpdateSite} disabled={isSubmitting}>
-                    {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Save Changes
-                  </Button>
+                <div className="min-w-0">
+                  <CardTitle className="text-xl sm:text-2xl truncate">{site.name}</CardTitle>
+                  <CardDescription className="truncate">{formatAddress()}</CardDescription>
                 </div>
               </div>
-            </DialogContent>
-          </Dialog>
+              <div className="flex items-center gap-2 shrink-0">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" disabled={isExporting}>
+                      {isExporting ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4 mr-2" />
+                      )}
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleExport("daily")}>
+                      <FileText className="w-4 h-4 mr-2" />
+                      Daily Temperature Log (7 days)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleExport("exceptions")}>
+                      <AlertTriangle className="w-4 h-4 mr-2" />
+                      Exception Report (7 days)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Edit Site</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-name">Site Name *</Label>
+                        <Input
+                          id="edit-name"
+                          value={editFormData.name}
+                          onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-address">Address</Label>
+                        <Input
+                          id="edit-address"
+                          value={editFormData.address}
+                          onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-city">City</Label>
+                          <Input
+                            id="edit-city"
+                            value={editFormData.city}
+                            onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="edit-state">State</Label>
+                          <Input
+                            id="edit-state"
+                            value={editFormData.state}
+                            onChange={(e) => setEditFormData({ ...editFormData, state: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-postal">Postal Code</Label>
+                        <Input
+                          id="edit-postal"
+                          value={editFormData.postal_code}
+                          onChange={(e) => setEditFormData({ ...editFormData, postal_code: e.target.value })}
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2 pt-4">
+                        <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={handleUpdateSite} disabled={isSubmitting}>
+                          {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          Save Changes
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+          </CardHeader>
+        </Card>
+
+        {/* Quick Stats Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
+                  <LayoutGrid className="w-5 h-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{areas.length}</p>
+                  <p className="text-xs text-muted-foreground">Areas</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
+                  <Thermometer className="w-5 h-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold">{totalUnits}</p>
+                  <p className="text-xs text-muted-foreground">Units</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="col-span-2 sm:col-span-1">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
+                  <Building2 className="w-5 h-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium truncate">{site.timezone}</p>
+                  <p className="text-xs text-muted-foreground">Timezone</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Compliance Settings Section */}
-        {site && (
-          <SiteComplianceSettings
-            siteId={site.id}
-            siteName={site.name}
-            timezone={site.timezone}
-            complianceMode={site.compliance_mode}
-            manualLogCadenceSeconds={site.manual_log_cadence_seconds}
-            correctiveActionRequired={site.corrective_action_required}
-            onSettingsUpdated={loadSiteData}
-          />
-        )}
+        <SiteComplianceSettings
+          siteId={site.id}
+          siteName={site.name}
+          timezone={site.timezone}
+          complianceMode={site.compliance_mode}
+          manualLogCadenceSeconds={site.manual_log_cadence_seconds}
+          correctiveActionRequired={site.corrective_action_required}
+          onSettingsUpdated={loadSiteData}
+        />
 
         {/* Areas Section */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-foreground">Areas</h2>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-accent hover:bg-accent/90 text-accent-foreground">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Area
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add New Area</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="area-name">Area Name *</Label>
-                    <Input
-                      id="area-name"
-                      placeholder="e.g., Main Kitchen"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    />
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg">Areas</CardTitle>
+                <CardDescription>Organize units by location within this site</CardDescription>
+              </div>
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Area
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add New Area</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="area-name">Area Name *</Label>
+                      <Input
+                        id="area-name"
+                        placeholder="e.g., Main Kitchen"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="area-desc">Description</Label>
+                      <Textarea
+                        id="area-desc"
+                        placeholder="Optional description"
+                        value={formData.description}
+                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-4">
+                      <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button 
+                        onClick={handleCreateArea} 
+                        disabled={isSubmitting}
+                      >
+                        {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Create Area
+                      </Button>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="area-desc">Description</Label>
-                    <Textarea
-                      id="area-desc"
-                      placeholder="Optional description"
-                      value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    />
-                  </div>
-                  <div className="flex justify-end gap-2 pt-4">
-                    <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={handleCreateArea} 
-                      disabled={isSubmitting}
-                      className="bg-accent hover:bg-accent/90"
-                    >
-                      {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                      Create Area
-                    </Button>
-                  </div>
-                </div>
-            </DialogContent>
-          </Dialog>
-          </div>
-          </div>
-
-          {areas.length > 0 ? (
-            <div className="grid gap-4">
-              {areas.map((area) => (
-                <Link key={area.id} to={`/sites/${siteId}/areas/${area.id}`}>
-                  <Card className="card-hover cursor-pointer">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-secondary/50 flex items-center justify-center">
-                            <Building2 className="w-6 h-6 text-secondary-foreground" />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-foreground">{area.name}</h3>
-                            <p className="text-sm text-muted-foreground">
-                              {area.description || "No description"}
-                            </p>
-                          </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {areas.length > 0 ? (
+              <div className="space-y-2">
+                {areas.map((area) => (
+                  <Link key={area.id} to={`/sites/${siteId}/areas/${area.id}`}>
+                    <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors cursor-pointer">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0">
+                          <Building2 className="w-5 h-5 text-muted-foreground" />
                         </div>
-                        <div className="flex items-center gap-4">
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Thermometer className="w-4 h-4" />
-                            <span>{area.unitsCount} units</span>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <h3 className="font-medium text-foreground truncate">{area.name}</h3>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {area.description || "No description"}
+                          </p>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <Card className="border-dashed">
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <div className="w-14 h-14 rounded-2xl bg-secondary/50 flex items-center justify-center mb-4">
-                  <Building2 className="w-7 h-7 text-secondary-foreground" />
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Thermometer className="w-4 h-4" />
+                          <span>{area.unitsCount}</span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 border border-dashed rounded-lg">
+                <div className="w-12 h-12 rounded-xl bg-secondary/50 flex items-center justify-center mb-3">
+                  <Building2 className="w-6 h-6 text-muted-foreground" />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">No Areas Yet</h3>
-                <p className="text-muted-foreground text-center max-w-md mb-4">
+                <h3 className="font-medium text-foreground mb-1">No Areas Yet</h3>
+                <p className="text-sm text-muted-foreground text-center max-w-sm mb-4">
                   Create areas within this site to organize your refrigeration units.
                 </p>
                 <Button 
+                  size="sm"
                   onClick={() => setDialogOpen(true)}
-                  className="bg-accent hover:bg-accent/90 text-accent-foreground"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add First Area
                 </Button>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </DashboardLayout>
   );
