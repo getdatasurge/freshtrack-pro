@@ -677,6 +677,8 @@ export type Database = {
         Row: {
           actor_id: string | null
           actor_type: string | null
+          area_id: string | null
+          category: string | null
           event_data: Json
           event_hash: string | null
           event_type: string
@@ -685,13 +687,17 @@ export type Database = {
           organization_id: string
           previous_hash: string | null
           recorded_at: string
+          severity: string | null
           site_id: string | null
+          title: string | null
           unit_id: string | null
           user_agent: string | null
         }
         Insert: {
           actor_id?: string | null
           actor_type?: string | null
+          area_id?: string | null
+          category?: string | null
           event_data?: Json
           event_hash?: string | null
           event_type: string
@@ -700,13 +706,17 @@ export type Database = {
           organization_id: string
           previous_hash?: string | null
           recorded_at?: string
+          severity?: string | null
           site_id?: string | null
+          title?: string | null
           unit_id?: string | null
           user_agent?: string | null
         }
         Update: {
           actor_id?: string | null
           actor_type?: string | null
+          area_id?: string | null
+          category?: string | null
           event_data?: Json
           event_hash?: string | null
           event_type?: string
@@ -715,11 +725,20 @@ export type Database = {
           organization_id?: string
           previous_hash?: string | null
           recorded_at?: string
+          severity?: string | null
           site_id?: string | null
+          title?: string | null
           unit_id?: string | null
           user_agent?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "event_logs_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "event_logs_organization_id_fkey"
             columns: ["organization_id"]
