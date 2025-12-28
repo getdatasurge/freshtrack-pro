@@ -169,26 +169,26 @@ const Alerts = () => {
         return;
       }
 
-      // Load DB alerts
+      // Load DB alerts - use direct organization_id filter
       const { data: alertsData, error: alertsError } = await supabase
         .from("alerts")
         .select(`
           id, title, message, alert_type, severity, status, escalation_level,
           temp_reading, temp_limit, triggered_at, acknowledged_at, acknowledged_by,
           acknowledgment_notes, resolved_at, last_notified_at, last_notified_reason,
+          organization_id, site_id, area_id, source,
           unit:units!inner(
             id, name,
-            area:areas!inner(name, site:sites!inner(name, organization_id))
+            area:areas!inner(name, site:sites!inner(name))
           )
         `)
+        .eq("organization_id", profile.organization_id)
         .order("triggered_at", { ascending: false })
         .limit(100);
 
       if (alertsError) throw alertsError;
 
-      const formattedDbAlerts: DBAlert[] = (alertsData || [])
-        .filter((a: any) => a.unit?.area?.site?.organization_id === profile.organization_id)
-        .map((a: any) => ({
+      const formattedDbAlerts: DBAlert[] = (alertsData || []).map((a: any) => ({
           ...a,
           unit: {
             id: a.unit.id,

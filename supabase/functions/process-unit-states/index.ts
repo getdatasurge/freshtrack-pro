@@ -40,6 +40,16 @@ function getOrgId(unit: any): string {
   return site?.organization_id || "";
 }
 
+function getSiteId(unit: any): string {
+  const area = unit.area;
+  if (Array.isArray(area)) return area[0]?.site_id || "";
+  return area?.site_id || "";
+}
+
+function getAreaId(unit: any): string {
+  return unit.area_id || "";
+}
+
 type UnitStatus = "ok" | "excursion" | "alarm_active" | "monitoring_interrupted" | "manual_required" | "restoring" | "offline";
 
 // Data gap threshold: 2x expected interval (60s) + 2 minutes = 4 minutes
@@ -65,11 +75,11 @@ Deno.serve(async (req) => {
     const { data: units, error: unitsError } = await supabase
       .from("units")
       .select(`
-        id, name, status, last_reading_at, last_temp_reading,
+        id, name, status, last_reading_at, last_temp_reading, area_id,
         temp_limit_high, temp_limit_low, temp_hysteresis, manual_log_cadence,
         door_state, door_last_changed_at, door_open_grace_minutes,
         confirm_time_door_closed, confirm_time_door_open, last_status_change,
-        area:areas!inner(site:sites!inner(organization_id))
+        area:areas!inner(site_id, site:sites!inner(organization_id))
       `)
       .eq("is_active", true);
 
@@ -166,10 +176,14 @@ Deno.serve(async (req) => {
               const nowIso = new Date().toISOString();
               const { data: alertData, error: alertError } = await supabase.from("alerts").insert({
                 unit_id: unit.id,
+                organization_id: getOrgId(unit),
+                site_id: getSiteId(unit),
+                area_id: getAreaId(unit),
+                source: "sensor",
                 title: `${unit.name}: Temperature Excursion${doorContext}`,
                 message: reason,
                 alert_type: "temp_excursion",
-                severity: "critical", // Default to CRITICAL for temp excursions
+                severity: "critical",
                 temp_reading: temp,
                 temp_limit: isAboveLimit ? highLimit : lowLimit,
                 first_active_at: nowIso,
@@ -258,6 +272,10 @@ Deno.serve(async (req) => {
                   if (!existingAlert) {
                     const { data: alertData } = await supabase.from("alerts").insert({
                       unit_id: unit.id,
+                      organization_id: getOrgId(unit),
+                      site_id: getSiteId(unit),
+                      area_id: getAreaId(unit),
+                      source: "sensor",
                       title: `${unit.name}: Suspected Cooling Failure`,
                       message: `Door closed; temp not recovering; possible cooling system issue. Current: ${temp}°F`,
                       alert_type: "suspected_cooling_failure",
@@ -386,6 +404,10 @@ Deno.serve(async (req) => {
           if (!existingAlert) {
             const { data: alertData } = await supabase.from("alerts").insert({
               unit_id: unit.id,
+              organization_id: getOrgId(unit),
+              site_id: getSiteId(unit),
+              area_id: getAreaId(unit),
+              source: "sensor",
               title: `${unit.name}: ${newStatus.replace(/_/g, " ").toUpperCase()}`,
               message: reason,
               alert_type: "monitoring_interrupted",
