@@ -49,6 +49,8 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [hasCheckedOrg, setHasCheckedOrg] = useState(false);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [stats, setStats] = useState<DashboardStats>({
     totalUnits: 0,
     unitsOk: 0,
@@ -66,14 +68,14 @@ const Dashboard = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       if (!session) {
-        navigate("/auth");
+        navigate("/auth", { replace: true });
       }
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (!session) {
-        navigate("/auth");
+        navigate("/auth", { replace: true });
       }
     });
 
@@ -88,23 +90,54 @@ const Dashboard = () => {
 
   const loadDashboardData = useCallback(async () => {
     if (!session?.user) return;
-    try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
+    
+    let orgId = organizationId;
+    
+    // Only check org once to prevent redirect loops
+    if (!hasCheckedOrg) {
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("user_id", session.user.id)
+          .maybeSingle();
 
-      if (!profile?.organization_id) {
+        // Mark that we've checked the org
+        setHasCheckedOrg(true);
+
+        // Handle profile query error - don't redirect
+        if (profileError) {
+          console.error("Error loading profile:", profileError);
+          setIsLoading(false);
+          return;
+        }
+
+        // Only redirect if we definitively have no org
+        if (!profile?.organization_id) {
+          setIsLoading(false);
+          navigate("/onboarding", { replace: true });
+          return;
+        }
+        
+        orgId = profile.organization_id;
+        setOrganizationId(orgId);
+      } catch (error) {
+        console.error("Error checking organization:", error);
         setIsLoading(false);
-        navigate("/onboarding");
         return;
       }
-
+    }
+    
+    if (!orgId) {
+      setIsLoading(false);
+      return;
+    }
+    
+    try {
       const { count: sitesCount } = await supabase
         .from("sites")
         .select("*", { count: "exact", head: true })
-        .eq("organization_id", profile.organization_id);
+        .eq("organization_id", orgId);
 
       // Fetch units with area and site info, including sensor reliability fields
       const { data: unitsData } = await supabase
@@ -119,7 +152,7 @@ const Dashboard = () => {
         .limit(50);
 
       const filteredUnits = (unitsData || []).filter(
-        (u: any) => u.area?.site?.organization_id === profile.organization_id
+        (u: any) => u.area?.site?.organization_id === orgId
       );
 
       // Fetch last manual log for each unit

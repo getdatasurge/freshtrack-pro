@@ -87,6 +87,8 @@ const Onboarding = () => {
   const { toast } = useToast();
   const [currentStep, setCurrentStep] = useState<Step>("organization");
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingOrg, setIsCheckingOrg] = useState(true);
+  const [hasCheckedOrg, setHasCheckedOrg] = useState(false);
   const [createdIds, setCreatedIds] = useState<{
     orgId?: string;
     siteId?: string;
@@ -101,27 +103,39 @@ const Onboarding = () => {
     unit: { name: "", type: "fridge" },
   });
 
-  // Check if user already has an organization
+  // Check if user already has an organization - only once
   useEffect(() => {
+    if (hasCheckedOrg) return;
+    
     const checkExistingOrg = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate("/auth");
-        return;
-      }
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          navigate("/auth", { replace: true });
+          return;
+        }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
 
-      if (profile?.organization_id) {
-        navigate("/dashboard");
+        setHasCheckedOrg(true);
+        setIsCheckingOrg(false);
+
+        // Only redirect if profile has an org - don't redirect on error
+        if (!error && profile?.organization_id) {
+          navigate("/dashboard", { replace: true });
+        }
+      } catch (err) {
+        console.error("Error checking org:", err);
+        setIsCheckingOrg(false);
+        setHasCheckedOrg(true);
       }
     };
     checkExistingOrg();
-  }, [navigate]);
+  }, [navigate, hasCheckedOrg]);
 
   const generateSlug = (name: string) => {
     return name
@@ -298,6 +312,15 @@ const Onboarding = () => {
   };
 
   const currentStepIndex = steps.findIndex((s) => s.key === currentStep);
+
+  // Show loading while checking org
+  if (isCheckingOrg) {
+    return (
+      <div className="min-h-screen bg-gradient-frost flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-accent" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-frost py-8 px-4">
