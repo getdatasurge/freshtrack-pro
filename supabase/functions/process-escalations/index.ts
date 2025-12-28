@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "https://esm.sh/resend@2.0.0";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
@@ -9,24 +9,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Roles that should receive escalation emails
-const ESCALATION_ROLES = ['owner', 'admin', 'manager'] as const;
-
-interface EscalationPolicy {
-  id: string;
-  organization_id: string | null;
-  site_id: string | null;
-  critical_primary_delay_minutes: number;
-  critical_secondary_delay_minutes: number | null;
-  warning_primary_delay_minutes: number;
-  warning_secondary_delay_minutes: number | null;
-  acknowledge_stops_notifications: boolean;
-  quiet_hours_enabled: boolean;
-  quiet_hours_start: string | null;
-  quiet_hours_end: string | null;
-  repeat_notification_interval_minutes: number | null;
-}
-
 interface Alert {
   id: string;
   title: string;
@@ -34,770 +16,611 @@ interface Alert {
   alert_type: string;
   severity: string;
   status: string;
-  triggered_at: string;
-  acknowledged_at: string | null;
-  escalation_level: number;
-  next_escalation_at: string | null;
-  unit_id: string;
   temp_reading: number | null;
   temp_limit: number | null;
+  triggered_at: string;
+  escalation_level: number;
+  next_escalation_at: string | null;
+  acknowledged_at: string | null;
+  unit_id: string;
+  metadata: Record<string, unknown> | null;
+  first_active_at: string | null;
+  last_notified_at: string | null;
+  last_notified_reason: string | null;
 }
 
 interface UnitInfo {
   id: string;
   name: string;
-  unit_type: string;
-  last_temp_reading: number | null;
-  last_reading_at: string | null;
-  temp_limit_high: number;
-  temp_limit_low: number | null;
-  areaId: string;
-  areaName: string;
-  siteId: string;
-  siteName: string;
-  organizationId: string;
-  timezone: string;
-}
-
-interface EligibleRecipient {
-  user_id: string;
-  email: string;
-  full_name: string | null;
-  role: string;
-}
-
-// Push notification structure (for future implementation)
-interface PushNotification {
-  title: string;
-  body: string;
-  data: {
-    alertId: string;
-    unitId: string;
-    action: string;
-    deepLink?: string;
+  area: {
+    id: string;
+    name: string;
+    site: {
+      id: string;
+      name: string;
+      organization_id: string;
+      timezone: string;
+    };
   };
 }
 
-// SMS message structure (Twilio-compatible, for future implementation)
-interface SMSMessage {
-  to: string; // E.164 format
-  body: string;
-  alertId: string;
-  unitId: string;
+interface NotificationSettings {
+  email_enabled: boolean;
+  recipients: string[];
+  notify_temp_excursion: boolean;
+  notify_alarm_active: boolean;
+  notify_manual_required: boolean;
+  notify_offline: boolean;
+  notify_low_battery: boolean;
+  notify_warnings: boolean;
 }
+
+interface EscalationPolicy {
+  critical_primary_delay_minutes: number;
+  critical_secondary_delay_minutes: number | null;
+  critical_owner_delay_minutes: number | null;
+  warning_primary_delay_minutes: number;
+  warning_secondary_delay_minutes: number | null;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  quiet_hours_behavior: string | null;
+  acknowledge_stops_notifications: boolean;
+  repeat_notification_interval_minutes: number | null;
+}
+
+interface EligibleRecipient {
+  email: string;
+  name: string | null;
+  role: string;
+  user_id: string;
+}
+
+const alertTypeLabels: Record<string, string> = {
+  alarm_active: "Temperature Alarm",
+  monitoring_interrupted: "Monitoring Interrupted",
+  missed_manual_entry: "Missed Manual Entry",
+  low_battery: "Low Battery",
+  sensor_fault: "Sensor Fault",
+  door_open: "Door Left Open",
+  calibration_due: "Calibration Due",
+  suspected_cooling_failure: "Suspected Cooling Failure",
+  temp_excursion: "Temperature Excursion",
+};
+
+const alertTypeToSettingKey: Record<string, keyof NotificationSettings> = {
+  temp_excursion: "notify_temp_excursion",
+  alarm_active: "notify_alarm_active",
+  missed_manual_entry: "notify_manual_required",
+  monitoring_interrupted: "notify_offline",
+  low_battery: "notify_low_battery",
+};
 
 function generateAlertEmailHtml(
   alert: Alert,
   unit: UnitInfo,
-  escalationLevel: number
+  appUrl: string
 ): string {
-  const siteName = unit.siteName;
-  const areaName = unit.areaName;
-  const unitName = unit.name;
-  
   const severityColors: Record<string, string> = {
-    critical: '#dc2626',
-    warning: '#f59e0b',
-    info: '#3b82f6',
+    critical: "#dc2626",
+    warning: "#f59e0b",
+    info: "#3b82f6",
   };
-  
-  const alertTypeLabels: Record<string, string> = {
-    missed_manual_entry: 'Manual Logging Overdue',
-    monitoring_interrupted: 'Sensor Offline',
-    alarm_active: 'Temperature Alarm',
-    temp_excursion: 'Temperature Excursion',
-    low_battery: 'Low Battery Warning',
-    sensor_fault: 'Sensor Fault',
-    door_open: 'Door Open Alert',
-    calibration_due: 'Calibration Due',
-    suspected_cooling_failure: 'Suspected Cooling Failure',
-  };
-  
+
+  const severityColor = severityColors[alert.severity] || severityColors.info;
   const alertLabel = alertTypeLabels[alert.alert_type] || alert.alert_type;
-  const severityColor = severityColors[alert.severity] || '#6b7280';
-  const triggeredAt = new Date(alert.triggered_at).toLocaleString();
-  
-  const escalationBadge = escalationLevel > 1 
-    ? `<span style="background: #fbbf24; color: #78350f; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 8px;">Escalation Level ${escalationLevel}</span>` 
-    : '';
+  const triggeredDate = new Date(alert.triggered_at).toLocaleString("en-US", {
+    timeZone: unit.area.site.timezone,
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%); padding: 24px 32px;">
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td>
-                    <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">❄️ FrostGuard</h1>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          
-          <!-- Alert Banner -->
-          <tr>
-            <td style="background-color: ${severityColor}; padding: 16px 32px;">
-              <h2 style="margin: 0; color: #ffffff; font-size: 18px; font-weight: 600;">
-                ${alert.severity === 'critical' ? '🚨' : '⚠️'} ${alertLabel}${escalationBadge}
-              </h2>
-            </td>
-          </tr>
-          
-          <!-- Content -->
-          <tr>
-            <td style="padding: 32px;">
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <!-- Unit Info -->
-                <tr>
-                  <td style="padding-bottom: 24px;">
-                    <h3 style="margin: 0 0 8px 0; color: #111827; font-size: 20px; font-weight: 600;">${unitName}</h3>
-                    <p style="margin: 0; color: #6b7280; font-size: 14px;">
-                      ${areaName} · ${siteName}
-                    </p>
-                  </td>
-                </tr>
-                
-                <!-- Alert Details -->
-                <tr>
-                  <td style="background-color: #f9fafb; border-radius: 8px; padding: 20px; margin-bottom: 24px;">
-                    <table width="100%" cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td style="padding-bottom: 12px;">
-                          <span style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Alert Type</span>
-                          <p style="margin: 4px 0 0 0; color: #111827; font-size: 16px; font-weight: 500;">${alertLabel}</p>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding-bottom: 12px;">
-                          <span style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Severity</span>
-                          <p style="margin: 4px 0 0 0; color: ${severityColor}; font-size: 16px; font-weight: 500; text-transform: capitalize;">${alert.severity}</p>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="padding-bottom: 12px;">
-                          <span style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Triggered At</span>
-                          <p style="margin: 4px 0 0 0; color: #111827; font-size: 16px; font-weight: 500;">${triggeredAt}</p>
-                        </td>
-                      </tr>
-                      ${alert.temp_reading !== null ? `
-                      <tr>
-                        <td style="padding-bottom: 12px;">
-                          <span style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Temperature Reading</span>
-                          <p style="margin: 4px 0 0 0; color: #111827; font-size: 16px; font-weight: 500;">${alert.temp_reading}°F</p>
-                        </td>
-                      </tr>
-                      ` : ''}
-                      ${alert.message ? `
-                      <tr>
-                        <td>
-                          <span style="color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Message</span>
-                          <p style="margin: 4px 0 0 0; color: #111827; font-size: 14px;">${alert.message}</p>
-                        </td>
-                      </tr>
-                      ` : ''}
-                    </table>
-                  </td>
-                </tr>
-                
-                <!-- CTA Button -->
-                <tr>
-                  <td style="padding-top: 24px;" align="center">
-                    <a href="${Deno.env.get('SITE_URL') || 'https://frostguard.app'}/units/${unit.id}" 
-                       style="display: inline-block; background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%); color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px;">
-                      View Unit Details
-                    </a>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-          
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f9fafb; padding: 24px 32px; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; color: #6b7280; font-size: 12px; text-align: center;">
-                This is an automated alert from FrostGuard Temperature Monitoring.<br>
-                To manage your notification preferences, visit your account settings.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `;
-}
-
-function generateSummaryEmailHtml(
-  alerts: Array<{ alert: Alert; unit: UnitInfo }>,
-  orgName: string
-): string {
-  const alertRows = alerts.map(({ alert, unit }) => {
-    const severityColors: Record<string, string> = {
-      critical: '#dc2626',
-      warning: '#f59e0b',
-      info: '#3b82f6',
-    };
-    const color = severityColors[alert.severity] || '#6b7280';
-    
-    return `
+  let tempInfo = "";
+  if (alert.temp_reading !== null) {
+    tempInfo = `
       <tr>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">
-          <span style="color: ${color}; font-weight: 600;">${alert.severity.toUpperCase()}</span>
-        </td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${unit.name}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${unit.siteName}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">${alert.title}</td>
-        <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">Level ${alert.escalation_level}</td>
+        <td style="padding: 8px 0; color: #6b7280;">Current Temperature:</td>
+        <td style="padding: 8px 0; font-weight: 600; color: ${severityColor};">${alert.temp_reading}°F</td>
       </tr>
     `;
-  }).join('');
+    if (alert.temp_limit !== null) {
+      tempInfo += `
+        <tr>
+          <td style="padding: 8px 0; color: #6b7280;">Limit:</td>
+          <td style="padding: 8px 0;">${alert.temp_limit}°F</td>
+        </tr>
+      `;
+    }
+  }
+
+  // Add metadata info if available
+  const metadata = alert.metadata || {};
+  let metadataInfo = "";
+  if (metadata.high_limit || metadata.low_limit) {
+    metadataInfo = `
+      <tr>
+        <td style="padding: 8px 0; color: #6b7280;">Range:</td>
+        <td style="padding: 8px 0;">${metadata.low_limit || "N/A"}°F - ${metadata.high_limit || "N/A"}°F</td>
+      </tr>
+    `;
+  }
 
   return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="700" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%); padding: 24px 32px;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">❄️ FrostGuard - Escalation Summary</h1>
-            </td>
-          </tr>
-          
-          <!-- Content -->
-          <tr>
-            <td style="padding: 32px;">
-              <h2 style="margin: 0 0 8px 0; color: #111827; font-size: 20px; font-weight: 600;">${orgName}</h2>
-              <p style="margin: 0 0 24px 0; color: #6b7280; font-size: 14px;">
-                ${alerts.length} alert${alerts.length !== 1 ? 's' : ''} requiring attention
-              </p>
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+      <table role="presentation" style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td align="center" style="padding: 40px 0;">
+            <table role="presentation" style="width: 600px; max-width: 100%; border-collapse: collapse; background-color: #ffffff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+              <!-- Header -->
+              <tr>
+                <td style="padding: 32px 40px; background-color: ${severityColor}; border-radius: 8px 8px 0 0;">
+                  <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">
+                    ⚠️ ${alertLabel}
+                  </h1>
+                  <p style="margin: 8px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">
+                    ${alert.severity.toUpperCase()} Alert - Immediate attention required
+                  </p>
+                </td>
+              </tr>
               
-              <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-                <tr style="background-color: #f9fafb;">
-                  <th style="padding: 12px; text-align: left; font-size: 12px; text-transform: uppercase; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Severity</th>
-                  <th style="padding: 12px; text-align: left; font-size: 12px; text-transform: uppercase; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Unit</th>
-                  <th style="padding: 12px; text-align: left; font-size: 12px; text-transform: uppercase; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Site</th>
-                  <th style="padding: 12px; text-align: left; font-size: 12px; text-transform: uppercase; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Alert</th>
-                  <th style="padding: 12px; text-align: left; font-size: 12px; text-transform: uppercase; color: #6b7280; border-bottom: 1px solid #e5e7eb;">Escalation</th>
-                </tr>
-                ${alertRows}
-              </table>
+              <!-- Content -->
+              <tr>
+                <td style="padding: 32px 40px;">
+                  <h2 style="margin: 0 0 16px; color: #111827; font-size: 18px;">
+                    ${unit.name}
+                  </h2>
+                  <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px;">
+                    ${unit.area.name} • ${unit.area.site.name}
+                  </p>
+                  
+                  <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+                    ${tempInfo}
+                    ${metadataInfo}
+                    <tr>
+                      <td style="padding: 8px 0; color: #6b7280;">Triggered:</td>
+                      <td style="padding: 8px 0;">${triggeredDate}</td>
+                    </tr>
+                  </table>
+                  
+                  ${alert.message ? `<p style="margin: 0 0 24px; padding: 16px; background-color: #fef3c7; border-radius: 6px; color: #92400e; font-size: 14px;">${alert.message}</p>` : ""}
+                  
+                  <a href="${appUrl}/unit/${unit.id}" style="display: inline-block; padding: 12px 24px; background-color: ${severityColor}; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 500;">
+                    View Unit Details
+                  </a>
+                </td>
+              </tr>
               
-              <div style="padding-top: 24px; text-align: center;">
-                <a href="${Deno.env.get('SITE_URL') || 'https://frostguard.app'}/alerts" 
-                   style="display: inline-block; background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%); color: #ffffff; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px;">
-                  View All Alerts
-                </a>
-              </div>
-            </td>
-          </tr>
-          
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f9fafb; padding: 24px 32px; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; color: #6b7280; font-size: 12px; text-align: center;">
-                This is an automated escalation summary from FrostGuard Temperature Monitoring.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
+              <!-- Footer -->
+              <tr>
+                <td style="padding: 24px 40px; background-color: #f9fafb; border-radius: 0 0 8px 8px; border-top: 1px solid #e5e7eb;">
+                  <p style="margin: 0; color: #9ca3af; font-size: 12px;">
+                    This alert was sent by FrostGuard. To manage your notification preferences, visit your settings.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
   `;
 }
 
-function isInQuietHours(policy: EscalationPolicy, timezone: string): boolean {
+function isInQuietHours(
+  policy: EscalationPolicy,
+  timezone: string
+): boolean {
   if (!policy.quiet_hours_enabled || !policy.quiet_hours_start || !policy.quiet_hours_end) {
     return false;
   }
-  
-  // Get current time in the site's timezone
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  const timeStr = formatter.format(now);
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  const currentMinutes = hours * 60 + minutes;
-  
-  const [startH, startM] = policy.quiet_hours_start.split(':').map(Number);
-  const [endH, endM] = policy.quiet_hours_end.split(':').map(Number);
-  const startMinutes = startH * 60 + startM;
-  const endMinutes = endH * 60 + endM;
-  
-  // Handle overnight quiet hours (e.g., 22:00 - 06:00)
-  if (startMinutes > endMinutes) {
-    return currentMinutes >= startMinutes || currentMinutes < endMinutes;
-  }
-  
-  return currentMinutes >= startMinutes && currentMinutes < endMinutes;
-}
 
-function calculateNextEscalation(
-  alert: Alert,
-  policy: EscalationPolicy,
-  newLevel: number
-): Date {
-  const now = new Date();
-  let delayMinutes: number;
-  
-  if (alert.severity === 'critical') {
-    if (newLevel === 1) {
-      delayMinutes = policy.critical_primary_delay_minutes;
-    } else if (newLevel === 2 && policy.critical_secondary_delay_minutes) {
-      delayMinutes = policy.critical_secondary_delay_minutes;
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const currentTime = formatter.format(now);
+    const [currentHour, currentMinute] = currentTime.split(":").map(Number);
+    const currentMinutes = currentHour * 60 + currentMinute;
+
+    const [startHour, startMinute] = policy.quiet_hours_start.split(":").map(Number);
+    const [endHour, endMinute] = policy.quiet_hours_end.split(":").map(Number);
+    const startMinutes = startHour * 60 + startMinute;
+    const endMinutes = endHour * 60 + endMinute;
+
+    if (startMinutes <= endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
     } else {
-      delayMinutes = policy.repeat_notification_interval_minutes || 30;
+      return currentMinutes >= startMinutes || currentMinutes < endMinutes;
     }
-  } else {
-    if (newLevel === 1) {
-      delayMinutes = policy.warning_primary_delay_minutes;
-    } else if (newLevel === 2 && policy.warning_secondary_delay_minutes) {
-      delayMinutes = policy.warning_secondary_delay_minutes;
-    } else {
-      delayMinutes = policy.repeat_notification_interval_minutes || 60;
+  } catch {
+    return false;
+  }
+}
+
+async function logNotificationEvent(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  params: {
+    organization_id: string;
+    site_id?: string;
+    unit_id?: string;
+    alert_id: string;
+    channel: string;
+    event_type: string;
+    to_recipients: string[];
+    status: "SENT" | "SKIPPED" | "FAILED";
+    reason?: string;
+    provider_message_id?: string;
+  }
+): Promise<void> {
+  try {
+    await supabaseAdmin.from("notification_events").insert({
+      organization_id: params.organization_id,
+      site_id: params.site_id,
+      unit_id: params.unit_id,
+      alert_id: params.alert_id,
+      channel: params.channel,
+      event_type: params.event_type,
+      to_recipients: params.to_recipients,
+      status: params.status,
+      reason: params.reason,
+      provider_message_id: params.provider_message_id,
+    });
+  } catch (error) {
+    console.error("Failed to log notification event:", error);
+  }
+}
+
+async function getNotificationSettings(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  organizationId: string
+): Promise<NotificationSettings> {
+  const { data } = await supabaseAdmin
+    .from("notification_settings")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+
+  if (data) {
+    return {
+      email_enabled: data.email_enabled,
+      recipients: data.recipients || [],
+      notify_temp_excursion: data.notify_temp_excursion,
+      notify_alarm_active: data.notify_alarm_active,
+      notify_manual_required: data.notify_manual_required,
+      notify_offline: data.notify_offline,
+      notify_low_battery: data.notify_low_battery,
+      notify_warnings: data.notify_warnings,
+    };
+  }
+
+  // Default settings if not configured
+  return {
+    email_enabled: true,
+    recipients: [],
+    notify_temp_excursion: true,
+    notify_alarm_active: true,
+    notify_manual_required: true,
+    notify_offline: false,
+    notify_low_battery: false,
+    notify_warnings: false,
+  };
+}
+
+async function getRecipients(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  organizationId: string,
+  settings: NotificationSettings
+): Promise<EligibleRecipient[]> {
+  const recipients: EligibleRecipient[] = [];
+
+  // Add recipients from notification_settings
+  for (const email of settings.recipients) {
+    recipients.push({
+      email: email.trim(),
+      name: null,
+      role: "configured",
+      user_id: "",
+    });
+  }
+
+  // If no configured recipients, fall back to org admins/owners
+  if (recipients.length === 0) {
+    const { data: roles } = await supabaseAdmin
+      .from("user_roles")
+      .select("user_id, role")
+      .eq("organization_id", organizationId)
+      .in("role", ["owner", "admin"]);
+
+    if (roles && roles.length > 0) {
+      const userIds = roles.map(r => r.user_id);
+      const { data: profiles } = await supabaseAdmin
+        .from("profiles")
+        .select("user_id, email, full_name")
+        .in("user_id", userIds);
+
+      if (profiles) {
+        for (const profile of profiles) {
+          const role = roles.find(r => r.user_id === profile.user_id);
+          recipients.push({
+            email: profile.email,
+            name: profile.full_name,
+            role: role?.role || "admin",
+            user_id: profile.user_id,
+          });
+        }
+      }
     }
   }
-  
-  return new Date(now.getTime() + delayMinutes * 60 * 1000);
+
+  return recipients;
 }
 
-// Prepare push notification payload (for future implementation)
-function preparePushNotification(alert: Alert, unit: UnitInfo): PushNotification {
-  const alertTypeLabels: Record<string, string> = {
-    missed_manual_entry: 'Manual Logging Overdue',
-    monitoring_interrupted: 'Sensor Offline',
-    alarm_active: 'Temperature Alarm',
-  };
-  
-  return {
-    title: `${alert.severity === 'critical' ? '🚨' : '⚠️'} ${alertTypeLabels[alert.alert_type] || alert.title}`,
-    body: `${unit.name} at ${unit.siteName} requires attention`,
-    data: {
-      alertId: alert.id,
-      unitId: unit.id,
-      action: alert.alert_type === 'missed_manual_entry' ? 'log_temperature' : 'view_unit',
-      deepLink: `/units/${unit.id}`,
-    },
-  };
-}
+function shouldNotifyForAlertType(
+  alertType: string,
+  severity: string,
+  settings: NotificationSettings
+): { shouldNotify: boolean; reason?: string } {
+  // Check if we should notify for warnings
+  if (severity === "warning" && !settings.notify_warnings) {
+    return { shouldNotify: false, reason: "Warning notifications disabled" };
+  }
 
-// Prepare SMS message (Twilio-compatible, for future implementation)
-function prepareSMSMessage(alert: Alert, unit: UnitInfo, recipientPhone: string): SMSMessage {
-  const alertTypeLabels: Record<string, string> = {
-    missed_manual_entry: 'Manual log overdue',
-    monitoring_interrupted: 'Sensor offline',
-    alarm_active: 'Temp alarm',
-  };
-  
-  const label = alertTypeLabels[alert.alert_type] || alert.title;
-  const severity = alert.severity === 'critical' ? '🚨 CRITICAL' : '⚠️ Warning';
-  
-  return {
-    to: recipientPhone,
-    body: `FrostGuard ${severity}: ${label} for ${unit.name} at ${unit.siteName}. Check app for details.`,
-    alertId: alert.id,
-    unitId: unit.id,
-  };
+  // Check alert-type specific settings
+  const settingKey = alertTypeToSettingKey[alertType];
+  if (settingKey && !settings[settingKey]) {
+    return { shouldNotify: false, reason: `${alertType} notifications disabled` };
+  }
+
+  return { shouldNotify: true };
 }
 
 const handler = async (req: Request): Promise<Response> => {
-  console.log("Process escalations function invoked");
-  
+  console.log("process-escalations: Starting...");
+
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    
-    // Find alerts that need escalation
-    const now = new Date().toISOString();
-    
-    const { data: alertsToEscalate, error: alertsError } = await supabase
-      .from('alerts')
-      .select(`
-        id,
-        title,
-        message,
-        alert_type,
-        severity,
-        status,
-        triggered_at,
-        acknowledged_at,
-        escalation_level,
-        next_escalation_at,
-        unit_id,
-        temp_reading,
-        temp_limit
-      `)
-      .in('status', ['active', 'acknowledged'])
-      .or(`next_escalation_at.is.null,next_escalation_at.lte.${now}`)
-      .order('severity', { ascending: false });
-    
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      { auth: { persistSession: false } }
+    );
+
+    const appUrl = Deno.env.get("APP_URL") || "https://frostguard.app";
+
+    // Fetch active alerts that need notification (newly active or never notified)
+    const { data: alerts, error: alertsError } = await supabaseAdmin
+      .from("alerts")
+      .select("*")
+      .eq("status", "active")
+      .is("last_notified_at", null);
+
     if (alertsError) {
       console.error("Error fetching alerts:", alertsError);
       throw alertsError;
     }
-    
-    console.log(`Found ${alertsToEscalate?.length || 0} alerts to process`);
-    
-    if (!alertsToEscalate || alertsToEscalate.length === 0) {
+
+    console.log(`process-escalations: Found ${alerts?.length || 0} alerts needing notification`);
+
+    if (!alerts || alerts.length === 0) {
       return new Response(
-        JSON.stringify({ message: "No alerts to escalate", processed: 0 }),
-        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        JSON.stringify({ success: true, message: "No alerts need notification", emailsSent: 0 }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    
-    const emailsSent: string[] = [];
-    const errors: string[] = [];
-    const orgAlertGroups: Map<string, Array<{ alert: Alert; unit: UnitInfo }>> = new Map();
-    
-    for (const alert of alertsToEscalate) {
-      try {
-        // Get unit info with area and site using separate queries to avoid type issues
-        const { data: unitData, error: unitError } = await supabase
-          .from('units')
-          .select('id, name, unit_type, last_temp_reading, last_reading_at, temp_limit_high, temp_limit_low, area_id')
-          .eq('id', alert.unit_id)
-          .single();
-        
-        if (unitError || !unitData) {
-          console.error(`Error fetching unit ${alert.unit_id}:`, unitError);
-          continue;
-        }
-        
-        // Get area info
-        const { data: areaData, error: areaError } = await supabase
-          .from('areas')
-          .select('id, name, site_id')
-          .eq('id', unitData.area_id)
-          .single();
-        
-        if (areaError || !areaData) {
-          console.error(`Error fetching area ${unitData.area_id}:`, areaError);
-          continue;
-        }
-        
-        // Get site info
-        const { data: siteData, error: siteError } = await supabase
-          .from('sites')
-          .select('id, name, organization_id, timezone')
-          .eq('id', areaData.site_id)
-          .single();
-        
-        if (siteError || !siteData) {
-          console.error(`Error fetching site ${areaData.site_id}:`, siteError);
-          continue;
-        }
-        
-        const unit: UnitInfo = {
-          id: unitData.id,
-          name: unitData.name,
-          unit_type: unitData.unit_type,
-          last_temp_reading: unitData.last_temp_reading,
-          last_reading_at: unitData.last_reading_at,
-          temp_limit_high: unitData.temp_limit_high,
-          temp_limit_low: unitData.temp_limit_low,
-          areaId: areaData.id,
-          areaName: areaData.name,
-          siteId: siteData.id,
-          siteName: siteData.name,
-          organizationId: siteData.organization_id,
-          timezone: siteData.timezone || 'America/New_York',
-        };
-        
-        const orgId = unit.organizationId;
-        const siteId = unit.siteId;
-        const timezone = unit.timezone;
-        
-        // Get escalation policy (site-level first, then org-level fallback)
-        let policy: EscalationPolicy | null = null;
-        
-        const { data: sitePolicy } = await supabase
-          .from('escalation_policies')
-          .select('*')
-          .eq('site_id', siteId)
-          .maybeSingle();
-        
-        if (sitePolicy) {
-          policy = sitePolicy;
-        } else {
-          const { data: orgPolicy } = await supabase
-            .from('escalation_policies')
-            .select('*')
-            .eq('organization_id', orgId)
-            .maybeSingle();
-          
-          if (orgPolicy) {
-            policy = orgPolicy;
-          }
-        }
-        
-        if (!policy) {
-          // Use default policy
-          policy = {
-            id: 'default',
-            organization_id: orgId,
-            site_id: null,
-            critical_primary_delay_minutes: 0,
-            critical_secondary_delay_minutes: 15,
-            warning_primary_delay_minutes: 0,
-            warning_secondary_delay_minutes: 30,
-            acknowledge_stops_notifications: true,
-            quiet_hours_enabled: false,
-            quiet_hours_start: null,
-            quiet_hours_end: null,
-            repeat_notification_interval_minutes: 30,
-          };
-        }
-        
-        // Check if alert is acknowledged and policy stops notifications
-        if (alert.status === 'acknowledged' && policy.acknowledge_stops_notifications) {
-          console.log(`Alert ${alert.id} acknowledged, skipping escalation`);
-          continue;
-        }
-        
-        // Check quiet hours
-        if (isInQuietHours(policy, timezone)) {
-          console.log(`Alert ${alert.id} in quiet hours, skipping`);
-          continue;
-        }
-        
-        // Determine new escalation level
-        const newLevel = alert.escalation_level + 1;
-        
-        // Get eligible recipients (managers, admins, owners only - not staff)
-        const { data: rolesData, error: rolesError } = await supabase
-          .from('user_roles')
-          .select('user_id, role')
-          .eq('organization_id', orgId)
-          .in('role', ESCALATION_ROLES);
-        
-        if (rolesError) {
-          console.error(`Error fetching roles for org ${orgId}:`, rolesError);
-          continue;
-        }
-        
-        // Get profiles for these users
-        const userIds = (rolesData || []).map(r => r.user_id);
-        
-        if (userIds.length === 0) {
-          console.log(`No eligible recipients for org ${orgId}`);
-          continue;
-        }
-        
-        const { data: profilesData, error: profilesError } = await supabase
-          .from('profiles')
-          .select('user_id, email, full_name, notification_preferences')
-          .in('user_id', userIds);
-        
-        if (profilesError) {
-          console.error(`Error fetching profiles:`, profilesError);
-          continue;
-        }
-        
-        // Build eligible recipients list
-        const eligibleRecipients: EligibleRecipient[] = [];
-        for (const roleRecord of rolesData || []) {
-          const profile = (profilesData || []).find(p => p.user_id === roleRecord.user_id);
-          if (!profile) continue;
-          
-          // Check email preference
-          const prefs = profile.notification_preferences as { email?: boolean } | null;
-          if (prefs?.email === false) continue;
-          
-          eligibleRecipients.push({
-            user_id: roleRecord.user_id,
-            email: profile.email,
-            full_name: profile.full_name,
-            role: roleRecord.role,
-          });
-        }
-        
-        console.log(`Found ${eligibleRecipients.length} eligible recipients for alert ${alert.id}`);
-        
-        // Send individual alert emails
-        for (const recipient of eligibleRecipients) {
-          const emailHtml = generateAlertEmailHtml(alert as Alert, unit, newLevel);
-          
-          const { error: emailError } = await resend.emails.send({
-            from: "FrostGuard <alerts@frostguard.app>",
-            to: [recipient.email],
-            subject: `${alert.severity === 'critical' ? '🚨' : '⚠️'} ${alert.title} - ${unit.name}`,
-            html: emailHtml,
-          });
-          
-          if (emailError) {
-            console.error(`Failed to send email to ${recipient.email}:`, emailError);
-            errors.push(`Failed: ${recipient.email}`);
-            
-            // Record failed delivery
-            await supabase.from('notification_deliveries').insert({
-              alert_id: alert.id,
-              user_id: recipient.user_id,
-              channel: 'email',
-              status: 'failed',
-              error_message: JSON.stringify(emailError),
-            });
-          } else {
-            console.log(`Sent escalation email to ${recipient.email}`);
-            emailsSent.push(recipient.email);
-            
-            // Record successful delivery
-            await supabase.from('notification_deliveries').insert({
-              alert_id: alert.id,
-              user_id: recipient.user_id,
-              channel: 'email',
-              status: 'sent',
-              sent_at: new Date().toISOString(),
-            });
-          }
-        }
-        
-        // Group alerts by org for admin summary
-        if (!orgAlertGroups.has(orgId)) {
-          orgAlertGroups.set(orgId, []);
-        }
-        orgAlertGroups.get(orgId)!.push({ alert: alert as Alert, unit });
-        
-        // Update alert escalation level and next_escalation_at
-        const nextEscalation = calculateNextEscalation(alert as Alert, policy, newLevel);
-        
-        await supabase
-          .from('alerts')
-          .update({
-            escalation_level: newLevel,
-            next_escalation_at: nextEscalation.toISOString(),
-          })
-          .eq('id', alert.id);
-        
-        // Log escalation event
-        await supabase.from('event_logs').insert({
+
+    let emailsSent = 0;
+    let emailsSkipped = 0;
+    let emailsFailed = 0;
+
+    for (const alert of alerts as Alert[]) {
+      console.log(`Processing alert ${alert.id} (${alert.alert_type}, ${alert.severity})`);
+
+      // Get unit info with area and site
+      const { data: unit, error: unitError } = await supabaseAdmin
+        .from("units")
+        .select(`
+          id, name,
+          area:areas!inner(
+            id, name,
+            site:sites!inner(
+              id, name, organization_id, timezone
+            )
+          )
+        `)
+        .eq("id", alert.unit_id)
+        .single();
+
+      if (unitError || !unit) {
+        console.error(`Failed to get unit info for alert ${alert.id}:`, unitError);
+        continue;
+      }
+
+      const unitInfo = unit as unknown as UnitInfo;
+      const orgId = unitInfo.area.site.organization_id;
+      const siteId = unitInfo.area.site.id;
+
+      // Get notification settings
+      const settings = await getNotificationSettings(supabaseAdmin, orgId);
+
+      // Check if email is enabled
+      if (!settings.email_enabled) {
+        console.log(`Skipping alert ${alert.id}: email notifications disabled`);
+        await logNotificationEvent(supabaseAdmin, {
           organization_id: orgId,
           site_id: siteId,
-          unit_id: unit.id,
-          event_type: 'alert_escalated',
-          actor_type: 'system',
-          event_data: {
-            alert_id: alert.id,
-            alert_type: alert.alert_type,
-            severity: alert.severity,
-            escalation_level: newLevel,
-            recipients_notified: emailsSent.length,
-          },
+          unit_id: alert.unit_id,
+          alert_id: alert.id,
+          channel: "email",
+          event_type: "ALERT_ACTIVE",
+          to_recipients: [],
+          status: "SKIPPED",
+          reason: "Email notifications disabled",
         });
-        
-      } catch (alertError) {
-        console.error(`Error processing alert ${alert.id}:`, alertError);
-        errors.push(`Alert ${alert.id}: ${alertError}`);
+        emailsSkipped++;
+        continue;
       }
-    }
-    
-    // Send admin summary emails for each org with escalated alerts
-    for (const [orgId, orgAlerts] of orgAlertGroups) {
-      if (orgAlerts.length === 0) continue;
-      
-      // Get org name
-      const { data: org } = await supabase
-        .from('organizations')
-        .select('name')
-        .eq('id', orgId)
-        .single();
-      
-      const orgName = org?.name || 'Your Organization';
-      
-      // Get admin/owner roles
-      const { data: adminRoles } = await supabase
-        .from('user_roles')
-        .select('user_id, role')
-        .eq('organization_id', orgId)
-        .in('role', ['admin', 'owner']);
-      
-      const adminUserIds = (adminRoles || []).map(r => r.user_id);
-      
-      if (adminUserIds.length > 0) {
-        const { data: adminProfiles } = await supabase
-          .from('profiles')
-          .select('user_id, email, notification_preferences')
-          .in('user_id', adminUserIds);
+
+      // Check if we should notify for this alert type/severity
+      const { shouldNotify, reason: skipReason } = shouldNotifyForAlertType(
+        alert.alert_type,
+        alert.severity,
+        settings
+      );
+
+      if (!shouldNotify) {
+        console.log(`Skipping alert ${alert.id}: ${skipReason}`);
+        await logNotificationEvent(supabaseAdmin, {
+          organization_id: orgId,
+          site_id: siteId,
+          unit_id: alert.unit_id,
+          alert_id: alert.id,
+          channel: "email",
+          event_type: "ALERT_ACTIVE",
+          to_recipients: [],
+          status: "SKIPPED",
+          reason: skipReason,
+        });
+        emailsSkipped++;
+        continue;
+      }
+
+      // Get recipients
+      const recipients = await getRecipients(supabaseAdmin, orgId, settings);
+
+      if (recipients.length === 0) {
+        console.log(`Skipping alert ${alert.id}: no recipients configured`);
+        await logNotificationEvent(supabaseAdmin, {
+          organization_id: orgId,
+          site_id: siteId,
+          unit_id: alert.unit_id,
+          alert_id: alert.id,
+          channel: "email",
+          event_type: "ALERT_ACTIVE",
+          to_recipients: [],
+          status: "SKIPPED",
+          reason: "No recipients configured",
+        });
+        emailsSkipped++;
+        continue;
+      }
+
+      // Check quiet hours
+      const { data: policy } = await supabaseAdmin
+        .from("escalation_policies")
+        .select("*")
+        .or(`organization_id.eq.${orgId},site_id.eq.${siteId}`)
+        .order("site_id", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (policy && isInQuietHours(policy as EscalationPolicy, unitInfo.area.site.timezone)) {
+        console.log(`Skipping alert ${alert.id}: quiet hours active`);
+        await logNotificationEvent(supabaseAdmin, {
+          organization_id: orgId,
+          site_id: siteId,
+          unit_id: alert.unit_id,
+          alert_id: alert.id,
+          channel: "email",
+          event_type: "ALERT_ACTIVE",
+          to_recipients: recipients.map(r => r.email),
+          status: "SKIPPED",
+          reason: "Quiet hours active",
+        });
+        emailsSkipped++;
+        continue;
+      }
+
+      // Send email
+      const recipientEmails = recipients.map(r => r.email);
+      const alertLabel = alertTypeLabels[alert.alert_type] || alert.alert_type;
+      const emailHtml = generateAlertEmailHtml(alert, unitInfo, appUrl);
+
+      try {
+        console.log(`Sending email to ${recipientEmails.join(", ")} for alert ${alert.id}`);
         
-        const adminRecipients = (adminProfiles || [])
-          .filter(p => {
-            const prefs = p.notification_preferences as { email?: boolean } | null;
-            return prefs?.email !== false;
+        const emailResponse = await resend.emails.send({
+          from: "FrostGuard Alerts <onboarding@resend.dev>",
+          to: recipientEmails,
+          subject: `🚨 ${alert.severity.toUpperCase()}: ${alertLabel} - ${unitInfo.name}`,
+          html: emailHtml,
+        });
+
+        console.log(`Email sent successfully:`, emailResponse);
+
+        // Log success
+        await logNotificationEvent(supabaseAdmin, {
+          organization_id: orgId,
+          site_id: siteId,
+          unit_id: alert.unit_id,
+          alert_id: alert.id,
+          channel: "email",
+          event_type: "ALERT_ACTIVE",
+          to_recipients: recipientEmails,
+          status: "SENT",
+          provider_message_id: emailResponse.data?.id,
+        });
+
+        // Update alert with notification timestamp
+        await supabaseAdmin
+          .from("alerts")
+          .update({
+            last_notified_at: new Date().toISOString(),
+            last_notified_reason: "ALERT_ACTIVE",
           })
-          .map(p => p.email);
-        
-        if (adminRecipients.length > 0) {
-          const summaryHtml = generateSummaryEmailHtml(orgAlerts, orgName);
-          
-          const { error: summaryError } = await resend.emails.send({
-            from: "FrostGuard <alerts@frostguard.app>",
-            to: adminRecipients,
-            subject: `📊 FrostGuard Escalation Summary - ${orgAlerts.length} Alert${orgAlerts.length !== 1 ? 's' : ''}`,
-            html: summaryHtml,
-          });
-          
-          if (summaryError) {
-            console.error(`Failed to send summary to admins:`, summaryError);
-          } else {
-            console.log(`Sent escalation summary to ${adminRecipients.length} admins`);
-          }
-        }
+          .eq("id", alert.id);
+
+        emailsSent++;
+      } catch (emailError: unknown) {
+        const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
+        console.error(`Failed to send email for alert ${alert.id}:`, emailError);
+
+        await logNotificationEvent(supabaseAdmin, {
+          organization_id: orgId,
+          site_id: siteId,
+          unit_id: alert.unit_id,
+          alert_id: alert.id,
+          channel: "email",
+          event_type: "ALERT_ACTIVE",
+          to_recipients: recipientEmails,
+          status: "FAILED",
+          reason: errorMessage,
+        });
+
+        emailsFailed++;
       }
     }
-    
-    const result = {
-      message: "Escalation processing complete",
-      processed: alertsToEscalate.length,
-      emailsSent: emailsSent.length,
-      errors: errors.length > 0 ? errors : undefined,
-    };
-    
-    console.log("Escalation result:", result);
-    
+
+    console.log(`process-escalations: Complete. Sent: ${emailsSent}, Skipped: ${emailsSkipped}, Failed: ${emailsFailed}`);
+
     return new Response(
-      JSON.stringify(result),
-      { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      JSON.stringify({
+        success: true,
+        emailsSent,
+        emailsSkipped,
+        emailsFailed,
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-    
   } catch (error: unknown) {
-    console.error("Error in process-escalations:", error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("process-escalations error:", error);
     return new Response(
       JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 };
