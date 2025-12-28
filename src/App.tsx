@@ -18,6 +18,7 @@ import Settings from "./pages/Settings";
 import Reports from "./pages/Reports";
 import Inspector from "./pages/Inspector";
 import PilotSetup from "./pages/PilotSetup";
+import EventHistory from "./pages/EventHistory";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const App = () => (
           <Route path="/settings" element={<Settings />} />
           <Route path="/inspector" element={<Inspector />} />
           <Route path="/pilot-setup" element={<PilotSetup />} />
+          <Route path="/events" element={<EventHistory />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

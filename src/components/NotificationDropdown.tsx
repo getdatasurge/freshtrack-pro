@@ -239,6 +239,9 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
               </Badge>
             )}
           </div>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            {notifications.length > 0 ? `Last updated just now` : "No recent updates"}
+          </p>
         </div>
 
         <ScrollArea className="h-[350px]">
@@ -306,7 +309,7 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
           )}
         </ScrollArea>
 
-        <div className="p-2 border-t border-border">
+        <div className="p-2 border-t border-border space-y-1">
           <Button 
             variant="ghost" 
             size="sm" 
@@ -314,6 +317,17 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
             onClick={handleViewAll}
           >
             View all alerts
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="w-full text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              setIsOpen(false);
+              navigate("/events");
+            }}
+          >
+            Event history
           </Button>
         </div>
       </PopoverContent>
