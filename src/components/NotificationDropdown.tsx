@@ -16,59 +16,41 @@ import {
   Clock,
   Battery,
   AlertTriangle,
-  Mail,
-  MailCheck,
-  MailX,
+  DoorOpen,
+  Snowflake,
+  Wrench,
   Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
-
-interface NotificationEvent {
-  id: string;
-  organization_id: string;
-  site_id: string | null;
-  unit_id: string | null;
-  alert_id: string | null;
-  channel: string;
-  event_type: string;
-  to_recipients: string[];
-  status: string;
-  reason: string | null;
-  created_at: string;
-}
+import {
+  mapAlertToNotification,
+  alertTypeLabels,
+  severityConfig,
+  type AlertNotification,
+  type AlertWithContext,
+} from "@/lib/alertNotificationMapper";
 
 interface NotificationDropdownProps {
   alertCount: number;
 }
 
+// Map alert types to icons
 const alertTypeIcons: Record<string, typeof AlertTriangle> = {
   temp_excursion: Thermometer,
   alarm_active: Thermometer,
   monitoring_interrupted: WifiOff,
   missed_manual_entry: Clock,
   low_battery: Battery,
-  TEMP_EXCURSION: Thermometer,
-  ALARM_ACTIVE: Thermometer,
-};
-
-const statusConfig = {
-  SENT: { icon: MailCheck, color: "text-safe", label: "Sent" },
-  SKIPPED: { icon: Mail, color: "text-muted-foreground", label: "Skipped" },
-  FAILED: { icon: MailX, color: "text-alarm", label: "Failed" },
-};
-
-const getTimeAgo = (dateStr: string) => {
-  const diffMins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${Math.floor(diffHours / 24)}d ago`;
+  door_open: DoorOpen,
+  suspected_cooling_failure: Snowflake,
+  calibration_due: Wrench,
+  sensor_fault: AlertTriangle,
 };
 
 const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState<NotificationEvent[]>([]);
+  const [notifications, setNotifications] = useState<AlertNotification[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [orgId, setOrgId] = useState<string | null>(null);
@@ -92,10 +74,16 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
   const loadNotifications = async () => {
     setIsLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setNotifications([]);
+        return;
+      }
+
       const { data: profile } = await supabase
         .from("profiles")
         .select("organization_id")
-        .eq("user_id", (await supabase.auth.getUser()).data.user?.id || "")
+        .eq("user_id", user.id)
         .maybeSingle();
 
       if (!profile?.organization_id) {
@@ -103,26 +91,66 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("notification_events")
-        .select("*")
+      // Query alerts with unit/area/site context
+      const { data: alerts, error } = await supabase
+        .from("alerts")
+        .select(`
+          id,
+          title,
+          message,
+          alert_type,
+          severity,
+          status,
+          temp_reading,
+          temp_limit,
+          triggered_at,
+          metadata,
+          unit_id,
+          unit:units!alerts_unit_id_fkey (
+            id,
+            name,
+            area:areas!units_area_id_fkey (
+              id,
+              name,
+              site:sites!areas_site_id_fkey (
+                id,
+                name
+              )
+            )
+          )
+        `)
         .eq("organization_id", profile.organization_id)
-        .order("created_at", { ascending: false })
-        .limit(10);
+        .in("status", ["active", "acknowledged"])
+        .order("triggered_at", { ascending: false })
+        .limit(20);
 
       if (error) throw error;
 
-      // Parse recipients from JSON
-      const parsed = (data || []).map((n: any) => ({
-        ...n,
-        to_recipients: Array.isArray(n.to_recipients) 
-          ? n.to_recipients 
-          : (typeof n.to_recipients === 'string' ? JSON.parse(n.to_recipients) : []),
-      }));
+      // Map alerts to notification format
+      const mappedNotifications = (alerts || []).map((alert: any) => {
+        // Transform the nested unit data structure
+        const alertWithContext: AlertWithContext = {
+          ...alert,
+          unit: alert.unit ? {
+            id: alert.unit.id,
+            name: alert.unit.name,
+            area: alert.unit.area ? {
+              id: alert.unit.area.id,
+              name: alert.unit.area.name,
+              site: alert.unit.area.site ? {
+                id: alert.unit.area.site.id,
+                name: alert.unit.area.site.name,
+              } : undefined,
+            } : undefined,
+          } : undefined,
+        };
+        return mapAlertToNotification(alertWithContext);
+      });
 
-      setNotifications(parsed);
+      setNotifications(mappedNotifications);
     } catch (error) {
       console.error("Error loading notifications:", error);
+      setNotifications([]);
     }
     setIsLoading(false);
   };
@@ -133,7 +161,7 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
     }
   }, [isOpen]);
 
-  // Real-time subscription for new alerts - scoped by organization_id
+  // Real-time subscription for new alerts
   useEffect(() => {
     if (!orgId) return;
 
@@ -149,15 +177,22 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
         },
         (payload) => {
           const alert = payload.new as any;
+          const title = alertTypeLabels[alert.alert_type] || alert.title || "New Alert";
+          
           if (alert.severity === "critical" && alert.status === "active") {
-            toast.error(`${alert.title}`, {
+            toast.error(title, {
               description: alert.message || "Critical alert triggered",
               duration: 10000,
               action: {
                 label: "View",
-                onClick: () => navigate("/alerts"),
+                onClick: () => navigate(`/unit/${alert.unit_id}`),
               },
             });
+          }
+          
+          // Refresh notifications if dropdown is open
+          if (isOpen) {
+            loadNotifications();
           }
         }
       )
@@ -166,11 +201,16 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [navigate, orgId]);
+  }, [navigate, orgId, isOpen]);
 
   const handleViewAll = () => {
     setIsOpen(false);
     navigate("/alerts");
+  };
+
+  const handleNotificationClick = (notification: AlertNotification) => {
+    setIsOpen(false);
+    navigate(`/unit/${notification.unitId}`);
   };
 
   return (
@@ -186,7 +226,7 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
         </Button>
       </PopoverTrigger>
       <PopoverContent 
-        className="w-80 p-0 bg-popover border border-border shadow-lg" 
+        className="w-96 p-0 bg-popover border border-border shadow-lg" 
         align="end"
         sideOffset={8}
       >
@@ -194,14 +234,14 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
           <div className="flex items-center justify-between">
             <h4 className="font-semibold text-foreground">Notifications</h4>
             {alertCount > 0 && (
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="destructive" className="text-xs">
                 {alertCount} active
               </Badge>
             )}
           </div>
         </div>
 
-        <ScrollArea className="h-[300px]">
+        <ScrollArea className="h-[350px]">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -209,44 +249,58 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
           ) : notifications.length > 0 ? (
             <div className="divide-y divide-border">
               {notifications.map((notif) => {
-                const status = statusConfig[notif.status as keyof typeof statusConfig] || statusConfig.SENT;
-                const StatusIcon = status.icon;
-                const TypeIcon = alertTypeIcons[notif.event_type] || AlertTriangle;
+                const Icon = alertTypeIcons[notif.alertType] || AlertTriangle;
+                const severity = severityConfig[notif.severity] || severityConfig.warning;
+                const isAcknowledged = notif.status === "acknowledged";
 
                 return (
-                  <div key={notif.id} className="p-3 hover:bg-muted/50 transition-colors">
+                  <button
+                    key={notif.id}
+                    onClick={() => handleNotificationClick(notif)}
+                    className={`w-full p-3 text-left hover:bg-muted/50 transition-colors ${
+                      isAcknowledged ? "opacity-70" : ""
+                    }`}
+                  >
                     <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
-                        <TypeIcon className="w-4 h-4 text-foreground" />
+                      <div className={`w-9 h-9 rounded-lg ${severity.iconBg} flex items-center justify-center flex-shrink-0`}>
+                        <Icon className={`w-4.5 h-4.5 ${severity.textColor}`} />
                       </div>
-                      <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex-1 min-w-0 space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground truncate">
-                            {notif.event_type.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+                          <span className={`text-sm font-medium ${severity.textColor}`}>
+                            {notif.title}
                           </span>
-                          <StatusIcon className={`w-3.5 h-3.5 ${status.color} flex-shrink-0`} />
+                          {isAcknowledged && (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                          )}
+                          <Badge 
+                            variant="outline" 
+                            className={`text-[10px] px-1.5 py-0 ${severity.textColor} ${severity.borderColor} ml-auto`}
+                          >
+                            {notif.severity}
+                          </Badge>
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {notif.status === "SENT" && notif.to_recipients?.length > 0
-                            ? `Sent to ${notif.to_recipients.length} recipient${notif.to_recipients.length > 1 ? "s" : ""}`
-                            : notif.reason || status.label
-                          }
+                        <p className="text-xs text-muted-foreground truncate">
+                          {notif.context}
                         </p>
-                        <p className="text-xs text-muted-foreground/70">
-                          {getTimeAgo(notif.created_at)}
+                        <p className="text-xs text-foreground/80">
+                          {notif.detail}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground/70">
+                          {notif.relativeTime}
                         </p>
                       </div>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-8 text-center px-4">
               <Bell className="w-8 h-8 text-muted-foreground/50 mb-2" />
-              <p className="text-sm text-muted-foreground">No recent notifications</p>
+              <p className="text-sm text-muted-foreground">No active alerts</p>
               <p className="text-xs text-muted-foreground/70 mt-1">
-                Email notifications will appear here
+                Alerts will appear here when triggered
               </p>
             </div>
           )}
