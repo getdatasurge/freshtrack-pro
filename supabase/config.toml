@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.process-escalations]
 verify_jwt = false
+
+[functions.ingest-readings]
+verify_jwt = false
