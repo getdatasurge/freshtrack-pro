@@ -28,6 +28,9 @@ import {
   ArrowUpCircle,
   Check,
   ClipboardEdit,
+  Mail,
+  MailCheck,
+  MailX,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
@@ -54,6 +57,8 @@ interface DBAlert {
   acknowledged_by: string | null;
   acknowledgment_notes: string | null;
   resolved_at: string | null;
+  last_notified_at: string | null;
+  last_notified_reason: string | null;
   unit: {
     id: string;
     name: string;
@@ -84,6 +89,8 @@ interface UnifiedAlert {
   isComputed: boolean;
   dbAlertId?: string;
   escalation_level?: number;
+  last_notified_at?: string | null;
+  last_notified_reason?: string | null;
 }
 
 const alertTypeConfig: Record<string, { icon: typeof AlertTriangle; label: string }> = {
@@ -168,7 +175,7 @@ const Alerts = () => {
         .select(`
           id, title, message, alert_type, severity, status, escalation_level,
           temp_reading, temp_limit, triggered_at, acknowledged_at, acknowledged_by,
-          acknowledgment_notes, resolved_at,
+          acknowledgment_notes, resolved_at, last_notified_at, last_notified_reason,
           unit:units!inner(
             id, name,
             area:areas!inner(name, site:sites!inner(name, organization_id))
@@ -292,6 +299,8 @@ const Alerts = () => {
           isComputed: false,
           dbAlertId: dbAlert.id,
           escalation_level: dbAlert.escalation_level,
+          last_notified_at: dbAlert.last_notified_at,
+          last_notified_reason: dbAlert.last_notified_reason,
         });
       }
 
@@ -549,6 +558,28 @@ const Alerts = () => {
                               <span className="text-muted-foreground"> (limit: {alert.temp_limit}°F)</span>
                             )}
                           </p>
+                        )}
+
+                        {/* Email delivery status */}
+                        {!alert.isComputed && (
+                          <div className="flex items-center gap-1.5 text-xs">
+                            {alert.last_notified_at ? (
+                              <>
+                                <MailCheck className="w-3.5 h-3.5 text-safe" />
+                                <span className="text-safe">Email sent {getTimeAgo(alert.last_notified_at)}</span>
+                              </>
+                            ) : alert.last_notified_reason ? (
+                              <>
+                                <MailX className="w-3.5 h-3.5 text-warning" />
+                                <span className="text-warning">Email: {alert.last_notified_reason}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                                <span className="text-muted-foreground">Email pending</span>
+                              </>
+                            )}
+                          </div>
                         )}
 
                         {/* Action Buttons */}

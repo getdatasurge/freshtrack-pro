@@ -14,6 +14,9 @@ import {
   CheckCircle2,
   ArrowUpCircle,
   Check,
+  Mail,
+  MailCheck,
+  MailX,
 } from "lucide-react";
 
 interface AlertRowProps {
@@ -36,6 +39,8 @@ interface AlertRowProps {
     isComputed: boolean;
     dbAlertId?: string;
     escalation_level?: number;
+    last_notified_at?: string | null;
+    last_notified_reason?: string | null;
   };
   onLogTemp?: () => void;
   onAcknowledge?: () => void;
@@ -140,6 +145,28 @@ const AlertRow = ({ alert, onLogTemp, onAcknowledge, onResolve, isSubmitting }: 
                   <span className="text-muted-foreground"> (limit: {alert.temp_limit}°F)</span>
                 )}
               </p>
+            )}
+
+            {/* Email delivery status */}
+            {!alert.isComputed && (
+              <div className="flex items-center gap-1.5 text-xs">
+                {alert.last_notified_at ? (
+                  <>
+                    <MailCheck className="w-3.5 h-3.5 text-safe" />
+                    <span className="text-safe">Email sent {getTimeAgo(alert.last_notified_at)}</span>
+                  </>
+                ) : alert.last_notified_reason ? (
+                  <>
+                    <MailX className="w-3.5 h-3.5 text-warning" />
+                    <span className="text-warning">Email: {alert.last_notified_reason}</span>
+                  </>
+                ) : (
+                  <>
+                    <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-muted-foreground">Email pending</span>
+                  </>
+                )}
+              </div>
             )}
 
             {/* Action Buttons */}

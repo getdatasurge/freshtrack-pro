@@ -3,8 +3,6 @@ import { useNavigate, Link, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { 
-  Thermometer, 
-  Bell, 
   LogOut,
   MapPin,
   Settings,
@@ -19,6 +17,7 @@ import { Session } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
 import ThemeToggle from "@/components/ThemeToggle";
 import BrandedLogo from "@/components/BrandedLogo";
+import NotificationDropdown from "@/components/NotificationDropdown";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -138,16 +137,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
             </div>
             <div className="flex items-center gap-2">
               <ThemeToggle />
-              <Link to="/alerts">
-                <Button variant="ghost" size="icon" className="relative">
-                  <Bell className="w-5 h-5" />
-                  {alertCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-alarm text-alarm-foreground text-xs rounded-full flex items-center justify-center">
-                      {alertCount}
-                    </span>
-                  )}
-                </Button>
-              </Link>
+              <NotificationDropdown alertCount={alertCount} />
               <Button variant="ghost" size="sm" onClick={handleSignOut} className="hidden sm:flex">
                 <LogOut className="w-4 h-4 mr-2" />
                 Sign Out
