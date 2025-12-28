@@ -308,7 +308,9 @@ export type Database = {
       }
       devices: {
         Row: {
+          battery_last_reported_at: string | null
           battery_level: number | null
+          battery_voltage: number | null
           calibration_offset: number | null
           created_at: string
           firmware_version: string | null
@@ -324,7 +326,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          battery_last_reported_at?: string | null
           battery_level?: number | null
+          battery_voltage?: number | null
           calibration_offset?: number | null
           created_at?: string
           firmware_version?: string | null
@@ -340,7 +344,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          battery_last_reported_at?: string | null
           battery_level?: number | null
+          battery_voltage?: number | null
           calibration_offset?: number | null
           created_at?: string
           firmware_version?: string | null
@@ -365,6 +371,44 @@ export type Database = {
           },
           {
             foreignKeyName: "devices_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      door_events: {
+        Row: {
+          created_at: string
+          id: string
+          metadata: Json | null
+          occurred_at: string
+          source: string | null
+          state: string
+          unit_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          occurred_at?: string
+          source?: string | null
+          state: string
+          unit_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          occurred_at?: string
+          source?: string | null
+          state?: string
+          unit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "door_events_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
@@ -1228,6 +1272,10 @@ export type Database = {
           confirm_time_door_closed: number
           confirm_time_door_open: number
           created_at: string
+          door_last_changed_at: string | null
+          door_open_grace_minutes: number | null
+          door_sensor_enabled: boolean | null
+          door_state: string | null
           id: string
           is_active: boolean
           last_manual_log_at: string | null
@@ -1253,6 +1301,10 @@ export type Database = {
           confirm_time_door_closed?: number
           confirm_time_door_open?: number
           created_at?: string
+          door_last_changed_at?: string | null
+          door_open_grace_minutes?: number | null
+          door_sensor_enabled?: boolean | null
+          door_state?: string | null
           id?: string
           is_active?: boolean
           last_manual_log_at?: string | null
@@ -1278,6 +1330,10 @@ export type Database = {
           confirm_time_door_closed?: number
           confirm_time_door_open?: number
           created_at?: string
+          door_last_changed_at?: string | null
+          door_open_grace_minutes?: number | null
+          door_sensor_enabled?: boolean | null
+          door_state?: string | null
           id?: string
           is_active?: boolean
           last_manual_log_at?: string | null
@@ -1413,6 +1469,7 @@ export type Database = {
         | "sensor_fault"
         | "door_open"
         | "calibration_due"
+        | "suspected_cooling_failure"
       app_role: "owner" | "admin" | "manager" | "staff" | "viewer" | "inspector"
       compliance_mode: "standard" | "haccp"
       device_status: "active" | "inactive" | "pairing" | "fault" | "low_battery"
@@ -1583,6 +1640,7 @@ export const Constants = {
         "sensor_fault",
         "door_open",
         "calibration_due",
+        "suspected_cooling_failure",
       ],
       app_role: ["owner", "admin", "manager", "staff", "viewer", "inspector"],
       compliance_mode: ["standard", "haccp"],
