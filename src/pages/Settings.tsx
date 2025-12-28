@@ -36,9 +36,8 @@ import {
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
-import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
+import { AlertRulesScopedEditor } from "@/components/settings/AlertRulesScopedEditor";
 import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
-import { useOrgAlertRules, AlertRulesRow } from "@/hooks/useAlertRules";
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 type ComplianceMode = Database["public"]["Enums"]["compliance_mode"];
@@ -96,20 +95,7 @@ const timezones = [
   { value: "Australia/Sydney", label: "Sydney (AEST)" },
 ];
 
-// Alert Rules Tab Component
-function AlertRulesTab({ organizationId, canEdit }: { organizationId: string; canEdit: boolean }) {
-  const { data: orgRules, refetch } = useOrgAlertRules(organizationId);
-
-  return (
-    <AlertRulesEditor
-      scope={{ organization_id: organizationId }}
-      scopeLabel="Organization Defaults"
-      existingRules={orgRules || null}
-      onSave={refetch}
-      canEdit={canEdit}
-    />
-  );
-}
+// Alert Rules Tab Component now uses the scoped editor directly
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -492,7 +478,7 @@ const Settings = () => {
         {/* Alert Rules Tab */}
         <TabsContent value="alerts">
           {organization && (
-            <AlertRulesTab organizationId={organization.id} canEdit={canEditOrg} />
+            <AlertRulesScopedEditor organizationId={organization.id} canEdit={canEditOrg} />
           )}
         </TabsContent>
 

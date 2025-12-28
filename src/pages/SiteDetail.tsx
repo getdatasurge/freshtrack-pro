@@ -3,6 +3,9 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { SiteComplianceSettings } from "@/components/site/SiteComplianceSettings";
+import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
+import { AlertRulesHistoryModal } from "@/components/settings/AlertRulesHistoryModal";
+import { useSiteAlertRules, useOrgAlertRules } from "@/hooks/useAlertRules";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,6 +29,7 @@ import {
   Download,
   AlertTriangle,
   FileText,
+  History,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -53,6 +57,7 @@ interface SiteData {
   compliance_mode: string;
   manual_log_cadence_seconds: number;
   corrective_action_required: boolean;
+  organization_id: string;
 }
 
 const SiteDetail = () => {
@@ -73,6 +78,11 @@ const SiteDetail = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [alertHistoryOpen, setAlertHistoryOpen] = useState(false);
+
+  // Alert rules
+  const { data: siteRules, refetch: refetchSiteRules } = useSiteAlertRules(siteId || null);
+  const { data: orgRules } = useOrgAlertRules(site?.organization_id || null);
 
   useEffect(() => {
     if (siteId) {
@@ -86,7 +96,7 @@ const SiteDetail = () => {
     // Load site with compliance fields
     const { data: siteData, error: siteError } = await supabase
       .from("sites")
-      .select("id, name, address, city, state, postal_code, timezone, compliance_mode, manual_log_cadence_seconds, corrective_action_required")
+      .select("id, name, address, city, state, postal_code, timezone, compliance_mode, manual_log_cadence_seconds, corrective_action_required, organization_id")
       .eq("id", siteId)
       .maybeSingle();
 
@@ -99,6 +109,7 @@ const SiteDetail = () => {
 
     setSite({
       ...siteData,
+      organization_id: siteData.organization_id,
       timezone: siteData.timezone || "America/New_York",
       compliance_mode: siteData.compliance_mode || "fda_food_code",
       manual_log_cadence_seconds: siteData.manual_log_cadence_seconds || 14400,
