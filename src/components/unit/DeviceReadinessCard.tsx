@@ -8,14 +8,20 @@ import {
   CheckCircle, 
   AlertTriangle, 
   XCircle,
-  Loader2
+  Loader2,
+  Link as LinkIcon
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { 
+  computeSensorInstallationStatus, 
+  DeviceInfo 
+} from "@/hooks/useSensorInstallationStatus";
 
 interface DeviceReadinessProps {
   unitStatus: string;
   lastReadingAt: string | null;
-  // Placeholders for future device data
+  // Device data for installation status
+  device?: DeviceInfo | null;
   batteryLevel?: number | null;
   signalStrength?: number | null;
   lastHeartbeat?: string | null;
@@ -25,24 +31,35 @@ interface DeviceReadinessProps {
 const DeviceReadinessCard = ({
   unitStatus,
   lastReadingAt,
+  device,
   batteryLevel,
   signalStrength,
   lastHeartbeat,
   deviceSerial,
 }: DeviceReadinessProps) => {
-  const getSensorStatus = () => {
-    if (unitStatus === "offline" || !lastReadingAt) {
-      return { status: "offline", label: "Offline", color: "text-muted-foreground", bg: "bg-muted", icon: XCircle };
+  // Use the unified sensor installation status
+  const installationStatus = computeSensorInstallationStatus(device || null, lastReadingAt);
+
+  const getStatusIcon = () => {
+    switch (installationStatus.status) {
+      case "not_paired":
+        return LinkIcon;
+      case "paired_never_seen":
+        return AlertTriangle;
+      case "previously_seen_offline":
+        return XCircle;
+      case "online":
+        return CheckCircle;
+      default:
+        return XCircle;
     }
-    if (unitStatus === "monitoring_interrupted") {
-      return { status: "interrupted", label: "Interrupted", color: "text-warning", bg: "bg-warning/10", icon: AlertTriangle };
-    }
-    return { status: "active", label: "Active", color: "text-safe", bg: "bg-safe/10", icon: CheckCircle };
   };
+
+  const StatusIcon = getStatusIcon();
 
   const getBatteryStatus = (level: number | null | undefined) => {
     if (level === null || level === undefined) {
-      return { label: "No sensor", color: "text-muted-foreground", bg: "bg-muted" };
+      return { label: "N/A", color: "text-muted-foreground", bg: "bg-muted" };
     }
     if (level > 50) {
       return { label: `${level}%`, color: "text-safe", bg: "bg-safe/10" };
@@ -55,7 +72,7 @@ const DeviceReadinessCard = ({
 
   const getSignalStatus = (strength: number | null | undefined) => {
     if (strength === null || strength === undefined) {
-      return { label: "No sensor", color: "text-muted-foreground" };
+      return { label: "N/A", color: "text-muted-foreground" };
     }
     if (strength > -60) {
       return { label: "Excellent", color: "text-safe" };
@@ -69,13 +86,11 @@ const DeviceReadinessCard = ({
     return { label: "Weak", color: "text-alarm" };
   };
 
-  const sensorStatus = getSensorStatus();
-  const batteryStatus = getBatteryStatus(batteryLevel);
+  const batteryStatus = getBatteryStatus(batteryLevel ?? device?.battery_level);
   const signalStatus = getSignalStatus(signalStrength);
-  const StatusIcon = sensorStatus.icon;
 
   const formatHeartbeat = (heartbeat: string | null | undefined, fallback: string | null) => {
-    const timestamp = heartbeat || fallback;
+    const timestamp = heartbeat || device?.last_seen_at || fallback;
     if (!timestamp) return "Never";
     try {
       return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
@@ -94,14 +109,14 @@ const DeviceReadinessCard = ({
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {/* Sensor Status */}
+          {/* Sensor Installation Status */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <StatusIcon className="w-3 h-3" />
               Sensor Status
             </p>
-            <Badge className={`${sensorStatus.bg} ${sensorStatus.color} border-0`}>
-              {sensorStatus.label}
+            <Badge className={`${installationStatus.bgColor} ${installationStatus.color} border-0`}>
+              {installationStatus.label}
             </Badge>
           </div>
 
@@ -156,12 +171,22 @@ const DeviceReadinessCard = ({
           </div>
         )}
 
-        {/* No sensor paired notice */}
-        {!lastReadingAt && (
-          <div className="mt-4 p-3 rounded-lg bg-muted/50 border border-dashed border-border">
+        {/* Installation status message */}
+        {installationStatus.status !== "online" && (
+          <div className={`mt-4 p-3 rounded-lg border border-dashed ${
+            installationStatus.status === "not_paired" 
+              ? "bg-muted/50 border-border" 
+              : "bg-warning/5 border-warning/30"
+          }`}>
             <div className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="w-4 h-4" />
-              <span className="text-sm">No sensor paired to this unit. Pair a sensor to enable automated monitoring.</span>
+              {installationStatus.status === "not_paired" ? (
+                <LinkIcon className="w-4 h-4" />
+              ) : installationStatus.status === "paired_never_seen" ? (
+                <AlertTriangle className="w-4 h-4 text-warning" />
+              ) : (
+                <XCircle className="w-4 h-4 text-warning" />
+              )}
+              <span className="text-sm">{installationStatus.description}</span>
             </div>
           </div>
         )}

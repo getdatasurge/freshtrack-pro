@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
+import LastKnownGoodCard from "@/components/unit/LastKnownGoodCard";
 import UnitSettingsSection from "@/components/unit/UnitSettingsSection";
 import UnitAlertsBanner from "@/components/unit/UnitAlertsBanner";
 import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
@@ -46,6 +47,7 @@ import { format } from "date-fns";
 import { Session } from "@supabase/supabase-js";
 import { computeUnitAlerts, ComputedAlert } from "@/hooks/useUnitAlerts";
 import { UnitStatusInfo } from "@/hooks/useUnitStatus";
+import { DeviceInfo } from "@/hooks/useSensorInstallationStatus";
 
 interface UnitData {
   id: string;
@@ -115,6 +117,12 @@ const UnitDetail = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [device, setDevice] = useState<DeviceInfo | null>(null);
+  const [lastKnownGood, setLastKnownGood] = useState<{
+    temp: number | null;
+    at: string | null;
+    source: "sensor" | "manual" | null;
+  }>({ temp: null, at: null, source: null });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -200,6 +208,65 @@ const UnitDetail = () => {
         .limit(50);
 
       setEvents(eventsData || []);
+
+      // Fetch device linked to this unit for installation status
+      const { data: deviceData } = await supabase
+        .from("devices")
+        .select("id, unit_id, last_seen_at, serial_number, battery_level, status")
+        .eq("unit_id", unitId)
+        .maybeSingle();
+
+      if (deviceData) {
+        setDevice({
+          id: deviceData.id,
+          unit_id: deviceData.unit_id,
+          last_seen_at: deviceData.last_seen_at,
+          serial_number: deviceData.serial_number,
+          battery_level: deviceData.battery_level,
+          status: deviceData.status,
+        });
+      } else {
+        setDevice(null);
+      }
+
+      // Compute Last Known Good reading
+      // Get the most recent valid sensor reading
+      const { data: lastValidSensor } = await supabase
+        .from("sensor_readings")
+        .select("temperature, recorded_at")
+        .eq("unit_id", unitId)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Get the most recent valid manual log
+      const { data: lastValidManual } = await supabase
+        .from("manual_temperature_logs")
+        .select("temperature, logged_at")
+        .eq("unit_id", unitId)
+        .order("logged_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // Determine which is more recent
+      let lkgTemp: number | null = null;
+      let lkgAt: string | null = null;
+      let lkgSource: "sensor" | "manual" | null = null;
+
+      const sensorTime = lastValidSensor?.recorded_at ? new Date(lastValidSensor.recorded_at).getTime() : 0;
+      const manualTime = lastValidManual?.logged_at ? new Date(lastValidManual.logged_at).getTime() : 0;
+
+      if (sensorTime > manualTime && lastValidSensor) {
+        lkgTemp = lastValidSensor.temperature;
+        lkgAt = lastValidSensor.recorded_at;
+        lkgSource = "sensor";
+      } else if (lastValidManual) {
+        lkgTemp = lastValidManual.temperature;
+        lkgAt = lastValidManual.logged_at;
+        lkgSource = "manual";
+      }
+
+      setLastKnownGood({ temp: lkgTemp, at: lkgAt, source: lkgSource });
 
       // Use computeUnitAlerts - same source of truth as Alerts Center
       // Build UnitStatusInfo from unit data
@@ -333,7 +400,7 @@ const UnitDetail = () => {
   }
 
   const status = statusConfig[unit.status] || statusConfig.offline;
-  const isOnline = unit.status !== "offline" && unit.last_reading_at;
+  const isOnline = Boolean(unit.status !== "offline" && unit.last_reading_at);
 
   return (
     <DashboardLayout
@@ -454,15 +521,25 @@ const UnitDetail = () => {
           />
         )}
 
+        {/* Last Known Good Card (shows when offline) */}
+        <LastKnownGoodCard
+          lastValidTemp={lastKnownGood.temp}
+          lastValidAt={lastKnownGood.at}
+          source={lastKnownGood.source}
+          tempLimitHigh={unit.temp_limit_high}
+          tempLimitLow={unit.temp_limit_low}
+          isCurrentlyOnline={isOnline}
+        />
+
         {/* Device Readiness */}
         <DeviceReadinessCard
           unitStatus={unit.status}
           lastReadingAt={unit.last_reading_at}
-          // Future: pass actual device data when available
-          batteryLevel={null}
+          device={device}
+          batteryLevel={device?.battery_level}
           signalStrength={null}
-          lastHeartbeat={null}
-          deviceSerial={null}
+          lastHeartbeat={device?.last_seen_at}
+          deviceSerial={device?.serial_number}
         />
 
         {/* Unit Settings (collapsed by default) */}
