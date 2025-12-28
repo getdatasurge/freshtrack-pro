@@ -1,5 +1,10 @@
 import { useMemo } from "react";
-import { AlertRules, DEFAULT_ALERT_RULES, computeOfflineTriggerMs, computeManualTriggerMinutes } from "./useAlertRules";
+import { 
+  AlertRules, 
+  DEFAULT_ALERT_RULES, 
+  computeMissedCheckins,
+  computeOfflineSeverity,
+} from "./useAlertRules";
 
 export interface UnitStatusInfo {
   id: string;
@@ -20,7 +25,12 @@ export interface UnitStatusInfo {
   sensor_reliable?: boolean;
   manual_logging_enabled?: boolean;
   consecutive_checkins?: number;
+  // New fields for missed check-in tracking
+  last_checkin_at?: string | null;
+  checkin_interval_minutes?: number;
 }
+
+export type OfflineSeverity = "none" | "warning" | "critical";
 
 export interface ComputedUnitStatus {
   // Core statuses
@@ -29,7 +39,15 @@ export interface ComputedUnitStatus {
   tempInRange: boolean;
   actionRequired: boolean;
   
-  // Computed values
+  // Missed check-in tracking
+  missedCheckins: number;
+  offlineSeverity: OfflineSeverity;
+  
+  // Manual log timing (based on last_reading_at, not offline time)
+  manualLogDueAt: Date | null;
+  isManualLogDue: boolean;
+  
+  // Computed values (legacy, kept for compatibility)
   minutesSinceManualLog: number | null;
   manualIntervalMinutes: number;
   manualOverdueMinutes: number;
@@ -42,19 +60,33 @@ export interface ComputedUnitStatus {
   statusBgColor: string;
 }
 
-// Default threshold for backward compatibility (10 minutes)
-const DEFAULT_SENSOR_OFFLINE_THRESHOLD_MS = 10 * 60 * 1000;
+// Default check-in interval (5 minutes)
+const DEFAULT_CHECKIN_INTERVAL_MINUTES = 5;
 
 export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): ComputedUnitStatus {
   const now = Date.now();
   const effectiveRules = rules || DEFAULT_ALERT_RULES;
   
-  // Calculate offline threshold from rules
-  const offlineThresholdMs = computeOfflineTriggerMs(effectiveRules);
+  // Get the unit's check-in interval (per-unit setting)
+  const checkinIntervalMinutes = unit.checkin_interval_minutes || DEFAULT_CHECKIN_INTERVAL_MINUTES;
   
-  // Manual log interval from rules (with grace period)
-  const manualTriggerMinutes = computeManualTriggerMinutes(effectiveRules);
+  // Compute missed check-ins based on last_checkin_at (or fall back to last_reading_at)
+  const lastCheckinAt = unit.last_checkin_at || unit.last_reading_at;
+  const missedCheckins = computeMissedCheckins(lastCheckinAt, checkinIntervalMinutes);
+  
+  // Compute offline severity based on missed check-ins
+  const offlineSeverity = computeOfflineSeverity(missedCheckins, effectiveRules);
+  const sensorOnline = offlineSeverity === "none";
+  
+  // Legacy offline threshold calculation (kept for backward compatibility)
+  const offlineThresholdMs = (
+    effectiveRules.expected_reading_interval_seconds * effectiveRules.offline_trigger_multiplier * 1000 +
+    effectiveRules.offline_trigger_additional_minutes * 60 * 1000
+  );
+  
+  // Manual log interval from rules
   const manualIntervalMinutes = effectiveRules.manual_interval_minutes;
+  const manualGraceMinutes = effectiveRules.manual_grace_minutes;
   
   // Time since last manual log
   let minutesSinceManualLog: number | null = null;
@@ -68,9 +100,16 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
     minutesSinceReading = Math.floor((now - new Date(unit.last_reading_at).getTime()) / 60000);
   }
   
-  // Sensor online status using configurable threshold
-  const sensorOnline = unit.last_reading_at !== null && 
-    (now - new Date(unit.last_reading_at).getTime()) < offlineThresholdMs;
+  // Manual log due time: based on last_reading_at (not offline time)
+  // This is the key change: manual logging is required 4 hours after the last known temperature reading
+  const manualLogDueAt = unit.last_reading_at 
+    ? new Date(new Date(unit.last_reading_at).getTime() + manualIntervalMinutes * 60000)
+    : null;
+  
+  // Check if manual log is actually due (past due time + grace period)
+  const isManualLogDue = manualLogDueAt 
+    ? now > manualLogDueAt.getTime() + (manualGraceMinutes * 60000)
+    : true; // If no last reading, consider it due
   
   // Check if sensor is reliable (paired + 2 consecutive check-ins)
   const isSensorReliable = unit.sensor_reliable === true;
@@ -78,12 +117,12 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
   
   // Manual required: ONLY if
   // 1. manual_logging_enabled is true (default true)
-  // 2. sensor is reliable (paired + 2 consecutive check-ins)
-  // 3. log is overdue
+  // 2. missed check-ins >= threshold (from org rules)
+  // 3. manual log is actually due (4 hours since last reading)
   const manualRequired = 
     isManualLoggingEnabled &&
-    isSensorReliable &&
-    (minutesSinceManualLog === null || minutesSinceManualLog >= manualTriggerMinutes);
+    missedCheckins >= effectiveRules.manual_log_missed_checkins_threshold &&
+    isManualLogDue;
   
   // How many minutes overdue (beyond the required interval)
   const manualOverdueMinutes = minutesSinceManualLog !== null 
@@ -105,7 +144,7 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
     unit.status === "monitoring_interrupted" ||
     unit.status === "offline";
   
-  // Status display
+  // Status display - now considers offline severity
   let statusLabel = "OK";
   let statusColor = "text-safe";
   let statusBgColor = "bg-safe/10";
@@ -118,7 +157,11 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
     statusLabel = "Excursion";
     statusColor = "text-excursion";
     statusBgColor = "bg-excursion/10";
-  } else if (!sensorOnline || unit.status === "offline" || unit.status === "monitoring_interrupted") {
+  } else if (offlineSeverity === "critical" || unit.status === "offline" || unit.status === "monitoring_interrupted") {
+    statusLabel = "Offline";
+    statusColor = "text-alarm";
+    statusBgColor = "bg-alarm/10";
+  } else if (offlineSeverity === "warning") {
     statusLabel = "Offline";
     statusColor = "text-warning";
     statusBgColor = "bg-warning/10";
@@ -141,6 +184,10 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
     manualRequired,
     tempInRange,
     actionRequired,
+    missedCheckins,
+    offlineSeverity,
+    manualLogDueAt,
+    isManualLogDue,
     minutesSinceManualLog,
     manualIntervalMinutes,
     manualOverdueMinutes,
