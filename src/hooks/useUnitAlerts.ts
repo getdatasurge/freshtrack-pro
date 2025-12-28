@@ -8,7 +8,8 @@ export type AlertType =
   | "EXCURSION" 
   | "ALARM_ACTIVE" 
   | "LOW_BATTERY" 
-  | "SUSPECTED_COOLING_FAILURE";
+  | "SUSPECTED_COOLING_FAILURE"
+  | "TEMP_EXCURSION";
 
 export interface ComputedAlert {
   id: string; // unit_id + alert_type for dedup

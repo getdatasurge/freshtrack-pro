@@ -94,10 +94,13 @@ const alertTypeConfig: Record<string, { icon: typeof AlertTriangle; label: strin
   sensor_fault: { icon: AlertTriangle, label: "Sensor Fault" },
   door_open: { icon: AlertTriangle, label: "Door Open" },
   calibration_due: { icon: AlertTriangle, label: "Calibration Due" },
+  temp_excursion: { icon: Thermometer, label: "Temperature Excursion" },
+  suspected_cooling_failure: { icon: Thermometer, label: "Suspected Cooling Failure" },
   MANUAL_REQUIRED: { icon: Clock, label: "Manual Logging Required" },
   OFFLINE: { icon: WifiOff, label: "Sensor Offline" },
   EXCURSION: { icon: Thermometer, label: "Temperature Excursion" },
   ALARM_ACTIVE: { icon: Thermometer, label: "Temperature Alarm" },
+  TEMP_EXCURSION: { icon: Thermometer, label: "Temperature Excursion" },
 };
 
 const severityConfig: Record<string, { color: string; bgColor: string }> = {
