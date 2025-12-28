@@ -96,6 +96,77 @@ export type Database = {
           },
         ]
       }
+      alert_rules_history: {
+        Row: {
+          action: string
+          alert_rules_id: string | null
+          changed_at: string
+          changed_by: string
+          changes: Json
+          created_at: string
+          id: string
+          note: string | null
+          organization_id: string | null
+          site_id: string | null
+          unit_id: string | null
+        }
+        Insert: {
+          action: string
+          alert_rules_id?: string | null
+          changed_at?: string
+          changed_by: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          note?: string | null
+          organization_id?: string | null
+          site_id?: string | null
+          unit_id?: string | null
+        }
+        Update: {
+          action?: string
+          alert_rules_id?: string | null
+          changed_at?: string
+          changed_by?: string
+          changes?: Json
+          created_at?: string
+          id?: string
+          note?: string | null
+          organization_id?: string | null
+          site_id?: string | null
+          unit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_rules_history_alert_rules_id_fkey"
+            columns: ["alert_rules_id"]
+            isOneToOne: false
+            referencedRelation: "alert_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_rules_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_rules_history_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_rules_history_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alerts: {
         Row: {
           acknowledged_at: string | null

@@ -6,22 +6,36 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Save, RotateCcw, Loader2, AlertTriangle, Clock, Wifi, DoorOpen, Thermometer } from "lucide-react";
+import { Save, RotateCcw, Loader2, AlertTriangle, Clock, Wifi, DoorOpen, Thermometer, X } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   AlertRulesRow, 
   DEFAULT_ALERT_RULES, 
   upsertAlertRules, 
   deleteAlertRules 
 } from "@/hooks/useAlertRules";
+import { insertAlertRulesHistory } from "@/hooks/useAlertRulesHistory";
 
 interface AlertRulesEditorProps {
   scope: { organization_id?: string; site_id?: string; unit_id?: string };
   scopeLabel: string;
   existingRules: AlertRulesRow | null;
-  parentRules?: Partial<AlertRulesRow> | null; // For showing inherited values
+  parentRules?: Partial<AlertRulesRow> | null;
   onSave?: () => void;
   canEdit: boolean;
 }
+
+type RuleField = 
+  | "manual_interval_minutes"
+  | "manual_grace_minutes"
+  | "expected_reading_interval_seconds"
+  | "offline_trigger_multiplier"
+  | "offline_trigger_additional_minutes"
+  | "door_open_warning_minutes"
+  | "door_open_critical_minutes"
+  | "excursion_confirm_minutes_door_closed"
+  | "excursion_confirm_minutes_door_open"
+  | "max_excursion_minutes";
 
 export function AlertRulesEditor({
   scope,
@@ -33,6 +47,7 @@ export function AlertRulesEditor({
 }: AlertRulesEditorProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [clearingField, setClearingField] = useState<string | null>(null);
 
   // Form state
   const [manualIntervalMinutes, setManualIntervalMinutes] = useState<string>("");
@@ -45,6 +60,8 @@ export function AlertRulesEditor({
   const [excursionConfirmMinutesDoorClosed, setExcursionConfirmMinutesDoorClosed] = useState<string>("");
   const [excursionConfirmMinutesDoorOpen, setExcursionConfirmMinutesDoorOpen] = useState<string>("");
   const [maxExcursionMinutes, setMaxExcursionMinutes] = useState<string>("");
+
+  const isOrgScope = !!scope.organization_id && !scope.site_id && !scope.unit_id;
 
   // Initialize form from existing rules
   useEffect(() => {
@@ -59,6 +76,18 @@ export function AlertRulesEditor({
       setExcursionConfirmMinutesDoorClosed(existingRules.excursion_confirm_minutes_door_closed?.toString() || "");
       setExcursionConfirmMinutesDoorOpen(existingRules.excursion_confirm_minutes_door_open?.toString() || "");
       setMaxExcursionMinutes(existingRules.max_excursion_minutes?.toString() || "");
+    } else {
+      // Clear form when no existing rules
+      setManualIntervalMinutes("");
+      setManualGraceMinutes("");
+      setExpectedReadingIntervalSeconds("");
+      setOfflineTriggerMultiplier("");
+      setOfflineTriggerAdditionalMinutes("");
+      setDoorOpenWarningMinutes("");
+      setDoorOpenCriticalMinutes("");
+      setExcursionConfirmMinutesDoorClosed("");
+      setExcursionConfirmMinutesDoorOpen("");
+      setMaxExcursionMinutes("");
     }
   }, [existingRules]);
 
@@ -68,7 +97,7 @@ export function AlertRulesEditor({
     defaultValue: number
   ): { value: number; source: "local" | "inherited" | "default" } => {
     if (formValue !== "") {
-      return { value: parseInt(formValue) || 0, source: "local" };
+      return { value: parseFloat(formValue) || 0, source: "local" };
     }
     if (parentValue !== null && parentValue !== undefined) {
       return { value: parentValue, source: "inherited" };
@@ -76,25 +105,68 @@ export function AlertRulesEditor({
     return { value: defaultValue, source: "default" };
   };
 
+  const getFieldValue = (field: RuleField): string => {
+    const map: Record<RuleField, string> = {
+      manual_interval_minutes: manualIntervalMinutes,
+      manual_grace_minutes: manualGraceMinutes,
+      expected_reading_interval_seconds: expectedReadingIntervalSeconds,
+      offline_trigger_multiplier: offlineTriggerMultiplier,
+      offline_trigger_additional_minutes: offlineTriggerAdditionalMinutes,
+      door_open_warning_minutes: doorOpenWarningMinutes,
+      door_open_critical_minutes: doorOpenCriticalMinutes,
+      excursion_confirm_minutes_door_closed: excursionConfirmMinutesDoorClosed,
+      excursion_confirm_minutes_door_open: excursionConfirmMinutesDoorOpen,
+      max_excursion_minutes: maxExcursionMinutes,
+    };
+    return map[field];
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+
       const rules: Partial<AlertRulesRow> = {};
+      const changes: Record<string, { from: unknown; to: unknown }> = {};
       
-      if (manualIntervalMinutes !== "") rules.manual_interval_minutes = parseInt(manualIntervalMinutes);
-      if (manualGraceMinutes !== "") rules.manual_grace_minutes = parseInt(manualGraceMinutes);
-      if (expectedReadingIntervalSeconds !== "") rules.expected_reading_interval_seconds = parseInt(expectedReadingIntervalSeconds);
-      if (offlineTriggerMultiplier !== "") rules.offline_trigger_multiplier = parseFloat(offlineTriggerMultiplier);
-      if (offlineTriggerAdditionalMinutes !== "") rules.offline_trigger_additional_minutes = parseInt(offlineTriggerAdditionalMinutes);
-      if (doorOpenWarningMinutes !== "") rules.door_open_warning_minutes = parseInt(doorOpenWarningMinutes);
-      if (doorOpenCriticalMinutes !== "") rules.door_open_critical_minutes = parseInt(doorOpenCriticalMinutes);
-      if (excursionConfirmMinutesDoorClosed !== "") rules.excursion_confirm_minutes_door_closed = parseInt(excursionConfirmMinutesDoorClosed);
-      if (excursionConfirmMinutesDoorOpen !== "") rules.excursion_confirm_minutes_door_open = parseInt(excursionConfirmMinutesDoorOpen);
-      if (maxExcursionMinutes !== "") rules.max_excursion_minutes = parseInt(maxExcursionMinutes);
+      const addIfChanged = (field: RuleField, value: string, parser: (v: string) => number) => {
+        const oldValue = existingRules?.[field] ?? null;
+        if (value !== "") {
+          const newValue = parser(value);
+          rules[field] = newValue as any;
+          if (oldValue !== newValue) {
+            changes[field] = { from: oldValue, to: newValue };
+          }
+        }
+      };
+
+      addIfChanged("manual_interval_minutes", manualIntervalMinutes, parseInt);
+      addIfChanged("manual_grace_minutes", manualGraceMinutes, parseInt);
+      addIfChanged("expected_reading_interval_seconds", expectedReadingIntervalSeconds, parseInt);
+      addIfChanged("offline_trigger_multiplier", offlineTriggerMultiplier, parseFloat);
+      addIfChanged("offline_trigger_additional_minutes", offlineTriggerAdditionalMinutes, parseInt);
+      addIfChanged("door_open_warning_minutes", doorOpenWarningMinutes, parseInt);
+      addIfChanged("door_open_critical_minutes", doorOpenCriticalMinutes, parseInt);
+      addIfChanged("excursion_confirm_minutes_door_closed", excursionConfirmMinutesDoorClosed, parseInt);
+      addIfChanged("excursion_confirm_minutes_door_open", excursionConfirmMinutesDoorOpen, parseInt);
+      addIfChanged("max_excursion_minutes", maxExcursionMinutes, parseInt);
 
       const { error } = await upsertAlertRules(scope, rules);
       
       if (error) throw error;
+
+      // Log audit history
+      if (userId && Object.keys(changes).length > 0) {
+        await insertAlertRulesHistory(
+          scope,
+          existingRules?.id || null,
+          existingRules ? "UPDATE" : "CREATE",
+          changes,
+          userId
+        );
+      }
+
       toast.success("Alert rules saved");
       onSave?.();
     } catch (error) {
@@ -102,6 +174,58 @@ export function AlertRulesEditor({
       toast.error("Failed to save alert rules");
     }
     setIsSaving(false);
+  };
+
+  const handleClearField = async (field: RuleField) => {
+    if (!existingRules) return;
+    
+    setClearingField(field);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+      const oldValue = existingRules[field];
+
+      // Update the rule to set the field to null
+      const { error } = await supabase
+        .from("alert_rules")
+        .update({ [field]: null })
+        .eq("id", existingRules.id);
+
+      if (error) throw error;
+
+      // Log audit
+      if (userId) {
+        await insertAlertRulesHistory(
+          scope,
+          existingRules.id,
+          "CLEAR_FIELD",
+          { [field]: { from: oldValue, to: null } },
+          userId
+        );
+      }
+
+      // Clear local state
+      const setterMap: Record<RuleField, (v: string) => void> = {
+        manual_interval_minutes: setManualIntervalMinutes,
+        manual_grace_minutes: setManualGraceMinutes,
+        expected_reading_interval_seconds: setExpectedReadingIntervalSeconds,
+        offline_trigger_multiplier: setOfflineTriggerMultiplier,
+        offline_trigger_additional_minutes: setOfflineTriggerAdditionalMinutes,
+        door_open_warning_minutes: setDoorOpenWarningMinutes,
+        door_open_critical_minutes: setDoorOpenCriticalMinutes,
+        excursion_confirm_minutes_door_closed: setExcursionConfirmMinutesDoorClosed,
+        excursion_confirm_minutes_door_open: setExcursionConfirmMinutesDoorOpen,
+        max_excursion_minutes: setMaxExcursionMinutes,
+      };
+      setterMap[field]("");
+
+      toast.success("Field cleared - now inherits from parent");
+      onSave?.();
+    } catch (error) {
+      console.error("Error clearing field:", error);
+      toast.error("Failed to clear field");
+    }
+    setClearingField(null);
   };
 
   const handleResetToDefault = async () => {
@@ -122,8 +246,37 @@ export function AlertRulesEditor({
 
     setIsDeleting(true);
     try {
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+
+      const oldRules = { ...existingRules };
       const { error } = await deleteAlertRules(scope);
       if (error) throw error;
+
+      // Log audit
+      if (userId) {
+        const changes: Record<string, { from: unknown; to: unknown }> = {};
+        const fields: RuleField[] = [
+          "manual_interval_minutes",
+          "manual_grace_minutes",
+          "expected_reading_interval_seconds",
+          "offline_trigger_multiplier",
+          "offline_trigger_additional_minutes",
+          "door_open_warning_minutes",
+          "door_open_critical_minutes",
+          "excursion_confirm_minutes_door_closed",
+          "excursion_confirm_minutes_door_open",
+          "max_excursion_minutes",
+        ];
+        fields.forEach((f) => {
+          if (oldRules[f] !== null && oldRules[f] !== undefined) {
+            changes[f] = { from: oldRules[f], to: null };
+          }
+        });
+        if (Object.keys(changes).length > 0) {
+          await insertAlertRulesHistory(scope, oldRules.id, "DELETE", changes, userId);
+        }
+      }
       
       // Clear form
       setManualIntervalMinutes("");
@@ -148,26 +301,27 @@ export function AlertRulesEditor({
 
   const FieldWithSource = ({ 
     label, 
+    field,
     value, 
     onChange, 
     parentValue, 
     defaultValue, 
     unit = "",
-    type = "number",
     step = "1",
     min = "0",
   }: { 
     label: string; 
+    field: RuleField;
     value: string; 
     onChange: (v: string) => void; 
     parentValue?: number | null; 
     defaultValue: number;
     unit?: string;
-    type?: string;
     step?: string;
     min?: string;
   }) => {
     const effective = getEffectiveValue(value, parentValue, defaultValue);
+    const canClear = !isOrgScope && value !== "" && existingRules;
     
     return (
       <div className="space-y-2">
@@ -183,12 +337,12 @@ export function AlertRulesEditor({
                 : "bg-muted text-muted-foreground"
             }
           >
-            {effective.source === "local" ? "Custom" : effective.source === "inherited" ? "Inherited" : "Default"}
+            {effective.source === "local" ? "Override" : effective.source === "inherited" ? "Inherited" : "Default"}
           </Badge>
         </div>
         <div className="flex gap-2 items-center">
           <Input
-            type={type}
+            type="number"
             step={step}
             min={min}
             value={value}
@@ -198,6 +352,22 @@ export function AlertRulesEditor({
             className="flex-1"
           />
           {unit && <span className="text-sm text-muted-foreground w-16">{unit}</span>}
+          {canClear && canEdit && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              onClick={() => handleClearField(field)}
+              disabled={clearingField === field}
+              title="Clear override (inherit from parent)"
+            >
+              {clearingField === field ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <X className="w-4 h-4" />
+              )}
+            </Button>
+          )}
         </div>
         {value === "" && (
           <p className="text-xs text-muted-foreground">
@@ -216,7 +386,7 @@ export function AlertRulesEditor({
           Alert Rules - {scopeLabel}
         </CardTitle>
         <CardDescription>
-          Configure alert thresholds and timing. Leave blank to inherit from parent level.
+          Configure alert thresholds and timing. {!isOrgScope && "Leave blank to inherit from parent level."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -229,6 +399,7 @@ export function AlertRulesEditor({
           <div className="grid gap-4 sm:grid-cols-2">
             <FieldWithSource
               label="Required Interval"
+              field="manual_interval_minutes"
               value={manualIntervalMinutes}
               onChange={setManualIntervalMinutes}
               parentValue={parentRules?.manual_interval_minutes}
@@ -237,6 +408,7 @@ export function AlertRulesEditor({
             />
             <FieldWithSource
               label="Grace Period"
+              field="manual_grace_minutes"
               value={manualGraceMinutes}
               onChange={setManualGraceMinutes}
               parentValue={parentRules?.manual_grace_minutes}
@@ -257,6 +429,7 @@ export function AlertRulesEditor({
           <div className="grid gap-4 sm:grid-cols-3">
             <FieldWithSource
               label="Expected Reading Interval"
+              field="expected_reading_interval_seconds"
               value={expectedReadingIntervalSeconds}
               onChange={setExpectedReadingIntervalSeconds}
               parentValue={parentRules?.expected_reading_interval_seconds}
@@ -265,6 +438,7 @@ export function AlertRulesEditor({
             />
             <FieldWithSource
               label="Offline Multiplier"
+              field="offline_trigger_multiplier"
               value={offlineTriggerMultiplier}
               onChange={setOfflineTriggerMultiplier}
               parentValue={parentRules?.offline_trigger_multiplier}
@@ -274,6 +448,7 @@ export function AlertRulesEditor({
             />
             <FieldWithSource
               label="Additional Buffer"
+              field="offline_trigger_additional_minutes"
               value={offlineTriggerAdditionalMinutes}
               onChange={setOfflineTriggerAdditionalMinutes}
               parentValue={parentRules?.offline_trigger_additional_minutes}
@@ -297,6 +472,7 @@ export function AlertRulesEditor({
           <div className="grid gap-4 sm:grid-cols-2">
             <FieldWithSource
               label="Warning After"
+              field="door_open_warning_minutes"
               value={doorOpenWarningMinutes}
               onChange={setDoorOpenWarningMinutes}
               parentValue={parentRules?.door_open_warning_minutes}
@@ -305,6 +481,7 @@ export function AlertRulesEditor({
             />
             <FieldWithSource
               label="Critical After"
+              field="door_open_critical_minutes"
               value={doorOpenCriticalMinutes}
               onChange={setDoorOpenCriticalMinutes}
               parentValue={parentRules?.door_open_critical_minutes}
@@ -325,6 +502,7 @@ export function AlertRulesEditor({
           <div className="grid gap-4 sm:grid-cols-3">
             <FieldWithSource
               label="Confirm (Door Closed)"
+              field="excursion_confirm_minutes_door_closed"
               value={excursionConfirmMinutesDoorClosed}
               onChange={setExcursionConfirmMinutesDoorClosed}
               parentValue={parentRules?.excursion_confirm_minutes_door_closed}
@@ -333,6 +511,7 @@ export function AlertRulesEditor({
             />
             <FieldWithSource
               label="Confirm (Door Open)"
+              field="excursion_confirm_minutes_door_open"
               value={excursionConfirmMinutesDoorOpen}
               onChange={setExcursionConfirmMinutesDoorOpen}
               parentValue={parentRules?.excursion_confirm_minutes_door_open}
@@ -341,6 +520,7 @@ export function AlertRulesEditor({
             />
             <FieldWithSource
               label="Max Duration"
+              field="max_excursion_minutes"
               value={maxExcursionMinutes}
               onChange={setMaxExcursionMinutes}
               parentValue={parentRules?.max_excursion_minutes}
@@ -363,7 +543,7 @@ export function AlertRulesEditor({
               ) : (
                 <RotateCcw className="w-4 h-4 mr-2" />
               )}
-              Reset to Default
+              {isOrgScope ? "Reset to Default" : "Remove All Overrides"}
             </Button>
             <Button onClick={handleSave} disabled={isSaving || isDeleting}>
               {isSaving ? (
