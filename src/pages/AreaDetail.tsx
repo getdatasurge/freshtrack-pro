@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
+import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -73,6 +74,7 @@ const AreaDetail = () => {
   const { toast } = useToast();
   const [area, setArea] = useState<AreaData | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [siblingAreas, setSiblingAreas] = useState<BreadcrumbSibling[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -126,6 +128,22 @@ const AreaDetail = () => {
       name: areaData.name,
       description: areaData.description || "",
     });
+
+    // Load sibling areas for breadcrumb dropdown
+    const { data: siblingsData } = await supabase
+      .from("areas")
+      .select("id, name")
+      .eq("site_id", areaData.site.id)
+      .neq("id", areaId)
+      .order("name");
+
+    if (siblingsData) {
+      setSiblingAreas(siblingsData.map(a => ({
+        id: a.id,
+        name: a.name,
+        href: `/sites/${areaData.site.id}/areas/${a.id}`,
+      })));
+    }
 
     // Load units
     const { data: unitsData, error: unitsError } = await supabase
@@ -256,21 +274,14 @@ const AreaDetail = () => {
   }
 
   return (
-    <DashboardLayout showBack backHref={`/sites/${siteId}`}>
-      <div className="space-y-6">
-        {/* Area Header */}
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-xl bg-secondary/50 flex items-center justify-center">
-              <Building2 className="w-7 h-7 text-secondary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">{area.name}</h1>
-              <p className="text-muted-foreground">
-                {area.site.name} · {area.description || "No description"}
-              </p>
-            </div>
-          </div>
+    <DashboardLayout>
+      <HierarchyBreadcrumb
+        items={[
+          { label: "All Equipment", href: "/sites" },
+          { label: area.site.name, href: `/sites/${area.site.id}` },
+          { label: area.name, isCurrentPage: true, siblings: siblingAreas },
+        ]}
+        actions={
           <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm">
@@ -311,6 +322,20 @@ const AreaDetail = () => {
               </div>
             </DialogContent>
           </Dialog>
+        }
+      />
+      <div className="space-y-6">
+        {/* Area Header - simplified since breadcrumb has the name */}
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-xl bg-secondary/50 flex items-center justify-center">
+            <Building2 className="w-7 h-7 text-secondary-foreground" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">{area.name}</h1>
+            <p className="text-muted-foreground">
+              {area.site.name} · {area.description || "No description"}
+            </p>
+          </div>
         </div>
 
         {/* Units Section */}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
+import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import { SiteComplianceSettings } from "@/components/site/SiteComplianceSettings";
 import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
 import { AlertRulesHistoryModal } from "@/components/settings/AlertRulesHistoryModal";
@@ -66,6 +67,7 @@ const SiteDetail = () => {
   const { toast } = useToast();
   const [site, setSite] = useState<SiteData | null>(null);
   const [areas, setAreas] = useState<Area[]>([]);
+  const [siblingSites, setSiblingSites] = useState<BreadcrumbSibling[]>([]);
   const [totalUnits, setTotalUnits] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -124,6 +126,22 @@ const SiteDetail = () => {
       state: siteData.state || "",
       postal_code: siteData.postal_code || "",
     });
+
+    // Load sibling sites for breadcrumb dropdown
+    const { data: siblingsData } = await supabase
+      .from("sites")
+      .select("id, name")
+      .eq("organization_id", siteData.organization_id)
+      .neq("id", siteId)
+      .order("name");
+
+    if (siblingsData) {
+      setSiblingSites(siblingsData.map(s => ({
+        id: s.id,
+        name: s.name,
+        href: `/sites/${s.id}`,
+      })));
+    }
 
     // Load areas with unit counts
     const { data: areasData, error: areasError } = await supabase
@@ -271,110 +289,116 @@ const SiteDetail = () => {
   }
 
   return (
-    <DashboardLayout showBack backHref="/sites">
+    <DashboardLayout>
+      <HierarchyBreadcrumb
+        items={[
+          { label: "All Equipment", href: "/sites" },
+          { label: site.name, isCurrentPage: true, siblings: siblingSites },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" disabled={isExporting}>
+                  {isExporting ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport("daily")}>
+                  <FileText className="w-4 h-4 mr-2" />
+                  Daily Log (7 days)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport("exceptions")}>
+                  <AlertTriangle className="w-4 h-4 mr-2" />
+                  Exceptions (7 days)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit Site</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-name">Site Name *</Label>
+                    <Input
+                      id="edit-name"
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-address">Address</Label>
+                    <Input
+                      id="edit-address"
+                      value={editFormData.address}
+                      onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-city">City</Label>
+                      <Input
+                        id="edit-city"
+                        value={editFormData.city}
+                        onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-state">State</Label>
+                      <Input
+                        id="edit-state"
+                        value={editFormData.state}
+                        onChange={(e) => setEditFormData({ ...editFormData, state: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-postal">Postal Code</Label>
+                    <Input
+                      id="edit-postal"
+                      value={editFormData.postal_code}
+                      onChange={(e) => setEditFormData({ ...editFormData, postal_code: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleUpdateSite} disabled={isSubmitting}>
+                      {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Save Changes
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+        }
+      />
       <div className="space-y-4">
-        {/* Site Header Card */}
+        {/* Site Header Card - simplified since breadcrumb has the name */}
         <Card>
           <CardHeader className="pb-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                  <MapPin className="w-6 h-6 text-primary" />
-                </div>
-                <div className="min-w-0">
-                  <CardTitle className="text-xl sm:text-2xl truncate">{site.name}</CardTitle>
-                  <CardDescription className="truncate">{formatAddress()}</CardDescription>
-                </div>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <MapPin className="w-6 h-6 text-primary" />
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" disabled={isExporting}>
-                      {isExporting ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      ) : (
-                        <Download className="w-4 h-4 mr-2" />
-                      )}
-                      Export
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleExport("daily")}>
-                      <FileText className="w-4 h-4 mr-2" />
-                      Daily Temperature Log (7 days)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleExport("exceptions")}>
-                      <AlertTriangle className="w-4 h-4 mr-2" />
-                      Exception Report (7 days)
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Pencil className="w-4 h-4 mr-2" />
-                      Edit
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Edit Site</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 pt-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="edit-name">Site Name *</Label>
-                        <Input
-                          id="edit-name"
-                          value={editFormData.name}
-                          onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="edit-address">Address</Label>
-                        <Input
-                          id="edit-address"
-                          value={editFormData.address}
-                          onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="edit-city">City</Label>
-                          <Input
-                            id="edit-city"
-                            value={editFormData.city}
-                            onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="edit-state">State</Label>
-                          <Input
-                            id="edit-state"
-                            value={editFormData.state}
-                            onChange={(e) => setEditFormData({ ...editFormData, state: e.target.value })}
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="edit-postal">Postal Code</Label>
-                        <Input
-                          id="edit-postal"
-                          value={editFormData.postal_code}
-                          onChange={(e) => setEditFormData({ ...editFormData, postal_code: e.target.value })}
-                        />
-                      </div>
-                      <div className="flex justify-end gap-2 pt-4">
-                        <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-                          Cancel
-                        </Button>
-                        <Button onClick={handleUpdateSite} disabled={isSubmitting}>
-                          {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                          Save Changes
-                        </Button>
-                      </div>
-                    </div>
-                  </DialogContent>
-                </Dialog>
+              <div className="min-w-0">
+                <CardTitle className="text-xl sm:text-2xl truncate">{site.name}</CardTitle>
+                <CardDescription className="truncate">{formatAddress()}</CardDescription>
               </div>
             </div>
           </CardHeader>
