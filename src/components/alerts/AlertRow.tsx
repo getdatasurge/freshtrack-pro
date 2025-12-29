@@ -4,11 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertTriangle,
-  Thermometer,
-  WifiOff,
-  Clock,
-  Battery,
-  ChevronRight,
   ClipboardEdit,
   Bell,
   CheckCircle2,
@@ -18,6 +13,7 @@ import {
   MailCheck,
   MailX,
 } from "lucide-react";
+import { getAlertTypeConfig, getSeverityConfig } from "@/lib/alertConfig";
 
 interface AlertRowProps {
   alert: {
@@ -48,26 +44,6 @@ interface AlertRowProps {
   isSubmitting?: boolean;
 }
 
-const alertTypeConfig: Record<string, { icon: typeof AlertTriangle; label: string }> = {
-  alarm_active: { icon: Thermometer, label: "Temperature Alarm" },
-  monitoring_interrupted: { icon: WifiOff, label: "Monitoring Interrupted" },
-  missed_manual_entry: { icon: Clock, label: "Missed Manual Entry" },
-  low_battery: { icon: Battery, label: "Low Battery" },
-  sensor_fault: { icon: AlertTriangle, label: "Sensor Fault" },
-  door_open: { icon: AlertTriangle, label: "Door Open" },
-  calibration_due: { icon: AlertTriangle, label: "Calibration Due" },
-  MANUAL_REQUIRED: { icon: Clock, label: "Manual Logging Required" },
-  OFFLINE: { icon: WifiOff, label: "Sensor Offline" },
-  EXCURSION: { icon: Thermometer, label: "Temperature Excursion" },
-  ALARM_ACTIVE: { icon: Thermometer, label: "Temperature Alarm" },
-};
-
-const severityConfig: Record<string, { color: string; bgColor: string }> = {
-  info: { color: "text-accent", bgColor: "bg-accent/10" },
-  warning: { color: "text-warning", bgColor: "bg-warning/10" },
-  critical: { color: "text-alarm", bgColor: "bg-alarm/10" },
-};
-
 const getTimeAgo = (dateStr: string) => {
   const diffMins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
   if (diffMins < 1) return "Just now";
@@ -78,8 +54,8 @@ const getTimeAgo = (dateStr: string) => {
 };
 
 const AlertRow = ({ alert, onLogTemp, onAcknowledge, onResolve, isSubmitting }: AlertRowProps) => {
-  const typeConfig = alertTypeConfig[alert.alertType] || alertTypeConfig.sensor_fault;
-  const severity = severityConfig[alert.severity] || severityConfig.warning;
+  const typeConfig = getAlertTypeConfig(alert.alertType);
+  const severity = getSeverityConfig(alert.severity);
   const Icon = typeConfig?.icon || AlertTriangle;
   const showLogButton = alert.alertType === "MANUAL_REQUIRED" || alert.alertType === "missed_manual_entry";
 

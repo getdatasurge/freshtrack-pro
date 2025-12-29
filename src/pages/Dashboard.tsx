@@ -35,15 +35,7 @@ interface DashboardStats {
   totalSites: number;
 }
 
-const statusConfig: Record<string, { color: string; bgColor: string; label: string; priority: number }> = {
-  alarm_active: { color: "text-alarm", bgColor: "bg-alarm/10", label: "ALARM", priority: 1 },
-  excursion: { color: "text-excursion", bgColor: "bg-excursion/10", label: "Excursion", priority: 2 },
-  monitoring_interrupted: { color: "text-warning", bgColor: "bg-warning/10", label: "Interrupted", priority: 3 },
-  manual_required: { color: "text-warning", bgColor: "bg-warning/10", label: "Manual Required", priority: 4 },
-  offline: { color: "text-muted-foreground", bgColor: "bg-muted", label: "Offline", priority: 5 },
-  restoring: { color: "text-accent", bgColor: "bg-accent/10", label: "Restoring", priority: 6 },
-  ok: { color: "text-safe", bgColor: "bg-safe/10", label: "OK", priority: 7 },
-};
+import { STATUS_CONFIG } from "@/lib/statusConfig";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -198,8 +190,8 @@ const Dashboard = () => {
       unitsWithComputed.sort((a, b) => {
         if (a.computed.actionRequired && !b.computed.actionRequired) return -1;
         if (!a.computed.actionRequired && b.computed.actionRequired) return 1;
-        const aPriority = statusConfig[a.status]?.priority || 99;
-        const bPriority = statusConfig[b.status]?.priority || 99;
+        const aPriority = STATUS_CONFIG[a.status]?.priority || 99;
+        const bPriority = STATUS_CONFIG[b.status]?.priority || 99;
         return aPriority - bPriority;
       });
 
@@ -500,7 +492,7 @@ const Dashboard = () => {
               const effectiveStatus = unit.computed.offlineSeverity !== 'none' 
                 ? 'offline' 
                 : unit.status;
-              const status = statusConfig[effectiveStatus] || statusConfig.offline;
+              const status = STATUS_CONFIG[effectiveStatus] || STATUS_CONFIG.offline;
               const isOnline = unit.computed.sensorOnline;
               return (
                 <Link key={unit.id} to={`/units/${unit.id}`}>

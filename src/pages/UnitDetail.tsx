@@ -95,15 +95,8 @@ interface UnitAlert {
   clearCondition: string;
 }
 
-const statusConfig: Record<string, { color: string; bgColor: string; label: string }> = {
-  ok: { color: "text-safe", bgColor: "bg-safe/10", label: "OK" },
-  excursion: { color: "text-excursion", bgColor: "bg-excursion/10", label: "Excursion" },
-  alarm_active: { color: "text-alarm", bgColor: "bg-alarm/10", label: "ALARM" },
-  monitoring_interrupted: { color: "text-warning", bgColor: "bg-warning/10", label: "Interrupted" },
-  manual_required: { color: "text-warning", bgColor: "bg-warning/10", label: "Manual Required" },
-  restoring: { color: "text-accent", bgColor: "bg-accent/10", label: "Restoring" },
-  offline: { color: "text-muted-foreground", bgColor: "bg-muted", label: "Offline" },
-};
+import { STATUS_CONFIG, getStatusConfig } from "@/lib/statusConfig";
+import { getAlertClearCondition } from "@/lib/alertConfig";
 
 const UnitDetail = () => {
   const { unitId } = useParams();
@@ -311,28 +304,7 @@ const UnitDetail = () => {
     setIsLoading(false);
   };
 
-  const getAlertClearCondition = (alertType: string): string => {
-    switch (alertType) {
-      case "MANUAL_REQUIRED":
-      case "missed_manual_entry":
-        return "Log a manual temperature";
-      case "OFFLINE":
-      case "monitoring_interrupted":
-        return "Sensor comes back online";
-      case "ALARM_ACTIVE":
-      case "alarm_active":
-        return "Temperature returns to range";
-      case "EXCURSION":
-      case "excursion":
-        return "Temperature returns to range";
-      case "low_battery":
-        return "Replace or charge battery";
-      case "door_open":
-        return "Close the door";
-      default:
-        return "Condition resolved";
-    }
-  };
+  // getAlertClearCondition is now imported from @/lib/alertConfig
 
   const exportToCSV = async (reportType: "daily" | "exceptions" = "daily") => {
     if (!unit) return;
@@ -402,7 +374,7 @@ const UnitDetail = () => {
     );
   }
 
-  const status = statusConfig[unit.status] || statusConfig.offline;
+  const status = STATUS_CONFIG[unit.status] || STATUS_CONFIG.offline;
   const isOnline = Boolean(unit.status !== "offline" && unit.last_reading_at);
 
   return (

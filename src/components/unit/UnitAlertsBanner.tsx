@@ -3,14 +3,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertTriangle,
-  Clock,
-  WifiOff,
-  Thermometer,
   ChevronDown,
   ChevronUp,
   ClipboardEdit,
   Bell,
 } from "lucide-react";
+import { getAlertTypeConfig } from "@/lib/alertConfig";
 
 interface UnitAlert {
   id: string;
@@ -26,16 +24,6 @@ interface UnitAlertsBannerProps {
   onLogTemp?: () => void;
   onAcknowledge?: (alertId: string) => void;
 }
-
-const alertConfig: Record<string, { icon: typeof AlertTriangle; clearText: string }> = {
-  MANUAL_REQUIRED: { icon: Clock, clearText: "Log a temperature reading" },
-  OFFLINE: { icon: WifiOff, clearText: "Sensor comes back online" },
-  EXCURSION: { icon: Thermometer, clearText: "Temperature returns to range" },
-  ALARM_ACTIVE: { icon: Thermometer, clearText: "Temperature returns to range" },
-  missed_manual_entry: { icon: Clock, clearText: "Log a temperature reading" },
-  monitoring_interrupted: { icon: WifiOff, clearText: "Sensor comes back online" },
-  alarm_active: { icon: Thermometer, clearText: "Temperature returns to range" },
-};
 
 const UnitAlertsBanner = ({ alerts, onLogTemp, onAcknowledge }: UnitAlertsBannerProps) => {
   const [expanded, setExpanded] = useState(false);
@@ -87,7 +75,7 @@ const UnitAlertsBanner = ({ alerts, onLogTemp, onAcknowledge }: UnitAlertsBanner
 
       <div className="space-y-2">
         {visibleAlerts.map((alert) => {
-          const config = alertConfig[alert.type] || alertConfig.OFFLINE;
+          const config = getAlertTypeConfig(alert.type);
           const Icon = config.icon;
           const isCritical = alert.severity === "critical";
           const showLogButton = alert.type === "MANUAL_REQUIRED" || alert.type === "missed_manual_entry";
