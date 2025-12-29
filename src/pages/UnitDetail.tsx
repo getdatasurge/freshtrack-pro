@@ -451,72 +451,181 @@ const UnitDetail = () => {
         }
       />
       <div className="space-y-6">
-        {/* Unit Header - simplified since breadcrumb has the name */}
-        <div className="flex items-center gap-4">
-          <div className={`w-14 h-14 rounded-xl ${status.bgColor} flex items-center justify-center`}>
-            <Thermometer className={`w-7 h-7 ${status.color}`} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-foreground">{unit.name}</h1>
-              <Badge className={`${status.bgColor} ${status.color} border-0`}>
-                {status.label}
-              </Badge>
-            </div>
-            <p className="text-muted-foreground">
-              {unit.area.site.name} · {unit.area.name}
-            </p>
-          </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">Current Temp</p>
-              <p className={`text-2xl font-bold ${
-                unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high
-                  ? "text-alarm"
-                  : status.color
-              }`}>
-                {formatTemp(unit.last_temp_reading)}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">High Limit</p>
-              <p className="text-2xl font-bold text-foreground">{unit.temp_limit_high}°F</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">Readings</p>
-              <p className="text-2xl font-bold text-foreground">{readings.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4">
-              <p className="text-xs text-muted-foreground">Status</p>
-              <div className="flex items-center gap-1 mt-1">
-                {isOnline ? (
-                  <Wifi className="w-4 h-4 text-safe" />
-                ) : (
-                  <WifiOff className="w-4 h-4 text-muted-foreground" />
-                )}
-                <span className="text-sm">{isOnline ? "Online" : "Offline"}</span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Alerts Banner */}
+        {/* Alerts Banner - Full Width, Prominent Position */}
         {unitAlerts.length > 0 && (
           <UnitAlertsBanner
             alerts={unitAlerts}
             onLogTemp={() => setModalOpen(true)}
           />
         )}
+
+        {/* Two Column Layout: Chart + Summary Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left: Temperature Chart (2/3 width) */}
+          <div className="lg:col-span-2">
+            <Card className="h-full">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-accent" />
+                  Temperature History
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {chartData.length > 0 ? (
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="tempGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="hsl(var(--accent))" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="hsl(var(--accent))" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis
+                          dataKey="time"
+                          stroke="hsl(var(--muted-foreground))"
+                          fontSize={12}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          stroke="hsl(var(--muted-foreground))"
+                          fontSize={12}
+                          tickLine={false}
+                          domain={["auto", "auto"]}
+                          tickFormatter={(v) => `${v}°`}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "hsl(var(--card))",
+                            border: "1px solid hsl(var(--border))",
+                            borderRadius: "8px",
+                          }}
+                          labelFormatter={(_, payload) => payload[0]?.payload?.fullTime || ""}
+                          formatter={(value: number) => [`${value.toFixed(1)}°F`, "Temperature"]}
+                        />
+                        <ReferenceLine
+                          y={unit.temp_limit_high}
+                          stroke="hsl(var(--alarm))"
+                          strokeDasharray="5 5"
+                          label={{ value: `Limit: ${unit.temp_limit_high}°F`, fill: "hsl(var(--alarm))", fontSize: 11 }}
+                        />
+                        {unit.temp_limit_low !== null && (
+                          <ReferenceLine
+                            y={unit.temp_limit_low}
+                            stroke="hsl(var(--accent))"
+                            strokeDasharray="5 5"
+                          />
+                        )}
+                        <Area
+                          type="monotone"
+                          dataKey="temperature"
+                          stroke="hsl(var(--accent))"
+                          fill="url(#tempGradient)"
+                          strokeWidth={2}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="temperature"
+                          stroke="hsl(var(--accent))"
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, fill: "hsl(var(--accent))" }}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="h-80 flex items-center justify-center">
+                    <p className="text-muted-foreground">No sensor readings in this time period</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right: Summary Cards (1/3 width) */}
+          <div className="space-y-4">
+            {/* Current Temperature - Large Display */}
+            <Card>
+              <CardContent className="pt-6 pb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-muted-foreground">Current Temperature</p>
+                  <div className="flex items-center gap-1">
+                    {isOnline ? (
+                      <Wifi className="w-4 h-4 text-safe" />
+                    ) : (
+                      <WifiOff className="w-4 h-4 text-muted-foreground" />
+                    )}
+                    <span className="text-xs text-muted-foreground">{isOnline ? "Live" : "Offline"}</span>
+                  </div>
+                </div>
+                <p className={`text-5xl font-bold ${
+                  unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high
+                    ? "text-alarm"
+                    : unit.last_temp_reading && unit.temp_limit_low && unit.last_temp_reading < unit.temp_limit_low
+                    ? "text-accent"
+                    : "text-safe"
+                }`}>
+                  {formatTemp(unit.last_temp_reading)}
+                </p>
+                {unit.last_reading_at && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Last reading: {format(new Date(unit.last_reading_at), "MMM d, h:mm a")}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Device Status Card */}
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-sm font-medium text-muted-foreground mb-3">Device Status</p>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${status.bgColor}`}>
+                    <Thermometer className={`w-5 h-5 ${status.color}`} />
+                  </div>
+                  <div>
+                    <Badge className={`${status.bgColor} ${status.color} border-0`}>
+                      {status.label}
+                    </Badge>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {unit.unit_type.replace(/_/g, " ")}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Temperature Limits Card */}
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-sm font-medium text-muted-foreground mb-3">Configured Limits</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">High Limit</span>
+                    <span className="font-medium text-alarm">{unit.temp_limit_high}°F</span>
+                  </div>
+                  {unit.temp_limit_low !== null && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Low Limit</span>
+                      <span className="font-medium text-accent">{unit.temp_limit_low}°F</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Readings Count Card */}
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-sm font-medium text-muted-foreground mb-2">Readings in Period</p>
+                <p className="text-3xl font-bold text-foreground">{readings.length}</p>
+                <p className="text-xs text-muted-foreground">sensor readings</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
 
         {/* Last Known Good Card (shows when offline) */}
         <LastKnownGoodCard
@@ -557,87 +666,6 @@ const UnitDetail = () => {
           doorOpenGraceMinutes={(unit as any).door_open_grace_minutes}
           onSettingsUpdated={loadUnitData}
         />
-
-        {/* Temperature Chart */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Activity className="w-5 h-5 text-accent" />
-              Temperature History
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {chartData.length > 0 ? (
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="tempGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(var(--accent))" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="hsl(var(--accent))" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis
-                      dataKey="time"
-                      stroke="hsl(var(--muted-foreground))"
-                      fontSize={12}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      stroke="hsl(var(--muted-foreground))"
-                      fontSize={12}
-                      tickLine={false}
-                      domain={["auto", "auto"]}
-                      tickFormatter={(v) => `${v}°`}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: "8px",
-                      }}
-                      labelFormatter={(_, payload) => payload[0]?.payload?.fullTime || ""}
-                      formatter={(value: number) => [`${value.toFixed(1)}°F`, "Temperature"]}
-                    />
-                    <ReferenceLine
-                      y={unit.temp_limit_high}
-                      stroke="hsl(var(--alarm))"
-                      strokeDasharray="5 5"
-                      label={{ value: `Limit: ${unit.temp_limit_high}°F`, fill: "hsl(var(--alarm))", fontSize: 11 }}
-                    />
-                    {unit.temp_limit_low !== null && (
-                      <ReferenceLine
-                        y={unit.temp_limit_low}
-                        stroke="hsl(var(--accent))"
-                        strokeDasharray="5 5"
-                      />
-                    )}
-                    <Area
-                      type="monotone"
-                      dataKey="temperature"
-                      stroke="hsl(var(--accent))"
-                      fill="url(#tempGradient)"
-                      strokeWidth={2}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="temperature"
-                      stroke="hsl(var(--accent))"
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4, fill: "hsl(var(--accent))" }}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-72 flex items-center justify-center">
-                <p className="text-muted-foreground">No sensor readings in this time period</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Tabs for Manual Logs and Events */}
         <Tabs defaultValue="manual" className="space-y-4">
