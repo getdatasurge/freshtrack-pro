@@ -101,13 +101,27 @@ export function AlertTypePolicyCard({
   // Fetch escalation contacts for contact priority dropdown
   const { data: escalationContacts } = useEscalationContacts();
 
+  // Helper to ensure escalation_steps is always an array
+  const parseEscalationSteps = (steps: unknown): EscalationStep[] => {
+    if (Array.isArray(steps)) return steps;
+    if (typeof steps === 'string') {
+      try {
+        const parsed = JSON.parse(steps);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
   // Initialize from existing policy
   useEffect(() => {
     if (existingPolicy) {
-      setInitialChannels(existingPolicy.initial_channels || []);
+      setInitialChannels(Array.isArray(existingPolicy.initial_channels) ? existingPolicy.initial_channels : []);
       setRequiresAck(existingPolicy.requires_ack);
       setAckDeadlineMinutes(existingPolicy.ack_deadline_minutes?.toString() || "");
-      setEscalationSteps(existingPolicy.escalation_steps || []);
+      setEscalationSteps(parseEscalationSteps(existingPolicy.escalation_steps));
       setSendResolvedNotifications(existingPolicy.send_resolved_notifications);
       setRemindersEnabled(existingPolicy.reminders_enabled);
       setReminderIntervalMinutes(existingPolicy.reminder_interval_minutes?.toString() || "");
@@ -115,7 +129,7 @@ export function AlertTypePolicyCard({
       setQuietHoursStart(existingPolicy.quiet_hours_start_local || "");
       setQuietHoursEnd(existingPolicy.quiet_hours_end_local || "");
       setAllowWarningNotifications(existingPolicy.allow_warning_notifications);
-      setNotifyRoles(existingPolicy.notify_roles || ["owner", "admin"]);
+      setNotifyRoles(Array.isArray(existingPolicy.notify_roles) ? existingPolicy.notify_roles : ["owner", "admin"]);
       setNotifySiteManagers(existingPolicy.notify_site_managers ?? true);
       setNotifyAssignedUsers(existingPolicy.notify_assigned_users ?? false);
     } else {
