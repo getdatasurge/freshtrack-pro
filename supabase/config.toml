@@ -12,13 +12,15 @@ verify_jwt = false
 [functions.stripe-portal]
 verify_jwt = true
 
-[functions.process-unit-states]
-verify_jwt = false
-
+# User-facing functions - require JWT authentication
 [functions.sensor-simulator]
-verify_jwt = false
+verify_jwt = true
 
 [functions.export-temperature-logs]
+verify_jwt = true
+
+# Internal/scheduled functions - use API key validation in code
+[functions.process-unit-states]
 verify_jwt = false
 
 [functions.process-escalations]

@@ -1,8 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { validateInternalApiKey, unauthorizedResponse } from "../_shared/validation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-api-key",
 };
 
 interface UnitRow {
@@ -28,26 +29,29 @@ interface UnitRow {
   };
 }
 
-function getOrgId(unit: any): string {
-  const area = unit.area;
+function getOrgId(unit: unknown): string {
+  const u = unit as Record<string, unknown>;
+  const area = u.area as Record<string, unknown> | Array<Record<string, unknown>>;
   if (Array.isArray(area)) {
-    const site = area[0]?.site;
-    if (Array.isArray(site)) return site[0]?.organization_id || "";
-    return site?.organization_id || "";
+    const site = area[0]?.site as Record<string, unknown> | Array<Record<string, unknown>>;
+    if (Array.isArray(site)) return (site[0]?.organization_id as string) || "";
+    return (site?.organization_id as string) || "";
   }
-  const site = area?.site;
-  if (Array.isArray(site)) return site[0]?.organization_id || "";
-  return site?.organization_id || "";
+  const site = area?.site as Record<string, unknown> | Array<Record<string, unknown>>;
+  if (Array.isArray(site)) return (site[0]?.organization_id as string) || "";
+  return (site?.organization_id as string) || "";
 }
 
-function getSiteId(unit: any): string {
-  const area = unit.area;
-  if (Array.isArray(area)) return area[0]?.site_id || "";
-  return area?.site_id || "";
+function getSiteId(unit: unknown): string {
+  const u = unit as Record<string, unknown>;
+  const area = u.area as Record<string, unknown> | Array<Record<string, unknown>>;
+  if (Array.isArray(area)) return (area[0]?.site_id as string) || "";
+  return (area?.site_id as string) || "";
 }
 
-function getAreaId(unit: any): string {
-  return unit.area_id || "";
+function getAreaId(unit: unknown): string {
+  const u = unit as Record<string, unknown>;
+  return (u.area_id as string) || "";
 }
 
 type UnitStatus = "ok" | "excursion" | "alarm_active" | "monitoring_interrupted" | "manual_required" | "restoring" | "offline";
@@ -58,21 +62,39 @@ const READINGS_TO_RESTORE = 2;
 const COOLING_FAILURE_THRESHOLD_MINUTES = 45;
 
 // Calculate dynamic data gap threshold from alert rules
-function calculateDataGapThreshold(rules: any): number {
-  const expectedIntervalSeconds = rules?.expected_reading_interval_seconds ?? 60;
-  const multiplier = rules?.offline_trigger_multiplier ?? 2.0;
-  const additionalMinutes = rules?.offline_trigger_additional_minutes ?? 2;
+function calculateDataGapThreshold(rules: Record<string, unknown> | null): number {
+  const expectedIntervalSeconds = (rules?.expected_reading_interval_seconds as number) ?? 60;
+  const multiplier = (rules?.offline_trigger_multiplier as number) ?? 2.0;
+  const additionalMinutes = (rules?.offline_trigger_additional_minutes as number) ?? 2;
   
   // threshold = (expected_interval * multiplier) + additional_minutes
   return (expectedIntervalSeconds * multiplier * 1000) + (additionalMinutes * 60 * 1000);
 }
 
+/**
+ * Process Unit States - Internal Scheduled Function
+ * 
+ * Security: Requires INTERNAL_API_KEY when configured
+ * 
+ * This function processes all active units to:
+ * - Detect data gaps and trigger monitoring_interrupted alerts
+ * - Detect temperature excursions and create alerts
+ * - Track door states and grace periods
+ * - Detect suspected cooling failures
+ */
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Validate internal API key
+    const apiKeyResult = validateInternalApiKey(req);
+    if (!apiKeyResult.valid) {
+      console.warn("[process-unit-states] API key validation failed:", apiKeyResult.error);
+      return unauthorizedResponse(apiKeyResult.error || "Unauthorized", corsHeaders);
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -100,34 +122,34 @@ Deno.serve(async (req) => {
     const stateChanges: { unitId: string; from: string; to: string; reason: string }[] = [];
     const newAlertIds: string[] = [];
 
-    for (const unit of (units || []) as any[]) {
-      const currentStatus = unit.status as UnitStatus;
+    for (const unit of (units || []) as unknown[]) {
+      const u = unit as Record<string, unknown>;
+      const currentStatus = u.status as UnitStatus;
       let newStatus: UnitStatus = currentStatus;
       let reason = "";
 
-      const lastReadingTime = unit.last_reading_at ? new Date(unit.last_reading_at).getTime() : null;
+      const lastReadingTime = u.last_reading_at ? new Date(u.last_reading_at as string).getTime() : null;
       const timeSinceReading = lastReadingTime ? now - lastReadingTime : Infinity;
 
       // Door state context
-      const doorState = unit.door_state || "unknown";
-      const doorGraceMinutes = unit.door_open_grace_minutes || 20;
-      const doorLastChanged = unit.door_last_changed_at ? new Date(unit.door_last_changed_at).getTime() : null;
+      const doorState = (u.door_state as string) || "unknown";
+      const doorGraceMinutes = (u.door_open_grace_minutes as number) || 20;
+      const doorLastChanged = u.door_last_changed_at ? new Date(u.door_last_changed_at as string).getTime() : null;
       const doorOpenDuration = doorState === "open" && doorLastChanged 
         ? Math.floor((now - doorLastChanged) / 60000) 
         : 0;
       const isDoorOpenWithinGrace = doorState === "open" && doorOpenDuration < doorGraceMinutes;
 
       // Confirm times (in seconds, convert to ms)
-      const confirmTimeDoorClosed = (unit.confirm_time_door_closed || 600) * 1000; // default 10 min
-      const confirmTimeDoorOpen = (unit.confirm_time_door_open || 1200) * 1000; // default 20 min
+      const confirmTimeDoorClosed = ((u.confirm_time_door_closed as number) || 600) * 1000; // default 10 min
+      const confirmTimeDoorOpen = ((u.confirm_time_door_open as number) || 1200) * 1000; // default 20 min
       const confirmTime = doorState === "open" ? confirmTimeDoorOpen : confirmTimeDoorClosed;
 
       // Get per-unit alert rules for dynamic threshold
-      const { data: effectiveRules } = await supabase.rpc("get_effective_alert_rules", { p_unit_id: unit.id });
-      const dataGapThresholdMs = calculateDataGapThreshold(effectiveRules);
+      const { data: effectiveRules } = await supabase.rpc("get_effective_alert_rules", { p_unit_id: u.id });
+      const dataGapThresholdMs = calculateDataGapThreshold(effectiveRules as Record<string, unknown> | null);
 
       // Check for data gap - transition to MONITORING_INTERRUPTED
-      // Also allow recovery from "offline" status when readings arrive
       if (timeSinceReading > dataGapThresholdMs) {
         if (currentStatus !== "monitoring_interrupted" && currentStatus !== "manual_required") {
           newStatus = "monitoring_interrupted";
@@ -142,44 +164,40 @@ Deno.serve(async (req) => {
       }
 
       // Check temperature excursion (only if we have recent data)
-      if (timeSinceReading <= dataGapThresholdMs && unit.last_temp_reading !== null) {
-        const temp = unit.last_temp_reading;
-        const highLimit = unit.temp_limit_high;
-        const lowLimit = unit.temp_limit_low;
-        const hysteresis = unit.temp_hysteresis;
+      if (timeSinceReading <= dataGapThresholdMs && u.last_temp_reading !== null) {
+        const temp = u.last_temp_reading as number;
+        const highLimit = u.temp_limit_high as number;
+        const lowLimit = u.temp_limit_low as number | null;
+        const hysteresis = u.temp_hysteresis as number;
 
         const isAboveLimit = temp > highLimit;
         const isBelowLimit = lowLimit !== null && temp < lowLimit;
 
         if (isAboveLimit || isBelowLimit) {
           // Temperature out of range
-          // If door is open and within grace period, delay escalation
           if (isDoorOpenWithinGrace && currentStatus === "ok") {
-            // Don't transition yet - door open grace
-            console.log(`Unit ${unit.name}: Temp out of range but door open (${doorOpenDuration}/${doorGraceMinutes}m grace)`);
+            console.log(`Unit ${u.name}: Temp out of range but door open (${doorOpenDuration}/${doorGraceMinutes}m grace)`);
           } else if (currentStatus === "ok" || currentStatus === "restoring") {
             newStatus = "excursion";
             reason = `Temperature ${temp}°F ${isAboveLimit ? "above" : "below"} limit${doorState === "open" ? " (door open)" : ""}`;
           } else if (currentStatus === "excursion") {
-            // Check if we should escalate to alarm based on confirm window
-            const statusChangeTime = unit.last_status_change ? new Date(unit.last_status_change).getTime() : now;
+            const statusChangeTime = u.last_status_change ? new Date(u.last_status_change as string).getTime() : now;
             const timeInExcursion = now - statusChangeTime;
 
             if (timeInExcursion >= confirmTime) {
               newStatus = "alarm_active";
               reason = `Temperature excursion confirmed after ${Math.floor(timeInExcursion / 60000)}m: ${temp}°F (door ${doorState})`;
             } else {
-              console.log(`Unit ${unit.name}: Excursion pending confirmation (${Math.floor(timeInExcursion / 60000)}/${Math.floor(confirmTime / 60000)}m)`);
+              console.log(`Unit ${u.name}: Excursion pending confirmation (${Math.floor(timeInExcursion / 60000)}/${Math.floor(confirmTime / 60000)}m)`);
             }
           }
 
           // Create or update temp_excursion alert when entering excursion state
           if (newStatus === "excursion" && currentStatus !== "excursion") {
-            // Check if alert already exists
             const { data: existingAlert } = await supabase
               .from("alerts")
               .select("id")
-              .eq("unit_id", unit.id)
+              .eq("unit_id", u.id)
               .eq("alert_type", "temp_excursion")
               .in("status", ["active", "acknowledged"])
               .maybeSingle();
@@ -188,12 +206,12 @@ Deno.serve(async (req) => {
               const doorContext = doorState !== "unknown" ? ` (door ${doorState})` : "";
               const nowIso = new Date().toISOString();
               const { data: alertData, error: alertError } = await supabase.from("alerts").insert({
-                unit_id: unit.id,
+                unit_id: u.id,
                 organization_id: getOrgId(unit),
                 site_id: getSiteId(unit),
                 area_id: getAreaId(unit),
                 source: "sensor",
-                title: `${unit.name}: Temperature Excursion${doorContext}`,
+                title: `${u.name}: Temperature Excursion${doorContext}`,
                 message: reason,
                 alert_type: "temp_excursion",
                 severity: "critical",
@@ -205,47 +223,44 @@ Deno.serve(async (req) => {
                   low_limit: lowLimit,
                   high_limit: highLimit,
                   reading_source: "sensor",
-                  reading_at: unit.last_reading_at,
+                  reading_at: u.last_reading_at,
                   door_state: doorState,
                 },
               }).select("id").single();
               
               if (!alertError && alertData) {
                 newAlertIds.push(alertData.id);
-                console.log(`Created temp_excursion alert (CRITICAL) for unit ${unit.name}`);
+                console.log(`Created temp_excursion alert (CRITICAL) for unit ${u.name}`);
               }
             }
           }
 
           // Escalate temp_excursion to critical when alarm_active
           if (newStatus === "alarm_active" && currentStatus === "excursion") {
-            const statusChangeTime = unit.last_status_change ? new Date(unit.last_status_change).getTime() : now;
+            const statusChangeTime = u.last_status_change ? new Date(u.last_status_change as string).getTime() : now;
             const durationMinutes = Math.floor((now - statusChangeTime) / 60000);
 
-            // Update existing temp_excursion alert to critical
-            const { error: updateError } = await supabase
+            await supabase
               .from("alerts")
               .update({
                 severity: "critical",
-                title: `${unit.name}: Temperature Alarm (${doorState !== "unknown" ? `door ${doorState}` : "confirmed"})`,
+                title: `${u.name}: Temperature Alarm (${doorState !== "unknown" ? `door ${doorState}` : "confirmed"})`,
                 message: `Temperature excursion confirmed: ${temp}°F after ${durationMinutes}m`,
                 metadata: {
                   current_temp: temp,
                   low_limit: lowLimit,
                   high_limit: highLimit,
                   reading_source: "sensor",
-                  reading_at: unit.last_reading_at,
+                  reading_at: u.last_reading_at,
                   door_state: doorState,
                   duration_minutes: durationMinutes,
                 },
               })
-              .eq("unit_id", unit.id)
+              .eq("unit_id", u.id)
               .eq("alert_type", "temp_excursion")
               .in("status", ["active", "acknowledged"]);
 
-            if (!updateError) {
-              console.log(`Escalated temp_excursion alert to critical for unit ${unit.name}`);
-            }
+            console.log(`Escalated temp_excursion alert to critical for unit ${u.name}`);
           }
 
           // Check for suspected cooling failure
@@ -255,7 +270,7 @@ Deno.serve(async (req) => {
             const { data: recentReadings } = await supabase
               .from("sensor_readings")
               .select("temperature, recorded_at")
-              .eq("unit_id", unit.id)
+              .eq("unit_id", u.id)
               .gte("recorded_at", coolingCheckTime)
               .order("recorded_at", { ascending: false });
 
@@ -277,19 +292,19 @@ Deno.serve(async (req) => {
                   const { data: existingAlert } = await supabase
                     .from("alerts")
                     .select("id")
-                    .eq("unit_id", unit.id)
+                    .eq("unit_id", u.id)
                     .eq("alert_type", "suspected_cooling_failure")
                     .in("status", ["active", "acknowledged"])
                     .maybeSingle();
 
                   if (!existingAlert) {
                     const { data: alertData } = await supabase.from("alerts").insert({
-                      unit_id: unit.id,
+                      unit_id: u.id,
                       organization_id: getOrgId(unit),
                       site_id: getSiteId(unit),
                       area_id: getAreaId(unit),
                       source: "sensor",
-                      title: `${unit.name}: Suspected Cooling Failure`,
+                      title: `${u.name}: Suspected Cooling Failure`,
                       message: `Door closed; temp not recovering; possible cooling system issue. Current: ${temp}°F`,
                       alert_type: "suspected_cooling_failure",
                       severity: "warning",
@@ -299,7 +314,7 @@ Deno.serve(async (req) => {
                     
                     if (alertData) {
                       newAlertIds.push(alertData.id);
-                      console.log(`Created suspected_cooling_failure alert for unit ${unit.name}`);
+                      console.log(`Created suspected_cooling_failure alert for unit ${u.name}`);
                     }
                   }
                 }
@@ -324,11 +339,11 @@ Deno.serve(async (req) => {
                   status: "resolved",
                   resolved_at: new Date().toISOString(),
                 })
-                .eq("unit_id", unit.id)
+                .eq("unit_id", u.id)
                 .eq("alert_type", "temp_excursion")
                 .in("status", ["active", "acknowledged"]);
               
-              console.log(`Resolved temp_excursion alert for unit ${unit.name}`);
+              console.log(`Resolved temp_excursion alert for unit ${u.name}`);
               
               // Resolve suspected cooling failure alert if exists
               await supabase
@@ -337,7 +352,7 @@ Deno.serve(async (req) => {
                   status: "resolved",
                   resolved_at: new Date().toISOString(),
                 })
-                .eq("unit_id", unit.id)
+                .eq("unit_id", u.id)
                 .eq("alert_type", "suspected_cooling_failure")
                 .in("status", ["active", "acknowledged"]);
             } else if (currentStatus === "restoring") {
@@ -345,7 +360,7 @@ Deno.serve(async (req) => {
               const { data: recentReadings } = await supabase
                 .from("sensor_readings")
                 .select("temperature")
-                .eq("unit_id", unit.id)
+                .eq("unit_id", u.id)
                 .order("recorded_at", { ascending: false })
                 .limit(READINGS_TO_RESTORE);
 
@@ -371,11 +386,11 @@ Deno.serve(async (req) => {
                   status: "resolved",
                   resolved_at: new Date().toISOString(),
                 })
-                .eq("unit_id", unit.id)
+                .eq("unit_id", u.id)
                 .eq("alert_type", "monitoring_interrupted")
                 .in("status", ["active", "acknowledged"]);
               
-              console.log(`Resolved monitoring_interrupted alerts for unit ${unit.name} (was ${currentStatus})`);
+              console.log(`Resolved monitoring_interrupted alerts for unit ${u.name} (was ${currentStatus})`);
             }
           }
         }
@@ -383,7 +398,7 @@ Deno.serve(async (req) => {
 
       // Update status if changed
       if (newStatus !== currentStatus) {
-        console.log(`Unit ${unit.name}: ${currentStatus} -> ${newStatus} (${reason})`);
+        console.log(`Unit ${u.name}: ${currentStatus} -> ${newStatus} (${reason})`);
         
         const { error: updateError } = await supabase
           .from("units")
@@ -391,15 +406,15 @@ Deno.serve(async (req) => {
             status: newStatus,
             last_status_change: new Date().toISOString(),
           })
-          .eq("id", unit.id);
+          .eq("id", u.id);
 
         if (updateError) {
-          console.error(`Error updating unit ${unit.id}:`, updateError);
+          console.error(`Error updating unit ${u.id}:`, updateError);
           continue;
         }
 
         stateChanges.push({
-          unitId: unit.id,
+          unitId: u.id as string,
           from: currentStatus,
           to: newStatus,
           reason,
@@ -410,86 +425,88 @@ Deno.serve(async (req) => {
           const { data: existingAlert } = await supabase
             .from("alerts")
             .select("id")
-            .eq("unit_id", unit.id)
+            .eq("unit_id", u.id)
             .eq("alert_type", "monitoring_interrupted")
             .in("status", ["active", "acknowledged"])
             .maybeSingle();
 
           if (!existingAlert) {
             const { data: alertData } = await supabase.from("alerts").insert({
-              unit_id: unit.id,
+              unit_id: u.id,
               organization_id: getOrgId(unit),
               site_id: getSiteId(unit),
               area_id: getAreaId(unit),
               source: "sensor",
-              title: `${unit.name}: ${newStatus.replace(/_/g, " ").toUpperCase()}`,
+              title: `${u.name}: Monitoring Interrupted`,
               message: reason,
               alert_type: "monitoring_interrupted",
-              severity: "warning",
+              severity: "info",
             }).select("id").single();
-            
+
             if (alertData) {
               newAlertIds.push(alertData.id);
-              console.log(`Created monitoring_interrupted alert for unit ${unit.name}`);
+              console.log(`Created monitoring_interrupted alert for unit ${u.name}`);
             }
           }
-        }
-
-        // Resolve alerts when status improves to ok
-        if (newStatus === "ok") {
-          await supabase
-            .from("alerts")
-            .update({
-              status: "resolved",
-              resolved_at: new Date().toISOString(),
-            })
-            .eq("unit_id", unit.id)
-            .in("alert_type", ["monitoring_interrupted", "temp_excursion", "alarm_active", "suspected_cooling_failure"])
-            .in("status", ["active", "acknowledged"]);
         }
 
         // Log state change to event_logs
         await supabase.from("event_logs").insert({
           organization_id: getOrgId(unit),
-          unit_id: unit.id,
+          site_id: getSiteId(unit),
+          unit_id: u.id,
           event_type: "unit_state_change",
-          actor_type: "system",
+          category: "unit",
+          severity: newStatus === "alarm_active" ? "error" : newStatus === "excursion" ? "warning" : "info",
+          title: `${u.name}: ${currentStatus} → ${newStatus}`,
           event_data: {
             from_status: currentStatus,
             to_status: newStatus,
             reason,
-            temp_reading: unit.last_temp_reading,
+            temp_reading: u.last_temp_reading,
             door_state: doorState,
           },
         });
       }
     }
 
-    // Trigger escalations if there are new alerts
+    // Trigger escalation processing if there are new alerts
     if (newAlertIds.length > 0) {
-      console.log(`Triggering escalations for ${newAlertIds.length} new alerts`);
+      console.log(`Triggering escalation processing for ${newAlertIds.length} new alerts`);
+      
+      const internalApiKey = Deno.env.get("INTERNAL_API_KEY");
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      
       try {
-        await supabase.functions.invoke("process-escalations");
-      } catch (escError) {
-        console.error("Error triggering escalations:", escError);
+        await fetch(`${supabaseUrl}/functions/v1/process-escalations`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(internalApiKey ? { "X-Internal-API-Key": internalApiKey } : {}),
+          },
+          body: JSON.stringify({ alert_ids: newAlertIds }),
+        });
+      } catch (err) {
+        console.error("Failed to trigger escalation processing:", err);
       }
     }
 
-    console.log(`Processed ${(units || []).length} units, ${stateChanges.length} state changes, ${newAlertIds.length} new alerts`);
+    console.log(`Process complete: ${stateChanges.length} state changes, ${newAlertIds.length} new alerts`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        processed: (units || []).length,
-        changes: stateChanges,
+        stateChanges: stateChanges.length,
         newAlerts: newAlertIds.length,
+        changes: stateChanges,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error: any) {
-    console.error("Error in process-unit-states:", error);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error("Error processing unit states:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

@@ -1,12 +1,13 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "https://esm.sh/resend@2.0.0";
+import { validateInternalApiKey, unauthorizedResponse } from "../_shared/validation.ts";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-api-key",
 };
 
 interface Alert {
@@ -269,7 +270,6 @@ async function logNotificationEvent(
   }
 }
 
-// Get effective notification policy using the RPC function
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getEffectivePolicy(
   supabaseAdmin: any,
@@ -310,17 +310,14 @@ async function getEffectivePolicy(
   };
 }
 
-// Check if alert severity meets policy threshold
 function shouldNotifyForSeverity(
   severity: string,
   policy: NotificationPolicy
 ): { shouldNotify: boolean; reason?: string } {
-  // Critical always passes (unless severity_threshold is somehow higher, which we don't support)
   if (severity === "critical") {
     return { shouldNotify: true };
   }
 
-  // Warning requires allow_warning_notifications or threshold <= WARNING
   if (severity === "warning") {
     if (policy.allow_warning_notifications || policy.severity_threshold === "WARNING" || policy.severity_threshold === "INFO") {
       return { shouldNotify: true };
@@ -328,7 +325,6 @@ function shouldNotifyForSeverity(
     return { shouldNotify: false, reason: "Warning notifications not enabled in policy" };
   }
 
-  // Info requires threshold to be INFO
   if (severity === "info") {
     if (policy.severity_threshold === "INFO") {
       return { shouldNotify: true };
@@ -339,7 +335,6 @@ function shouldNotifyForSeverity(
   return { shouldNotify: true };
 }
 
-// Get recipients based on policy roles
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getRecipients(
   supabaseAdmin: any,
@@ -348,7 +343,6 @@ async function getRecipients(
 ): Promise<EligibleRecipient[]> {
   const recipients: EligibleRecipient[] = [];
 
-  // Get users based on notify_roles from policy
   const rolesToNotify = policy.notify_roles || ["owner", "admin"];
   
   const { data: roles } = await supabaseAdmin
@@ -380,6 +374,14 @@ async function getRecipients(
   return recipients;
 }
 
+/**
+ * Process Escalations - Internal Scheduled Function
+ * 
+ * Security: Requires INTERNAL_API_KEY when configured
+ * 
+ * This function processes all active alerts and sends notifications
+ * based on configured policies.
+ */
 const handler = async (req: Request): Promise<Response> => {
   console.log("process-escalations: Starting...");
 
@@ -388,6 +390,13 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
+    // Validate internal API key
+    const apiKeyResult = validateInternalApiKey(req);
+    if (!apiKeyResult.valid) {
+      console.warn("[process-escalations] API key validation failed:", apiKeyResult.error);
+      return unauthorizedResponse(apiKeyResult.error || "Unauthorized", corsHeaders);
+    }
+
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
@@ -396,7 +405,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     const appUrl = Deno.env.get("APP_URL") || "https://frostguard.app";
 
-    // Fetch active alerts that need notification (newly active or never notified)
+    // Fetch active alerts that need notification
     const { data: alerts, error: alertsError } = await supabaseAdmin
       .from("alerts")
       .select("*")
@@ -426,7 +435,6 @@ const handler = async (req: Request): Promise<Response> => {
     for (const alert of alerts as Alert[]) {
       console.log(`Processing alert ${alert.id} (${alert.alert_type}, ${alert.severity})`);
 
-      // Get unit info with area and site
       const { data: unit, error: unitError } = await supabaseAdmin
         .from("units")
         .select(`
@@ -450,12 +458,10 @@ const handler = async (req: Request): Promise<Response> => {
       const orgId = unitInfo.area.site.organization_id;
       const siteId = unitInfo.area.site.id;
 
-      // Get effective notification policy from the RPC
       const policy = await getEffectivePolicy(supabaseAdmin, alert.unit_id, alert.alert_type);
 
       if (!policy) {
         console.log(`No notification policy found for alert ${alert.id}, using defaults`);
-        // Continue with default behavior - log to IN_APP_CENTER
         await logNotificationEvent(supabaseAdmin, {
           organization_id: orgId,
           site_id: siteId,
@@ -479,7 +485,6 @@ const handler = async (req: Request): Promise<Response> => {
         continue;
       }
 
-      // Check severity threshold
       const { shouldNotify, reason: severityReason } = shouldNotifyForSeverity(alert.severity, policy);
       if (!shouldNotify) {
         console.log(`Skipping alert ${alert.id}: ${severityReason}`);
@@ -498,9 +503,9 @@ const handler = async (req: Request): Promise<Response> => {
         continue;
       }
 
-      // Check quiet hours
-      if (isInQuietHours(policy, unitInfo.area.site.timezone)) {
-        console.log(`Skipping alert ${alert.id}: quiet hours active`);
+      const inQuietHours = isInQuietHours(policy, unitInfo.area.site.timezone);
+      if (inQuietHours && alert.severity !== "critical") {
+        console.log(`Skipping alert ${alert.id}: In quiet hours`);
         await logNotificationEvent(supabaseAdmin, {
           organization_id: orgId,
           site_id: siteId,
@@ -510,22 +515,16 @@ const handler = async (req: Request): Promise<Response> => {
           event_type: "ALERT_ACTIVE",
           to_recipients: [],
           status: "SKIPPED",
-          reason: "Quiet hours active",
+          reason: "In quiet hours (non-critical)",
         });
         emailsSkipped++;
         continue;
       }
 
-      // Process each channel from the policy
-      const channels = policy.initial_channels || ["IN_APP_CENTER"];
-      console.log(`Alert ${alert.id}: Processing channels: ${channels.join(", ")}`);
+      const channelsToUse = policy.initial_channels || ["IN_APP_CENTER"];
 
-      // Get recipients for email/sms channels
-      const recipients = await getRecipients(supabaseAdmin, orgId, policy);
-
-      for (const channel of channels) {
+      for (const channel of channelsToUse) {
         if (channel === "IN_APP_CENTER") {
-          // Log in-app notification event (frontend picks this up from alerts table)
           await logNotificationEvent(supabaseAdmin, {
             organization_id: orgId,
             site_id: siteId,
@@ -538,7 +537,6 @@ const handler = async (req: Request): Promise<Response> => {
           });
           inAppLogged++;
         } else if (channel === "WEB_TOAST") {
-          // Log web toast event (frontend realtime subscription handles display)
           await logNotificationEvent(supabaseAdmin, {
             organization_id: orgId,
             site_id: siteId,
@@ -551,8 +549,10 @@ const handler = async (req: Request): Promise<Response> => {
           });
           webToastLogged++;
         } else if (channel === "EMAIL") {
+          const recipients = await getRecipients(supabaseAdmin, orgId, policy);
+          
           if (recipients.length === 0) {
-            console.log(`Skipping EMAIL for alert ${alert.id}: no recipients`);
+            console.log(`No email recipients for alert ${alert.id}`);
             await logNotificationEvent(supabaseAdmin, {
               organization_id: orgId,
               site_id: siteId,
@@ -568,57 +568,51 @@ const handler = async (req: Request): Promise<Response> => {
             continue;
           }
 
-          // Send email
-          const recipientEmails = recipients.map(r => r.email);
           const alertLabel = alertTypeLabels[alert.alert_type] || alert.alert_type;
           const emailHtml = generateAlertEmailHtml(alert, unitInfo, appUrl);
 
           try {
-            console.log(`Sending email to ${recipientEmails.join(", ")} for alert ${alert.id}`);
-            
-            const emailResponse = await resend.emails.send({
-              from: "FrostGuard Alerts <onboarding@resend.dev>",
-              to: recipientEmails,
-              subject: `🚨 ${alert.severity.toUpperCase()}: ${alertLabel} - ${unitInfo.name}`,
+            const { data: emailData, error: emailError } = await resend.emails.send({
+              from: "FrostGuard Alerts <alerts@frostguard.app>",
+              to: recipients.map(r => r.email),
+              subject: `[${alert.severity.toUpperCase()}] ${alertLabel}: ${unitInfo.name}`,
               html: emailHtml,
             });
 
-            console.log(`Email sent successfully:`, emailResponse);
-
-            await logNotificationEvent(supabaseAdmin, {
-              organization_id: orgId,
-              site_id: siteId,
-              unit_id: alert.unit_id,
-              alert_id: alert.id,
-              channel: "EMAIL",
-              event_type: "ALERT_ACTIVE",
-              to_recipients: recipientEmails,
-              status: "SENT",
-              provider_message_id: emailResponse.data?.id,
-            });
-
-            emailsSent++;
-          } catch (emailError: unknown) {
-            const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
-            console.error(`Failed to send email for alert ${alert.id}:`, emailError);
-
-            await logNotificationEvent(supabaseAdmin, {
-              organization_id: orgId,
-              site_id: siteId,
-              unit_id: alert.unit_id,
-              alert_id: alert.id,
-              channel: "EMAIL",
-              event_type: "ALERT_ACTIVE",
-              to_recipients: recipientEmails,
-              status: "FAILED",
-              reason: errorMessage,
-            });
-
+            if (emailError) {
+              console.error(`Email send error for alert ${alert.id}:`, emailError);
+              await logNotificationEvent(supabaseAdmin, {
+                organization_id: orgId,
+                site_id: siteId,
+                unit_id: alert.unit_id,
+                alert_id: alert.id,
+                channel: "EMAIL",
+                event_type: "ALERT_ACTIVE",
+                to_recipients: recipients.map(r => r.email),
+                status: "FAILED",
+                reason: emailError.message || "Unknown error",
+              });
+              emailsFailed++;
+            } else {
+              console.log(`Email sent for alert ${alert.id} to ${recipients.length} recipients`);
+              await logNotificationEvent(supabaseAdmin, {
+                organization_id: orgId,
+                site_id: siteId,
+                unit_id: alert.unit_id,
+                alert_id: alert.id,
+                channel: "EMAIL",
+                event_type: "ALERT_ACTIVE",
+                to_recipients: recipients.map(r => r.email),
+                status: "SENT",
+                provider_message_id: emailData?.id,
+              });
+              emailsSent++;
+            }
+          } catch (err) {
+            console.error(`Email exception for alert ${alert.id}:`, err);
             emailsFailed++;
           }
         } else if (channel === "SMS") {
-          // SMS integration placeholder - would use Twilio
-          console.log(`SMS channel not yet implemented for alert ${alert.id}`);
           await logNotificationEvent(supabaseAdmin, {
             organization_id: orgId,
             site_id: siteId,
@@ -633,7 +627,6 @@ const handler = async (req: Request): Promise<Response> => {
         }
       }
 
-      // Update alert with notification timestamp
       await supabaseAdmin
         .from("alerts")
         .update({
@@ -648,16 +641,15 @@ const handler = async (req: Request): Promise<Response> => {
     return new Response(
       JSON.stringify({
         success: true,
-        emailsSent,
-        emailsSkipped,
-        emailsFailed,
-        webToastLogged,
-        inAppLogged,
+        processed: alerts.length,
+        emails: { sent: emailsSent, skipped: emailsSkipped, failed: emailsFailed },
+        webToast: webToastLogged,
+        inApp: inAppLogged,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("process-escalations error:", error);
     return new Response(
       JSON.stringify({ error: errorMessage }),
