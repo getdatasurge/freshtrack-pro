@@ -1101,6 +1101,9 @@ export type Database = {
           escalation_steps: Json
           id: string
           initial_channels: string[]
+          notify_assigned_users: boolean | null
+          notify_roles: string[] | null
+          notify_site_managers: boolean | null
           organization_id: string | null
           quiet_hours_enabled: boolean
           quiet_hours_end_local: string | null
@@ -1122,6 +1125,9 @@ export type Database = {
           escalation_steps?: Json
           id?: string
           initial_channels?: string[]
+          notify_assigned_users?: boolean | null
+          notify_roles?: string[] | null
+          notify_site_managers?: boolean | null
           organization_id?: string | null
           quiet_hours_enabled?: boolean
           quiet_hours_end_local?: string | null
@@ -1143,6 +1149,9 @@ export type Database = {
           escalation_steps?: Json
           id?: string
           initial_channels?: string[]
+          notify_assigned_users?: boolean | null
+          notify_roles?: string[] | null
+          notify_site_managers?: boolean | null
           organization_id?: string | null
           quiet_hours_enabled?: boolean
           quiet_hours_end_local?: string | null

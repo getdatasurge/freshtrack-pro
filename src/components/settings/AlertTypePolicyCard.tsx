@@ -20,16 +20,34 @@ import {
   Mail,
   MessageSquare,
   Smartphone,
+  Users,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   NotificationPolicy,
   NotificationChannel,
   EscalationStep,
+  AppRole,
   DEFAULT_NOTIFICATION_POLICY,
   upsertNotificationPolicy,
   deleteNotificationPolicy,
   AlertType,
 } from "@/hooks/useNotificationPolicies";
+import { useEscalationContacts } from "@/hooks/useEscalationContacts";
+
+const ROLE_LABELS: Record<AppRole, string> = {
+  owner: "Owners",
+  admin: "Admins",
+  manager: "Managers",
+  staff: "Staff",
+  viewer: "Viewers",
+};
 
 interface AlertTypePolicyCardProps {
   alertType: AlertType;
@@ -75,6 +93,13 @@ export function AlertTypePolicyCard({
   const [quietHoursStart, setQuietHoursStart] = useState<string>("");
   const [quietHoursEnd, setQuietHoursEnd] = useState<string>("");
   const [allowWarningNotifications, setAllowWarningNotifications] = useState(false);
+  // Recipient state
+  const [notifyRoles, setNotifyRoles] = useState<AppRole[]>(["owner", "admin"]);
+  const [notifySiteManagers, setNotifySiteManagers] = useState(true);
+  const [notifyAssignedUsers, setNotifyAssignedUsers] = useState(false);
+
+  // Fetch escalation contacts for contact priority dropdown
+  const { data: escalationContacts } = useEscalationContacts();
 
   // Initialize from existing policy
   useEffect(() => {
@@ -90,6 +115,9 @@ export function AlertTypePolicyCard({
       setQuietHoursStart(existingPolicy.quiet_hours_start_local || "");
       setQuietHoursEnd(existingPolicy.quiet_hours_end_local || "");
       setAllowWarningNotifications(existingPolicy.allow_warning_notifications);
+      setNotifyRoles(existingPolicy.notify_roles || ["owner", "admin"]);
+      setNotifySiteManagers(existingPolicy.notify_site_managers ?? true);
+      setNotifyAssignedUsers(existingPolicy.notify_assigned_users ?? false);
     } else {
       // Clear form
       setInitialChannels([]);
@@ -103,6 +131,9 @@ export function AlertTypePolicyCard({
       setQuietHoursStart("");
       setQuietHoursEnd("");
       setAllowWarningNotifications(false);
+      setNotifyRoles(["owner", "admin"]);
+      setNotifySiteManagers(true);
+      setNotifyAssignedUsers(false);
     }
   }, [existingPolicy]);
 
@@ -128,10 +159,18 @@ export function AlertTypePolicyCard({
     );
   };
 
+  const toggleRole = (role: AppRole) => {
+    setNotifyRoles((prev) =>
+      prev.includes(role)
+        ? prev.filter((r) => r !== role)
+        : [...prev, role]
+    );
+  };
+
   const addEscalationStep = () => {
     setEscalationSteps((prev) => [
       ...prev,
-      { delay_minutes: 10, channels: ["EMAIL"], repeat: false },
+      { delay_minutes: 10, channels: ["EMAIL"], contact_priority: 1, repeat: false },
     ]);
   };
 
@@ -190,6 +229,9 @@ export function AlertTypePolicyCard({
         quiet_hours_end_local: quietHoursEnd || null,
         severity_threshold: "WARNING",
         allow_warning_notifications: allowWarningNotifications,
+        notify_roles: notifyRoles,
+        notify_site_managers: notifySiteManagers,
+        notify_assigned_users: notifyAssignedUsers,
       };
 
       const { error } = await upsertNotificationPolicy(scope, alertType, policy);
@@ -223,6 +265,9 @@ export function AlertTypePolicyCard({
       setQuietHoursStart("");
       setQuietHoursEnd("");
       setAllowWarningNotifications(false);
+      setNotifyRoles(["owner", "admin"]);
+      setNotifySiteManagers(true);
+      setNotifyAssignedUsers(false);
 
       toast.success("Override cleared - now inherits from parent");
       onSave?.();
@@ -296,6 +341,70 @@ export function AlertTypePolicyCard({
 
       <Separator />
 
+      {/* Recipients */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Users className="w-4 h-4 text-muted-foreground" />
+          <Label className="text-sm font-medium">Initial Notification Recipients</Label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Select which roles receive the initial notification. Users can manage their preferences in their profile.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          {(["owner", "admin", "manager", "staff"] as AppRole[]).map((role) => (
+            <div
+              key={role}
+              className="flex items-center space-x-2 p-2 rounded-md border bg-background"
+            >
+              <Checkbox
+                id={`${alertType}-role-${role}`}
+                checked={notifyRoles.includes(role)}
+                onCheckedChange={() => toggleRole(role)}
+                disabled={!canEdit}
+              />
+              <label
+                htmlFor={`${alertType}-role-${role}`}
+                className="text-sm cursor-pointer flex-1"
+              >
+                {ROLE_LABELS[role]}
+              </label>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col gap-2 mt-2">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id={`${alertType}-site-managers`}
+              checked={notifySiteManagers}
+              onCheckedChange={(checked) => setNotifySiteManagers(!!checked)}
+              disabled={!canEdit}
+            />
+            <label
+              htmlFor={`${alertType}-site-managers`}
+              className="text-sm cursor-pointer"
+            >
+              Include Site Managers
+            </label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id={`${alertType}-assigned-users`}
+              checked={notifyAssignedUsers}
+              onCheckedChange={(checked) => setNotifyAssignedUsers(!!checked)}
+              disabled={!canEdit}
+            />
+            <label
+              htmlFor={`${alertType}-assigned-users`}
+              className="text-sm cursor-pointer"
+            >
+              Include Users Assigned to Unit
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <Separator />
+
       {/* Acknowledgement */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -355,31 +464,71 @@ export function AlertTypePolicyCard({
             No escalation steps configured. Notifications will only use initial channels.
           </p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {escalationSteps.map((step, index) => (
               <div
                 key={index}
-                className="flex items-center gap-3 p-3 rounded-md border bg-muted/30"
+                className="flex flex-col gap-2 p-3 rounded-md border bg-muted/30"
               >
-                <span className="text-sm text-muted-foreground whitespace-nowrap">
-                  After
-                </span>
-                <Input
-                  type="number"
-                  min="1"
-                  value={step.delay_minutes}
-                  onChange={(e) =>
-                    updateEscalationStep(index, {
-                      delay_minutes: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-20 h-8"
-                  disabled={!canEdit}
-                />
-                <span className="text-sm text-muted-foreground whitespace-nowrap">
-                  min, escalate via:
-                </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                    After
+                  </span>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={step.delay_minutes}
+                    onChange={(e) =>
+                      updateEscalationStep(index, {
+                        delay_minutes: parseInt(e.target.value) || 0,
+                      })
+                    }
+                    className="w-20 h-8"
+                    disabled={!canEdit}
+                  />
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                    min, notify:
+                  </span>
+                  <Select
+                    value={step.contact_priority?.toString() || "1"}
+                    onValueChange={(val) => updateEscalationStep(index, { contact_priority: parseInt(val) })}
+                    disabled={!canEdit}
+                  >
+                    <SelectTrigger className="w-[180px] h-8">
+                      <SelectValue placeholder="Contact level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {escalationContacts && escalationContacts.length > 0 ? (
+                        [...new Set(escalationContacts.map(c => c.priority))].sort().map((priority) => {
+                          const contactsAtLevel = escalationContacts.filter(c => c.priority === priority);
+                          return (
+                            <SelectItem key={priority} value={priority.toString()}>
+                              Level {priority} ({contactsAtLevel.map(c => c.name).join(", ")})
+                            </SelectItem>
+                          );
+                        })
+                      ) : (
+                        <>
+                          <SelectItem value="1">Level 1 (Primary)</SelectItem>
+                          <SelectItem value="2">Level 2 (Secondary)</SelectItem>
+                          <SelectItem value="3">Level 3 (Owner)</SelectItem>
+                        </>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 ml-auto text-muted-foreground hover:text-destructive"
+                      onClick={() => removeEscalationStep(index)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 ml-4">
+                  <span className="text-sm text-muted-foreground">via:</span>
                   <div className="flex items-center space-x-1">
                     <Checkbox
                       id={`${alertType}-esc-${index}-email`}
@@ -409,16 +558,6 @@ export function AlertTypePolicyCard({
                     </label>
                   </div>
                 </div>
-                {canEdit && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 ml-auto text-muted-foreground hover:text-destructive"
-                    onClick={() => removeEscalationStep(index)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                )}
               </div>
             ))}
           </div>
