@@ -703,6 +703,7 @@ async function injectReading(
     last_checkin_at: now,
     consecutive_checkins: newConsecutive,
     sensor_reliable: sensorReliable,
+    status: "ok", // Mark unit as OK when receiving valid readings
   };
 
   if (config.door_sensor_present || forceDoorUpdate) {

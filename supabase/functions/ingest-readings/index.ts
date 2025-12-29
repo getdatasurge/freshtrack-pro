@@ -224,6 +224,7 @@ Deno.serve(async (req) => {
         last_checkin_at: update.time,
         consecutive_checkins: newConsecutive,
         sensor_reliable: sensorReliable,
+        status: "ok", // Mark unit as OK when receiving valid readings
       };
       
       if (update.doorOpen !== undefined) {
