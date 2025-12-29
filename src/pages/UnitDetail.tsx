@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
+import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
 import LastKnownGoodCard from "@/components/unit/LastKnownGoodCard";
 import UnitSettingsSection from "@/components/unit/UnitSettingsSection";
@@ -103,6 +104,7 @@ const UnitDetail = () => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [unit, setUnit] = useState<UnitData | null>(null);
+  const [siblingUnits, setSiblingUnits] = useState<BreadcrumbSibling[]>([]);
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [manualLogs, setManualLogs] = useState<ManualLog[]>([]);
   const [events, setEvents] = useState<EventLog[]>([]);
@@ -168,6 +170,23 @@ const UnitDetail = () => {
           site: { id: unitData.area.site.id, name: unitData.area.site.name },
         },
       });
+
+      // Load sibling units for breadcrumb dropdown
+      const { data: siblingsData } = await supabase
+        .from("units")
+        .select("id, name")
+        .eq("area_id", unitData.area.id)
+        .eq("is_active", true)
+        .neq("id", unitId)
+        .order("name");
+
+      if (siblingsData) {
+        setSiblingUnits(siblingsData.map(u => ({
+          id: u.id,
+          name: u.name,
+          href: `/units/${u.id}`,
+        })));
+      }
 
       const fromDate = getTimeRangeDate().toISOString();
 
@@ -378,29 +397,15 @@ const UnitDetail = () => {
   const isOnline = Boolean(unit.status !== "offline" && unit.last_reading_at);
 
   return (
-    <DashboardLayout
-      showBack
-      backHref={`/sites/${unit.area.site.id}/areas/${unit.area.id}`}
-    >
-      <div className="space-y-6">
-        {/* Unit Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className={`w-14 h-14 rounded-xl ${status.bgColor} flex items-center justify-center`}>
-              <Thermometer className={`w-7 h-7 ${status.color}`} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-foreground">{unit.name}</h1>
-                <Badge className={`${status.bgColor} ${status.color} border-0`}>
-                  {status.label}
-                </Badge>
-              </div>
-              <p className="text-muted-foreground">
-                {unit.area.site.name} · {unit.area.name}
-              </p>
-            </div>
-          </div>
+    <DashboardLayout>
+      <HierarchyBreadcrumb
+        items={[
+          { label: "All Equipment", href: "/sites" },
+          { label: unit.area.site.name, href: `/sites/${unit.area.site.id}` },
+          { label: unit.area.name, href: `/sites/${unit.area.site.id}/areas/${unit.area.id}` },
+          { label: unit.name, isCurrentPage: true, siblings: siblingUnits },
+        ]}
+        actions={
           <div className="flex items-center gap-2">
             <Select value={timeRange} onValueChange={setTimeRange}>
               <SelectTrigger className="w-32">
@@ -414,36 +419,53 @@ const UnitDetail = () => {
                 <SelectItem value="30d">Last 30 days</SelectItem>
               </SelectContent>
             </Select>
+            <Button 
+              variant="default"
+              className="bg-accent hover:bg-accent/90"
+              onClick={() => setModalOpen(true)}
+            >
+              <ClipboardEdit className="w-4 h-4 mr-2" />
+              Log Temp
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => exportToCSV("daily")} 
+              disabled={isExporting}
+            >
+              {isExporting ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4 mr-2" />
+              )}
+              Daily Log
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => exportToCSV("exceptions")} 
+              disabled={isExporting}
+            >
+              <AlertTriangle className="w-4 h-4 mr-2" />
+              Exceptions
+            </Button>
+          </div>
+        }
+      />
+      <div className="space-y-6">
+        {/* Unit Header - simplified since breadcrumb has the name */}
+        <div className="flex items-center gap-4">
+          <div className={`w-14 h-14 rounded-xl ${status.bgColor} flex items-center justify-center`}>
+            <Thermometer className={`w-7 h-7 ${status.color}`} />
+          </div>
+          <div>
             <div className="flex items-center gap-2">
-              <Button 
-                variant="default"
-                className="bg-accent hover:bg-accent/90"
-                onClick={() => setModalOpen(true)}
-              >
-                <ClipboardEdit className="w-4 h-4 mr-2" />
-                Log Temp
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => exportToCSV("daily")} 
-                disabled={isExporting}
-              >
-                {isExporting ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4 mr-2" />
-                )}
-                Daily Log
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => exportToCSV("exceptions")} 
-                disabled={isExporting}
-              >
-                <AlertTriangle className="w-4 h-4 mr-2" />
-                Exceptions
-              </Button>
+              <h1 className="text-2xl font-bold text-foreground">{unit.name}</h1>
+              <Badge className={`${status.bgColor} ${status.color} border-0`}>
+                {status.label}
+              </Badge>
             </div>
+            <p className="text-muted-foreground">
+              {unit.area.site.name} · {unit.area.name}
+            </p>
           </div>
         </div>
 
