@@ -92,10 +92,14 @@ Deno.serve(async (req) => {
 
         await supabase.from("sensor_readings").insert(reading);
 
-        // Update unit
+        // Update unit - mark as OK when receiving valid readings
         const unitUpdate: any = {
           last_temp_reading: sim.current_temperature,
           last_reading_at: nowIso,
+          last_checkin_at: nowIso,
+          status: "ok",
+          consecutive_checkins: 1,
+          sensor_reliable: true,
         };
 
         if (sim.door_sensor_present) {

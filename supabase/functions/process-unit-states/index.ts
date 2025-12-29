@@ -52,12 +52,20 @@ function getAreaId(unit: any): string {
 
 type UnitStatus = "ok" | "excursion" | "alarm_active" | "monitoring_interrupted" | "manual_required" | "restoring" | "offline";
 
-// Data gap threshold: 2x expected interval (60s) + 2 minutes = 4 minutes
-const DATA_GAP_THRESHOLD_MS = 4 * 60 * 1000;
 // Readings needed to restore
 const READINGS_TO_RESTORE = 2;
 // Suspected cooling failure threshold (minutes)
 const COOLING_FAILURE_THRESHOLD_MINUTES = 45;
+
+// Calculate dynamic data gap threshold from alert rules
+function calculateDataGapThreshold(rules: any): number {
+  const expectedIntervalSeconds = rules?.expected_reading_interval_seconds ?? 60;
+  const multiplier = rules?.offline_trigger_multiplier ?? 2.0;
+  const additionalMinutes = rules?.offline_trigger_additional_minutes ?? 2;
+  
+  // threshold = (expected_interval * multiplier) + additional_minutes
+  return (expectedIntervalSeconds * multiplier * 1000) + (additionalMinutes * 60 * 1000);
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -114,11 +122,16 @@ Deno.serve(async (req) => {
       const confirmTimeDoorOpen = (unit.confirm_time_door_open || 1200) * 1000; // default 20 min
       const confirmTime = doorState === "open" ? confirmTimeDoorOpen : confirmTimeDoorClosed;
 
+      // Get per-unit alert rules for dynamic threshold
+      const { data: effectiveRules } = await supabase.rpc("get_effective_alert_rules", { p_unit_id: unit.id });
+      const dataGapThresholdMs = calculateDataGapThreshold(effectiveRules);
+
       // Check for data gap - transition to MONITORING_INTERRUPTED
-      if (timeSinceReading > DATA_GAP_THRESHOLD_MS) {
-        if (currentStatus !== "monitoring_interrupted" && currentStatus !== "manual_required" && currentStatus !== "offline") {
+      // Also allow recovery from "offline" status when readings arrive
+      if (timeSinceReading > dataGapThresholdMs) {
+        if (currentStatus !== "monitoring_interrupted" && currentStatus !== "manual_required") {
           newStatus = "monitoring_interrupted";
-          reason = `No sensor data for ${Math.floor(timeSinceReading / 60000)} minutes`;
+          reason = `No sensor data for ${Math.floor(timeSinceReading / 60000)} minutes (threshold: ${Math.floor(dataGapThresholdMs / 60000)}m)`;
         }
         
         // MONITORING_INTERRUPTED immediately becomes MANUAL_REQUIRED
@@ -129,7 +142,7 @@ Deno.serve(async (req) => {
       }
 
       // Check temperature excursion (only if we have recent data)
-      if (timeSinceReading <= DATA_GAP_THRESHOLD_MS && unit.last_temp_reading !== null) {
+      if (timeSinceReading <= dataGapThresholdMs && unit.last_temp_reading !== null) {
         const temp = unit.last_temp_reading;
         const highLimit = unit.temp_limit_high;
         const lowLimit = unit.temp_limit_low;
@@ -347,9 +360,10 @@ Deno.serve(async (req) => {
                 newStatus = "ok";
                 reason = "Temperature stable in range";
               }
-            } else if (currentStatus === "manual_required" || currentStatus === "monitoring_interrupted") {
+            } else if (currentStatus === "manual_required" || currentStatus === "monitoring_interrupted" || currentStatus === "offline") {
+              // Allow recovery from offline/manual_required states when readings arrive
               newStatus = "restoring";
-              reason = "Monitoring resumed";
+              reason = `Monitoring resumed from ${currentStatus}`;
               
               await supabase
                 .from("alerts")
@@ -361,7 +375,7 @@ Deno.serve(async (req) => {
                 .eq("alert_type", "monitoring_interrupted")
                 .in("status", ["active", "acknowledged"]);
               
-              console.log(`Resolved monitoring_interrupted alerts for unit ${unit.name}`);
+              console.log(`Resolved monitoring_interrupted alerts for unit ${unit.name} (was ${currentStatus})`);
             }
           }
         }

@@ -496,7 +496,11 @@ const Dashboard = () => {
           </div>
           <div className="grid gap-3">
             {units.map((unit) => {
-              const status = statusConfig[unit.status] || statusConfig.offline;
+              // Use computed status when offline, otherwise use database status
+              const effectiveStatus = unit.computed.offlineSeverity !== 'none' 
+                ? 'offline' 
+                : unit.status;
+              const status = statusConfig[effectiveStatus] || statusConfig.offline;
               const isOnline = unit.computed.sensorOnline;
               return (
                 <Link key={unit.id} to={`/units/${unit.id}`}>
