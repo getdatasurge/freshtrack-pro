@@ -1,30 +1,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { 
+  ingestRequestSchema, 
+  validateDeviceApiKey,
+  validationErrorResponse,
+  unauthorizedResponse,
+  type NormalizedReadingInput 
+} from "../_shared/validation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-device-api-key",
 };
-
-/**
- * Normalized Reading Interface - vendor-agnostic sensor data
- */
-interface NormalizedReading {
-  unit_id: string;
-  device_serial?: string;
-  temperature: number;
-  humidity?: number;
-  battery_level?: number;
-  battery_voltage?: number;
-  signal_strength?: number;
-  door_open?: boolean;
-  source: "ttn" | "ble" | "simulator" | "manual_sensor" | "api";
-  source_metadata?: Record<string, unknown>;
-  recorded_at?: string;
-}
-
-interface IngestRequest {
-  readings: NormalizedReading[];
-}
 
 /**
  * Ingest Abstraction Layer - Vendor-Agnostic Sensor Data Ingestion
@@ -32,7 +18,10 @@ interface IngestRequest {
  * This edge function provides a unified API for ingesting sensor readings
  * from multiple sources (TTN, BLE hubs, simulators, future vendors).
  * 
+ * Security: Requires X-Device-API-Key header when DEVICE_INGEST_API_KEY is configured
+ * 
  * Features:
+ * - Input validation using Zod schemas
  * - Tags readings with source for traceability
  * - Updates unit's last_temp_reading and last_reading_at
  * - Updates unit's door_state and door_last_changed_at for door events
@@ -47,21 +36,37 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Validate device API key
+    const apiKeyResult = validateDeviceApiKey(req);
+    if (!apiKeyResult.valid) {
+      console.warn("[ingest-readings] API key validation failed:", apiKeyResult.error);
+      return unauthorizedResponse(apiKeyResult.error || "Unauthorized", corsHeaders);
+    }
+
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    const body: IngestRequest = await req.json();
-    const { readings } = body;
-
-    if (!readings || !Array.isArray(readings) || readings.length === 0) {
+    // Parse and validate request body
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
       return new Response(
-        JSON.stringify({ error: "No readings provided" }),
+        JSON.stringify({ error: "Invalid JSON body" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`[ingest-readings] Received ${readings.length} readings`);
+    const parseResult = ingestRequestSchema.safeParse(rawBody);
+    if (!parseResult.success) {
+      console.warn("[ingest-readings] Validation failed:", parseResult.error.issues);
+      return validationErrorResponse(parseResult.error, corsHeaders);
+    }
+
+    const { readings } = parseResult.data;
+
+    console.log(`[ingest-readings] Received ${readings.length} validated readings`);
 
     const results: { unit_id: string; success: boolean; error?: string }[] = [];
     const unitUpdates: Map<string, { temp: number; time: string; doorOpen?: boolean }> = new Map();
@@ -69,16 +74,6 @@ Deno.serve(async (req) => {
 
     for (const reading of readings) {
       try {
-        // Validate required fields
-        if (!reading.unit_id || reading.temperature === undefined) {
-          results.push({
-            unit_id: reading.unit_id || "unknown",
-            success: false,
-            error: "Missing unit_id or temperature",
-          });
-          continue;
-        }
-
         // Validate unit exists and get reliability data
         const { data: unit, error: unitError } = await supabase
           .from("units")
@@ -181,12 +176,13 @@ Deno.serve(async (req) => {
         console.log(
           `[ingest-readings] Ingested reading: unit=${reading.unit_id}, temp=${reading.temperature}, door=${reading.door_open}, source=${reading.source}`
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
         console.error(`[ingest-readings] Error processing reading:`, err);
         results.push({
           unit_id: reading.unit_id || "unknown",
           success: false,
-          error: err.message,
+          error: errorMessage,
         });
       }
     }
@@ -218,7 +214,7 @@ Deno.serve(async (req) => {
       // Sensor becomes reliable after 2 consecutive check-ins
       const sensorReliable = newConsecutive >= 2;
 
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         last_temp_reading: update.temp,
         last_reading_at: update.time,
         last_checkin_at: update.time,
@@ -246,7 +242,7 @@ Deno.serve(async (req) => {
 
     // Batch update devices with battery and signal info
     for (const [deviceId, batteryUpdate] of deviceBatteryUpdates) {
-      const updateData: any = {
+      const updateData: Record<string, unknown> = {
         battery_last_reported_at: batteryUpdate.time,
         last_seen_at: batteryUpdate.time,
       };
@@ -282,10 +278,11 @@ Deno.serve(async (req) => {
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("[ingest-readings] Fatal error:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
