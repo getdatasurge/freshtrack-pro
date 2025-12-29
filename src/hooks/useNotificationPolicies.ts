@@ -31,8 +31,11 @@ export type NotificationChannel = "WEB_TOAST" | "IN_APP_CENTER" | "EMAIL" | "SMS
 export interface EscalationStep {
   delay_minutes: number;
   channels: ("EMAIL" | "SMS")[];
+  contact_priority?: number;
   repeat: boolean;
 }
+
+export type AppRole = "owner" | "admin" | "manager" | "staff" | "viewer";
 
 export interface NotificationPolicy {
   id?: string;
@@ -52,6 +55,10 @@ export interface NotificationPolicy {
   quiet_hours_end_local: string | null;
   severity_threshold: "INFO" | "WARNING" | "CRITICAL";
   allow_warning_notifications: boolean;
+  // Recipient targeting
+  notify_roles: AppRole[];
+  notify_site_managers: boolean;
+  notify_assigned_users: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -76,6 +83,9 @@ export const DEFAULT_NOTIFICATION_POLICY: Omit<NotificationPolicy, "alert_type">
   quiet_hours_end_local: null,
   severity_threshold: "WARNING",
   allow_warning_notifications: false,
+  notify_roles: ["owner", "admin"],
+  notify_site_managers: true,
+  notify_assigned_users: false,
 };
 
 // Helper to map DB row to NotificationPolicy
@@ -98,6 +108,9 @@ function mapDbRowToPolicy(row: Record<string, unknown>): NotificationPolicy {
     quiet_hours_end_local: row.quiet_hours_end_local as string | null,
     severity_threshold: row.severity_threshold as "INFO" | "WARNING" | "CRITICAL",
     allow_warning_notifications: row.allow_warning_notifications as boolean,
+    notify_roles: (row.notify_roles || ["owner", "admin"]) as AppRole[],
+    notify_site_managers: row.notify_site_managers as boolean ?? true,
+    notify_assigned_users: row.notify_assigned_users as boolean ?? false,
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
   };
@@ -214,6 +227,9 @@ export async function upsertNotificationPolicy(
       quiet_hours_end_local: policy.quiet_hours_end_local,
       severity_threshold: policy.severity_threshold,
       allow_warning_notifications: policy.allow_warning_notifications,
+      notify_roles: policy.notify_roles,
+      notify_site_managers: policy.notify_site_managers,
+      notify_assigned_users: policy.notify_assigned_users,
     };
 
     // Use upsert with conflict on unique index
