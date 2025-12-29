@@ -93,28 +93,7 @@ interface UnifiedAlert {
   last_notified_reason?: string | null;
 }
 
-const alertTypeConfig: Record<string, { icon: typeof AlertTriangle; label: string }> = {
-  alarm_active: { icon: Thermometer, label: "Temperature Alarm" },
-  monitoring_interrupted: { icon: WifiOff, label: "Monitoring Interrupted" },
-  missed_manual_entry: { icon: Clock, label: "Missed Manual Entry" },
-  low_battery: { icon: Battery, label: "Low Battery" },
-  sensor_fault: { icon: AlertTriangle, label: "Sensor Fault" },
-  door_open: { icon: AlertTriangle, label: "Door Open" },
-  calibration_due: { icon: AlertTriangle, label: "Calibration Due" },
-  temp_excursion: { icon: Thermometer, label: "Temperature Excursion" },
-  suspected_cooling_failure: { icon: Thermometer, label: "Suspected Cooling Failure" },
-  MANUAL_REQUIRED: { icon: Clock, label: "Manual Logging Required" },
-  OFFLINE: { icon: WifiOff, label: "Sensor Offline" },
-  EXCURSION: { icon: Thermometer, label: "Temperature Excursion" },
-  ALARM_ACTIVE: { icon: Thermometer, label: "Temperature Alarm" },
-  TEMP_EXCURSION: { icon: Thermometer, label: "Temperature Excursion" },
-};
-
-const severityConfig: Record<string, { color: string; bgColor: string }> = {
-  info: { color: "text-accent", bgColor: "bg-accent/10" },
-  warning: { color: "text-warning", bgColor: "bg-warning/10" },
-  critical: { color: "text-alarm", bgColor: "bg-alarm/10" },
-};
+import { ALERT_TYPE_CONFIG, SEVERITY_CONFIG, getAlertTypeConfig, getSeverityConfig } from "@/lib/alertConfig";
 
 const Alerts = () => {
   const navigate = useNavigate();
@@ -492,8 +471,8 @@ const Alerts = () => {
         <TabsContent value={activeTab} className="space-y-3">
           {filteredAlerts.length > 0 ? (
             filteredAlerts.map((alert) => {
-              const typeConfig = alertTypeConfig[alert.alertType] || alertTypeConfig.sensor_fault;
-              const severity = severityConfig[alert.severity] || severityConfig.warning;
+              const typeConfig = getAlertTypeConfig(alert.alertType);
+              const severity = getSeverityConfig(alert.severity);
               const Icon = typeConfig?.icon || AlertTriangle;
               const showLogButton = alert.alertType === "MANUAL_REQUIRED" || alert.alertType === "missed_manual_entry";
 

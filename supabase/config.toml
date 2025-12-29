@@ -18,9 +18,6 @@ verify_jwt = false
 [functions.sensor-simulator]
 verify_jwt = false
 
-[functions.check-missed-logs]
-verify_jwt = false
-
 [functions.export-temperature-logs]
 verify_jwt = false
 

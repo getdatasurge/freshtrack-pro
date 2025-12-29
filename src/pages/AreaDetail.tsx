@@ -66,15 +66,7 @@ const unitTypes: { value: UnitType; label: string }[] = [
   { value: "blast_chiller", label: "Blast Chiller" },
 ];
 
-const statusConfig: Record<string, { color: string; bgColor: string; label: string }> = {
-  ok: { color: "text-safe", bgColor: "bg-safe/10", label: "OK" },
-  excursion: { color: "text-excursion", bgColor: "bg-excursion/10", label: "Excursion" },
-  alarm_active: { color: "text-alarm", bgColor: "bg-alarm/10", label: "ALARM" },
-  monitoring_interrupted: { color: "text-warning", bgColor: "bg-warning/10", label: "Interrupted" },
-  manual_required: { color: "text-warning", bgColor: "bg-warning/10", label: "Manual Required" },
-  restoring: { color: "text-accent", bgColor: "bg-accent/10", label: "Restoring" },
-  offline: { color: "text-muted-foreground", bgColor: "bg-muted", label: "Offline" },
-};
+import { STATUS_CONFIG } from "@/lib/statusConfig";
 
 const AreaDetail = () => {
   const { siteId, areaId } = useParams();
@@ -403,7 +395,7 @@ const AreaDetail = () => {
           {units.length > 0 ? (
             <div className="grid gap-3">
               {units.map((unit) => {
-                const status = statusConfig[unit.status] || statusConfig.offline;
+                const status = STATUS_CONFIG[unit.status] || STATUS_CONFIG.offline;
                 const isOnline = unit.status !== "offline" && unit.last_reading_at;
 
                 return (
