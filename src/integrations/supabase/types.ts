@@ -178,6 +178,7 @@ export type Database = {
       }
       alerts: {
         Row: {
+          ack_required: boolean | null
           acknowledged_at: string | null
           acknowledged_by: string | null
           acknowledgment_notes: string | null
@@ -185,6 +186,7 @@ export type Database = {
           area_id: string | null
           created_at: string
           escalation_level: number
+          escalation_steps_sent: Json | null
           first_active_at: string | null
           id: string
           last_notified_at: string | null
@@ -207,6 +209,7 @@ export type Database = {
           unit_id: string
         }
         Insert: {
+          ack_required?: boolean | null
           acknowledged_at?: string | null
           acknowledged_by?: string | null
           acknowledgment_notes?: string | null
@@ -214,6 +217,7 @@ export type Database = {
           area_id?: string | null
           created_at?: string
           escalation_level?: number
+          escalation_steps_sent?: Json | null
           first_active_at?: string | null
           id?: string
           last_notified_at?: string | null
@@ -236,6 +240,7 @@ export type Database = {
           unit_id: string
         }
         Update: {
+          ack_required?: boolean | null
           acknowledged_at?: string | null
           acknowledged_by?: string | null
           acknowledgment_notes?: string | null
@@ -243,6 +248,7 @@ export type Database = {
           area_id?: string | null
           created_at?: string
           escalation_level?: number
+          escalation_steps_sent?: Json | null
           first_active_at?: string | null
           id?: string
           last_notified_at?: string | null
@@ -1005,43 +1011,55 @@ export type Database = {
           alert_id: string | null
           channel: string
           created_at: string
+          dismissed_at: string | null
+          escalation_step_index: number | null
           event_type: string
           id: string
           organization_id: string
           provider_message_id: string | null
+          read_at: string | null
           reason: string | null
           site_id: string | null
           status: string
           to_recipients: Json
           unit_id: string | null
+          user_id: string | null
         }
         Insert: {
           alert_id?: string | null
           channel?: string
           created_at?: string
+          dismissed_at?: string | null
+          escalation_step_index?: number | null
           event_type: string
           id?: string
           organization_id: string
           provider_message_id?: string | null
+          read_at?: string | null
           reason?: string | null
           site_id?: string | null
           status: string
           to_recipients?: Json
           unit_id?: string | null
+          user_id?: string | null
         }
         Update: {
           alert_id?: string | null
           channel?: string
           created_at?: string
+          dismissed_at?: string | null
+          escalation_step_index?: number | null
           event_type?: string
           id?: string
           organization_id?: string
           provider_message_id?: string | null
+          read_at?: string | null
           reason?: string | null
           site_id?: string | null
           status?: string
           to_recipients?: Json
           unit_id?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -1067,6 +1085,94 @@ export type Database = {
           },
           {
             foreignKeyName: "notification_events_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_policies: {
+        Row: {
+          ack_deadline_minutes: number | null
+          alert_type: string
+          allow_warning_notifications: boolean
+          created_at: string
+          escalation_steps: Json
+          id: string
+          initial_channels: string[]
+          organization_id: string | null
+          quiet_hours_enabled: boolean
+          quiet_hours_end_local: string | null
+          quiet_hours_start_local: string | null
+          reminder_interval_minutes: number | null
+          reminders_enabled: boolean
+          requires_ack: boolean
+          send_resolved_notifications: boolean
+          severity_threshold: string
+          site_id: string | null
+          unit_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          ack_deadline_minutes?: number | null
+          alert_type: string
+          allow_warning_notifications?: boolean
+          created_at?: string
+          escalation_steps?: Json
+          id?: string
+          initial_channels?: string[]
+          organization_id?: string | null
+          quiet_hours_enabled?: boolean
+          quiet_hours_end_local?: string | null
+          quiet_hours_start_local?: string | null
+          reminder_interval_minutes?: number | null
+          reminders_enabled?: boolean
+          requires_ack?: boolean
+          send_resolved_notifications?: boolean
+          severity_threshold?: string
+          site_id?: string | null
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ack_deadline_minutes?: number | null
+          alert_type?: string
+          allow_warning_notifications?: boolean
+          created_at?: string
+          escalation_steps?: Json
+          id?: string
+          initial_channels?: string[]
+          organization_id?: string | null
+          quiet_hours_enabled?: boolean
+          quiet_hours_end_local?: string | null
+          quiet_hours_start_local?: string | null
+          reminder_interval_minutes?: number | null
+          reminders_enabled?: boolean
+          requires_ack?: boolean
+          send_resolved_notifications?: boolean
+          severity_threshold?: string
+          site_id?: string | null
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_policies_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_policies_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_policies_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
@@ -1849,6 +1955,10 @@ export type Database = {
         Returns: string
       }
       get_effective_alert_rules: { Args: { p_unit_id: string }; Returns: Json }
+      get_effective_notification_policy: {
+        Args: { p_alert_type: string; p_unit_id: string }
+        Returns: Json
+      }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {

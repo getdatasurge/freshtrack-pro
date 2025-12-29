@@ -5,14 +5,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { AlertRulesEditor } from "./AlertRulesEditor";
 import { AlertRulesHistoryModal } from "./AlertRulesHistoryModal";
+import { NotificationPolicyEditor } from "./NotificationPolicyEditor";
 import { 
   useOrgAlertRules, 
   useSiteAlertRules, 
   useUnitAlertRulesOverride,
   AlertRulesRow 
 } from "@/hooks/useAlertRules";
-import { Building2, MapPin, Thermometer, History, Loader2 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  useOrgNotificationPolicies,
+  useSiteNotificationPolicies,
+  useUnitNotificationPolicies,
+  NotificationPolicy,
+} from "@/hooks/useNotificationPolicies";
+import { Building2, MapPin, Thermometer, History, Loader2, Bell, Settings } from "lucide-react";
 
 interface Site {
   id: string;
@@ -30,9 +36,12 @@ interface AlertRulesScopedEditorProps {
   canEdit: boolean;
 }
 
+import { useQueryClient } from "@tanstack/react-query";
+
 export function AlertRulesScopedEditor({ organizationId, canEdit }: AlertRulesScopedEditorProps) {
   const queryClient = useQueryClient();
   const [scopeTab, setScopeTab] = useState<"org" | "site" | "unit">("org");
+  const [editorTab, setEditorTab] = useState<"thresholds" | "notifications">("thresholds");
   const [sites, setSites] = useState<Site[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
@@ -51,6 +60,17 @@ export function AlertRulesScopedEditor({ organizationId, canEdit }: AlertRulesSc
   
   // Fetch unit rules when unit selected
   const { data: unitRules, refetch: refetchUnit } = useUnitAlertRulesOverride(
+    scopeTab === "unit" ? selectedUnitId : null
+  );
+
+  // Fetch notification policies for each scope
+  const { data: orgNotifPolicies, refetch: refetchOrgNotif } = useOrgNotificationPolicies(
+    scopeTab === "org" ? organizationId : null
+  );
+  const { data: siteNotifPolicies, refetch: refetchSiteNotif } = useSiteNotificationPolicies(
+    scopeTab === "site" ? selectedSiteId : null
+  );
+  const { data: unitNotifPolicies, refetch: refetchUnitNotif } = useUnitNotificationPolicies(
     scopeTab === "unit" ? selectedUnitId : null
   );
 
@@ -111,13 +131,16 @@ export function AlertRulesScopedEditor({ organizationId, canEdit }: AlertRulesSc
   const handleSave = () => {
     if (scopeTab === "org") {
       refetchOrg();
+      refetchOrgNotif();
     } else if (scopeTab === "site") {
       refetchSite();
+      refetchSiteNotif();
     } else if (scopeTab === "unit") {
       refetchUnit();
+      refetchUnitNotif();
     }
-    // Invalidate effective rules queries
     queryClient.invalidateQueries({ queryKey: ["alert-rules"] });
+    queryClient.invalidateQueries({ queryKey: ["notification-policies"] });
   };
 
   const getCurrentScope = () => {
@@ -155,6 +178,12 @@ export function AlertRulesScopedEditor({ organizationId, canEdit }: AlertRulesSc
     if (scopeTab === "site") return orgRules || null;
     if (scopeTab === "unit") return siteRules || orgRules || null;
     return null;
+  };
+
+  const getParentNotifPolicies = (): NotificationPolicy[] | undefined => {
+    if (scopeTab === "site") return orgNotifPolicies;
+    if (scopeTab === "unit") return siteNotifPolicies || orgNotifPolicies;
+    return undefined;
   };
 
   const canShowEditor = () => {
@@ -250,17 +279,45 @@ export function AlertRulesScopedEditor({ organizationId, canEdit }: AlertRulesSc
         </div>
       )}
 
+      {/* Editor Tabs: Thresholds vs Notifications */}
+      {canShowEditor() && (
+        <Tabs value={editorTab} onValueChange={(v) => setEditorTab(v as "thresholds" | "notifications")}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="thresholds" className="flex items-center gap-2">
+              <Settings className="w-4 h-4" />
+              Alert Thresholds
+            </TabsTrigger>
+            <TabsTrigger value="notifications" className="flex items-center gap-2">
+              <Bell className="w-4 h-4" />
+              Notification Policy
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="thresholds">
+            <AlertRulesEditor
+              scope={getCurrentScope()}
+              scopeLabel={getCurrentScopeLabel()}
+              existingRules={getCurrentRules()}
+              parentRules={getParentRules()}
+              onSave={handleSave}
+              canEdit={canEdit}
+            />
+          </TabsContent>
+
+          <TabsContent value="notifications">
+            <NotificationPolicyEditor
+              scope={getCurrentScope()}
+              scopeLabel={getCurrentScopeLabel()}
+              parentPolicies={getParentNotifPolicies()}
+              canEdit={canEdit}
+              onSave={handleSave}
+            />
+          </TabsContent>
+        </Tabs>
+      )}
+
       {/* Editor */}
-      {canShowEditor() ? (
-        <AlertRulesEditor
-          scope={getCurrentScope()}
-          scopeLabel={getCurrentScopeLabel()}
-          existingRules={getCurrentRules()}
-          parentRules={getParentRules()}
-          onSave={handleSave}
-          canEdit={canEdit}
-        />
-      ) : (
+      {!canShowEditor() && (
         <div className="text-center py-12 text-muted-foreground border rounded-lg">
           Select a {scopeTab} to configure its alert rules
         </div>
