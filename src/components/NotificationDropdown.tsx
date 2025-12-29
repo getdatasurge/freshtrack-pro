@@ -161,6 +161,39 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
     }
   }, [isOpen]);
 
+// Check if toast should be shown based on notification policy
+  const shouldShowToast = async (
+    alert: { unit_id: string; alert_type: string; severity: string }
+  ): Promise<boolean> => {
+    try {
+      const { data: policy } = await supabase.rpc("get_effective_notification_policy", {
+        p_unit_id: alert.unit_id,
+        p_alert_type: alert.alert_type,
+      });
+
+      if (!policy || typeof policy !== "object") return false;
+
+      const policyObj = policy as Record<string, unknown>;
+
+      // Check if WEB_TOAST is in initial_channels
+      const initialChannels = (policyObj.initial_channels as string[]) || [];
+      if (!initialChannels.includes("WEB_TOAST")) return false;
+
+      // Check severity threshold
+      const severityThreshold = (policyObj.severity_threshold as string) || "WARNING";
+      const allowWarnings = policyObj.allow_warning_notifications as boolean;
+
+      if (alert.severity === "critical") return true;
+      if (alert.severity === "warning" && allowWarnings) return true;
+      if (alert.severity === "info" && severityThreshold === "INFO") return true;
+
+      return false;
+    } catch (error) {
+      console.error("Error checking notification policy:", error);
+      return false;
+    }
+  };
+
   // Real-time subscription for new alerts
   useEffect(() => {
     if (!orgId) return;
@@ -175,19 +208,24 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
           table: "alerts",
           filter: `organization_id=eq.${orgId}`,
         },
-        (payload) => {
+        async (payload) => {
           const alert = payload.new as any;
           const title = alertTypeLabels[alert.alert_type] || alert.title || "New Alert";
           
-          if (alert.severity === "critical" && alert.status === "active") {
-            toast.error(title, {
-              description: alert.message || "Critical alert triggered",
-              duration: 10000,
-              action: {
-                label: "View",
-                onClick: () => navigate(`/unit/${alert.unit_id}`),
-              },
-            });
+          // Check policy to determine if toast should be shown
+          if (alert.status === "active") {
+            const showToast = await shouldShowToast(alert);
+            if (showToast) {
+              const toastFn = alert.severity === "critical" ? toast.error : toast.warning;
+              toastFn(title, {
+                description: alert.message || `${alert.severity} alert triggered`,
+                duration: 10000,
+                action: {
+                  label: "View",
+                  onClick: () => navigate(`/unit/${alert.unit_id}`),
+                },
+              });
+            }
           }
           
           // Refresh notifications if dropdown is open

@@ -44,29 +44,25 @@ interface UnitInfo {
   };
 }
 
-interface NotificationSettings {
-  email_enabled: boolean;
-  recipients: string[];
-  notify_temp_excursion: boolean;
-  notify_alarm_active: boolean;
-  notify_manual_required: boolean;
-  notify_offline: boolean;
-  notify_low_battery: boolean;
-  notify_warnings: boolean;
-}
-
-interface EscalationPolicy {
-  critical_primary_delay_minutes: number;
-  critical_secondary_delay_minutes: number | null;
-  critical_owner_delay_minutes: number | null;
-  warning_primary_delay_minutes: number;
-  warning_secondary_delay_minutes: number | null;
+interface NotificationPolicy {
+  initial_channels: string[];
+  requires_ack: boolean;
+  ack_deadline_minutes: number | null;
+  escalation_steps: unknown[];
+  send_resolved_notifications: boolean;
+  reminders_enabled: boolean;
+  reminder_interval_minutes: number | null;
   quiet_hours_enabled: boolean;
-  quiet_hours_start: string | null;
-  quiet_hours_end: string | null;
-  quiet_hours_behavior: string | null;
-  acknowledge_stops_notifications: boolean;
-  repeat_notification_interval_minutes: number | null;
+  quiet_hours_start_local: string | null;
+  quiet_hours_end_local: string | null;
+  severity_threshold: string;
+  allow_warning_notifications: boolean;
+  notify_roles: string[];
+  notify_site_managers: boolean;
+  notify_assigned_users: boolean;
+  source_unit: boolean;
+  source_site: boolean;
+  source_org: boolean;
 }
 
 interface EligibleRecipient {
@@ -86,14 +82,6 @@ const alertTypeLabels: Record<string, string> = {
   calibration_due: "Calibration Due",
   suspected_cooling_failure: "Suspected Cooling Failure",
   temp_excursion: "Temperature Excursion",
-};
-
-const alertTypeToSettingKey: Record<string, keyof NotificationSettings> = {
-  temp_excursion: "notify_temp_excursion",
-  alarm_active: "notify_alarm_active",
-  missed_manual_entry: "notify_manual_required",
-  monitoring_interrupted: "notify_offline",
-  low_battery: "notify_low_battery",
 };
 
 function generateAlertEmailHtml(
@@ -133,7 +121,6 @@ function generateAlertEmailHtml(
     }
   }
 
-  // Add metadata info if available
   const metadata = alert.metadata || {};
   let metadataInfo = "";
   if (metadata.high_limit || metadata.low_limit) {
@@ -214,10 +201,10 @@ function generateAlertEmailHtml(
 }
 
 function isInQuietHours(
-  policy: EscalationPolicy,
+  policy: NotificationPolicy,
   timezone: string
 ): boolean {
-  if (!policy.quiet_hours_enabled || !policy.quiet_hours_start || !policy.quiet_hours_end) {
+  if (!policy.quiet_hours_enabled || !policy.quiet_hours_start_local || !policy.quiet_hours_end_local) {
     return false;
   }
 
@@ -233,8 +220,8 @@ function isInQuietHours(
     const [currentHour, currentMinute] = currentTime.split(":").map(Number);
     const currentMinutes = currentHour * 60 + currentMinute;
 
-    const [startHour, startMinute] = policy.quiet_hours_start.split(":").map(Number);
-    const [endHour, endMinute] = policy.quiet_hours_end.split(":").map(Number);
+    const [startHour, startMinute] = policy.quiet_hours_start_local.split(":").map(Number);
+    const [endHour, endMinute] = policy.quiet_hours_end_local.split(":").map(Number);
     const startMinutes = startHour * 60 + startMinute;
     const endMinutes = endHour * 60 + endMinute;
 
@@ -282,110 +269,115 @@ async function logNotificationEvent(
   }
 }
 
+// Get effective notification policy using the RPC function
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getNotificationSettings(
+async function getEffectivePolicy(
   supabaseAdmin: any,
-  organizationId: string
-): Promise<NotificationSettings> {
-  const { data } = await supabaseAdmin
-    .from("notification_settings")
-    .select("*")
-    .eq("organization_id", organizationId)
-    .maybeSingle();
+  unitId: string,
+  alertType: string
+): Promise<NotificationPolicy | null> {
+  const { data, error } = await supabaseAdmin.rpc("get_effective_notification_policy", {
+    p_unit_id: unitId,
+    p_alert_type: alertType,
+  });
 
-  if (data) {
-    return {
-      email_enabled: data.email_enabled,
-      recipients: data.recipients || [],
-      notify_temp_excursion: data.notify_temp_excursion,
-      notify_alarm_active: data.notify_alarm_active,
-      notify_manual_required: data.notify_manual_required,
-      notify_offline: data.notify_offline,
-      notify_low_battery: data.notify_low_battery,
-      notify_warnings: data.notify_warnings,
-    };
+  if (error) {
+    console.error("Error fetching notification policy:", error);
+    return null;
   }
 
-  // Default settings if not configured
+  if (!data) return null;
+
   return {
-    email_enabled: true,
-    recipients: [],
-    notify_temp_excursion: true,
-    notify_alarm_active: true,
-    notify_manual_required: true,
-    notify_offline: false,
-    notify_low_battery: false,
-    notify_warnings: false,
+    initial_channels: data.initial_channels || ["IN_APP_CENTER"],
+    requires_ack: data.requires_ack || false,
+    ack_deadline_minutes: data.ack_deadline_minutes,
+    escalation_steps: data.escalation_steps || [],
+    send_resolved_notifications: data.send_resolved_notifications || false,
+    reminders_enabled: data.reminders_enabled || false,
+    reminder_interval_minutes: data.reminder_interval_minutes,
+    quiet_hours_enabled: data.quiet_hours_enabled || false,
+    quiet_hours_start_local: data.quiet_hours_start_local,
+    quiet_hours_end_local: data.quiet_hours_end_local,
+    severity_threshold: data.severity_threshold || "WARNING",
+    allow_warning_notifications: data.allow_warning_notifications || false,
+    notify_roles: data.notify_roles || ["owner", "admin"],
+    notify_site_managers: data.notify_site_managers ?? true,
+    notify_assigned_users: data.notify_assigned_users || false,
+    source_unit: data.source_unit || false,
+    source_site: data.source_site || false,
+    source_org: data.source_org || false,
   };
 }
 
+// Check if alert severity meets policy threshold
+function shouldNotifyForSeverity(
+  severity: string,
+  policy: NotificationPolicy
+): { shouldNotify: boolean; reason?: string } {
+  // Critical always passes (unless severity_threshold is somehow higher, which we don't support)
+  if (severity === "critical") {
+    return { shouldNotify: true };
+  }
+
+  // Warning requires allow_warning_notifications or threshold <= WARNING
+  if (severity === "warning") {
+    if (policy.allow_warning_notifications || policy.severity_threshold === "WARNING" || policy.severity_threshold === "INFO") {
+      return { shouldNotify: true };
+    }
+    return { shouldNotify: false, reason: "Warning notifications not enabled in policy" };
+  }
+
+  // Info requires threshold to be INFO
+  if (severity === "info") {
+    if (policy.severity_threshold === "INFO") {
+      return { shouldNotify: true };
+    }
+    return { shouldNotify: false, reason: "Info notifications not enabled in policy" };
+  }
+
+  return { shouldNotify: true };
+}
+
+// Get recipients based on policy roles
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getRecipients(
   supabaseAdmin: any,
   organizationId: string,
-  settings: NotificationSettings
+  policy: NotificationPolicy
 ): Promise<EligibleRecipient[]> {
   const recipients: EligibleRecipient[] = [];
 
-  // Add recipients from notification_settings
-  for (const email of settings.recipients) {
-    recipients.push({
-      email: email.trim(),
-      name: null,
-      role: "configured",
-      user_id: "",
-    });
-  }
+  // Get users based on notify_roles from policy
+  const rolesToNotify = policy.notify_roles || ["owner", "admin"];
+  
+  const { data: roles } = await supabaseAdmin
+    .from("user_roles")
+    .select("user_id, role")
+    .eq("organization_id", organizationId)
+    .in("role", rolesToNotify);
 
-  // If no configured recipients, fall back to org admins/owners
-  if (recipients.length === 0) {
-    const { data: roles } = await supabaseAdmin
-      .from("user_roles")
-      .select("user_id, role")
-      .eq("organization_id", organizationId)
-      .in("role", ["owner", "admin"]);
+  if (roles && roles.length > 0) {
+    const userIds = (roles as { user_id: string; role: string }[]).map(r => r.user_id);
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id, email, full_name")
+      .in("user_id", userIds);
 
-    if (roles && roles.length > 0) {
-      const userIds = (roles as { user_id: string; role: string }[]).map(r => r.user_id);
-      const { data: profiles } = await supabaseAdmin
-        .from("profiles")
-        .select("user_id, email, full_name")
-        .in("user_id", userIds);
-
-      if (profiles) {
-        for (const profile of profiles as { user_id: string; email: string; full_name: string | null }[]) {
-          const role = (roles as { user_id: string; role: string }[]).find(r => r.user_id === profile.user_id);
-          recipients.push({
-            email: profile.email,
-            name: profile.full_name,
-            role: role?.role || "admin",
-            user_id: profile.user_id,
-          });
-        }
+    if (profiles) {
+      for (const profile of profiles as { user_id: string; email: string; full_name: string | null }[]) {
+        const role = (roles as { user_id: string; role: string }[]).find(r => r.user_id === profile.user_id);
+        recipients.push({
+          email: profile.email,
+          name: profile.full_name,
+          role: role?.role || "admin",
+          user_id: profile.user_id,
+        });
       }
     }
   }
 
   return recipients;
-}
-
-function shouldNotifyForAlertType(
-  alertType: string,
-  severity: string,
-  settings: NotificationSettings
-): { shouldNotify: boolean; reason?: string } {
-  // Check if we should notify for warnings
-  if (severity === "warning" && !settings.notify_warnings) {
-    return { shouldNotify: false, reason: "Warning notifications disabled" };
-  }
-
-  // Check alert-type specific settings
-  const settingKey = alertTypeToSettingKey[alertType];
-  if (settingKey && !settings[settingKey]) {
-    return { shouldNotify: false, reason: `${alertType} notifications disabled` };
-  }
-
-  return { shouldNotify: true };
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -420,7 +412,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     if (!alerts || alerts.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, message: "No alerts need notification", emailsSent: 0 }),
+        JSON.stringify({ success: true, message: "No alerts need notification", processed: 0 }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -428,6 +420,8 @@ const handler = async (req: Request): Promise<Response> => {
     let emailsSent = 0;
     let emailsSkipped = 0;
     let emailsFailed = 0;
+    let webToastLogged = 0;
+    let inAppLogged = 0;
 
     for (const alert of alerts as Alert[]) {
       console.log(`Processing alert ${alert.id} (${alert.alert_type}, ${alert.severity})`);
@@ -456,128 +450,25 @@ const handler = async (req: Request): Promise<Response> => {
       const orgId = unitInfo.area.site.organization_id;
       const siteId = unitInfo.area.site.id;
 
-      // Get notification settings
-      const settings = await getNotificationSettings(supabaseAdmin, orgId);
+      // Get effective notification policy from the RPC
+      const policy = await getEffectivePolicy(supabaseAdmin, alert.unit_id, alert.alert_type);
 
-      // Check if email is enabled
-      if (!settings.email_enabled) {
-        console.log(`Skipping alert ${alert.id}: email notifications disabled`);
+      if (!policy) {
+        console.log(`No notification policy found for alert ${alert.id}, using defaults`);
+        // Continue with default behavior - log to IN_APP_CENTER
         await logNotificationEvent(supabaseAdmin, {
           organization_id: orgId,
           site_id: siteId,
           unit_id: alert.unit_id,
           alert_id: alert.id,
-          channel: "email",
+          channel: "IN_APP_CENTER",
           event_type: "ALERT_ACTIVE",
           to_recipients: [],
-          status: "SKIPPED",
-          reason: "Email notifications disabled",
-        });
-        emailsSkipped++;
-        continue;
-      }
-
-      // Check if we should notify for this alert type/severity
-      const { shouldNotify, reason: skipReason } = shouldNotifyForAlertType(
-        alert.alert_type,
-        alert.severity,
-        settings
-      );
-
-      if (!shouldNotify) {
-        console.log(`Skipping alert ${alert.id}: ${skipReason}`);
-        await logNotificationEvent(supabaseAdmin, {
-          organization_id: orgId,
-          site_id: siteId,
-          unit_id: alert.unit_id,
-          alert_id: alert.id,
-          channel: "email",
-          event_type: "ALERT_ACTIVE",
-          to_recipients: [],
-          status: "SKIPPED",
-          reason: skipReason,
-        });
-        emailsSkipped++;
-        continue;
-      }
-
-      // Get recipients
-      const recipients = await getRecipients(supabaseAdmin, orgId, settings);
-
-      if (recipients.length === 0) {
-        console.log(`Skipping alert ${alert.id}: no recipients configured`);
-        await logNotificationEvent(supabaseAdmin, {
-          organization_id: orgId,
-          site_id: siteId,
-          unit_id: alert.unit_id,
-          alert_id: alert.id,
-          channel: "email",
-          event_type: "ALERT_ACTIVE",
-          to_recipients: [],
-          status: "SKIPPED",
-          reason: "No recipients configured",
-        });
-        emailsSkipped++;
-        continue;
-      }
-
-      // Check quiet hours
-      const { data: policy } = await supabaseAdmin
-        .from("escalation_policies")
-        .select("*")
-        .or(`organization_id.eq.${orgId},site_id.eq.${siteId}`)
-        .order("site_id", { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (policy && isInQuietHours(policy as EscalationPolicy, unitInfo.area.site.timezone)) {
-        console.log(`Skipping alert ${alert.id}: quiet hours active`);
-        await logNotificationEvent(supabaseAdmin, {
-          organization_id: orgId,
-          site_id: siteId,
-          unit_id: alert.unit_id,
-          alert_id: alert.id,
-          channel: "email",
-          event_type: "ALERT_ACTIVE",
-          to_recipients: recipients.map(r => r.email),
-          status: "SKIPPED",
-          reason: "Quiet hours active",
-        });
-        emailsSkipped++;
-        continue;
-      }
-
-      // Send email
-      const recipientEmails = recipients.map(r => r.email);
-      const alertLabel = alertTypeLabels[alert.alert_type] || alert.alert_type;
-      const emailHtml = generateAlertEmailHtml(alert, unitInfo, appUrl);
-
-      try {
-        console.log(`Sending email to ${recipientEmails.join(", ")} for alert ${alert.id}`);
-        
-        const emailResponse = await resend.emails.send({
-          from: "FrostGuard Alerts <onboarding@resend.dev>",
-          to: recipientEmails,
-          subject: `🚨 ${alert.severity.toUpperCase()}: ${alertLabel} - ${unitInfo.name}`,
-          html: emailHtml,
-        });
-
-        console.log(`Email sent successfully:`, emailResponse);
-
-        // Log success
-        await logNotificationEvent(supabaseAdmin, {
-          organization_id: orgId,
-          site_id: siteId,
-          unit_id: alert.unit_id,
-          alert_id: alert.id,
-          channel: "email",
-          event_type: "ALERT_ACTIVE",
-          to_recipients: recipientEmails,
           status: "SENT",
-          provider_message_id: emailResponse.data?.id,
+          reason: "Default policy - in-app only",
         });
+        inAppLogged++;
 
-        // Update alert with notification timestamp
         await supabaseAdmin
           .from("alerts")
           .update({
@@ -585,29 +476,174 @@ const handler = async (req: Request): Promise<Response> => {
             last_notified_reason: "ALERT_ACTIVE",
           })
           .eq("id", alert.id);
+        continue;
+      }
 
-        emailsSent++;
-      } catch (emailError: unknown) {
-        const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
-        console.error(`Failed to send email for alert ${alert.id}:`, emailError);
-
+      // Check severity threshold
+      const { shouldNotify, reason: severityReason } = shouldNotifyForSeverity(alert.severity, policy);
+      if (!shouldNotify) {
+        console.log(`Skipping alert ${alert.id}: ${severityReason}`);
         await logNotificationEvent(supabaseAdmin, {
           organization_id: orgId,
           site_id: siteId,
           unit_id: alert.unit_id,
           alert_id: alert.id,
-          channel: "email",
+          channel: "ALL",
           event_type: "ALERT_ACTIVE",
-          to_recipients: recipientEmails,
-          status: "FAILED",
-          reason: errorMessage,
+          to_recipients: [],
+          status: "SKIPPED",
+          reason: severityReason,
         });
-
-        emailsFailed++;
+        emailsSkipped++;
+        continue;
       }
+
+      // Check quiet hours
+      if (isInQuietHours(policy, unitInfo.area.site.timezone)) {
+        console.log(`Skipping alert ${alert.id}: quiet hours active`);
+        await logNotificationEvent(supabaseAdmin, {
+          organization_id: orgId,
+          site_id: siteId,
+          unit_id: alert.unit_id,
+          alert_id: alert.id,
+          channel: "ALL",
+          event_type: "ALERT_ACTIVE",
+          to_recipients: [],
+          status: "SKIPPED",
+          reason: "Quiet hours active",
+        });
+        emailsSkipped++;
+        continue;
+      }
+
+      // Process each channel from the policy
+      const channels = policy.initial_channels || ["IN_APP_CENTER"];
+      console.log(`Alert ${alert.id}: Processing channels: ${channels.join(", ")}`);
+
+      // Get recipients for email/sms channels
+      const recipients = await getRecipients(supabaseAdmin, orgId, policy);
+
+      for (const channel of channels) {
+        if (channel === "IN_APP_CENTER") {
+          // Log in-app notification event (frontend picks this up from alerts table)
+          await logNotificationEvent(supabaseAdmin, {
+            organization_id: orgId,
+            site_id: siteId,
+            unit_id: alert.unit_id,
+            alert_id: alert.id,
+            channel: "IN_APP_CENTER",
+            event_type: "ALERT_ACTIVE",
+            to_recipients: [],
+            status: "SENT",
+          });
+          inAppLogged++;
+        } else if (channel === "WEB_TOAST") {
+          // Log web toast event (frontend realtime subscription handles display)
+          await logNotificationEvent(supabaseAdmin, {
+            organization_id: orgId,
+            site_id: siteId,
+            unit_id: alert.unit_id,
+            alert_id: alert.id,
+            channel: "WEB_TOAST",
+            event_type: "ALERT_ACTIVE",
+            to_recipients: [],
+            status: "SENT",
+          });
+          webToastLogged++;
+        } else if (channel === "EMAIL") {
+          if (recipients.length === 0) {
+            console.log(`Skipping EMAIL for alert ${alert.id}: no recipients`);
+            await logNotificationEvent(supabaseAdmin, {
+              organization_id: orgId,
+              site_id: siteId,
+              unit_id: alert.unit_id,
+              alert_id: alert.id,
+              channel: "EMAIL",
+              event_type: "ALERT_ACTIVE",
+              to_recipients: [],
+              status: "SKIPPED",
+              reason: "No recipients configured",
+            });
+            emailsSkipped++;
+            continue;
+          }
+
+          // Send email
+          const recipientEmails = recipients.map(r => r.email);
+          const alertLabel = alertTypeLabels[alert.alert_type] || alert.alert_type;
+          const emailHtml = generateAlertEmailHtml(alert, unitInfo, appUrl);
+
+          try {
+            console.log(`Sending email to ${recipientEmails.join(", ")} for alert ${alert.id}`);
+            
+            const emailResponse = await resend.emails.send({
+              from: "FrostGuard Alerts <onboarding@resend.dev>",
+              to: recipientEmails,
+              subject: `🚨 ${alert.severity.toUpperCase()}: ${alertLabel} - ${unitInfo.name}`,
+              html: emailHtml,
+            });
+
+            console.log(`Email sent successfully:`, emailResponse);
+
+            await logNotificationEvent(supabaseAdmin, {
+              organization_id: orgId,
+              site_id: siteId,
+              unit_id: alert.unit_id,
+              alert_id: alert.id,
+              channel: "EMAIL",
+              event_type: "ALERT_ACTIVE",
+              to_recipients: recipientEmails,
+              status: "SENT",
+              provider_message_id: emailResponse.data?.id,
+            });
+
+            emailsSent++;
+          } catch (emailError: unknown) {
+            const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
+            console.error(`Failed to send email for alert ${alert.id}:`, emailError);
+
+            await logNotificationEvent(supabaseAdmin, {
+              organization_id: orgId,
+              site_id: siteId,
+              unit_id: alert.unit_id,
+              alert_id: alert.id,
+              channel: "EMAIL",
+              event_type: "ALERT_ACTIVE",
+              to_recipients: recipientEmails,
+              status: "FAILED",
+              reason: errorMessage,
+            });
+
+            emailsFailed++;
+          }
+        } else if (channel === "SMS") {
+          // SMS integration placeholder - would use Twilio
+          console.log(`SMS channel not yet implemented for alert ${alert.id}`);
+          await logNotificationEvent(supabaseAdmin, {
+            organization_id: orgId,
+            site_id: siteId,
+            unit_id: alert.unit_id,
+            alert_id: alert.id,
+            channel: "SMS",
+            event_type: "ALERT_ACTIVE",
+            to_recipients: [],
+            status: "SKIPPED",
+            reason: "SMS not yet implemented",
+          });
+        }
+      }
+
+      // Update alert with notification timestamp
+      await supabaseAdmin
+        .from("alerts")
+        .update({
+          last_notified_at: new Date().toISOString(),
+          last_notified_reason: "ALERT_ACTIVE",
+        })
+        .eq("id", alert.id);
     }
 
-    console.log(`process-escalations: Complete. Sent: ${emailsSent}, Skipped: ${emailsSkipped}, Failed: ${emailsFailed}`);
+    console.log(`process-escalations: Complete. Emails sent: ${emailsSent}, skipped: ${emailsSkipped}, failed: ${emailsFailed}. WebToast: ${webToastLogged}, InApp: ${inAppLogged}`);
 
     return new Response(
       JSON.stringify({
@@ -615,6 +651,8 @@ const handler = async (req: Request): Promise<Response> => {
         emailsSent,
         emailsSkipped,
         emailsFailed,
+        webToastLogged,
+        inAppLogged,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
