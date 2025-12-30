@@ -23,11 +23,16 @@ serve(async (req) => {
     const ttnApiKey = Deno.env.get("TTN_API_KEY");
     const ttnApiBaseUrl = Deno.env.get("TTN_API_BASE_URL");
     const ttnWebhookApiKey = Deno.env.get("TTN_WEBHOOK_API_KEY");
+    const ttnUserId = Deno.env.get("TTN_USER_ID");
 
-    if (!ttnApiKey || !ttnApiBaseUrl) {
-      console.error("TTN credentials not configured");
+    if (!ttnApiKey || !ttnApiBaseUrl || !ttnUserId) {
+      console.error("TTN credentials not configured - missing:", {
+        apiKey: !ttnApiKey,
+        baseUrl: !ttnApiBaseUrl,
+        userId: !ttnUserId,
+      });
       return new Response(
-        JSON.stringify({ error: "TTN credentials not configured" }),
+        JSON.stringify({ error: "TTN credentials not configured (API key, base URL, or user ID missing)" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -75,8 +80,10 @@ serve(async (req) => {
       if (!org.ttn_application_created) {
         console.log(`[ttn-manage-application] Creating TTN application: ${ttnAppId}`);
 
-        // Try to create the application
-        const createResponse = await ttnFetch("/api/v3/applications", {
+        // Try to create the application using the correct TTN v3 API endpoint
+        // TTN v3 requires POST /api/v3/users/{user_id}/applications
+        console.log(`[ttn-manage-application] Using TTN user ID: ${ttnUserId}`);
+        const createResponse = await ttnFetch(`/api/v3/users/${ttnUserId}/applications`, {
           method: "POST",
           body: JSON.stringify({
             application: {
