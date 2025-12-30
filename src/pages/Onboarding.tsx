@@ -720,9 +720,14 @@ const Onboarding = () => {
                       Go to Dashboard
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
-                    <p className="text-sm text-muted-foreground">
+                    <Button
+                      variant="link"
+                      onClick={() => navigate("/settings")}
+                      className="text-sm text-muted-foreground hover:text-accent p-0 h-auto"
+                    >
                       Next: Pair your first sensor device
-                    </p>
+                      <ArrowRight className="w-3 h-3 ml-1" />
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
