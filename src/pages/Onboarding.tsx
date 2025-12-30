@@ -164,6 +164,12 @@ const Onboarding = () => {
   };
 
   const handleCreateOrganization = async () => {
+    // If org was already created, just move to next step
+    if (createdIds.orgId) {
+      setCurrentStep("site");
+      return;
+    }
+
     // Validate organization name
     const nameResult = validateInput(organizationNameSchema, data.organization.name);
     if (!nameResult.success) {
@@ -199,6 +205,12 @@ const Onboarding = () => {
   };
 
   const handleCreateSite = async () => {
+    // If site was already created, just move to next step
+    if (createdIds.siteId) {
+      setCurrentStep("area");
+      return;
+    }
+
     // Validate site name
     const nameResult = validateInput(siteNameSchema, data.site.name);
     if (!nameResult.success) {
@@ -251,6 +263,12 @@ const Onboarding = () => {
   };
 
   const handleCreateArea = async () => {
+    // If area was already created, just move to next step
+    if (createdIds.areaId) {
+      setCurrentStep("unit");
+      return;
+    }
+
     // Validate area name
     const nameResult = validateInput(areaNameSchema, data.area.name);
     if (!nameResult.success) {
@@ -285,6 +303,12 @@ const Onboarding = () => {
   };
 
   const handleCreateUnit = async () => {
+    // If unit was already created, just move to complete
+    if (createdIds.unitId) {
+      setCurrentStep("complete");
+      return;
+    }
+
     // Validate unit name
     const nameResult = validateInput(unitNameSchema, data.unit.name);
     if (!nameResult.success) {
