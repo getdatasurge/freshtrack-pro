@@ -269,16 +269,33 @@ export function useProvisionLoraSensor() {
         let detailedMessage = error.message;
         
         // Try to get the actual response body for more details
-        if (errorContext && typeof errorContext.json === 'function') {
+        if (errorContext) {
           try {
-            const responseBody = await errorContext.json();
-            if (responseBody?.error) {
-              detailedMessage = responseBody.error;
-            } else if (responseBody?.details) {
-              detailedMessage = `${responseBody.error || 'Provisioning failed'}: ${responseBody.details}`;
+            // Clone the response to avoid "body already read" issues
+            const clonedContext = errorContext.clone ? errorContext.clone() : errorContext;
+            if (typeof clonedContext.json === 'function') {
+              const responseBody = await clonedContext.json();
+              console.log("[useProvisionLoraSensor] Backend response:", responseBody);
+              if (responseBody?.details) {
+                detailedMessage = responseBody.details;
+              } else if (responseBody?.error) {
+                detailedMessage = responseBody.error;
+              }
             }
-          } catch {
-            // If we can't parse, use the original message
+          } catch (parseError) {
+            // Try reading as text if JSON fails
+            try {
+              const clonedContext = errorContext.clone ? errorContext.clone() : errorContext;
+              if (typeof clonedContext.text === 'function') {
+                const textBody = await clonedContext.text();
+                if (textBody) {
+                  console.log("[useProvisionLoraSensor] Backend text response:", textBody);
+                  detailedMessage = textBody;
+                }
+              }
+            } catch {
+              // Keep original message
+            }
           }
         }
         
