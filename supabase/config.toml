@@ -31,3 +31,7 @@ verify_jwt = false
 
 [functions.run-simulator-heartbeats]
 verify_jwt = false
+
+# TTN webhook - no JWT, uses device lookup for auth
+[functions.ttn-webhook]
+verify_jwt = false
