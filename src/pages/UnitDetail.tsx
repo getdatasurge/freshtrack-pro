@@ -462,6 +462,16 @@ const UnitDetail = () => {
               <AlertTriangle className="w-4 h-4 mr-2" />
               Exceptions
             </Button>
+            {canDeleteEntities && !permissionsLoading && (
+              <Button 
+                variant="ghost" 
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
+            )}
           </div>
         }
       />
@@ -789,6 +799,14 @@ const UnitDetail = () => {
             session={session}
           />
         )}
+
+        <DeleteConfirmationDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          entityName={unit.name}
+          entityType="unit"
+          onConfirm={handleDeleteUnit}
+        />
       </div>
     </DashboardLayout>
   );

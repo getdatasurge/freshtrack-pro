@@ -5,7 +5,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { usePermissions } from "@/hooks/useUserRole";
-import { softDeleteArea, getActiveChildrenCount } from "@/hooks/useSoftDelete";
+import { softDeleteArea } from "@/hooks/useSoftDelete";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
+import { Session } from "@supabase/supabase-js";
 
 type UnitType = Database["public"]["Enums"]["unit_type"];
 
@@ -75,13 +76,17 @@ import { STATUS_CONFIG } from "@/lib/statusConfig";
 
 const AreaDetail = () => {
   const { siteId, areaId } = useParams();
+  const navigate = useNavigate();
   const { toast } = useToast();
+  const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
+  const [session, setSession] = useState<Session | null>(null);
   const [area, setArea] = useState<AreaData | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
   const [siblingAreas, setSiblingAreas] = useState<BreadcrumbSibling[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     unit_type: "fridge" as UnitType,
@@ -90,6 +95,10 @@ const AreaDetail = () => {
   });
   const [editFormData, setEditFormData] = useState({ name: "", description: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+  }, []);
 
   useEffect(() => {
     if (areaId) {
@@ -133,11 +142,12 @@ const AreaDetail = () => {
       description: areaData.description || "",
     });
 
-    // Load sibling areas for breadcrumb dropdown
+    // Load sibling areas for breadcrumb dropdown (only active)
     const { data: siblingsData } = await supabase
       .from("areas")
       .select("id, name")
       .eq("site_id", areaData.site.id)
+      .eq("is_active", true)
       .neq("id", areaId)
       .order("name");
 
@@ -228,6 +238,14 @@ const AreaDetail = () => {
     setIsSubmitting(false);
   };
 
+  const handleDeleteArea = async () => {
+    if (!session?.user?.id || !areaId || !area) return;
+    const result = await softDeleteArea(areaId, session.user.id, true);
+    if (result.success) {
+      navigate(`/sites/${area.site.id}`);
+    }
+  };
+
   const formatTemp = (temp: number | null) => {
     if (temp === null) return "--";
     return `${temp.toFixed(1)}°F`;
@@ -286,46 +304,59 @@ const AreaDetail = () => {
           { label: area.name, isCurrentPage: true, siblings: siblingAreas },
         ]}
         actions={
-          <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Pencil className="w-4 h-4 mr-2" />
-                Edit Area
+          <div className="flex items-center gap-2">
+            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Edit Area
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Edit Area</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-name">Area Name *</Label>
+                    <Input
+                      id="edit-name"
+                      value={editFormData.name}
+                      onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-desc">Description</Label>
+                    <Textarea
+                      id="edit-desc"
+                      value={editFormData.description}
+                      onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleUpdateArea} disabled={isSubmitting}>
+                      {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                      Save Changes
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+            {canDeleteEntities && !permissionsLoading && (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Edit Area</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-name">Area Name *</Label>
-                  <Input
-                    id="edit-name"
-                    value={editFormData.name}
-                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="edit-desc">Description</Label>
-                  <Textarea
-                    id="edit-desc"
-                    value={editFormData.description}
-                    onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-                  />
-                </div>
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleUpdateArea} disabled={isSubmitting}>
-                    {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                    Save Changes
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+            )}
+          </div>
         }
       />
       <div className="space-y-6">
@@ -516,6 +547,18 @@ const AreaDetail = () => {
             </Card>
           )}
         </div>
+
+        {area && (
+          <DeleteConfirmationDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            entityName={area.name}
+            entityType="area"
+            onConfirm={handleDeleteArea}
+            hasChildren={units.length > 0}
+            childrenCount={units.length}
+          />
+        )}
       </div>
     </DashboardLayout>
   );
