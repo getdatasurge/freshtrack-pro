@@ -7,6 +7,7 @@ import {
   Loader2,
   Thermometer,
   DoorOpen,
+  DoorClosed,
   Star,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -23,6 +24,8 @@ interface UnitSensorsCardProps {
   organizationId: string;
   siteId: string;
   canEdit?: boolean;
+  doorState?: 'open' | 'closed' | null;
+  doorLastChangedAt?: string | null;
 }
 
 const getStatusBadge = (status: LoraSensorStatus) => {
@@ -70,7 +73,9 @@ export function UnitSensorsCard({
   unitId, 
   organizationId, 
   siteId,
-  canEdit = true 
+  canEdit = true,
+  doorState,
+  doorLastChangedAt,
 }: UnitSensorsCardProps) {
   const { data: sensors, isLoading } = useLoraSensorsByUnit(unitId);
   const unlinkSensor = useLinkSensorToUnit();
@@ -191,17 +196,31 @@ export function UnitSensorsCard({
                       {/* Right Side: Status & Door State */}
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {/* Door State Badge - Always visible for door sensors */}
-                        {showDoorState && (
+                        {showDoorState && doorState && (
                           <Badge 
                             className={cn(
                               "border-0 font-medium",
-                              // We don't have real-time door state from sensor yet, 
-                              // but we can show based on last reading
-                              "bg-muted text-muted-foreground"
+                              doorState === 'open' 
+                                ? "bg-alarm/20 text-alarm" 
+                                : "bg-safe/20 text-safe"
                             )}
                           >
-                            <DoorOpen className="w-3 h-3 mr-1" />
-                            Door
+                            {doorState === 'open' ? (
+                              <>
+                                <DoorOpen className="w-3 h-3 mr-1" />
+                                Open
+                                {doorLastChangedAt && (
+                                  <span className="ml-1 text-[10px] opacity-75">
+                                    {formatDistanceToNow(new Date(doorLastChangedAt))}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <DoorClosed className="w-3 h-3 mr-1" />
+                                Closed
+                              </>
+                            )}
                           </Badge>
                         )}
 

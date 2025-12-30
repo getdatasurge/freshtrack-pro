@@ -694,6 +694,8 @@ const UnitDetail = () => {
             unitId={unit.id}
             organizationId={(unit.area.site as any).organization_id}
             siteId={unit.area.site.id}
+            doorState={(unit as any).door_state}
+            doorLastChangedAt={(unit as any).door_last_changed_at}
           />
         )}
 
