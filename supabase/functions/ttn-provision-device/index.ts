@@ -14,7 +14,8 @@ interface ProvisionRequest {
 
 serve(async (req) => {
   // Version banner for deployment verification
-  const BUILD_VERSION = "dual-cluster-v1-20251230";
+  // ENDPOINT ROUTER: TTN Sandbox Identity Server HTTP API is on eu1; use cluster host only for regional operations
+  const BUILD_VERSION = "endpoint-router-v1-20251230";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   
   // Handle CORS preflight
