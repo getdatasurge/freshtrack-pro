@@ -282,6 +282,7 @@ const Auth = () => {
       toast({
         title: "Account created!",
         description: "Please check your email to verify your account.",
+        variant: "success",
       });
     }
     setIsLoading(false);
@@ -302,7 +303,7 @@ const Auth = () => {
     if (error) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Email sent", description: "Check your inbox for the confirmation link." });
+      toast({ title: "Email sent", description: "Check your inbox for the confirmation link.", variant: "success" });
     }
     setIsLoading(false);
   };
