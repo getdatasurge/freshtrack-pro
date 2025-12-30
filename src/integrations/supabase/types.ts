@@ -365,7 +365,7 @@ export type Database = {
           next_calibration_due: string | null
           notes: string | null
           offset_applied: number
-          performed_by: string
+          performed_by: string | null
           reference_temp: number
         }
         Insert: {
@@ -377,7 +377,7 @@ export type Database = {
           next_calibration_due?: string | null
           notes?: string | null
           offset_applied: number
-          performed_by: string
+          performed_by?: string | null
           reference_temp: number
         }
         Update: {
@@ -389,7 +389,7 @@ export type Database = {
           next_calibration_due?: string | null
           notes?: string | null
           offset_applied?: number
-          performed_by?: string
+          performed_by?: string | null
           reference_temp?: number
         }
         Relationships: [
@@ -408,7 +408,7 @@ export type Database = {
           alert_id: string | null
           completed_at: string
           created_at: string
-          created_by: string
+          created_by: string | null
           id: string
           photo_urls: string[] | null
           preventive_measures: string | null
@@ -420,7 +420,7 @@ export type Database = {
           alert_id?: string | null
           completed_at?: string
           created_at?: string
-          created_by: string
+          created_by?: string | null
           id?: string
           photo_urls?: string[] | null
           preventive_measures?: string | null
@@ -432,7 +432,7 @@ export type Database = {
           alert_id?: string | null
           completed_at?: string
           created_at?: string
-          created_by?: string
+          created_by?: string | null
           id?: string
           photo_urls?: string[] | null
           preventive_measures?: string | null
@@ -1099,7 +1099,7 @@ export type Database = {
           id: string
           is_in_range: boolean | null
           logged_at: string
-          logged_by: string
+          logged_by: string | null
           notes: string | null
           photo_url: string | null
           temperature: number
@@ -1110,7 +1110,7 @@ export type Database = {
           id?: string
           is_in_range?: boolean | null
           logged_at?: string
-          logged_by: string
+          logged_by?: string | null
           notes?: string | null
           photo_url?: string | null
           temperature: number
@@ -1121,7 +1121,7 @@ export type Database = {
           id?: string
           is_in_range?: boolean | null
           logged_at?: string
-          logged_by?: string
+          logged_by?: string | null
           notes?: string | null
           photo_url?: string | null
           temperature?: number
@@ -1474,7 +1474,7 @@ export type Database = {
           expires_at: string
           hub_id: string
           id: string
-          initiated_by: string
+          initiated_by: string | null
           started_at: string
           status: Database["public"]["Enums"]["pairing_status"]
           unit_id: string
@@ -1487,7 +1487,7 @@ export type Database = {
           expires_at?: string
           hub_id: string
           id?: string
-          initiated_by: string
+          initiated_by?: string | null
           started_at?: string
           status?: Database["public"]["Enums"]["pairing_status"]
           unit_id: string
@@ -1500,7 +1500,7 @@ export type Database = {
           expires_at?: string
           hub_id?: string
           id?: string
-          initiated_by?: string
+          initiated_by?: string | null
           started_at?: string
           status?: Database["public"]["Enums"]["pairing_status"]
           unit_id?: string
