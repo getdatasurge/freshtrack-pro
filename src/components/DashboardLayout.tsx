@@ -58,7 +58,13 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       if (!session) {
-        navigate("/auth");
+        // If user explicitly signed out, go to landing page
+        // If session was never there (initial load), go to auth
+        if (event === 'SIGNED_OUT') {
+          navigate("/");
+        } else {
+          navigate("/auth");
+        }
       }
     });
 
@@ -108,21 +114,40 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   };
 
   const handleSignOut = async () => {
-    // Clear React Query cache BEFORE signing out for session isolation
-    queryClient.clear();
-    
-    // Clear IndexedDB offline storage
-    await clearOfflineStorage();
-    
-    // Reset component state
-    setOrgId(null);
-    setOrgName("");
-    setAlertCount(0);
-    
-    // Sign out from Supabase
-    await supabase.auth.signOut();
-    toast({ title: "Signed out successfully" });
-    navigate("/");
+    try {
+      // Clear React Query cache BEFORE signing out for session isolation
+      queryClient.clear();
+      
+      // Clear IndexedDB offline storage
+      await clearOfflineStorage();
+      
+      // Reset component state
+      setOrgId(null);
+      setOrgName("");
+      setAlertCount(0);
+      
+      // Sign out from Supabase - auth listener will handle navigation
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        toast({ 
+          title: "Sign out failed", 
+          description: error.message,
+          variant: "destructive" 
+        });
+        return;
+      }
+      
+      toast({ title: "Signed out successfully" });
+      // Navigation handled by onAuthStateChange listener
+    } catch (err) {
+      console.error('Sign out error:', err);
+      toast({ 
+        title: "Sign out failed", 
+        description: "An unexpected error occurred",
+        variant: "destructive" 
+      });
+    }
   };
 
   return (
