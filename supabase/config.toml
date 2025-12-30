@@ -47,6 +47,6 @@ verify_jwt = false
 [functions.ttn-provision-device]
 verify_jwt = false
 
-# User cleanup - requires JWT authentication
+# User cleanup - called by app (JWT) or database trigger (service role)
 [functions.cleanup-user-sensors]
-verify_jwt = true
+verify_jwt = false
