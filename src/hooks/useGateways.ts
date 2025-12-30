@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Gateway, GatewayInsert } from "@/types/ttn";
 import { toast } from "sonner";
-
 /**
  * Hook to fetch all gateways for an organization
  */
@@ -55,9 +54,15 @@ export function useCreateGateway() {
 
   return useMutation({
     mutationFn: async (gateway: GatewayInsert): Promise<Gateway> => {
+      // Get current user for created_by
+      const { data: { user } } = await supabase.auth.getUser();
+      
       const { data, error } = await supabase
         .from("gateways")
-        .insert(gateway)
+        .insert({
+          ...gateway,
+          created_by: user?.id || null,
+        })
         .select()
         .single();
 
