@@ -262,7 +262,34 @@ export function useProvisionLoraSensor() {
         },
       });
 
-      if (error) throw error;
+      // Extract detailed error from edge function response
+      if (error) {
+        // FunctionsHttpError includes context with the response body
+        const errorContext = (error as any)?.context;
+        let detailedMessage = error.message;
+        
+        // Try to get the actual response body for more details
+        if (errorContext && typeof errorContext.json === 'function') {
+          try {
+            const responseBody = await errorContext.json();
+            if (responseBody?.error) {
+              detailedMessage = responseBody.error;
+            } else if (responseBody?.details) {
+              detailedMessage = `${responseBody.error || 'Provisioning failed'}: ${responseBody.details}`;
+            }
+          } catch {
+            // If we can't parse, use the original message
+          }
+        }
+        
+        throw new Error(detailedMessage);
+      }
+      
+      // Check if data indicates failure
+      if (data && !data.success && data.error) {
+        throw new Error(data.details ? `${data.error}: ${data.details}` : data.error);
+      }
+      
       return data;
     },
     onSuccess: (data, variables) => {
@@ -273,6 +300,7 @@ export function useProvisionLoraSensor() {
       setProvisioningId(null);
     },
     onError: (error: Error) => {
+      console.error("[useProvisionLoraSensor] Provisioning error:", error);
       toast.error(`TTN provisioning failed: ${error.message}`);
       setProvisioningId(null);
     },
