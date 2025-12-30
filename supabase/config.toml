@@ -46,3 +46,7 @@ verify_jwt = false
 
 [functions.ttn-provision-device]
 verify_jwt = false
+
+# User cleanup - requires JWT authentication
+[functions.cleanup-user-sensors]
+verify_jwt = true

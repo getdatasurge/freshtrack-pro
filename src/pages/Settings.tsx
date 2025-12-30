@@ -458,6 +458,23 @@ const Settings = () => {
   const removeUser = async (userId: string) => {
     if (!organization) return;
     try {
+      // First, clean up any sensors created by this user
+      toast.loading("Cleaning up user's sensors...", { id: "remove-user" });
+      
+      const { data: cleanupResult, error: cleanupError } = await supabase.functions.invoke(
+        "cleanup-user-sensors",
+        { body: { user_id: userId, organization_id: organization.id } }
+      );
+
+      if (cleanupError) {
+        console.error("Sensor cleanup error:", cleanupError);
+        // Continue with user removal even if cleanup fails
+        toast.warning("Some sensors may not have been cleaned up", { id: "remove-user" });
+      } else if (cleanupResult?.deleted_count > 0) {
+        console.log(`Cleaned up ${cleanupResult.deleted_count} sensors (${cleanupResult.ttn_deprovision_count} from TTN)`);
+      }
+
+      // Remove user role
       const { error } = await supabase
         .from("user_roles")
         .delete()
@@ -467,10 +484,16 @@ const Settings = () => {
       if (error) throw error;
       
       setUsers(prev => prev.filter(u => u.user_id !== userId));
-      toast.success("User removed from organization");
+      
+      // Show success with cleanup summary
+      if (cleanupResult?.deleted_count > 0) {
+        toast.success(`User removed. Cleaned up ${cleanupResult.deleted_count} sensor(s).`, { id: "remove-user" });
+      } else {
+        toast.success("User removed from organization", { id: "remove-user" });
+      }
     } catch (error) {
       console.error("Error removing user:", error);
-      toast.error("Failed to remove user");
+      toast.error("Failed to remove user", { id: "remove-user" });
     }
   };
 

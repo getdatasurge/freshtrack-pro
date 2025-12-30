@@ -176,12 +176,47 @@ export function useUpdateLoraSensor() {
 
 /**
  * Hook to delete a LoRa sensor
+ * De-provisions from TTN first if the sensor was provisioned
  */
 export function useDeleteLoraSensor() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ id, orgId }: { id: string; orgId: string }): Promise<void> => {
+      // First, fetch the sensor to check if it's provisioned to TTN
+      const { data: sensor, error: fetchError } = await supabase
+        .from("lora_sensors")
+        .select("ttn_device_id, ttn_application_id, organization_id, name")
+        .eq("id", id)
+        .single();
+
+      if (fetchError) {
+        console.error("[useDeleteLoraSensor] Error fetching sensor:", fetchError);
+        throw fetchError;
+      }
+
+      // If provisioned to TTN, de-provision first
+      if (sensor?.ttn_device_id) {
+        console.log(`[useDeleteLoraSensor] De-provisioning sensor ${id} from TTN...`);
+        
+        const { error: ttnError } = await supabase.functions.invoke("ttn-provision-device", {
+          body: { 
+            action: "delete", 
+            sensor_id: id, 
+            organization_id: sensor.organization_id 
+          }
+        });
+        
+        if (ttnError) {
+          console.warn("[useDeleteLoraSensor] TTN de-provision failed:", ttnError);
+          // Continue with DB delete anyway, but log the warning
+          toast.warning("Could not remove from TTN network, but sensor will be deleted from database");
+        } else {
+          console.log(`[useDeleteLoraSensor] Successfully de-provisioned from TTN`);
+        }
+      }
+
+      // Delete from database
       const { error } = await supabase
         .from("lora_sensors")
         .delete()
