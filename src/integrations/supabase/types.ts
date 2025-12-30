@@ -1427,6 +1427,9 @@ export type Database = {
           name: string
           slug: string
           timezone: string
+          ttn_application_created: boolean | null
+          ttn_application_id: string | null
+          ttn_webhook_configured: boolean | null
           updated_at: string
         }
         Insert: {
@@ -1438,6 +1441,9 @@ export type Database = {
           name: string
           slug: string
           timezone?: string
+          ttn_application_created?: boolean | null
+          ttn_application_id?: string | null
+          ttn_webhook_configured?: boolean | null
           updated_at?: string
         }
         Update: {
@@ -1449,6 +1455,9 @@ export type Database = {
           name?: string
           slug?: string
           timezone?: string
+          ttn_application_created?: boolean | null
+          ttn_application_id?: string | null
+          ttn_webhook_configured?: boolean | null
           updated_at?: string
         }
         Relationships: []
