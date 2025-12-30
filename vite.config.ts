@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => ({
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.ico", "robots.txt", "apple-touch-icon.png"],
+      includeAssets: ["favicon.ico", "robots.txt", "icon.svg"],
       manifest: {
         name: "FrostGuard - Refrigeration Monitoring",
         short_name: "FrostGuard",
@@ -29,22 +29,15 @@ export default defineConfig(({ mode }) => ({
         categories: ["business", "utilities", "food"],
         icons: [
           {
-            src: "/pwa-192x192.png",
-            sizes: "192x192",
-            type: "image/png",
-            purpose: "any",
+            src: "/favicon.ico",
+            sizes: "64x64 32x32 24x24 16x16",
+            type: "image/x-icon",
           },
           {
-            src: "/pwa-512x512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "any",
-          },
-          {
-            src: "/pwa-maskable-512x512.png",
-            sizes: "512x512",
-            type: "image/png",
-            purpose: "maskable",
+            src: "/icon.svg",
+            sizes: "any",
+            type: "image/svg+xml",
+            purpose: "any maskable",
           },
         ],
         shortcuts: [
@@ -53,14 +46,14 @@ export default defineConfig(({ mode }) => ({
             short_name: "Dashboard",
             description: "View your monitoring dashboard",
             url: "/dashboard",
-            icons: [{ src: "/pwa-192x192.png", sizes: "192x192" }],
+            icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
           },
           {
             name: "Log Temperature",
             short_name: "Log Temp",
             description: "Manually log a temperature reading",
             url: "/manual-log",
-            icons: [{ src: "/pwa-192x192.png", sizes: "192x192" }],
+            icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
           },
         ],
       },
