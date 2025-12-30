@@ -119,35 +119,16 @@ serve(async (req) => {
       if (org.ttn_application_id && org.ttn_application_created) {
         console.log(`[ttn-manage-application] TTN application already configured: ${org.ttn_application_id}`);
       } else if (!org.ttn_application_created) {
-        console.log(`[ttn-manage-application] Creating TTN application: ${ttnAppId}`);
+        console.log(`[ttn-manage-application] Checking if TTN application exists: ${ttnAppId}`);
 
-        // Try to create the application using the correct TTN v3 API endpoint (Identity Server)
-        console.log(`[ttn-manage-application] Using TTN user ID: ${ttnUserId}`);
-        const createResponse = await ttnIsFetch(`/api/v3/users/${ttnUserId}/applications`, {
-          method: "POST",
-          body: JSON.stringify({
-            application: {
-              ids: { application_id: ttnAppId },
-              name: `FrostGuard - ${org.name}`,
-              description: `FrostGuard temperature monitoring for ${org.name}`,
-            },
-          }),
+        // Step 1: Check if application already exists (GET first, then create if needed)
+        const checkResponse = await ttnIsFetch(`/api/v3/applications/${ttnAppId}`, {
+          method: "GET",
         });
 
-        if (createResponse.ok) {
-          console.log(`[ttn-manage-application] Application created successfully`);
-          
-          // Update organization with TTN app ID
-          await supabase
-            .from("organizations")
-            .update({
-              ttn_application_id: ttnAppId,
-              ttn_application_created: true,
-            })
-            .eq("id", organization_id);
-        } else if (createResponse.status === 409) {
-          // Application already exists - that's fine, just update our records
-          console.log(`[ttn-manage-application] Application already exists in TTN`);
+        if (checkResponse.ok) {
+          // Application exists! Update our records
+          console.log(`[ttn-manage-application] Application ${ttnAppId} already exists in TTN`);
           
           await supabase
             .from("organizations")
@@ -156,12 +137,112 @@ serve(async (req) => {
               ttn_application_created: true,
             })
             .eq("id", organization_id);
-        } else {
-          const errorText = await createResponse.text();
-          console.error(`[ttn-manage-application] Failed to create application: ${errorText}`);
+        } else if (checkResponse.status === 404) {
+          // Application doesn't exist, try to create it
+          console.log(`[ttn-manage-application] Application not found, attempting to create: ${ttnAppId}`);
+          console.log(`[ttn-manage-application] Using TTN user ID: ${ttnUserId}`);
+          
+          const createResponse = await ttnIsFetch(`/api/v3/users/${ttnUserId}/applications`, {
+            method: "POST",
+            body: JSON.stringify({
+              application: {
+                ids: { application_id: ttnAppId },
+                name: `FrostGuard - ${org.name}`,
+                description: `FrostGuard temperature monitoring for ${org.name}`,
+              },
+            }),
+          });
+
+          if (createResponse.ok) {
+            console.log(`[ttn-manage-application] Application created successfully`);
+            
+            await supabase
+              .from("organizations")
+              .update({
+                ttn_application_id: ttnAppId,
+                ttn_application_created: true,
+              })
+              .eq("id", organization_id);
+          } else if (createResponse.status === 409) {
+            // Application already exists (race condition) - that's fine
+            console.log(`[ttn-manage-application] Application already exists in TTN (409)`);
+            
+            await supabase
+              .from("organizations")
+              .update({
+                ttn_application_id: ttnAppId,
+                ttn_application_created: true,
+              })
+              .eq("id", organization_id);
+          } else {
+            const errorText = await createResponse.text();
+            console.error(`[ttn-manage-application] Failed to create application: ${errorText}`);
+            
+            // Parse error to check for permission issues
+            let errorCode = 0;
+            let errorMessage = errorText;
+            try {
+              const parsed = JSON.parse(errorText);
+              errorCode = parsed.code || 0;
+              errorMessage = parsed.message || errorText;
+            } catch {
+              // Keep raw text
+            }
+            
+            // Code 7 = permission denied in gRPC
+            if (errorCode === 7 || createResponse.status === 403) {
+              return new Response(
+                JSON.stringify({ 
+                  error: "TTN API key lacks permission to create applications",
+                  hint: `Your TTN API key does not have 'applications:create' permission. Please either:
+1. Create the application manually in TTN Console with ID: ${ttnAppId}
+2. Or generate a new API key with 'All application rights' or 'applications:create' permission`,
+                  ttn_app_id: ttnAppId,
+                  details: errorMessage,
+                }),
+                { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+            
+            return new Response(
+              JSON.stringify({ error: "Failed to create TTN application", details: errorText }),
+              { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        } else if (checkResponse.status === 401) {
+          // API key is invalid
+          const errorText = await checkResponse.text();
+          console.error(`[ttn-manage-application] TTN API authentication failed: ${errorText}`);
           return new Response(
-            JSON.stringify({ error: "Failed to create TTN application", details: errorText }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            JSON.stringify({ 
+              error: "TTN API authentication failed",
+              hint: "Your TTN API key is invalid or expired. Please generate a new one in TTN Console.",
+              details: errorText,
+            }),
+            { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        } else if (checkResponse.status === 403) {
+          // API key lacks permission to even read applications
+          const errorText = await checkResponse.text();
+          console.error(`[ttn-manage-application] TTN API access denied: ${errorText}`);
+          return new Response(
+            JSON.stringify({ 
+              error: "TTN API key lacks required permissions",
+              hint: "Your TTN API key needs at least 'applications:read' permission. Please update the key permissions in TTN Console.",
+              details: errorText,
+            }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        } else {
+          // Unexpected error
+          const errorText = await checkResponse.text();
+          console.error(`[ttn-manage-application] TTN API error: ${checkResponse.status} - ${errorText}`);
+          return new Response(
+            JSON.stringify({ 
+              error: `TTN API error (${checkResponse.status})`,
+              details: errorText,
+            }),
+            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
       }

@@ -308,9 +308,16 @@ export function useProvisionLoraSensor() {
         throw new Error(detailedMessage);
       }
       
-      // Check if data indicates failure
+      // Check if data indicates failure (with detailed error info)
       if (data && !data.success && data.error) {
-        throw new Error(data.details ? `${data.error}: ${data.details}` : data.error);
+        // Build error message with hint if available
+        let errorMessage = data.error;
+        if (data.hint) {
+          errorMessage = `${data.error}\n\n${data.hint}`;
+        } else if (data.details) {
+          errorMessage = `${data.error}: ${data.details}`;
+        }
+        throw new Error(errorMessage);
       }
       
       return data;
