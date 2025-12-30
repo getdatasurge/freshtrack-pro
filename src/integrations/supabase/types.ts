@@ -783,6 +783,66 @@ export type Database = {
           },
         ]
       }
+      gateways: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          gateway_eui: string
+          id: string
+          last_seen_at: string | null
+          name: string
+          organization_id: string
+          site_id: string | null
+          status: Database["public"]["Enums"]["gateway_status"]
+          ttn_application_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          gateway_eui: string
+          id?: string
+          last_seen_at?: string | null
+          name: string
+          organization_id: string
+          site_id?: string | null
+          status?: Database["public"]["Enums"]["gateway_status"]
+          ttn_application_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          gateway_eui?: string
+          id?: string
+          last_seen_at?: string | null
+          name?: string
+          organization_id?: string
+          site_id?: string | null
+          status?: Database["public"]["Enums"]["gateway_status"]
+          ttn_application_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gateways_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gateways_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       hubs: {
         Row: {
           created_at: string
@@ -926,6 +986,106 @@ export type Database = {
             columns: ["subscription_id"]
             isOneToOne: false
             referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lora_sensors: {
+        Row: {
+          app_eui: string | null
+          app_key: string | null
+          battery_level: number | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          dev_eui: string
+          firmware_version: string | null
+          id: string
+          last_join_at: string | null
+          last_seen_at: string | null
+          manufacturer: string | null
+          model: string | null
+          name: string
+          organization_id: string
+          sensor_type: Database["public"]["Enums"]["lora_sensor_type"]
+          signal_strength: number | null
+          site_id: string | null
+          status: Database["public"]["Enums"]["lora_sensor_status"]
+          ttn_application_id: string | null
+          ttn_device_id: string | null
+          unit_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          app_eui?: string | null
+          app_key?: string | null
+          battery_level?: number | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          dev_eui: string
+          firmware_version?: string | null
+          id?: string
+          last_join_at?: string | null
+          last_seen_at?: string | null
+          manufacturer?: string | null
+          model?: string | null
+          name: string
+          organization_id: string
+          sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
+          signal_strength?: number | null
+          site_id?: string | null
+          status?: Database["public"]["Enums"]["lora_sensor_status"]
+          ttn_application_id?: string | null
+          ttn_device_id?: string | null
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          app_eui?: string | null
+          app_key?: string | null
+          battery_level?: number | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          dev_eui?: string
+          firmware_version?: string | null
+          id?: string
+          last_join_at?: string | null
+          last_seen_at?: string | null
+          manufacturer?: string | null
+          model?: string | null
+          name?: string
+          organization_id?: string
+          sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
+          signal_strength?: number | null
+          site_id?: string | null
+          status?: Database["public"]["Enums"]["lora_sensor_status"]
+          ttn_application_id?: string | null
+          ttn_device_id?: string | null
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lora_sensors_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lora_sensors_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lora_sensors_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]
@@ -2082,6 +2242,13 @@ export type Database = {
       app_role: "owner" | "admin" | "manager" | "staff" | "viewer" | "inspector"
       compliance_mode: "standard" | "haccp"
       device_status: "active" | "inactive" | "pairing" | "fault" | "low_battery"
+      gateway_status: "pending" | "online" | "offline" | "maintenance"
+      lora_sensor_status: "pending" | "joining" | "active" | "offline" | "fault"
+      lora_sensor_type:
+        | "temperature"
+        | "temperature_humidity"
+        | "door"
+        | "combo"
       notification_channel: "push" | "email" | "sms"
       notification_status: "pending" | "sent" | "delivered" | "failed"
       pairing_status:
@@ -2255,6 +2422,14 @@ export const Constants = {
       app_role: ["owner", "admin", "manager", "staff", "viewer", "inspector"],
       compliance_mode: ["standard", "haccp"],
       device_status: ["active", "inactive", "pairing", "fault", "low_battery"],
+      gateway_status: ["pending", "online", "offline", "maintenance"],
+      lora_sensor_status: ["pending", "joining", "active", "offline", "fault"],
+      lora_sensor_type: [
+        "temperature",
+        "temperature_humidity",
+        "door",
+        "combo",
+      ],
       notification_channel: ["push", "email", "sms"],
       notification_status: ["pending", "sent", "delivered", "failed"],
       pairing_status: [
