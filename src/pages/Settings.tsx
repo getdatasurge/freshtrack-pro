@@ -46,6 +46,7 @@ import { NotificationSettingsCard } from "@/components/settings/NotificationSett
 import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
 import { GatewayManager } from "@/components/settings/GatewayManager";
 import { SensorManager } from "@/components/settings/SensorManager";
+import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
 
 // E.164 phone number validation regex
 const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -1024,6 +1025,7 @@ const Settings = () => {
         {/* Developer Tab (Admin Only) */}
         {canManageUsers && (
           <TabsContent value="developer" className="space-y-6">
+            <TTNConnectionSettings />
             <EdgeFunctionDiagnostics />
             <SensorSimulatorPanel />
           </TabsContent>

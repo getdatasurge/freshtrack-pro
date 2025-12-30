@@ -75,6 +75,13 @@ export const eventTypeLabels: Record<string, string> = {
   report_exported: "Report Exported",
   user_login: "User Login",
   user_logout: "User Logout",
+  
+  // TTN Settings
+  "ttn.settings.updated": "TTN Settings Updated",
+  "ttn.settings.enabled": "TTN Integration Enabled",
+  "ttn.settings.disabled": "TTN Integration Disabled",
+  "ttn.settings.tested": "TTN Connection Tested",
+  "ttn.settings.test_failed": "TTN Connection Test Failed",
 };
 
 // Event categories with icons and colors
@@ -226,6 +233,13 @@ export const eventTypeIcons: Record<string, LucideIcon> = {
   report_exported: ClipboardCheck,
   user_login: User,
   user_logout: User,
+  
+  // TTN Settings
+  "ttn.settings.updated": Settings,
+  "ttn.settings.enabled": Radio,
+  "ttn.settings.disabled": Radio,
+  "ttn.settings.tested": CheckCircle2,
+  "ttn.settings.test_failed": XCircle,
 };
 
 // Infer category from event type
@@ -239,7 +253,7 @@ export function inferCategory(eventType: string): EventCategory {
   if (eventType.includes("manual") || eventType.includes("excursion") || eventType.includes("temp_logged")) {
     return "compliance";
   }
-  if (eventType.includes("settings") || eventType.includes("thresholds") || eventType.includes("rules")) {
+  if (eventType.includes("settings") || eventType.includes("thresholds") || eventType.includes("rules") || eventType.startsWith("ttn.")) {
     return "settings";
   }
   if (eventType.includes("notification") || eventType.includes("SENT") || eventType.includes("FAILED") || eventType.includes("SKIPPED")) {
