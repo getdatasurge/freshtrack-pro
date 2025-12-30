@@ -12,20 +12,45 @@ interface FunctionStatus {
   error?: string;
 }
 
-const EDGE_FUNCTIONS = [
+// Functions that support GET health check endpoint
+const EDGE_FUNCTIONS_WITH_GET = [
   "ttn-provision-device",
-  "ttn-webhook",
-  "ttn-list-devices",
   "ttn-manage-application",
+];
+
+// Functions that only support POST (skip GET health check)
+const EDGE_FUNCTIONS_POST_ONLY = [
+  { name: "ttn-webhook", note: "POST-only (receives TTN uplinks)" },
+  { name: "ttn-list-devices", note: "POST-only (requires auth)" },
+];
+
+const ALL_FUNCTIONS = [
+  ...EDGE_FUNCTIONS_WITH_GET,
+  ...EDGE_FUNCTIONS_POST_ONLY.map((f) => f.name),
 ];
 
 export function EdgeFunctionDiagnostics() {
   const [functions, setFunctions] = useState<FunctionStatus[]>(
-    EDGE_FUNCTIONS.map((name) => ({ name, status: "unknown" }))
+    ALL_FUNCTIONS.map((name) => ({ name, status: "unknown" }))
   );
   const [isChecking, setIsChecking] = useState(false);
 
   const checkFunction = async (functionName: string): Promise<FunctionStatus> => {
+    // Check if this is a POST-only function
+    const postOnlyFn = EDGE_FUNCTIONS_POST_ONLY.find((f) => f.name === functionName);
+    if (postOnlyFn) {
+      // Skip GET check for POST-only functions, mark as skipped
+      return {
+        name: functionName,
+        status: "ok",
+        details: {
+          status: "skipped",
+          note: postOnlyFn.note,
+          message: "This function doesn't support GET health checks",
+        },
+      };
+    }
+
     try {
       // Use supabase.functions.invoke with GET-like behavior
       // Since we added a GET handler to our edge function, we try fetching it
@@ -50,10 +75,21 @@ export function EdgeFunctionDiagnostics() {
         };
       }
 
+      // Check for hints in the response (e.g., missing TTN_USER_ID)
+      const responseData = data as Record<string, unknown>;
+      if (responseData?.hint) {
+        return {
+          name: functionName,
+          status: "error",
+          details: responseData,
+          error: responseData.hint as string,
+        };
+      }
+
       return {
         name: functionName,
         status: "ok",
-        details: data as Record<string, unknown>,
+        details: responseData,
       };
     } catch (err) {
       return {
@@ -74,7 +110,7 @@ export function EdgeFunctionDiagnostics() {
 
     // Check all functions in parallel
     const results = await Promise.all(
-      EDGE_FUNCTIONS.map((name) => checkFunction(name))
+      ALL_FUNCTIONS.map((name) => checkFunction(name))
     );
 
     setFunctions(results);

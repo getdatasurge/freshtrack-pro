@@ -1,0 +1,5 @@
+[function]
+# Disable JWT verification for internal function-to-function calls
+# This function is called by ttn-provision-device and needs to accept
+# requests without JWT since it uses service role key authentication
+verify_jwt = false

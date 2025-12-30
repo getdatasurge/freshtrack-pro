@@ -143,15 +143,59 @@ serve(async (req) => {
 
     // Ensure TTN application exists for this org
     console.log(`[ttn-provision-device] Ensuring TTN application for org: ${organization_id}`);
-    
+
     const ensureAppResponse = await supabase.functions.invoke("ttn-manage-application", {
       body: { action: "ensure", organization_id },
     });
 
+    // Log full response for debugging
+    console.log(`[ttn-provision-device] ttn-manage-application response:`, {
+      data: ensureAppResponse.data,
+      error: ensureAppResponse.error,
+      errorMessage: ensureAppResponse.error?.message,
+      errorContext: ensureAppResponse.error?.context,
+    });
+
     if (ensureAppResponse.error) {
       console.error("Failed to ensure TTN application:", ensureAppResponse.error);
+
+      // Try to extract more details from the error context
+      let detailedError = ensureAppResponse.error.message;
+      let hint = "";
+
+      // Check if there's response data even with an error
+      if (ensureAppResponse.data) {
+        console.log("[ttn-provision-device] Error response data:", ensureAppResponse.data);
+        if (ensureAppResponse.data.error) {
+          detailedError = ensureAppResponse.data.error;
+        }
+        if (ensureAppResponse.data.hint) {
+          hint = ensureAppResponse.data.hint;
+        }
+        if (ensureAppResponse.data.details) {
+          detailedError += `: ${ensureAppResponse.data.details}`;
+        }
+      }
+
+      // Try to read the error context if available
+      try {
+        const errorContext = (ensureAppResponse.error as any)?.context;
+        if (errorContext?.json) {
+          const contextData = await errorContext.clone().json();
+          console.log("[ttn-provision-device] Error context data:", contextData);
+          if (contextData.error) detailedError = contextData.error;
+          if (contextData.hint) hint = contextData.hint;
+        }
+      } catch (e) {
+        // Context parsing failed, use what we have
+      }
+
       return new Response(
-        JSON.stringify({ error: "Failed to ensure TTN application", details: ensureAppResponse.error.message }),
+        JSON.stringify({
+          error: "Failed to ensure TTN application",
+          details: detailedError,
+          hint: hint || "Check that TTN_USER_ID, TTN_API_KEY, and TTN_API_BASE_URL are correctly configured in Edge Function secrets",
+        }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -160,7 +204,7 @@ serve(async (req) => {
     if (ensureAppResponse.data?.error) {
       console.error("TTN application error:", ensureAppResponse.data);
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           error: ensureAppResponse.data.error,
           hint: ensureAppResponse.data.hint,
           ttn_app_id: ensureAppResponse.data.ttn_app_id,
