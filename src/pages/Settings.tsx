@@ -39,6 +39,26 @@ import { BillingTab } from "@/components/billing/BillingTab";
 import { AlertRulesScopedEditor } from "@/components/settings/AlertRulesScopedEditor";
 import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
 import { NotificationSettingsCard } from "@/components/settings/NotificationSettingsCard";
+import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
+
+// E.164 phone number validation regex
+const E164_REGEX = /^\+[1-9]\d{1,14}$/;
+
+// Helper to format phone number for display as user types
+const formatPhoneForInput = (value: string): string => {
+  // Remove all non-digit characters except +
+  const cleaned = value.replace(/[^\d+]/g, '');
+  // Ensure it starts with +
+  if (cleaned && !cleaned.startsWith('+')) {
+    return '+' + cleaned;
+  }
+  return cleaned;
+};
+
+// Helper to validate E.164 format
+const isValidE164 = (phone: string): boolean => {
+  return E164_REGEX.test(phone);
+};
 
 type AppRole = Database["public"]["Enums"]["app_role"];
 type ComplianceMode = Database["public"]["Enums"]["compliance_mode"];
@@ -273,6 +293,15 @@ const Settings = () => {
 
   const saveNotifications = async () => {
     if (!profile) return;
+    
+    // Validate phone number if SMS is enabled
+    if (notifSms && userPhone) {
+      if (!isValidE164(userPhone)) {
+        toast.error("Invalid phone number format. Please use E.164 format (e.g., +15551234567)");
+        return;
+      }
+    }
+    
     setIsSaving(true);
     try {
       const { error } = await supabase
@@ -294,6 +323,41 @@ const Settings = () => {
       toast.error("Failed to save preferences");
     }
     setIsSaving(false);
+  };
+
+  const sendTestSms = async () => {
+    if (!profile || !userPhone || !organization) return;
+    
+    if (!isValidE164(userPhone)) {
+      toast.error("Invalid phone number. Please save a valid E.164 format number first.");
+      return;
+    }
+    
+    try {
+      toast.loading("Sending test SMS...", { id: "test-sms" });
+      
+      const { data, error } = await supabase.functions.invoke("send-sms-alert", {
+        body: {
+          to: userPhone,
+          message: "✅ FreshTrack Test: Your SMS alerts are configured correctly! You will receive critical alerts at this number.",
+          alertType: "test",
+          organizationId: organization.id,
+        },
+      });
+
+      if (error) throw error;
+      
+      if (data?.status === "sent") {
+        toast.success("Test SMS sent successfully!", { id: "test-sms" });
+      } else if (data?.status === "rate_limited") {
+        toast.info("Test SMS was rate limited. Please wait 15 minutes before trying again.", { id: "test-sms" });
+      } else {
+        toast.error(data?.error || "Failed to send test SMS", { id: "test-sms" });
+      }
+    } catch (error) {
+      console.error("Error sending test SMS:", error);
+      toast.error("Failed to send test SMS", { id: "test-sms" });
+    }
   };
 
   const updateUserRole = async (userId: string, newRole: AppRole) => {
@@ -560,21 +624,38 @@ const Settings = () => {
               </div>
 
               {notifSms && (
-                <div className="space-y-2 pt-2">
-                  <Label htmlFor="phone">Phone Number</Label>
-                  <div className="flex gap-2">
+                <div className="space-y-3 pt-2">
+                  <Label htmlFor="phone">Phone Number (E.164 Format)</Label>
+                  <div className="flex gap-2 items-start">
                     <Smartphone className="w-5 h-5 text-muted-foreground mt-2.5" />
-                    <Input
-                      id="phone"
-                      type="tel"
-                      placeholder="+1 (555) 123-4567"
-                      value={userPhone}
-                      onChange={(e) => setUserPhone(e.target.value)}
-                      className="max-w-xs"
-                    />
+                    <div className="flex-1 max-w-xs space-y-1">
+                      <Input
+                        id="phone"
+                        type="tel"
+                        placeholder="+15551234567"
+                        value={userPhone}
+                        onChange={(e) => setUserPhone(formatPhoneForInput(e.target.value))}
+                        className={userPhone && !isValidE164(userPhone) ? "border-destructive" : ""}
+                      />
+                      {userPhone && !isValidE164(userPhone) && (
+                        <p className="text-xs text-destructive">
+                          Please enter a valid E.164 format (e.g., +15551234567)
+                        </p>
+                      )}
+                    </div>
+                    {canManageUsers && userPhone && isValidE164(userPhone) && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={sendTestSms}
+                        className="shrink-0"
+                      >
+                        Send Test SMS
+                      </Button>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Required for SMS alerts. Standard messaging rates may apply.
+                    Required for SMS alerts. Use international format starting with + and country code. Standard messaging rates may apply.
                   </p>
                 </div>
               )}
@@ -591,6 +672,13 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* SMS Alert History */}
+          {canManageUsers && organization && (
+            <div className="mt-6">
+              <SmsAlertHistory organizationId={organization.id} />
+            </div>
+          )}
         </TabsContent>
 
         {/* Users Tab */}

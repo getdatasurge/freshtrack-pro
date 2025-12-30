@@ -1674,6 +1674,63 @@ export type Database = {
           },
         ]
       }
+      sms_alert_log: {
+        Row: {
+          alert_id: string | null
+          alert_type: string
+          created_at: string
+          error_message: string | null
+          id: string
+          message: string
+          organization_id: string
+          phone_number: string
+          status: string
+          twilio_sid: string | null
+          user_id: string | null
+        }
+        Insert: {
+          alert_id?: string | null
+          alert_type: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          message: string
+          organization_id: string
+          phone_number: string
+          status?: string
+          twilio_sid?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          alert_id?: string | null
+          alert_type?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          message?: string
+          organization_id?: string
+          phone_number?: string
+          status?: string
+          twilio_sid?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_alert_log_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_alert_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscriptions: {
         Row: {
           canceled_at: string | null
