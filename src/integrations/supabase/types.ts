@@ -1630,6 +1630,48 @@ export type Database = {
           },
         ]
       }
+      sensor_cleanup_queue: {
+        Row: {
+          created_at: string | null
+          deleted_user_id: string
+          dev_eui: string
+          error_message: string | null
+          id: string
+          organization_id: string
+          processed_at: string | null
+          sensor_id: string
+          sensor_name: string
+          ttn_application_id: string | null
+          ttn_device_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          deleted_user_id: string
+          dev_eui: string
+          error_message?: string | null
+          id?: string
+          organization_id: string
+          processed_at?: string | null
+          sensor_id: string
+          sensor_name: string
+          ttn_application_id?: string | null
+          ttn_device_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          deleted_user_id?: string
+          dev_eui?: string
+          error_message?: string | null
+          id?: string
+          organization_id?: string
+          processed_at?: string | null
+          sensor_id?: string
+          sensor_name?: string
+          ttn_application_id?: string | null
+          ttn_device_id?: string | null
+        }
+        Relationships: []
+      }
       sensor_readings: {
         Row: {
           battery_level: number | null
@@ -2243,6 +2285,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      process_sensor_cleanup_queue: { Args: never; Returns: Json }
       user_belongs_to_org: {
         Args: { _org_id: string; _user_id: string }
         Returns: boolean
