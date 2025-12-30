@@ -199,7 +199,24 @@ const Onboarding = () => {
       toast({ title: "Organization created!" });
       setCurrentStep("site");
     } catch (error: any) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      const errorMessage = error.message || "";
+      
+      if (errorMessage.includes("organizations_slug_key") || 
+          errorMessage.includes("unique constraint")) {
+        toast({ 
+          title: "URL Already Taken", 
+          description: "This organization name or URL slug already exists. Please choose a different name.", 
+          variant: "destructive" 
+        });
+      } else if (errorMessage.includes("already belongs to an organization")) {
+        toast({ 
+          title: "Already Registered", 
+          description: "Your account is already associated with an organization.", 
+          variant: "destructive" 
+        });
+      } else {
+        toast({ title: "Error", description: errorMessage, variant: "destructive" });
+      }
     }
     setIsLoading(false);
   };
