@@ -1420,11 +1420,63 @@ export type Database = {
           },
         ]
       }
+      org_cleanup_jobs: {
+        Row: {
+          attempts: number
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          dependent_counts: Json | null
+          id: string
+          last_error: string | null
+          organization_id: string
+          reason: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          dependent_counts?: Json | null
+          id?: string
+          last_error?: string | null
+          organization_id: string
+          reason: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          dependent_counts?: Json | null
+          id?: string
+          last_error?: string | null
+          organization_id?: string
+          reason?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "org_cleanup_jobs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           accent_color: string | null
           compliance_mode: Database["public"]["Enums"]["compliance_mode"]
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           id: string
           logo_url: string | null
           name: string
@@ -1439,6 +1491,8 @@ export type Database = {
           accent_color?: string | null
           compliance_mode?: Database["public"]["Enums"]["compliance_mode"]
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           id?: string
           logo_url?: string | null
           name: string
@@ -1453,6 +1507,8 @@ export type Database = {
           accent_color?: string | null
           compliance_mode?: Database["public"]["Enums"]["compliance_mode"]
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           id?: string
           logo_url?: string | null
           name?: string
@@ -2317,6 +2373,7 @@ export type Database = {
         Args: { _target_org_id: string; _viewer_id: string }
         Returns: boolean
       }
+      check_slug_available: { Args: { p_slug: string }; Returns: boolean }
       create_area_for_site: {
         Args: { p_description?: string; p_name: string; p_site_id: string }
         Returns: string
@@ -2355,6 +2412,23 @@ export type Database = {
         Args: { p_created_by?: string; p_reason: string; p_unit_id: string }
         Returns: number
       }
+      find_orphan_organizations: {
+        Args: never
+        Returns: {
+          alerts_count: number
+          areas_count: number
+          event_logs_count: number
+          gateways_count: number
+          has_subscription: boolean
+          org_created_at: string
+          org_id: string
+          org_name: string
+          org_slug: string
+          sensors_count: number
+          sites_count: number
+          units_count: number
+        }[]
+      }
       get_deprovision_job_stats: {
         Args: { p_organization_id: string }
         Returns: Json
@@ -2365,6 +2439,7 @@ export type Database = {
         Returns: Json
       }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
+      hard_delete_organization: { Args: { p_org_id: string }; Returns: Json }
       has_role: {
         Args: {
           _org_id: string
@@ -2374,6 +2449,10 @@ export type Database = {
         Returns: boolean
       }
       process_sensor_cleanup_queue: { Args: never; Returns: Json }
+      soft_delete_organization: {
+        Args: { p_org_id: string; p_user_id: string }
+        Returns: Json
+      }
       user_belongs_to_org: {
         Args: { _org_id: string; _user_id: string }
         Returns: boolean

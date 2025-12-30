@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { 
   Thermometer, 
@@ -17,7 +18,9 @@ import {
   ArrowRight,
   ArrowLeft,
   Radio,
-  Plus
+  Plus,
+  AlertCircle,
+  Check,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -112,6 +115,57 @@ const Onboarding = () => {
     gateway: { name: "", eui: "" },
   });
 
+  // Slug availability state
+  const [slugStatus, setSlugStatus] = useState<{
+    isChecking: boolean;
+    available: boolean | null;
+    suggestions: string[];
+  }>({ isChecking: false, available: null, suggestions: [] });
+
+  // Debounced slug check
+  const checkSlugAvailability = useCallback(async (slug: string) => {
+    if (!slug || slug.length < 2) {
+      setSlugStatus({ isChecking: false, available: null, suggestions: [] });
+      return;
+    }
+
+    setSlugStatus(prev => ({ ...prev, isChecking: true }));
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/check-slug-available?slug=${encodeURIComponent(slug)}`,
+        { method: "GET", headers: { "Content-Type": "application/json" } }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        setSlugStatus({
+          isChecking: false,
+          available: result.available,
+          suggestions: result.suggestions || [],
+        });
+      } else {
+        // On error, don't block user
+        setSlugStatus({ isChecking: false, available: null, suggestions: [] });
+      }
+    } catch (error) {
+      console.error("Error checking slug:", error);
+      setSlugStatus({ isChecking: false, available: null, suggestions: [] });
+    }
+  }, []);
+
+  // Debounce slug check
+  useEffect(() => {
+    const slug = data.organization.slug;
+    if (!slug) return;
+
+    const timer = setTimeout(() => {
+      checkSlugAvailability(slug);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [data.organization.slug, checkSlugAvailability]);
+
   // Check if user already has an organization - only once
   useEffect(() => {
     if (hasCheckedOrg) return;
@@ -194,6 +248,18 @@ const Onboarding = () => {
       return;
     }
 
+    // Check if slug was marked as unavailable
+    if (slugStatus.available === false) {
+      toast({ 
+        title: "URL Already Taken", 
+        description: slugStatus.suggestions.length > 0 
+          ? `Try one of these: ${slugStatus.suggestions.slice(0, 3).join(", ")}`
+          : "Please choose a different URL slug.",
+        variant: "destructive" 
+      });
+      return;
+    }
+
     setIsLoading(true);
     try {
       const { data: orgId, error } = await supabase.rpc("create_organization_with_owner", {
@@ -210,11 +276,15 @@ const Onboarding = () => {
     } catch (error: any) {
       const errorMessage = error.message || "";
       
+      // Handle slug conflicts with friendly message and trigger re-check
       if (errorMessage.includes("organizations_slug_key") || 
-          errorMessage.includes("unique constraint")) {
+          errorMessage.includes("unique constraint") ||
+          errorMessage.includes("organizations_slug_active_key")) {
+        // Re-check slug to get suggestions
+        await checkSlugAvailability(slugToUse);
         toast({ 
           title: "URL Already Taken", 
-          description: "This organization name or URL slug already exists. Please choose a different name.", 
+          description: "This URL is already in use. Please choose a different one or select from suggestions below.", 
           variant: "destructive" 
         });
       } else if (errorMessage.includes("already belongs to an organization")) {
@@ -223,11 +293,20 @@ const Onboarding = () => {
           description: "Your account is already associated with an organization.", 
           variant: "destructive" 
         });
+        // Redirect after delay
+        setTimeout(() => navigate("/dashboard", { replace: true }), 2000);
       } else {
         toast({ title: "Error", description: errorMessage, variant: "destructive" });
       }
     }
     setIsLoading(false);
+  };
+
+  const handleSelectSuggestion = (suggestion: string) => {
+    setData(prev => ({
+      ...prev,
+      organization: { ...prev.organization, slug: suggestion },
+    }));
   };
 
   const handleCreateSite = async () => {
@@ -502,14 +581,36 @@ const Onboarding = () => {
                     <Label htmlFor="org-slug">URL Slug</Label>
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-muted-foreground">frostguard.app/</span>
-                      <Input
-                        id="org-slug"
-                        placeholder="acme-restaurants"
-                        value={data.organization.slug}
-                        onChange={(e) => updateData("organization", "slug", e.target.value)}
-                        className="flex-1"
-                      />
+                      <div className="flex-1 relative">
+                        <Input
+                          id="org-slug"
+                          placeholder="acme-restaurants"
+                          value={data.organization.slug}
+                          onChange={(e) => updateData("organization", "slug", e.target.value)}
+                          className={`pr-8 ${slugStatus.available === false ? "border-destructive" : slugStatus.available === true ? "border-safe" : ""}`}
+                        />
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                          {slugStatus.isChecking && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+                          {!slugStatus.isChecking && slugStatus.available === true && <Check className="w-4 h-4 text-safe" />}
+                          {!slugStatus.isChecking && slugStatus.available === false && <AlertCircle className="w-4 h-4 text-destructive" />}
+                        </div>
+                      </div>
                     </div>
+                    {slugStatus.available === false && slugStatus.suggestions.length > 0 && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-muted-foreground">Try:</span>
+                        {slugStatus.suggestions.slice(0, 3).map((s) => (
+                          <Badge 
+                            key={s} 
+                            variant="outline" 
+                            className="cursor-pointer hover:bg-accent/10"
+                            onClick={() => handleSelectSuggestion(s)}
+                          >
+                            {s}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="org-timezone">Timezone</Label>
