@@ -58,12 +58,19 @@ serve(async (req) => {
       );
     }
 
-    const ttnAppId = `fg-${org.slug}`.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    // Use existing ttn_application_id if set, otherwise generate one
+    const ttnAppId = org.ttn_application_id || `fg-${org.slug}`.toLowerCase().replace(/[^a-z0-9-]/g, "-");
     console.log(`[ttn-manage-application] TTN Application ID: ${ttnAppId}`);
 
-    // Helper function for TTN API calls
+    // Helper function for TTN API calls with proper URL construction
     const ttnFetch = async (endpoint: string, options: RequestInit = {}) => {
-      const url = `${ttnApiBaseUrl}${endpoint}`;
+      // Normalize base URL - remove trailing slashes and any /api/v3 suffix
+      let baseUrl = ttnApiBaseUrl.trim().replace(/\/+$/, "");
+      if (baseUrl.endsWith("/api/v3")) {
+        baseUrl = baseUrl.slice(0, -7);
+      }
+      const url = `${baseUrl}${endpoint}`;
+      console.log(`[ttn-manage-application] TTN API: ${options.method || "GET"} ${url}`);
       const response = await fetch(url, {
         ...options,
         headers: {
@@ -77,7 +84,10 @@ serve(async (req) => {
 
     // Create or ensure TTN application exists
     if (action === "create" || action === "ensure") {
-      if (!org.ttn_application_created) {
+      // If ttn_application_id is already set and marked as created, skip creation
+      if (org.ttn_application_id && org.ttn_application_created) {
+        console.log(`[ttn-manage-application] TTN application already configured: ${org.ttn_application_id}`);
+      } else if (!org.ttn_application_created) {
         console.log(`[ttn-manage-application] Creating TTN application: ${ttnAppId}`);
 
         // Try to create the application using the correct TTN v3 API endpoint
