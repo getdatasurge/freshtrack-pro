@@ -33,7 +33,8 @@ import {
   CreditCard,
   AlertTriangle,
   Code2,
-  CheckCircle
+  CheckCircle,
+  Radio
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
@@ -41,6 +42,7 @@ import { AlertRulesScopedEditor } from "@/components/settings/AlertRulesScopedEd
 import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
 import { NotificationSettingsCard } from "@/components/settings/NotificationSettingsCard";
 import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
+import { GatewayManager } from "@/components/settings/GatewayManager";
 
 // E.164 phone number validation regex
 const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -128,6 +130,7 @@ const Settings = () => {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [userRole, setUserRole] = useState<AppRole | null>(null);
+  const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
 
   // Form states
   const [orgName, setOrgName] = useState("");
@@ -262,6 +265,18 @@ const Settings = () => {
         });
 
         setUsers(usersWithRoles);
+      }
+
+      // Load sites for gateway management
+      const { data: sitesData } = await supabase
+        .from("sites")
+        .select("id, name")
+        .eq("organization_id", profileData.organization_id)
+        .is("deleted_at", null)
+        .order("name");
+      
+      if (sitesData) {
+        setSites(sitesData);
       }
     } catch (error) {
       console.error("Error loading settings:", error);
@@ -464,7 +479,7 @@ const Settings = () => {
   return (
     <DashboardLayout title="Settings">
       <Tabs defaultValue={defaultTab} className="space-y-6">
-        <TabsList className={`grid w-full max-w-2xl ${canManageUsers ? 'grid-cols-6' : 'grid-cols-5'}`}>
+        <TabsList className={`grid w-full max-w-3xl ${canManageUsers ? 'grid-cols-7' : 'grid-cols-6'}`}>
           <TabsTrigger value="organization" className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <span className="hidden sm:inline">Organization</span>
@@ -485,6 +500,12 @@ const Settings = () => {
             <Users className="w-4 h-4" />
             <span className="hidden sm:inline">Users</span>
           </TabsTrigger>
+          {canManageUsers && (
+            <TabsTrigger value="gateways" className="flex items-center gap-2">
+              <Radio className="w-4 h-4" />
+              <span className="hidden sm:inline">Gateways</span>
+            </TabsTrigger>
+          )}
           {canManageUsers && (
             <TabsTrigger value="developer" className="flex items-center gap-2">
               <Code2 className="w-4 h-4" />
@@ -923,6 +944,17 @@ const Settings = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Gateways Tab (Admin Only) */}
+        {canManageUsers && organization && (
+          <TabsContent value="gateways">
+            <GatewayManager
+              organizationId={organization.id}
+              sites={sites}
+              canEdit={canManageUsers}
+            />
+          </TabsContent>
+        )}
 
         {/* Developer Tab (Admin Only) */}
         {canManageUsers && (
