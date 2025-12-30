@@ -136,10 +136,20 @@ Deno.serve(async (req) => {
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
     const unitData = unit as any;
+    const unitOrgId = unitData.area.site.organization_id;
+    
+    // CRITICAL: Cross-org validation - if user is authenticated, verify they own this unit
+    if (organizationId && unitOrgId !== organizationId) {
+      return new Response(
+        JSON.stringify({ error: "Cannot access units from another organization" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    
+    // Set org from unit if not authenticated (e.g., cron job)
     if (!organizationId) {
-      organizationId = unitData.area.site.organization_id;
+      organizationId = unitOrgId;
     }
 
     // Get or create simulated device config
