@@ -32,7 +32,8 @@ import {
   Trash2,
   CreditCard,
   AlertTriangle,
-  Code2
+  Code2,
+  CheckCircle
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
@@ -325,6 +326,30 @@ const Settings = () => {
     setIsSaving(false);
   };
 
+  const [isSendingSms, setIsSendingSms] = useState(false);
+  const [smsVerified, setSmsVerified] = useState<boolean | null>(null);
+  const queryClient = useQueryClient();
+
+  // Helper to parse Twilio-specific errors into user-friendly messages
+  const getTwilioErrorMessage = (error: string): string => {
+    if (error.includes("unverified") || error.includes("21608") || error.includes("21211")) {
+      return "This phone number needs to be verified in your Twilio console (trial account limitation). Add it at: twilio.com/console/phone-numbers/verified";
+    }
+    if (error.includes("21614") || error.includes("not a valid phone number")) {
+      return "Invalid phone number format. Please check the number and try again.";
+    }
+    if (error.includes("21610") || error.includes("blacklist")) {
+      return "This number has been blocked from receiving SMS. The recipient may have opted out.";
+    }
+    if (error.includes("21408") || error.includes("permission")) {
+      return "Permission denied. Check your Twilio account geographic permissions.";
+    }
+    if (error.includes("rate") || error.includes("limit")) {
+      return "Rate limited. Please wait a few minutes before trying again.";
+    }
+    return error;
+  };
+
   const sendTestSms = async () => {
     if (!profile || !userPhone || !organization) return;
     
@@ -333,6 +358,7 @@ const Settings = () => {
       return;
     }
     
+    setIsSendingSms(true);
     try {
       toast.loading("Sending test SMS...", { id: "test-sms" });
       
@@ -345,18 +371,29 @@ const Settings = () => {
         },
       });
 
+      console.log("SMS Response:", data, error);
+
       if (error) throw error;
       
       if (data?.status === "sent") {
-        toast.success("Test SMS sent successfully!", { id: "test-sms" });
+        toast.success(`Test SMS sent! (SID: ${data.twilio_sid?.slice(-8) || 'confirmed'})`, { id: "test-sms" });
+        setSmsVerified(true);
+        // Refresh SMS history
+        queryClient.invalidateQueries({ queryKey: ["sms-alert-history", organization.id] });
       } else if (data?.status === "rate_limited") {
-        toast.info("Test SMS was rate limited. Please wait 15 minutes before trying again.", { id: "test-sms" });
+        toast.info("SMS rate limited. Please wait 15 minutes before trying again.", { id: "test-sms" });
       } else {
-        toast.error(data?.error || "Failed to send test SMS", { id: "test-sms" });
+        const friendlyError = getTwilioErrorMessage(data?.error || "Unknown error");
+        toast.error(friendlyError, { id: "test-sms", duration: 8000 });
+        setSmsVerified(false);
       }
     } catch (error) {
       console.error("Error sending test SMS:", error);
-      toast.error("Failed to send test SMS", { id: "test-sms" });
+      const message = error instanceof Error ? error.message : "Failed to send test SMS";
+      toast.error(getTwilioErrorMessage(message), { id: "test-sms" });
+      setSmsVerified(false);
+    } finally {
+      setIsSendingSms(false);
     }
   };
 
@@ -629,17 +666,37 @@ const Settings = () => {
                   <div className="flex gap-2 items-start">
                     <Smartphone className="w-5 h-5 text-muted-foreground mt-2.5" />
                     <div className="flex-1 max-w-xs space-y-1">
-                      <Input
-                        id="phone"
-                        type="tel"
-                        placeholder="+15551234567"
-                        value={userPhone}
-                        onChange={(e) => setUserPhone(formatPhoneForInput(e.target.value))}
-                        className={userPhone && !isValidE164(userPhone) ? "border-destructive" : ""}
-                      />
+                      <div className="relative">
+                        <Input
+                          id="phone"
+                          type="tel"
+                          placeholder="+15551234567"
+                          value={userPhone}
+                          onChange={(e) => {
+                            setUserPhone(formatPhoneForInput(e.target.value));
+                            setSmsVerified(null); // Reset verification status on change
+                          }}
+                          className={`${userPhone && !isValidE164(userPhone) ? "border-destructive" : ""} ${smsVerified === true ? "border-safe pr-8" : ""}`}
+                        />
+                        {smsVerified === true && (
+                          <CheckCircle className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-safe" />
+                        )}
+                      </div>
                       {userPhone && !isValidE164(userPhone) && (
                         <p className="text-xs text-destructive">
                           Please enter a valid E.164 format (e.g., +15551234567)
+                        </p>
+                      )}
+                      {smsVerified === true && (
+                        <p className="text-xs text-safe flex items-center gap-1">
+                          <CheckCircle className="h-3 w-3" />
+                          SMS verified - alerts will be sent to this number
+                        </p>
+                      )}
+                      {smsVerified === false && (
+                        <p className="text-xs text-warning flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          SMS verification failed. If using a Twilio trial account, verify this number in your Twilio console first.
                         </p>
                       )}
                     </div>
@@ -648,9 +705,17 @@ const Settings = () => {
                         variant="outline" 
                         size="sm"
                         onClick={sendTestSms}
+                        disabled={isSendingSms}
                         className="shrink-0"
                       >
-                        Send Test SMS
+                        {isSendingSms ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            Sending...
+                          </>
+                        ) : (
+                          "Send Test SMS"
+                        )}
                       </Button>
                     )}
                   </div>

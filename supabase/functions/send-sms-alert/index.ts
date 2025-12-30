@@ -30,7 +30,9 @@ interface TwilioResponse {
 }
 
 const handler = async (req: Request): Promise<Response> => {
-  console.log("send-sms-alert: Received request");
+  console.log("send-sms-alert: ============ Request Start ============");
+  console.log("send-sms-alert: Method:", req.method);
+  console.log("send-sms-alert: Time:", new Date().toISOString());
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -43,10 +45,18 @@ const handler = async (req: Request): Promise<Response> => {
     const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
     const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
 
+    // Log credential existence (not values!)
+    console.log("send-sms-alert: Credentials check:", {
+      hasAccountSid: !!TWILIO_ACCOUNT_SID,
+      hasAuthToken: !!TWILIO_AUTH_TOKEN,
+      hasPhoneNumber: !!TWILIO_PHONE_NUMBER,
+      fromNumber: TWILIO_PHONE_NUMBER ? `${TWILIO_PHONE_NUMBER.slice(0, 5)}***` : "MISSING",
+    });
+
     if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
       console.error("send-sms-alert: Missing Twilio credentials");
       return new Response(
-        JSON.stringify({ error: "Twilio credentials not configured" }),
+        JSON.stringify({ error: "Twilio credentials not configured", status: "failed" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -55,7 +65,15 @@ const handler = async (req: Request): Promise<Response> => {
     const body: SmsAlertRequest = await req.json();
     const { to, message, alertType, userId, organizationId, alertId } = body;
 
-    console.log(`send-sms-alert: Processing SMS to ${to} for alert type ${alertType}`);
+    // Log request parameters (mask phone number for privacy)
+    console.log("send-sms-alert: Request params:", {
+      to: to ? `${to.slice(0, 5)}***${to.slice(-2)}` : "MISSING",
+      alertType,
+      organizationId: organizationId ? `${organizationId.slice(0, 8)}...` : "MISSING",
+      hasUserId: !!userId,
+      hasAlertId: !!alertId,
+      messageLength: message?.length || 0,
+    });
 
     // Validate required fields
     if (!to || !message || !alertType || !organizationId) {
@@ -141,12 +159,24 @@ const handler = async (req: Request): Promise<Response> => {
 
     const twilioData: TwilioResponse = await twilioResponse.json();
 
+    // Log full Twilio response for debugging
+    console.log("send-sms-alert: Twilio response status:", twilioResponse.status);
+    console.log("send-sms-alert: Twilio response data:", JSON.stringify({
+      sid: twilioData.sid,
+      status: twilioData.status,
+      error_code: twilioData.error_code,
+      error_message: twilioData.error_message,
+    }));
+
     if (!twilioResponse.ok) {
       const errorMsg = twilioData.message || twilioData.error_message || "Unknown Twilio error";
-      console.error(`send-sms-alert: Twilio API error: ${errorMsg}`);
+      const errorCode = twilioData.error_code?.toString() || "";
+      const fullError = errorCode ? `${errorCode}: ${errorMsg}` : errorMsg;
+      
+      console.error(`send-sms-alert: Twilio API error: ${fullError}`);
       
       // Log the failed attempt
-      await supabase.from("sms_alert_log").insert({
+      const { error: insertError } = await supabase.from("sms_alert_log").insert({
         organization_id: organizationId,
         user_id: userId,
         alert_id: alertId,
@@ -154,19 +184,25 @@ const handler = async (req: Request): Promise<Response> => {
         alert_type: alertType,
         message: message,
         status: "failed",
-        error_message: errorMsg,
+        error_message: fullError,
       });
+      
+      if (insertError) {
+        console.error("send-sms-alert: Failed to log SMS error:", insertError);
+      }
 
       return new Response(
-        JSON.stringify({ error: errorMsg, status: "failed" }),
+        JSON.stringify({ error: fullError, status: "failed", code: twilioData.error_code }),
         { status: twilioResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`send-sms-alert: SMS sent successfully, Twilio SID: ${twilioData.sid}`);
+    console.log(`send-sms-alert: SMS sent successfully!`);
+    console.log(`send-sms-alert: Twilio SID: ${twilioData.sid}`);
+    console.log(`send-sms-alert: Message status: ${twilioData.status}`);
 
     // Log successful SMS
-    await supabase.from("sms_alert_log").insert({
+    const { error: insertError } = await supabase.from("sms_alert_log").insert({
       organization_id: organizationId,
       user_id: userId,
       alert_id: alertId,
@@ -176,7 +212,15 @@ const handler = async (req: Request): Promise<Response> => {
       status: "sent",
       twilio_sid: twilioData.sid,
     });
+    
+    if (insertError) {
+      console.error("send-sms-alert: Failed to log successful SMS:", insertError);
+    } else {
+      console.log("send-sms-alert: SMS logged to database successfully");
+    }
 
+    console.log("send-sms-alert: ============ Request Complete ============");
+    
     return new Response(
       JSON.stringify({ 
         status: "sent", 
@@ -188,9 +232,10 @@ const handler = async (req: Request): Promise<Response> => {
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Internal server error";
+    console.error("send-sms-alert: ============ Request Failed ============");
     console.error("send-sms-alert: Unexpected error:", error);
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: errorMessage, status: "failed" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
