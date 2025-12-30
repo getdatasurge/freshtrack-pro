@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
+import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
+import { usePermissions } from "@/hooks/useUserRole";
+import { softDeleteArea, getActiveChildrenCount } from "@/hooks/useSoftDelete";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,7 +33,8 @@ import {
   Thermometer,
   Pencil,
   Wifi,
-  WifiOff
+  WifiOff,
+  Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
