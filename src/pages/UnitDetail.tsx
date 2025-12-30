@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
@@ -9,6 +9,9 @@ import UnitSettingsSection from "@/components/unit/UnitSettingsSection";
 import UnitAlertsBanner from "@/components/unit/UnitAlertsBanner";
 import BatteryHealthCard from "@/components/unit/BatteryHealthCard";
 import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
+import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
+import { usePermissions } from "@/hooks/useUserRole";
+import { softDeleteUnit, getActiveChildrenCount } from "@/hooks/useSoftDelete";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +34,7 @@ import {
   FileText,
   Activity,
   ClipboardEdit,
+  Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -101,7 +105,9 @@ import { getAlertClearCondition } from "@/lib/alertConfig";
 
 const UnitDetail = () => {
   const { unitId } = useParams();
+  const navigate = useNavigate();
   const { toast } = useToast();
+  const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
   const [isLoading, setIsLoading] = useState(true);
   const [unit, setUnit] = useState<UnitData | null>(null);
   const [siblingUnits, setSiblingUnits] = useState<BreadcrumbSibling[]>([]);
@@ -114,11 +120,20 @@ const UnitDetail = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [device, setDevice] = useState<DeviceInfo | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [lastKnownGood, setLastKnownGood] = useState<{
     temp: number | null;
-    at: string | null;
+    at: null | string;
     source: "sensor" | "manual" | null;
   }>({ temp: null, at: null, source: null });
+
+  const handleDeleteUnit = async () => {
+    if (!session?.user?.id || !unitId) return;
+    const result = await softDeleteUnit(unitId, session.user.id, true);
+    if (result.success && unit) {
+      navigate(`/sites/${unit.area.site.id}/areas/${unit.area.id}`);
+    }
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));

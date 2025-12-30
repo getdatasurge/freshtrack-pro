@@ -21,6 +21,9 @@ export interface RolePermissions {
   canEditComplianceSettings: boolean;
   canExportReports: boolean;
   canViewAuditLogs: boolean;
+  canDeleteEntities: boolean;
+  canRestoreEntities: boolean;
+  canPermanentlyDelete: boolean;
 }
 
 // Define permissions for each role
@@ -36,6 +39,9 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canEditComplianceSettings: true,
     canExportReports: true,
     canViewAuditLogs: true,
+    canDeleteEntities: true,
+    canRestoreEntities: true,
+    canPermanentlyDelete: true,
   },
   admin: {
     canLogTemps: true,
@@ -48,6 +54,9 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canEditComplianceSettings: true,
     canExportReports: true,
     canViewAuditLogs: true,
+    canDeleteEntities: true,
+    canRestoreEntities: true,
+    canPermanentlyDelete: true,
   },
   manager: {
     canLogTemps: true,
@@ -60,6 +69,9 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canEditComplianceSettings: false,
     canExportReports: true,
     canViewAuditLogs: false,
+    canDeleteEntities: false,
+    canRestoreEntities: false,
+    canPermanentlyDelete: false,
   },
   staff: {
     canLogTemps: true,
@@ -72,6 +84,9 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canEditComplianceSettings: false,
     canExportReports: false,
     canViewAuditLogs: false,
+    canDeleteEntities: false,
+    canRestoreEntities: false,
+    canPermanentlyDelete: false,
   },
   viewer: {
     canLogTemps: false,
@@ -84,6 +99,9 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canEditComplianceSettings: false,
     canExportReports: false,
     canViewAuditLogs: false,
+    canDeleteEntities: false,
+    canRestoreEntities: false,
+    canPermanentlyDelete: false,
   },
   inspector: {
     canLogTemps: false,
@@ -96,6 +114,9 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canEditComplianceSettings: false,
     canExportReports: true,
     canViewAuditLogs: false,
+    canDeleteEntities: false,
+    canRestoreEntities: false,
+    canPermanentlyDelete: false,
   },
 };
 
@@ -163,6 +184,9 @@ export function getPermissions(role: AppRole | null): RolePermissions {
       canEditComplianceSettings: false,
       canExportReports: false,
       canViewAuditLogs: false,
+      canDeleteEntities: false,
+      canRestoreEntities: false,
+      canPermanentlyDelete: false,
     };
   }
   return rolePermissions[role];

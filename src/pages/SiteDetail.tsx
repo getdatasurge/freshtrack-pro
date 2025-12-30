@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import { SiteComplianceSettings } from "@/components/site/SiteComplianceSettings";
 import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
 import { AlertRulesHistoryModal } from "@/components/settings/AlertRulesHistoryModal";
+import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { useSiteAlertRules, useOrgAlertRules } from "@/hooks/useAlertRules";
+import { usePermissions } from "@/hooks/useUserRole";
+import { softDeleteSite, getActiveChildrenCount } from "@/hooks/useSoftDelete";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,6 +35,7 @@ import {
   FileText,
   History,
   LayoutGrid,
+  Trash2,
 } from "lucide-react";
 import {
   DropdownMenu,

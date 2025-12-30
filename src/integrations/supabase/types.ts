@@ -311,8 +311,11 @@ export type Database = {
       areas: {
         Row: {
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           description: string | null
           id: string
+          is_active: boolean
           name: string
           site_id: string
           sort_order: number
@@ -320,8 +323,11 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           id?: string
+          is_active?: boolean
           name: string
           site_id: string
           sort_order?: number
@@ -329,8 +335,11 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           id?: string
+          is_active?: boolean
           name?: string
           site_id?: string
           sort_order?: number
@@ -454,6 +463,8 @@ export type Database = {
           battery_voltage: number | null
           calibration_offset: number | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           firmware_version: string | null
           hub_id: string | null
           id: string
@@ -473,6 +484,8 @@ export type Database = {
           battery_voltage?: number | null
           calibration_offset?: number | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           firmware_version?: string | null
           hub_id?: string | null
           id?: string
@@ -492,6 +505,8 @@ export type Database = {
           battery_voltage?: number | null
           calibration_offset?: number | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           firmware_version?: string | null
           hub_id?: string | null
           id?: string
@@ -1614,6 +1629,8 @@ export type Database = {
           corrective_action_required: boolean | null
           country: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           id: string
           is_active: boolean
           latitude: number | null
@@ -1633,6 +1650,8 @@ export type Database = {
           corrective_action_required?: boolean | null
           country?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           id?: string
           is_active?: boolean
           latitude?: number | null
@@ -1652,6 +1671,8 @@ export type Database = {
           corrective_action_required?: boolean | null
           country?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           id?: string
           is_active?: boolean
           latitude?: number | null
@@ -1836,6 +1857,8 @@ export type Database = {
           confirm_time_door_open: number
           consecutive_checkins: number | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
           door_last_changed_at: string | null
           door_open_grace_minutes: number | null
           door_sensor_enabled: boolean | null
@@ -1870,6 +1893,8 @@ export type Database = {
           confirm_time_door_open?: number
           consecutive_checkins?: number | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           door_last_changed_at?: string | null
           door_open_grace_minutes?: number | null
           door_sensor_enabled?: boolean | null
@@ -1904,6 +1929,8 @@ export type Database = {
           confirm_time_door_open?: number
           consecutive_checkins?: number | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           door_last_changed_at?: string | null
           door_open_grace_minutes?: number | null
           door_sensor_enabled?: boolean | null
