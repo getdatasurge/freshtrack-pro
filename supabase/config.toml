@@ -39,3 +39,10 @@ verify_jwt = false
 # SMS alerts - internal function, uses service role key
 [functions.send-sms-alert]
 verify_jwt = false
+
+# TTN provisioning functions - internal, use service role key
+[functions.ttn-manage-application]
+verify_jwt = false
+
+[functions.ttn-provision-device]
+verify_jwt = false

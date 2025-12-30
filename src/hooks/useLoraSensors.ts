@@ -108,12 +108,37 @@ export function useCreateLoraSensor() {
       if (error) throw error;
       return data as LoraSensor;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ["lora-sensors", data.organization_id] });
       if (data.unit_id) {
         queryClient.invalidateQueries({ queryKey: ["lora-sensors-by-unit", data.unit_id] });
       }
       toast.success("LoRa sensor created successfully");
+
+      // Trigger TTN provisioning (fire-and-forget)
+      try {
+        console.log("[useLoraSensors] Triggering TTN provisioning for sensor:", data.id);
+        const { error: provisionError } = await supabase.functions.invoke("ttn-provision-device", {
+          body: {
+            action: "create",
+            sensor_id: data.id,
+            organization_id: data.organization_id,
+          },
+        });
+        
+        if (provisionError) {
+          console.warn("[useLoraSensors] TTN provisioning warning:", provisionError);
+          toast.info("Sensor registered. TTN provisioning will retry automatically.");
+        } else {
+          console.log("[useLoraSensors] TTN provisioning initiated");
+          // Invalidate to refresh status
+          setTimeout(() => {
+            queryClient.invalidateQueries({ queryKey: ["lora-sensors", data.organization_id] });
+          }, 2000);
+        }
+      } catch (error) {
+        console.warn("[useLoraSensors] TTN provisioning queued for retry:", error);
+      }
     },
     onError: (error: Error) => {
       toast.error(`Failed to create LoRa sensor: ${error.message}`);
