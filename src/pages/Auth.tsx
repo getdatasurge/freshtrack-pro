@@ -27,6 +27,10 @@ const Auth = () => {
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [resetForm, setResetForm] = useState({ newPassword: "", confirmPassword: "" });
 
+  // Sign up confirmation state
+  const [signUpComplete, setSignUpComplete] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
+
   // Password visibility states
   const [showSignInPassword, setShowSignInPassword] = useState(false);
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
@@ -273,9 +277,11 @@ const Auth = () => {
         });
       }
     } else {
+      setPendingEmail(signUpForm.email);
+      setSignUpComplete(true);
       toast({
         title: "Account created!",
-        description: "Welcome to FrostGuard. Let's set up your organization.",
+        description: "Please check your email to verify your account.",
       });
     }
     setIsLoading(false);
@@ -283,6 +289,71 @@ const Auth = () => {
 
   const signUpStrength = getPasswordStrength(signUpForm.password);
   const resetStrength = getPasswordStrength(resetForm.newPassword);
+
+  const handleResendConfirmation = async () => {
+    setIsLoading(true);
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: pendingEmail,
+      options: {
+        emailRedirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+    if (error) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Email sent", description: "Check your inbox for the confirmation link." });
+    }
+    setIsLoading(false);
+  };
+
+  // Show Email Confirmation UI after signup
+  if (signUpComplete) {
+    return (
+      <div className="min-h-screen bg-gradient-frost flex flex-col items-center justify-center p-4">
+        <Link to="/" className="flex items-center gap-2 mb-8">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-primary flex items-center justify-center">
+            <Thermometer className="w-6 h-6 text-white" />
+          </div>
+          <span className="text-2xl font-bold text-foreground">FrostGuard</span>
+        </Link>
+
+        <Card className="w-full max-w-md shadow-lg text-center">
+          <CardHeader>
+            <div className="mx-auto w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mb-4">
+              <Mail className="w-8 h-8 text-accent" />
+            </div>
+            <CardTitle className="text-2xl">Check your email</CardTitle>
+            <CardDescription>
+              We've sent a confirmation link to<br />
+              <strong className="text-foreground">{pendingEmail}</strong>
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Click the link in the email to verify your account and get started.
+            </p>
+            <Button 
+              variant="outline" 
+              onClick={handleResendConfirmation}
+              disabled={isLoading}
+              className="w-full"
+            >
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Resend confirmation email
+            </Button>
+            <button
+              type="button"
+              onClick={() => { setSignUpComplete(false); setActiveTab("signin"); }}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Back to sign in
+            </button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   // Show Reset Password UI
   if (showResetPassword) {
