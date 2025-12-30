@@ -69,8 +69,22 @@ serve(async (req) => {
     if (ensureAppResponse.error) {
       console.error("Failed to ensure TTN application:", ensureAppResponse.error);
       return new Response(
-        JSON.stringify({ error: "Failed to ensure TTN application" }),
+        JSON.stringify({ error: "Failed to ensure TTN application", details: ensureAppResponse.error.message }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check for application-level errors in the response data
+    if (ensureAppResponse.data?.error) {
+      console.error("TTN application error:", ensureAppResponse.data);
+      return new Response(
+        JSON.stringify({ 
+          error: ensureAppResponse.data.error,
+          hint: ensureAppResponse.data.hint,
+          ttn_app_id: ensureAppResponse.data.ttn_app_id,
+          details: ensureAppResponse.data.details,
+        }),
+        { status: ensureAppResponse.data.hint ? 403 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
