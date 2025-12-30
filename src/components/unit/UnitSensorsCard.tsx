@@ -1,28 +1,22 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { 
   Radio, 
-  MoreHorizontal, 
   Plus, 
-  Unlink,
   Loader2,
-  Battery,
-  Signal,
-  CloudUpload,
+  Thermometer,
+  DoorOpen,
+  Star,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useLoraSensorsByUnit, useLinkSensorToUnit, useProvisionLoraSensor } from "@/hooks/useLoraSensors";
+import { useSetPrimarySensor } from "@/hooks/useSetPrimarySensor";
 import { LoraSensor, LoraSensorStatus } from "@/types/ttn";
 import { useState } from "react";
 import { AssignSensorToUnitDialog } from "./AssignSensorToUnitDialog";
+import { SensorDetailsPopover } from "./SensorDetailsPopover";
+import { cn } from "@/lib/utils";
 
 interface UnitSensorsCardProps {
   unitId: string;
@@ -30,10 +24,6 @@ interface UnitSensorsCardProps {
   siteId: string;
   canEdit?: boolean;
 }
-
-const formatEUI = (eui: string) => {
-  return eui.match(/.{1,2}/g)?.join(":") || eui;
-};
 
 const getStatusBadge = (status: LoraSensorStatus) => {
   switch (status) {
@@ -52,36 +42,27 @@ const getStatusBadge = (status: LoraSensorStatus) => {
   }
 };
 
-const getSensorTypeLabel = (type: string): string => {
+const getSensorIcon = (type: string) => {
   switch (type) {
-    case "temperature": return "Temperature";
-    case "temperature_humidity": return "Temp + Humidity";
-    case "door": return "Door";
-    case "combo": return "Combo (Temp + Door)";
-    default: return type;
+    case "door":
+      return <DoorOpen className="w-4 h-4 text-blue-500" />;
+    case "temperature":
+    case "temperature_humidity":
+      return <Thermometer className="w-4 h-4 text-orange-500" />;
+    case "combo":
+      return <Radio className="w-4 h-4 text-purple-500" />;
+    default:
+      return <Radio className="w-4 h-4 text-muted-foreground" />;
   }
 };
 
-const getStatusMessage = (sensor: LoraSensor): string => {
-  switch (sensor.status) {
-    case "pending":
-      return "Registered - Awaiting network join";
-    case "joining":
-      return "Joining network...";
-    case "active":
-      if (sensor.last_seen_at) {
-        return `Last seen ${formatDistanceToNow(new Date(sensor.last_seen_at), { addSuffix: true })}`;
-      }
-      return "Active";
-    case "offline":
-      if (sensor.last_seen_at) {
-        return `Last seen ${formatDistanceToNow(new Date(sensor.last_seen_at), { addSuffix: true })}`;
-      }
-      return "Offline - No recent data";
-    case "fault":
-      return "Sensor fault detected";
-    default:
-      return "";
+const getSensorTypeLabel = (type: string): string => {
+  switch (type) {
+    case "temperature": return "Temp";
+    case "temperature_humidity": return "Temp+Humidity";
+    case "door": return "Door";
+    case "combo": return "Combo";
+    default: return type;
   }
 };
 
@@ -94,6 +75,7 @@ export function UnitSensorsCard({
   const { data: sensors, isLoading } = useLoraSensorsByUnit(unitId);
   const unlinkSensor = useLinkSensorToUnit();
   const provisionSensor = useProvisionLoraSensor();
+  const setPrimarySensor = useSetPrimarySensor();
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
 
   const handleUnlink = (sensorId: string) => {
@@ -107,6 +89,17 @@ export function UnitSensorsCard({
     });
   };
 
+  const handleSetPrimary = (sensor: LoraSensor) => {
+    setPrimarySensor.mutate({
+      sensorId: sensor.id,
+      unitId: unitId,
+      sensorType: sensor.sensor_type,
+    });
+  };
+
+  // Check if a sensor is a door sensor (door or combo)
+  const isDoorSensor = (type: string) => type === 'door' || type === 'combo';
+
   if (isLoading) {
     return (
       <Card>
@@ -116,6 +109,10 @@ export function UnitSensorsCard({
       </Card>
     );
   }
+
+  // Separate door sensors from temperature sensors for display
+  const doorSensors = sensors?.filter(s => isDoorSensor(s.sensor_type)) || [];
+  const tempSensors = sensors?.filter(s => !isDoorSensor(s.sensor_type) || s.sensor_type === 'combo') || [];
 
   return (
     <>
@@ -143,87 +140,78 @@ export function UnitSensorsCard({
         </CardHeader>
         <CardContent>
           {sensors && sensors.length > 0 ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {sensors.map((sensor) => {
                 const statusBadge = getStatusBadge(sensor.status);
-                const statusMessage = getStatusMessage(sensor);
+                const isDoor = isDoorSensor(sensor.sensor_type);
+                const showDoorState = isDoor && sensor.status === 'active';
 
                 return (
-                  <div
+                  <SensorDetailsPopover
                     key={sensor.id}
-                    className="flex items-start justify-between p-3 rounded-lg border border-border bg-card"
+                    sensor={sensor}
+                    canEdit={canEdit}
+                    onSetPrimary={() => handleSetPrimary(sensor)}
+                    onUnlink={() => handleUnlink(sensor.id)}
+                    onProvision={() => handleProvision(sensor)}
+                    isProvisioning={provisionSensor.isProvisioning(sensor.id)}
+                    isSettingPrimary={setPrimarySensor.isPending}
                   >
-                    <div className="space-y-1 flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-foreground truncate">
-                          {sensor.name}
-                        </span>
+                    <div
+                      className={cn(
+                        "flex items-center justify-between p-3 rounded-lg border border-border bg-card cursor-pointer hover:bg-muted/50 transition-colors",
+                        sensor.is_primary && "border-accent/50"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Sensor Type Icon */}
+                        <div className="flex-shrink-0">
+                          {getSensorIcon(sensor.sensor_type)}
+                        </div>
+
+                        {/* Sensor Info */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-foreground text-sm truncate">
+                              {sensor.name}
+                            </span>
+                            {sensor.is_primary && (
+                              <Star className="w-3 h-3 text-accent fill-accent flex-shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {getSensorTypeLabel(sensor.sensor_type)}
+                            {sensor.last_seen_at && sensor.status === 'active' && (
+                              <> · {formatDistanceToNow(new Date(sensor.last_seen_at), { addSuffix: true })}</>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right Side: Status & Door State */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {/* Door State Badge - Always visible for door sensors */}
+                        {showDoorState && (
+                          <Badge 
+                            className={cn(
+                              "border-0 font-medium",
+                              // We don't have real-time door state from sensor yet, 
+                              // but we can show based on last reading
+                              "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            <DoorOpen className="w-3 h-3 mr-1" />
+                            Door
+                          </Badge>
+                        )}
+
+                        {/* Status Badge */}
                         <Badge className={`${statusBadge.className} border-0 text-xs`}>
                           {statusBadge.label}
                         </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          {getSensorTypeLabel(sensor.sensor_type)}
-                        </Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground font-mono">
-                        EUI: {formatEUI(sensor.dev_eui)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {statusMessage}
-                      </p>
-                      {/* Show battery/signal for active sensors */}
-                      {sensor.status === "active" && (sensor.battery_level || sensor.signal_strength) && (
-                        <div className="flex items-center gap-3 mt-1">
-                          {sensor.battery_level !== null && (
-                            <span className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Battery className="w-3 h-3" />
-                              {sensor.battery_level}%
-                            </span>
-                          )}
-                          {sensor.signal_strength !== null && (
-                            <span className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Signal className="w-3 h-3" />
-                              {sensor.signal_strength} dBm
-                            </span>
-                          )}
-                        </div>
-                      )}
                     </div>
-                    {canEdit && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {sensor.status === "pending" && (
-                            <>
-                              <DropdownMenuItem
-                                onClick={() => handleProvision(sensor)}
-                                disabled={provisionSensor.isProvisioning(sensor.id)}
-                              >
-                                {provisionSensor.isProvisioning(sensor.id) ? (
-                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                ) : (
-                                  <CloudUpload className="w-4 h-4 mr-2 text-blue-600" />
-                                )}
-                                Provision to TTN
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                            </>
-                          )}
-                          <DropdownMenuItem
-                            onClick={() => handleUnlink(sensor.id)}
-                            className="text-warning"
-                          >
-                            <Unlink className="w-4 h-4 mr-2" />
-                            Unlink from Unit
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                  </div>
+                  </SensorDetailsPopover>
                 );
               })}
             </div>

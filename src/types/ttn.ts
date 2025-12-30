@@ -44,6 +44,7 @@ export interface LoraSensor {
   signal_strength: number | null;
   last_seen_at: string | null;
   last_join_at: string | null;
+  is_primary: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
