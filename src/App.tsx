@@ -20,6 +20,7 @@ import Inspector from "./pages/Inspector";
 import PilotSetup from "./pages/PilotSetup";
 import EventHistory from "./pages/EventHistory";
 import RecentlyDeleted from "./pages/RecentlyDeleted";
+import TTNCleanup from "./pages/TTNCleanup";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ const App = () => (
           <Route path="/pilot-setup" element={<PilotSetup />} />
           <Route path="/events" element={<EventHistory />} />
           <Route path="/admin/recently-deleted" element={<RecentlyDeleted />} />
+          <Route path="/admin/ttn-cleanup" element={<TTNCleanup />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
