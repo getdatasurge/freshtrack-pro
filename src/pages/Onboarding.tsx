@@ -16,7 +16,8 @@ import {
   CheckCircle2,
   ArrowRight,
   ArrowLeft,
-  Radio
+  Radio,
+  Plus
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -836,21 +837,22 @@ const Onboarding = () => {
                     Your organization, site, area, {createdIds.gatewayId ? "gateway, " : ""}and first unit have been created. 
                     You can now start monitoring temperatures.
                   </p>
-                  <div className="space-y-3">
+                  <div className="flex flex-col items-center gap-3">
                     <Button
-                      onClick={() => navigate("/dashboard")}
+                      onClick={() => navigate("/settings?tab=sensors&action=add")}
                       className="w-full max-w-xs bg-accent hover:bg-accent/90"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Pair Your First Sensor
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => navigate("/dashboard")}
+                      className="w-full max-w-xs"
                     >
                       Go to Dashboard
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
-                    <button
-                      onClick={() => navigate("/settings?tab=sensors&action=add")}
-                      className="text-sm text-muted-foreground hover:text-accent transition-colors inline-flex items-center gap-1"
-                    >
-                      Next: Pair your first sensor device
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
                   </div>
                 </CardContent>
               </Card>
