@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLoraSensors, useDeleteLoraSensor, useProvisionLoraSensor } from "@/hooks/useLoraSensors";
 import { LoraSensor, LoraSensorStatus, LoraSensorType } from "@/types/ttn";
 import {
@@ -42,14 +42,21 @@ interface SensorManagerProps {
   sites: Site[];
   units: Unit[];
   canEdit: boolean;
+  autoOpenAdd?: boolean;
 }
 
-export function SensorManager({ organizationId, sites, units, canEdit }: SensorManagerProps) {
+export function SensorManager({ organizationId, sites, units, canEdit, autoOpenAdd }: SensorManagerProps) {
   const { data: sensors, isLoading } = useLoraSensors(organizationId);
   const deleteSensor = useDeleteLoraSensor();
   const provisionSensor = useProvisionLoraSensor();
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (autoOpenAdd) {
+      setAddDialogOpen(true);
+    }
+  }, [autoOpenAdd]);
   const [editSensor, setEditSensor] = useState<LoraSensor | null>(null);
   const [deleteSensor_, setDeleteSensor] = useState<LoraSensor | null>(null);
 

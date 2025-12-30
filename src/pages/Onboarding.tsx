@@ -845,7 +845,7 @@ const Onboarding = () => {
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                     <button
-                      onClick={() => navigate("/settings")}
+                      onClick={() => navigate("/settings?tab=sensors&action=add")}
                       className="text-sm text-muted-foreground hover:text-accent transition-colors inline-flex items-center gap-1"
                     >
                       Next: Pair your first sensor device

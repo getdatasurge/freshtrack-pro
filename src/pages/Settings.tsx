@@ -151,6 +151,7 @@ const Settings = () => {
 
   const [searchParams] = useSearchParams();
   const defaultTab = searchParams.get("tab") || "organization";
+  const action = searchParams.get("action");
 
   useEffect(() => {
     // Check for success/canceled params from Stripe
@@ -991,6 +992,7 @@ const Settings = () => {
               sites={sites}
               units={units}
               canEdit={canManageUsers}
+              autoOpenAdd={action === "add" && defaultTab === "sensors"}
             />
           </TabsContent>
         )}
