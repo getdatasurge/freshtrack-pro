@@ -374,6 +374,148 @@ async function getRecipients(
   return recipients;
 }
 
+interface SmsRecipient {
+  user_id: string;
+  phone: string;
+  name: string | null;
+}
+
+// Get recipients with valid phone numbers and SMS notifications enabled
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getSmsRecipients(
+  supabaseAdmin: any,
+  organizationId: string,
+  policy: NotificationPolicy
+): Promise<SmsRecipient[]> {
+  const recipients: SmsRecipient[] = [];
+  const rolesToNotify = policy.notify_roles || ["owner", "admin"];
+  
+  const { data: roles } = await supabaseAdmin
+    .from("user_roles")
+    .select("user_id, role")
+    .eq("organization_id", organizationId)
+    .in("role", rolesToNotify);
+
+  if (roles && roles.length > 0) {
+    const userIds = (roles as { user_id: string; role: string }[]).map(r => r.user_id);
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id, phone, full_name, notification_preferences")
+      .in("user_id", userIds);
+
+    if (profiles) {
+      for (const profile of profiles as { user_id: string; phone: string | null; full_name: string | null; notification_preferences: { sms?: boolean } | null }[]) {
+        // Check if user has phone and SMS enabled
+        const smsEnabled = profile.notification_preferences?.sms !== false; // Default to true if not explicitly disabled
+        const hasPhone = profile.phone && /^\+[1-9]\d{1,14}$/.test(profile.phone);
+        
+        if (hasPhone && smsEnabled) {
+          recipients.push({
+            user_id: profile.user_id,
+            phone: profile.phone!,
+            name: profile.full_name,
+          });
+        }
+      }
+    }
+  }
+
+  return recipients;
+}
+
+// Build SMS message from alert and unit info
+function buildSmsMessage(alert: Alert, unit: UnitInfo): string {
+  const unitName = unit.name;
+  const timestamp = new Date(alert.triggered_at).toLocaleString("en-US", {
+    timeZone: unit.area.site.timezone,
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
+  switch (alert.alert_type) {
+    case "alarm_active":
+    case "temp_excursion": {
+      const temp = alert.temp_reading !== null ? `${alert.temp_reading}°F` : "unknown";
+      const limit = alert.temp_limit !== null ? `${alert.temp_limit}°F` : "limit";
+      const metadata = alert.metadata || {};
+      const range = metadata.low_limit && metadata.high_limit 
+        ? `(${metadata.low_limit}°F-${metadata.high_limit}°F)` 
+        : `(limit: ${limit})`;
+      return `🚨 FreshTrack Alert: ${unitName} temp is ${temp} - outside safe range ${range}. Check immediately.`;
+    }
+    
+    case "monitoring_interrupted":
+      return `⚠️ FreshTrack Alert: ${unitName} sensor has gone offline as of ${timestamp}. Please verify equipment status.`;
+    
+    case "low_battery": {
+      const battery = alert.metadata?.battery_level || "low";
+      return `🔔 FreshTrack Notice: ${unitName} sensor battery low (${battery}%). Replace soon.`;
+    }
+    
+    case "door_open": {
+      const duration = alert.metadata?.duration_minutes || "extended";
+      return `⚠️ FreshTrack Alert: ${unitName} door open for ${duration} min. Check equipment.`;
+    }
+    
+    case "missed_manual_entry":
+      return `📝 FreshTrack Notice: ${unitName} is due for a manual temperature log. Please record a reading.`;
+    
+    case "sensor_fault":
+      return `⚠️ FreshTrack Alert: ${unitName} sensor is reporting a fault. Check device status.`;
+    
+    case "calibration_due":
+      return `🔔 FreshTrack Notice: ${unitName} sensor is due for calibration.`;
+    
+    case "suspected_cooling_failure":
+      return `🚨 FreshTrack Alert: ${unitName} may have a cooling failure. Temperature rising consistently. Check immediately.`;
+    
+    default:
+      return `🔔 FreshTrack Alert: ${unitName} - ${alertTypeLabels[alert.alert_type] || alert.alert_type}. Please check.`;
+  }
+}
+
+interface SendSmsParams {
+  to: string;
+  message: string;
+  alertType: string;
+  userId?: string;
+  organizationId: string;
+  alertId?: string;
+}
+
+interface SendSmsResponse {
+  status: "sent" | "failed" | "rate_limited";
+  twilio_sid?: string;
+  error?: string;
+}
+
+// Send SMS via the send-sms-alert edge function
+async function sendSmsAlert(params: SendSmsParams): Promise<SendSmsResponse> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/send-sms-alert`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify(params),
+    });
+
+    const data = await response.json();
+    return {
+      status: data.status || (response.ok ? "sent" : "failed"),
+      twilio_sid: data.twilio_sid,
+      error: data.error,
+    };
+  } catch (error) {
+    console.error("sendSmsAlert error:", error);
+    return { status: "failed", error: String(error) };
+  }
+}
+
 /**
  * Process Escalations - Internal Scheduled Function
  * 
@@ -613,6 +755,54 @@ const handler = async (req: Request): Promise<Response> => {
             emailsFailed++;
           }
         } else if (channel === "SMS") {
+          // Get recipients with phone numbers and SMS enabled
+          const smsRecipients = await getSmsRecipients(supabaseAdmin, orgId, policy);
+          
+          if (smsRecipients.length === 0) {
+            console.log(`No SMS recipients for alert ${alert.id}`);
+            await logNotificationEvent(supabaseAdmin, {
+              organization_id: orgId,
+              site_id: siteId,
+              unit_id: alert.unit_id,
+              alert_id: alert.id,
+              channel: "SMS",
+              event_type: "ALERT_ACTIVE",
+              to_recipients: [],
+              status: "SKIPPED",
+              reason: "No SMS recipients configured",
+            });
+            continue;
+          }
+
+          // Build SMS message from template
+          const smsMessage = buildSmsMessage(alert, unitInfo);
+          let smsSent = 0;
+          let smsFailed = 0;
+
+          for (const recipient of smsRecipients) {
+            try {
+              const smsResponse = await sendSmsAlert({
+                to: recipient.phone,
+                message: smsMessage,
+                alertType: alert.alert_type,
+                userId: recipient.user_id,
+                organizationId: orgId,
+                alertId: alert.id,
+              });
+
+              if (smsResponse.status === "sent") {
+                smsSent++;
+              } else if (smsResponse.status === "rate_limited") {
+                console.log(`SMS rate limited for user ${recipient.user_id}`);
+              } else {
+                smsFailed++;
+              }
+            } catch (err) {
+              console.error(`SMS exception for recipient ${recipient.phone}:`, err);
+              smsFailed++;
+            }
+          }
+
           await logNotificationEvent(supabaseAdmin, {
             organization_id: orgId,
             site_id: siteId,
@@ -620,9 +810,9 @@ const handler = async (req: Request): Promise<Response> => {
             alert_id: alert.id,
             channel: "SMS",
             event_type: "ALERT_ACTIVE",
-            to_recipients: [],
-            status: "SKIPPED",
-            reason: "SMS not yet implemented",
+            to_recipients: smsRecipients.map((r: SmsRecipient) => r.phone),
+            status: smsSent > 0 ? "SENT" : (smsFailed > 0 ? "FAILED" : "SKIPPED"),
+            reason: smsSent > 0 ? `Sent to ${smsSent} recipients` : (smsFailed > 0 ? `Failed for ${smsFailed} recipients` : "All rate limited"),
           });
         }
       }

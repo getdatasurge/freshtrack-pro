@@ -35,3 +35,7 @@ verify_jwt = false
 # TTN webhook - no JWT, uses device lookup for auth
 [functions.ttn-webhook]
 verify_jwt = false
+
+# SMS alerts - internal function, uses service role key
+[functions.send-sms-alert]
+verify_jwt = false
