@@ -99,9 +99,18 @@ export function useCreateLoraSensor() {
 
   return useMutation({
     mutationFn: async (sensor: LoraSensorInsert): Promise<LoraSensor> => {
+      // Get current user for created_by field
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+
+      const sensorWithCreator = {
+        ...sensor,
+        created_by: userId || null,
+      };
+
       const { data, error } = await supabase
         .from("lora_sensors")
-        .insert(sensor)
+        .insert(sensorWithCreator)
         .select()
         .single();
 
@@ -115,30 +124,9 @@ export function useCreateLoraSensor() {
       }
       toast.success("LoRa sensor created successfully");
 
-      // Trigger TTN provisioning (fire-and-forget)
-      try {
-        console.log("[useLoraSensors] Triggering TTN provisioning for sensor:", data.id);
-        const { error: provisionError } = await supabase.functions.invoke("ttn-provision-device", {
-          body: {
-            action: "create",
-            sensor_id: data.id,
-            organization_id: data.organization_id,
-          },
-        });
-        
-        if (provisionError) {
-          console.warn("[useLoraSensors] TTN provisioning warning:", provisionError);
-          toast.info("Sensor registered. TTN provisioning will retry automatically.");
-        } else {
-          console.log("[useLoraSensors] TTN provisioning initiated");
-          // Invalidate to refresh status
-          setTimeout(() => {
-            queryClient.invalidateQueries({ queryKey: ["lora-sensors", data.organization_id] });
-          }, 2000);
-        }
-      } catch (error) {
-        console.warn("[useLoraSensors] TTN provisioning queued for retry:", error);
-      }
+      // Trigger TTN provisioning (fire-and-forget) - currently disabled until Phase 4
+      // Sensor will remain in 'pending' status until TTN integration is implemented
+      console.log("[useLoraSensors] Sensor registered with status 'pending'. TTN provisioning not yet implemented.");
     },
     onError: (error: Error) => {
       toast.error(`Failed to create LoRa sensor: ${error.message}`);

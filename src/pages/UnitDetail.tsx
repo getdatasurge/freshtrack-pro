@@ -8,10 +8,12 @@ import LastKnownGoodCard from "@/components/unit/LastKnownGoodCard";
 import UnitSettingsSection from "@/components/unit/UnitSettingsSection";
 import UnitAlertsBanner from "@/components/unit/UnitAlertsBanner";
 import BatteryHealthCard from "@/components/unit/BatteryHealthCard";
+import UnitSensorsCard from "@/components/unit/UnitSensorsCard";
 import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteUnit, getActiveChildrenCount } from "@/hooks/useSoftDelete";
+import { useLoraSensorsByUnit } from "@/hooks/useLoraSensors";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -66,7 +68,7 @@ interface UnitData {
   last_reading_at: string | null;
   last_manual_log_at: string | null;
   manual_log_cadence: number;
-  area: { id: string; name: string; site: { id: string; name: string } };
+  area: { id: string; name: string; site: { id: string; name: string; organization_id: string } };
 }
 
 interface SensorReading {
@@ -127,6 +129,11 @@ const UnitDetail = () => {
     source: "sensor" | "manual" | null;
   }>({ temp: null, at: null, source: null });
 
+  // Fetch LoRa sensors linked to this unit
+  const { data: loraSensors } = useLoraSensorsByUnit(unitId || null);
+  // Use the first LoRa sensor for DeviceReadinessCard display
+  const primaryLoraSensor = loraSensors?.[0] || null;
+
   const handleDeleteUnit = async () => {
     if (!session?.user?.id || !unitId) return;
     const result = await softDeleteUnit(unitId, session.user.id, true);
@@ -165,7 +172,7 @@ const UnitDetail = () => {
           id, name, unit_type, status, temp_limit_high, temp_limit_low,
           last_temp_reading, last_reading_at, last_manual_log_at, manual_log_cadence,
           notes, door_state, door_last_changed_at, door_sensor_enabled, door_open_grace_minutes,
-          area:areas!inner(id, name, site:sites!inner(id, name))
+          area:areas!inner(id, name, site:sites!inner(id, name, organization_id))
         `)
         .eq("id", unitId)
         .maybeSingle();
@@ -182,7 +189,11 @@ const UnitDetail = () => {
         area: {
           id: unitData.area.id,
           name: unitData.area.name,
-          site: { id: unitData.area.site.id, name: unitData.area.site.name },
+          site: { 
+            id: unitData.area.site.id, 
+            name: unitData.area.site.name,
+            organization_id: unitData.area.site.organization_id,
+          },
         },
       });
 
@@ -673,7 +684,17 @@ const UnitDetail = () => {
           deviceSerial={device?.serial_number}
           doorState={(unit as any).door_state}
           doorLastChangedAt={(unit as any).door_last_changed_at}
+          loraSensor={primaryLoraSensor}
         />
+
+        {/* Connected LoRa Sensors */}
+        {unit.area.site.organization_id && (
+          <UnitSensorsCard
+            unitId={unit.id}
+            organizationId={(unit.area.site as any).organization_id}
+            siteId={unit.area.site.id}
+          />
+        )}
 
         {/* Battery Health */}
         {device?.id && (

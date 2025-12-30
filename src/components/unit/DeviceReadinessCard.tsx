@@ -10,13 +10,15 @@ import {
   XCircle,
   DoorOpen,
   DoorClosed,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Loader2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { 
   computeSensorInstallationStatus, 
   DeviceInfo 
 } from "@/hooks/useSensorInstallationStatus";
+import { LoraSensor } from "@/types/ttn";
 
 interface DeviceReadinessProps {
   unitStatus: string;
@@ -36,6 +38,8 @@ interface DeviceReadinessProps {
   missedCheckins?: number;
   lastCheckinAt?: string | null;
   offlineSeverity?: "none" | "warning" | "critical";
+  // LoRa sensor data (if available)
+  loraSensor?: LoraSensor | null;
 }
 
 const DeviceReadinessCard = ({
@@ -52,12 +56,44 @@ const DeviceReadinessCard = ({
   missedCheckins = 0,
   lastCheckinAt,
   offlineSeverity = "none",
+  loraSensor,
 }: DeviceReadinessProps) => {
-  // Use the unified sensor installation status
-  const installationStatus = computeSensorInstallationStatus(device || null, lastReadingAt);
+  // Determine if we have a LoRa sensor in pending/joining state
+  const isLoraPending = loraSensor?.status === "pending";
+  const isLoraJoining = loraSensor?.status === "joining";
+  const hasLoraData = loraSensor && (loraSensor.status === "active" || loraSensor.status === "offline");
+
+  // Use LoRa sensor data if available and active, otherwise fall back to device data
+  const effectiveBatteryLevel = hasLoraData ? loraSensor.battery_level : (batteryLevel ?? device?.battery_level);
+  const effectiveSignalStrength = hasLoraData ? loraSensor.signal_strength : signalStrength;
+  const effectiveLastSeen = hasLoraData ? loraSensor.last_seen_at : (lastHeartbeat || device?.last_seen_at);
+
+  // Compute installation status - override for pending LoRa sensors
+  const baseInstallationStatus = computeSensorInstallationStatus(device || null, lastReadingAt);
+  
+  // Override status for pending/joining LoRa sensors
+  const installationStatus = isLoraPending
+    ? {
+        status: "pending_registration" as const,
+        label: "Pending Registration",
+        description: "Sensor registered - awaiting network join. No alerts will trigger until active.",
+        color: "text-muted-foreground",
+        bgColor: "bg-muted",
+      }
+    : isLoraJoining
+    ? {
+        status: "joining_network" as const,
+        label: "Joining Network",
+        description: "Sensor is attempting to join the LoRaWAN network. This may take a few minutes.",
+        color: "text-warning",
+        bgColor: "bg-warning/10",
+      }
+    : baseInstallationStatus;
 
   const getStatusIcon = () => {
-    switch (installationStatus.status) {
+    if (isLoraPending) return Radio;
+    if (isLoraJoining) return Loader2;
+    switch (baseInstallationStatus.status) {
       case "not_paired":
         return LinkIcon;
       case "paired_never_seen":
@@ -122,13 +158,13 @@ const DeviceReadinessCard = ({
     };
   };
 
-  const batteryStatus = getBatteryStatus(batteryLevel ?? device?.battery_level);
-  const signalStatus = getSignalStatus(signalStrength);
+  const batteryStatus = getBatteryStatus(effectiveBatteryLevel);
+  const signalStatus = getSignalStatus(effectiveSignalStrength);
   const doorStatus = getDoorStatus(doorState, doorLastChangedAt);
   const DoorIcon = doorStatus.icon;
 
   const formatHeartbeat = (heartbeat: string | null | undefined, fallback: string | null) => {
-    const timestamp = heartbeat || device?.last_seen_at || fallback;
+    const timestamp = effectiveLastSeen || heartbeat || device?.last_seen_at || fallback;
     if (!timestamp) return "Never";
     try {
       return formatDistanceToNow(new Date(timestamp), { addSuffix: true });
@@ -159,7 +195,7 @@ const DeviceReadinessCard = ({
           {/* Sensor Installation Status */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <StatusIcon className="w-3 h-3" />
+              <StatusIcon className={`w-3 h-3 ${isLoraJoining ? "animate-spin" : ""}`} />
               Sensor Status
             </p>
             <Badge className={`${installationStatus.bgColor} ${installationStatus.color} border-0`}>
@@ -173,7 +209,7 @@ const DeviceReadinessCard = ({
               <Battery className="w-3 h-3" />
               Battery Level
             </p>
-            {batteryLevel !== null && batteryLevel !== undefined ? (
+            {effectiveBatteryLevel !== null && effectiveBatteryLevel !== undefined ? (
               <div>
                 <Badge className={`${batteryStatus.bg} ${batteryStatus.color} border-0`}>
                   {batteryStatus.label}
@@ -184,6 +220,8 @@ const DeviceReadinessCard = ({
                   </p>
                 )}
               </div>
+            ) : (isLoraPending || isLoraJoining) ? (
+              <span className="text-sm text-muted-foreground italic">Awaiting data</span>
             ) : (
               <span className="text-sm text-muted-foreground italic">No sensor paired</span>
             )}
@@ -195,10 +233,12 @@ const DeviceReadinessCard = ({
               <Signal className="w-3 h-3" />
               Signal Strength
             </p>
-            {signalStrength !== null && signalStrength !== undefined ? (
+            {effectiveSignalStrength !== null && effectiveSignalStrength !== undefined ? (
               <span className={`text-sm font-medium ${signalStatus.color}`}>
-                {signalStatus.label} ({signalStrength} dBm)
+                {signalStatus.label} ({effectiveSignalStrength} dBm)
               </span>
+            ) : (isLoraPending || isLoraJoining) ? (
+              <span className="text-sm text-muted-foreground italic">Awaiting data</span>
             ) : (
               <span className="text-sm text-muted-foreground italic">No sensor paired</span>
             )}
@@ -246,14 +286,20 @@ const DeviceReadinessCard = ({
         {/* Installation status message */}
         {installationStatus.status !== "online" && (
           <div className={`mt-4 p-3 rounded-lg border border-dashed ${
-            installationStatus.status === "not_paired" 
-              ? "bg-muted/50 border-border" 
-              : "bg-warning/5 border-warning/30"
+            isLoraPending || isLoraJoining
+              ? "bg-muted/50 border-accent/30"
+              : installationStatus.status === "not_paired" 
+                ? "bg-muted/50 border-border" 
+                : "bg-warning/5 border-warning/30"
           }`}>
             <div className="flex items-center gap-2 text-muted-foreground">
-              {installationStatus.status === "not_paired" ? (
+              {isLoraPending ? (
+                <Radio className="w-4 h-4 text-accent" />
+              ) : isLoraJoining ? (
+                <Loader2 className="w-4 h-4 text-warning animate-spin" />
+              ) : installationStatus.status === "not_paired" ? (
                 <LinkIcon className="w-4 h-4" />
-              ) : installationStatus.status === "paired_never_seen" ? (
+              ) : baseInstallationStatus.status === "paired_never_seen" ? (
                 <AlertTriangle className="w-4 h-4 text-warning" />
               ) : (
                 <XCircle className="w-4 h-4 text-warning" />
