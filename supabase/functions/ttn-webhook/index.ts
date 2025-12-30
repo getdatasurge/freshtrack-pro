@@ -63,6 +63,7 @@ interface LoraSensor {
   ttn_application_id: string | null;
   sensor_type: string;
   name: string;
+  is_primary: boolean;
 }
 
 interface LegacyDevice {
@@ -138,7 +139,7 @@ Deno.serve(async (req) => {
     // ========================================
     const { data: loraSensor, error: sensorError } = await supabase
       .from('lora_sensors')
-      .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name')
+      .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
       .or(`dev_eui.eq.${devEui},dev_eui.eq.${devEuiUpper}`)
       .maybeSingle();
 
@@ -293,13 +294,16 @@ async function handleLoraSensor(
   // Handle unit-assigned sensors (insert readings)
   // ========================================
   if (sensor.unit_id) {
-    // Validate we have temperature data for sensor readings
-    if (decoded.temperature === undefined) {
-      console.log(`No temperature in payload for sensor ${sensor.name}, skipping reading insert`);
+    const hasTemperatureData = decoded.temperature !== undefined;
+    const hasDoorData = decoded.door_open !== undefined;
+
+    // Allow door-only sensors to process without temperature
+    if (!hasTemperatureData && !hasDoorData) {
+      console.log(`No temperature or door data in payload for sensor ${sensor.name}, skipping reading insert`);
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'Sensor updated, no temperature data to record',
+          message: 'Sensor updated, no temperature or door data to record',
           sensor_id: sensor.id,
           status: sensorUpdate.status || sensor.status,
         }),
@@ -317,13 +321,14 @@ async function handleLoraSensor(
     const previousDoorState = unit?.door_state;
     const currentDoorOpen = decoded.door_open as boolean | undefined;
 
-    // Insert sensor reading
+    // Insert sensor reading (temperature can be null for door-only sensors)
     const { error: insertError } = await supabase
       .from('sensor_readings')
       .insert({
         unit_id: sensor.unit_id,
+        lora_sensor_id: sensor.id, // Track which sensor created this reading
         device_id: null, // lora_sensors don't use devices table
-        temperature: decoded.temperature,
+        temperature: decoded.temperature ?? null,
         humidity: decoded.humidity,
         battery_level: decoded.battery,
         signal_strength: rssi,
@@ -337,17 +342,27 @@ async function handleLoraSensor(
       throw insertError;
     }
 
-    console.log(`Inserted sensor reading for unit ${sensor.unit_id}`);
+    console.log(`Inserted sensor reading for unit ${sensor.unit_id} from sensor ${sensor.id}`);
 
-    // Update unit with latest reading
+    // Build unit update - only update temperature fields from PRIMARY sensors
     const unitUpdate: Record<string, unknown> = {
-      last_temp_reading: decoded.temperature,
-      last_reading_at: receivedAt,
-      last_checkin_at: receivedAt,
-      sensor_reliable: true,
       updated_at: new Date().toISOString(),
     };
 
+    // Only primary sensors update compliance temperature fields
+    if (sensor.is_primary && hasTemperatureData) {
+      unitUpdate.last_temp_reading = decoded.temperature;
+      unitUpdate.last_reading_at = receivedAt;
+      unitUpdate.last_checkin_at = receivedAt;
+      unitUpdate.sensor_reliable = true;
+      console.log(`Primary sensor ${sensor.name} updating unit temperature: ${decoded.temperature}`);
+    } else if (hasTemperatureData) {
+      // Non-primary sensors still contribute to checkin tracking
+      unitUpdate.last_checkin_at = receivedAt;
+      console.log(`Secondary sensor ${sensor.name} recorded temperature: ${decoded.temperature} (not updating unit compliance fields)`);
+    }
+
+    // Always update door state if we have door data (regardless of primary status)
     if (currentDoorOpen !== undefined) {
       const newDoorState = currentDoorOpen ? 'open' : 'closed';
       unitUpdate.door_state = newDoorState;
@@ -378,6 +393,7 @@ async function handleLoraSensor(
               dev_eui: devEui,
               device_id: deviceId,
               sensor_id: sensor.id,
+              sensor_name: sensor.name,
               organization_id: sensor.organization_id,
             }
           });
@@ -399,6 +415,7 @@ async function handleLoraSensor(
         unit_id: sensor.unit_id,
         organization_id: sensor.organization_id,
         temperature: decoded.temperature,
+        is_primary: sensor.is_primary,
         status: sensorUpdate.status || sensor.status,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

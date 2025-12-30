@@ -1001,6 +1001,7 @@ export type Database = {
           dev_eui: string
           firmware_version: string | null
           id: string
+          is_primary: boolean
           last_join_at: string | null
           last_seen_at: string | null
           manufacturer: string | null
@@ -1026,6 +1027,7 @@ export type Database = {
           dev_eui: string
           firmware_version?: string | null
           id?: string
+          is_primary?: boolean
           last_join_at?: string | null
           last_seen_at?: string | null
           manufacturer?: string | null
@@ -1051,6 +1053,7 @@ export type Database = {
           dev_eui?: string
           firmware_version?: string | null
           id?: string
+          is_primary?: boolean
           last_join_at?: string | null
           last_seen_at?: string | null
           manufacturer?: string | null
@@ -1634,11 +1637,12 @@ export type Database = {
           door_open: boolean | null
           humidity: number | null
           id: string
+          lora_sensor_id: string | null
           received_at: string
           recorded_at: string
           signal_strength: number | null
           source: string | null
-          temperature: number
+          temperature: number | null
           unit_id: string
         }
         Insert: {
@@ -1647,11 +1651,12 @@ export type Database = {
           door_open?: boolean | null
           humidity?: number | null
           id?: string
+          lora_sensor_id?: string | null
           received_at?: string
           recorded_at?: string
           signal_strength?: number | null
           source?: string | null
-          temperature: number
+          temperature?: number | null
           unit_id: string
         }
         Update: {
@@ -1660,11 +1665,12 @@ export type Database = {
           door_open?: boolean | null
           humidity?: number | null
           id?: string
+          lora_sensor_id?: string | null
           received_at?: string
           recorded_at?: string
           signal_strength?: number | null
           source?: string | null
-          temperature?: number
+          temperature?: number | null
           unit_id?: string
         }
         Relationships: [
@@ -1673,6 +1679,13 @@ export type Database = {
             columns: ["device_id"]
             isOneToOne: false
             referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sensor_readings_lora_sensor_id_fkey"
+            columns: ["lora_sensor_id"]
+            isOneToOne: false
+            referencedRelation: "lora_sensors"
             referencedColumns: ["id"]
           },
           {
