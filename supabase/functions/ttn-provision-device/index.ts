@@ -12,34 +12,116 @@ interface ProvisionRequest {
   organization_id: string;
 }
 
+// Safe environment variable getter with logging
+function getEnvVar(name: string, required: boolean = false): string | undefined {
+  const value = Deno.env.get(name);
+  if (required && !value) {
+    console.error(`[ttn-provision-device] Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 serve(async (req) => {
   // Version banner for deployment verification
   // ENDPOINT ROUTER: TTN Sandbox Identity Server HTTP API is on eu1; use cluster host only for regional operations
-  const BUILD_VERSION = "endpoint-router-v1-20251230";
+  const BUILD_VERSION = "endpoint-router-v2-diagnostics-20251230";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
-  
+  console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Health check / diagnostics endpoint (GET request)
+  if (req.method === "GET") {
+    const supabaseUrl = getEnvVar("SUPABASE_URL");
+    const hasServiceKey = !!getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
+    const hasTTNApiKey = !!getEnvVar("TTN_API_KEY");
+    const ttnApiBaseUrl = getEnvVar("TTN_API_BASE_URL");
+    const ttnIsBaseUrl = getEnvVar("TTN_IS_BASE_URL");
+
+    return new Response(
+      JSON.stringify({
+        status: "ok",
+        function: "ttn-provision-device",
+        version: BUILD_VERSION,
+        timestamp: new Date().toISOString(),
+        environment: {
+          hasSupabaseUrl: !!supabaseUrl,
+          hasServiceKey,
+          hasTTNApiKey,
+          ttnApiBaseUrl: ttnApiBaseUrl ? ttnApiBaseUrl.replace(/\/api\/v3$/, "") : "not set",
+          ttnIsBaseUrl: ttnIsBaseUrl || "default (eu1)",
+        },
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      }
+    );
+  }
+
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const ttnApiKey = Deno.env.get("TTN_API_KEY");
     const ttnApiBaseUrl = Deno.env.get("TTN_API_BASE_URL"); // Regional cluster (nam1 for you)
     const ttnIsBaseUrl = Deno.env.get("TTN_IS_BASE_URL") || "https://eu1.cloud.thethings.network"; // Identity Server
 
-    if (!ttnApiKey || !ttnApiBaseUrl) {
-      console.error("TTN credentials not configured");
+    // Check for required environment variables
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error("[ttn-provision-device] Missing Supabase credentials");
       return new Response(
-        JSON.stringify({ error: "TTN credentials not configured" }),
+        JSON.stringify({
+          success: false,
+          error: "Server configuration error: Missing database credentials",
+          hint: "Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in Edge Function secrets",
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!ttnApiKey || !ttnApiBaseUrl) {
+      console.error("[ttn-provision-device] TTN credentials not configured");
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "TTN credentials not configured",
+          hint: "Set TTN_API_KEY and TTN_API_BASE_URL in Edge Function secrets",
+        }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const body: ProvisionRequest = await req.json();
+
+    // Parse request body safely
+    let body: ProvisionRequest;
+    try {
+      const bodyText = await req.text();
+      console.log("[ttn-provision-device] Raw request body:", bodyText);
+
+      if (!bodyText || bodyText.trim() === "") {
+        return new Response(
+          JSON.stringify({ success: false, error: "Empty request body" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      body = JSON.parse(bodyText);
+      console.log("[ttn-provision-device] Parsed payload:", JSON.stringify(body));
+    } catch (parseError) {
+      console.error("[ttn-provision-device] JSON parse error:", parseError);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid JSON in request body",
+          details: parseError instanceof Error ? parseError.message : "Parse error",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
     const { action, sensor_id, organization_id } = body;
 
     console.log(`[ttn-provision-device] Action: ${action}, Sensor: ${sensor_id}, Org: ${organization_id}`);
@@ -401,10 +483,29 @@ serve(async (req) => {
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
-    console.error("[ttn-provision-device] Error:", error);
+    // Comprehensive error logging for debugging
+    console.error("=== [ttn-provision-device] UNHANDLED ERROR ===");
+    console.error("Error type:", typeof error);
+    if (error instanceof Error) {
+      console.error("Error name:", error.name);
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    } else {
+      console.error("Error value:", error);
+    }
+
     const message = error instanceof Error ? error.message : "Unknown error";
+    const name = error instanceof Error ? error.name : "Error";
+
     return new Response(
-      JSON.stringify({ error: message }),
+      JSON.stringify({
+        success: false,
+        error: "Internal server error",
+        details: {
+          name,
+          message,
+        },
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
