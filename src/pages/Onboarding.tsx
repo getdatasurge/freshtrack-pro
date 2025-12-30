@@ -723,7 +723,7 @@ const Onboarding = () => {
                     <Button
                       variant="link"
                       onClick={() => navigate("/settings")}
-                      className="text-sm text-muted-foreground hover:text-accent p-0 h-auto"
+                      className="text-sm text-muted-foreground hover:text-accent p-0 h-auto flex items-center justify-center mx-auto"
                     >
                       Next: Pair your first sensor device
                       <ArrowRight className="w-3 h-3 ml-1" />
