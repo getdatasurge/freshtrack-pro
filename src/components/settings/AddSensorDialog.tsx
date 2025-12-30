@@ -51,7 +51,7 @@ const addSensorSchema = z.object({
     .min(1, "AppKey is required")
     .regex(APPKEY_REGEX, "AppKey must be exactly 32 hexadecimal characters"),
   sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo"] as const),
-  site_id: z.string().optional(),
+  site_id: z.string().min(1, "Site is required"),
   unit_id: z.string().optional(),
   description: z.string().max(500, "Description must be less than 500 characters").optional(),
 });
@@ -75,6 +75,8 @@ interface AddSensorDialogProps {
   organizationId: string;
   sites: Site[];
   units: Unit[];
+  defaultSiteId?: string;
+  defaultUnitId?: string;
 }
 
 export function AddSensorDialog({
@@ -83,6 +85,8 @@ export function AddSensorDialog({
   organizationId,
   sites,
   units,
+  defaultSiteId,
+  defaultUnitId,
 }: AddSensorDialogProps) {
   const createSensor = useCreateLoraSensor();
   const [showAppKey, setShowAppKey] = useState(false);
@@ -95,8 +99,8 @@ export function AddSensorDialog({
       app_eui: "",
       app_key: "",
       sensor_type: "temperature",
-      site_id: undefined,
-      unit_id: undefined,
+      site_id: defaultSiteId || "",
+      unit_id: defaultUnitId || undefined,
       description: "",
     },
   });
@@ -131,12 +135,21 @@ export function AddSensorDialog({
     );
   };
 
-  const handleOpenChange = (open: boolean) => {
-    if (!open) {
-      form.reset();
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      form.reset({
+        name: "",
+        dev_eui: "",
+        app_eui: "",
+        app_key: "",
+        sensor_type: "temperature",
+        site_id: defaultSiteId || "",
+        unit_id: defaultUnitId || undefined,
+        description: "",
+      });
       setShowAppKey(false);
     }
-    onOpenChange(open);
+    onOpenChange(newOpen);
   };
 
   // Reset unit when site changes
@@ -285,10 +298,10 @@ export function AddSensorDialog({
               name="site_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Site (Optional)</FormLabel>
+                  <FormLabel>Site *</FormLabel>
                   <Select
                     onValueChange={handleSiteChange}
-                    value={field.value || "none"}
+                    value={field.value || ""}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -296,7 +309,6 @@ export function AddSensorDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="none">No site assigned</SelectItem>
                       {sites.map((site) => (
                         <SelectItem key={site.id} value={site.id}>
                           {site.name}
@@ -304,6 +316,9 @@ export function AddSensorDialog({
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormDescription>
+                    Site assignment is required for sensor provisioning
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
