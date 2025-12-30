@@ -15,7 +15,8 @@ import {
   Loader2,
   CheckCircle2,
   ArrowRight,
-  ArrowLeft
+  ArrowLeft,
+  Radio
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -32,7 +33,7 @@ import {
   validateInput,
 } from "@/lib/validation";
 
-type Step = "organization" | "site" | "area" | "unit" | "complete";
+type Step = "organization" | "site" | "area" | "unit" | "gateway" | "complete";
 
 interface OnboardingData {
   organization: {
@@ -54,6 +55,10 @@ interface OnboardingData {
   unit: {
     name: string;
     type: string;
+  };
+  gateway: {
+    name: string;
+    eui: string;
   };
 }
 
@@ -80,6 +85,7 @@ const steps: { key: Step; title: string; icon: React.ElementType }[] = [
   { key: "site", title: "Site", icon: MapPin },
   { key: "area", title: "Area", icon: LayoutGrid },
   { key: "unit", title: "Unit", icon: Thermometer },
+  { key: "gateway", title: "Gateway", icon: Radio },
 ];
 
 const Onboarding = () => {
@@ -94,6 +100,7 @@ const Onboarding = () => {
     siteId?: string;
     areaId?: string;
     unitId?: string;
+    gatewayId?: string;
   }>({});
 
   const [data, setData] = useState<OnboardingData>({
@@ -101,6 +108,7 @@ const Onboarding = () => {
     site: { name: "", address: "", city: "", state: "", postalCode: "" },
     area: { name: "", description: "" },
     unit: { name: "", type: "fridge" },
+    gateway: { name: "", eui: "" },
   });
 
   // Check if user already has an organization - only once
@@ -345,11 +353,59 @@ const Onboarding = () => {
 
       setCreatedIds((prev) => ({ ...prev, unitId }));
       toast({ title: "Unit created!" });
+      setCurrentStep("gateway");
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+    setIsLoading(false);
+  };
+
+  const handleCreateGateway = async () => {
+    // If gateway was already created, just move to complete
+    if (createdIds.gatewayId) {
+      setCurrentStep("complete");
+      return;
+    }
+
+    // Validate gateway name
+    if (!data.gateway.name.trim()) {
+      toast({ title: "Gateway name is required", variant: "destructive" });
+      return;
+    }
+
+    // Validate gateway EUI (16 hex characters)
+    const euiRegex = /^[0-9A-Fa-f]{16}$/;
+    if (!euiRegex.test(data.gateway.eui)) {
+      toast({ title: "Gateway EUI must be 16 hexadecimal characters", variant: "destructive" });
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { data: gateway, error } = await supabase
+        .from("gateways")
+        .insert({
+          organization_id: createdIds.orgId!,
+          name: data.gateway.name.trim(),
+          gateway_eui: data.gateway.eui.toUpperCase(),
+          site_id: createdIds.siteId,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setCreatedIds((prev) => ({ ...prev, gatewayId: gateway.id }));
+      toast({ title: "Gateway registered!" });
       setCurrentStep("complete");
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
     }
     setIsLoading(false);
+  };
+
+  const handleSkipGateway = () => {
+    setCurrentStep("complete");
   };
 
   const currentStepIndex = steps.findIndex((s) => s.key === currentStep);
@@ -685,10 +741,78 @@ const Onboarding = () => {
                       disabled={isLoading}
                     >
                       {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                      Continue
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Gateway Step */}
+            {currentStep === "gateway" && (
+              <Card className="shadow-lg">
+                <CardHeader className="text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-accent/10 flex items-center justify-center mx-auto mb-4">
+                    <Radio className="w-8 h-8 text-accent" />
+                  </div>
+                  <CardTitle className="text-2xl">Add Your Gateway</CardTitle>
+                  <CardDescription>
+                    Register a LoRaWAN gateway to receive sensor data wirelessly.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="gateway-name">Gateway Name *</Label>
+                    <Input
+                      id="gateway-name"
+                      placeholder="Main Building Gateway"
+                      value={data.gateway.name}
+                      onChange={(e) => updateData("gateway", "name", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="gateway-eui">Gateway EUI *</Label>
+                    <Input
+                      id="gateway-eui"
+                      placeholder="A1B2C3D4E5F67890"
+                      className="font-mono uppercase"
+                      maxLength={16}
+                      value={data.gateway.eui}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/[^0-9A-Fa-f]/g, "");
+                        updateData("gateway", "eui", value.toUpperCase());
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      16-character hexadecimal identifier from your gateway hardware
+                    </p>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setCurrentStep("unit")}
+                      disabled={isLoading}
+                    >
+                      <ArrowLeft className="w-4 h-4 mr-2" />
+                      Back
+                    </Button>
+                    <Button
+                      onClick={handleCreateGateway}
+                      className="flex-1 bg-accent hover:bg-accent/90"
+                      disabled={isLoading}
+                    >
+                      {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                       Complete Setup
                       <CheckCircle2 className="w-4 h-4 ml-2" />
                     </Button>
                   </div>
+                  <button
+                    onClick={handleSkipGateway}
+                    className="text-xs text-muted-foreground hover:text-foreground w-full text-center pt-2 transition-colors"
+                  >
+                    Skip for now — I'll add a gateway later
+                  </button>
                 </CardContent>
               </Card>
             )}
@@ -709,7 +833,7 @@ const Onboarding = () => {
                     You're All Set!
                   </h2>
                   <p className="text-muted-foreground mb-8 max-w-md mx-auto">
-                    Your organization, site, area, and first unit have been created. 
+                    Your organization, site, area, {createdIds.gatewayId ? "gateway, " : ""}and first unit have been created. 
                     You can now start monitoring temperatures.
                   </p>
                   <div className="space-y-3">
@@ -720,14 +844,13 @@ const Onboarding = () => {
                       Go to Dashboard
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
-                    <Button
-                      variant="link"
+                    <button
                       onClick={() => navigate("/settings")}
-                      className="text-sm text-muted-foreground hover:text-accent p-0 h-auto flex items-center justify-center mx-auto"
+                      className="text-sm text-muted-foreground hover:text-accent transition-colors inline-flex items-center gap-1"
                     >
                       Next: Pair your first sensor device
-                      <ArrowRight className="w-3 h-3 ml-1" />
-                    </Button>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
                   </div>
                 </CardContent>
               </Card>
