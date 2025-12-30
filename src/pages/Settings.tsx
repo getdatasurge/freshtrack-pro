@@ -34,7 +34,8 @@ import {
   AlertTriangle,
   Code2,
   CheckCircle,
-  Radio
+  Radio,
+  Thermometer
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
@@ -43,6 +44,7 @@ import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
 import { NotificationSettingsCard } from "@/components/settings/NotificationSettingsCard";
 import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
 import { GatewayManager } from "@/components/settings/GatewayManager";
+import { SensorManager } from "@/components/settings/SensorManager";
 
 // E.164 phone number validation regex
 const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -131,6 +133,7 @@ const Settings = () => {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [userRole, setUserRole] = useState<AppRole | null>(null);
   const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
+  const [units, setUnits] = useState<{ id: string; name: string; site_id: string }[]>([]);
 
   // Form states
   const [orgName, setOrgName] = useState("");
@@ -277,6 +280,24 @@ const Settings = () => {
       
       if (sitesData) {
         setSites(sitesData);
+      }
+
+      // Load units for sensor management (through areas → sites)
+      const { data: unitsData } = await supabase
+        .from("units")
+        .select("id, name, area_id, areas!inner(site_id, sites!inner(organization_id))")
+        .eq("areas.sites.organization_id", profileData.organization_id)
+        .is("deleted_at", null)
+        .order("name");
+      
+      if (unitsData) {
+        // Extract site_id from nested join
+        const formattedUnits = unitsData.map((u: any) => ({
+          id: u.id,
+          name: u.name,
+          site_id: u.areas?.site_id || "",
+        }));
+        setUnits(formattedUnits);
       }
     } catch (error) {
       console.error("Error loading settings:", error);
@@ -479,7 +500,7 @@ const Settings = () => {
   return (
     <DashboardLayout title="Settings">
       <Tabs defaultValue={defaultTab} className="space-y-6">
-        <TabsList className={`grid w-full max-w-3xl ${canManageUsers ? 'grid-cols-7' : 'grid-cols-6'}`}>
+        <TabsList className={`grid w-full max-w-4xl ${canManageUsers ? 'grid-cols-8' : 'grid-cols-6'}`}>
           <TabsTrigger value="organization" className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <span className="hidden sm:inline">Organization</span>
@@ -504,6 +525,12 @@ const Settings = () => {
             <TabsTrigger value="gateways" className="flex items-center gap-2">
               <Radio className="w-4 h-4" />
               <span className="hidden sm:inline">Gateways</span>
+            </TabsTrigger>
+          )}
+          {canManageUsers && (
+            <TabsTrigger value="sensors" className="flex items-center gap-2">
+              <Thermometer className="w-4 h-4" />
+              <span className="hidden sm:inline">Sensors</span>
             </TabsTrigger>
           )}
           {canManageUsers && (
@@ -951,6 +978,18 @@ const Settings = () => {
             <GatewayManager
               organizationId={organization.id}
               sites={sites}
+              canEdit={canManageUsers}
+            />
+          </TabsContent>
+        )}
+
+        {/* Sensors Tab (Admin Only) */}
+        {canManageUsers && organization && (
+          <TabsContent value="sensors">
+            <SensorManager
+              organizationId={organization.id}
+              sites={sites}
+              units={units}
               canEdit={canManageUsers}
             />
           </TabsContent>
