@@ -165,15 +165,16 @@ export function validateInternalApiKey(req: Request): { valid: boolean; error?: 
 /**
  * Validate device API key for IoT ingestion
  * Checks for DEVICE_INGEST_API_KEY environment variable
+ * 
+ * SECURITY: Rejects all requests if DEVICE_INGEST_API_KEY is not configured
  */
 export function validateDeviceApiKey(req: Request): { valid: boolean; error?: string } {
   const expectedKey = Deno.env.get("DEVICE_INGEST_API_KEY");
   
-  // If no device key configured, allow requests (backwards compatibility)
-  // but log a warning
+  // If no device key configured, reject all requests for security
   if (!expectedKey) {
-    console.warn("DEVICE_INGEST_API_KEY not configured - allowing unauthenticated ingestion");
-    return { valid: true };
+    console.warn("DEVICE_INGEST_API_KEY not configured - device ingestion endpoints disabled");
+    return { valid: false, error: "Device ingestion API not configured" };
   }
   
   const apiKeyHeader = req.headers.get("X-Device-API-Key");
