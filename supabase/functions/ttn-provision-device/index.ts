@@ -13,6 +13,10 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
+  // Version banner for deployment verification
+  const BUILD_VERSION = "probe-v2-20251230-0253";
+  console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
+  
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
