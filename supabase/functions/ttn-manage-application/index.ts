@@ -11,15 +11,59 @@ interface ManageApplicationRequest {
   organization_id: string;
 }
 
+// Safe environment variable getter with logging
+function getEnvVar(name: string, required: boolean = false): string | undefined {
+  const value = Deno.env.get(name);
+  if (required && !value) {
+    console.error(`[ttn-manage-application] Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 serve(async (req) => {
   // Version banner for deployment verification
   // ENDPOINT ROUTER: TTN Sandbox Identity Server HTTP API is on eu1; use cluster host only for regional operations
-  const BUILD_VERSION = "endpoint-router-v1-20251230";
+  const BUILD_VERSION = "endpoint-router-v2-diagnostics-20251230";
   console.log(`[ttn-manage-application] Build: ${BUILD_VERSION}`);
+  console.log(`[ttn-manage-application] Method: ${req.method}, URL: ${req.url}`);
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Health check / diagnostics endpoint (GET request)
+  if (req.method === "GET") {
+    const supabaseUrl = getEnvVar("SUPABASE_URL");
+    const hasServiceKey = !!getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
+    const hasTTNApiKey = !!getEnvVar("TTN_API_KEY");
+    const ttnApiBaseUrl = getEnvVar("TTN_API_BASE_URL");
+    const ttnIsBaseUrl = getEnvVar("TTN_IS_BASE_URL");
+    const hasTTNUserId = !!getEnvVar("TTN_USER_ID");
+    const hasTTNWebhookKey = !!getEnvVar("TTN_WEBHOOK_API_KEY");
+
+    return new Response(
+      JSON.stringify({
+        status: "ok",
+        function: "ttn-manage-application",
+        version: BUILD_VERSION,
+        timestamp: new Date().toISOString(),
+        environment: {
+          hasSupabaseUrl: !!supabaseUrl,
+          hasServiceKey,
+          hasTTNApiKey,
+          hasTTNUserId,
+          hasTTNWebhookKey,
+          ttnApiBaseUrl: ttnApiBaseUrl ? ttnApiBaseUrl.replace(/\/api\/v3$/, "") : "not set",
+          ttnIsBaseUrl: ttnIsBaseUrl || "default (eu1)",
+        },
+        hint: !hasTTNUserId ? "TTN_USER_ID is required - this is your TTN Console username" : undefined,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      }
+    );
   }
 
   try {
