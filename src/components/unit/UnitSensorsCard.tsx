@@ -5,6 +5,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { 
@@ -15,9 +16,10 @@ import {
   Loader2,
   Battery,
   Signal,
+  CloudUpload,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { useLoraSensorsByUnit, useLinkSensorToUnit } from "@/hooks/useLoraSensors";
+import { useLoraSensorsByUnit, useLinkSensorToUnit, useProvisionLoraSensor } from "@/hooks/useLoraSensors";
 import { LoraSensor, LoraSensorStatus } from "@/types/ttn";
 import { useState } from "react";
 import { AssignSensorToUnitDialog } from "./AssignSensorToUnitDialog";
@@ -91,10 +93,18 @@ export function UnitSensorsCard({
 }: UnitSensorsCardProps) {
   const { data: sensors, isLoading } = useLoraSensorsByUnit(unitId);
   const unlinkSensor = useLinkSensorToUnit();
+  const provisionSensor = useProvisionLoraSensor();
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
 
   const handleUnlink = (sensorId: string) => {
     unlinkSensor.mutate({ sensorId, unitId: null });
+  };
+
+  const handleProvision = (sensor: LoraSensor) => {
+    provisionSensor.mutate({
+      sensorId: sensor.id,
+      organizationId: sensor.organization_id,
+    });
   };
 
   if (isLoading) {
@@ -187,6 +197,22 @@ export function UnitSensorsCard({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {sensor.status === "pending" && (
+                            <>
+                              <DropdownMenuItem
+                                onClick={() => handleProvision(sensor)}
+                                disabled={provisionSensor.isProvisioning(sensor.id)}
+                              >
+                                {provisionSensor.isProvisioning(sensor.id) ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <CloudUpload className="w-4 h-4 mr-2 text-blue-600" />
+                                )}
+                                Provision to TTN
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          )}
                           <DropdownMenuItem
                             onClick={() => handleUnlink(sensor.id)}
                             className="text-warning"

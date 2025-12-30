@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { LoraSensor, LoraSensorInsert } from "@/types/ttn";
 import { toast } from "sonner";
+import { useState } from "react";
 
 /**
  * Hook to fetch all LoRa sensors for an organization
@@ -234,4 +235,52 @@ export function useLinkSensorToUnit() {
       toast.error(`Failed to link sensor: ${error.message}`);
     },
   });
+}
+
+/**
+ * Hook to provision a LoRa sensor to TTN
+ */
+export function useProvisionLoraSensor() {
+  const queryClient = useQueryClient();
+  const [provisioningId, setProvisioningId] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: async ({
+      sensorId,
+      organizationId,
+    }: {
+      sensorId: string;
+      organizationId: string;
+    }): Promise<{ success: boolean; message?: string }> => {
+      setProvisioningId(sensorId);
+      
+      const { data, error } = await supabase.functions.invoke("ttn-provision-device", {
+        body: { 
+          action: "create", 
+          sensor_id: sensorId, 
+          organization_id: organizationId 
+        },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["lora-sensors"] });
+      queryClient.invalidateQueries({ queryKey: ["lora-sensor", variables.sensorId] });
+      queryClient.invalidateQueries({ queryKey: ["lora-sensors-by-unit"] });
+      toast.success("Sensor provisioned to TTN - awaiting network join");
+      setProvisioningId(null);
+    },
+    onError: (error: Error) => {
+      toast.error(`TTN provisioning failed: ${error.message}`);
+      setProvisioningId(null);
+    },
+  });
+
+  return {
+    ...mutation,
+    provisioningId,
+    isProvisioning: (sensorId: string) => provisioningId === sensorId,
+  };
 }

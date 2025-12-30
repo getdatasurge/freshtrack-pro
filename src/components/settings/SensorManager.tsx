@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLoraSensors, useDeleteLoraSensor } from "@/hooks/useLoraSensors";
+import { useLoraSensors, useDeleteLoraSensor, useProvisionLoraSensor } from "@/hooks/useLoraSensors";
 import { LoraSensor, LoraSensorStatus, LoraSensorType } from "@/types/ttn";
 import {
   Table,
@@ -21,9 +21,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Loader2, Thermometer } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload } from "lucide-react";
 import { AddSensorDialog } from "./AddSensorDialog";
 import { EditSensorDialog } from "./EditSensorDialog";
+import { formatDistanceToNow } from "date-fns";
 
 interface Site {
   id: string;
@@ -46,6 +47,7 @@ interface SensorManagerProps {
 export function SensorManager({ organizationId, sites, units, canEdit }: SensorManagerProps) {
   const { data: sensors, isLoading } = useLoraSensors(organizationId);
   const deleteSensor = useDeleteLoraSensor();
+  const provisionSensor = useProvisionLoraSensor();
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editSensor, setEditSensor] = useState<LoraSensor | null>(null);
@@ -114,6 +116,27 @@ export function SensorManager({ organizationId, sites, units, canEdit }: SensorM
     return eui.toUpperCase().match(/.{1,2}/g)?.join(":") || eui.toUpperCase();
   };
 
+  const formatLastUplink = (lastSeenAt: string | null, status: LoraSensorStatus) => {
+    if (status === "pending" || status === "joining") {
+      return <span className="text-muted-foreground">—</span>;
+    }
+    if (!lastSeenAt) {
+      return <span className="text-muted-foreground">Never</span>;
+    }
+    try {
+      return formatDistanceToNow(new Date(lastSeenAt), { addSuffix: true });
+    } catch {
+      return <span className="text-muted-foreground">—</span>;
+    }
+  };
+
+  const handleProvision = (sensor: LoraSensor) => {
+    provisionSensor.mutate({
+      sensorId: sensor.id,
+      organizationId: sensor.organization_id,
+    });
+  };
+
   const handleDelete = () => {
     if (deleteSensor_) {
       deleteSensor.mutate(
@@ -160,7 +183,8 @@ export function SensorManager({ organizationId, sites, units, canEdit }: SensorM
                 <TableHead>Type</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Status</TableHead>
-                {canEdit && <TableHead className="w-[100px]">Actions</TableHead>}
+                <TableHead>Last Uplink</TableHead>
+                {canEdit && <TableHead className="w-[140px]">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -173,9 +197,27 @@ export function SensorManager({ organizationId, sites, units, canEdit }: SensorM
                   <TableCell>{getSensorTypeLabel(sensor.sensor_type)}</TableCell>
                   <TableCell>{getLocationDisplay(sensor)}</TableCell>
                   <TableCell>{getStatusBadge(sensor.status)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {formatLastUplink(sensor.last_seen_at, sensor.status)}
+                  </TableCell>
                   {canEdit && (
                     <TableCell>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        {sensor.status === "pending" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleProvision(sensor)}
+                            disabled={provisionSensor.isProvisioning(sensor.id)}
+                            title="Provision to TTN"
+                          >
+                            {provisionSensor.isProvisioning(sensor.id) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <CloudUpload className="h-4 w-4 text-blue-600" />
+                            )}
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"

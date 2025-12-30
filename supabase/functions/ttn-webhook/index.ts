@@ -85,6 +85,19 @@ Deno.serve(async (req) => {
     );
   }
 
+  // Validate webhook secret if configured
+  const webhookSecret = Deno.env.get('TTN_WEBHOOK_API_KEY');
+  if (webhookSecret) {
+    const providedSecret = req.headers.get('X-Downlink-Apikey') || req.headers.get('X-Webhook-Secret');
+    if (providedSecret !== webhookSecret) {
+      console.warn('[SECURITY] Invalid or missing webhook secret');
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized', message: 'Invalid webhook secret' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+  }
+
   try {
     const payload: TTNUplinkMessage = await req.json();
     
