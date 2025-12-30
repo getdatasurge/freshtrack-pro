@@ -3,6 +3,9 @@ project_id = "mfwyiifehsvwnjwqoxht"
 [functions.check-password-breach]
 verify_jwt = false
 
+[functions.check-slug-available]
+verify_jwt = false
+
 [functions.stripe-checkout]
 verify_jwt = true
 
