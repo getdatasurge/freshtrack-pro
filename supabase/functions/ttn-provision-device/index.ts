@@ -88,9 +88,14 @@ serve(async (req) => {
 
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
 
-    // Helper for TTN API calls
+    // Helper for TTN API calls with proper URL construction
     const ttnFetch = async (endpoint: string, options: RequestInit = {}) => {
-      const url = `${ttnApiBaseUrl}${endpoint}`;
+      // Normalize base URL - remove trailing slashes and any /api/v3 suffix
+      let baseUrl = ttnApiBaseUrl.trim().replace(/\/+$/, "");
+      if (baseUrl.endsWith("/api/v3")) {
+        baseUrl = baseUrl.slice(0, -7);
+      }
+      const url = `${baseUrl}${endpoint}`;
       console.log(`[ttn-provision-device] TTN API: ${options.method || "GET"} ${url}`);
       const response = await fetch(url, {
         ...options,
