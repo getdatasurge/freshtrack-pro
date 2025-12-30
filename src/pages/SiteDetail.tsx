@@ -9,7 +9,7 @@ import { AlertRulesHistoryModal } from "@/components/settings/AlertRulesHistoryM
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { useSiteAlertRules, useOrgAlertRules } from "@/hooks/useAlertRules";
 import { usePermissions } from "@/hooks/useUserRole";
-import { softDeleteSite, getActiveChildrenCount } from "@/hooks/useSoftDelete";
+import { softDeleteSite } from "@/hooks/useSoftDelete";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { Session } from "@supabase/supabase-js";
 
 interface Area {
   id: string;
@@ -68,7 +69,10 @@ interface SiteData {
 
 const SiteDetail = () => {
   const { siteId } = useParams();
+  const navigate = useNavigate();
   const { toast } = useToast();
+  const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
+  const [session, setSession] = useState<Session | null>(null);
   const [site, setSite] = useState<SiteData | null>(null);
   const [areas, setAreas] = useState<Area[]>([]);
   const [siblingSites, setSiblingSites] = useState<BreadcrumbSibling[]>([]);
@@ -76,6 +80,7 @@ const SiteDetail = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [formData, setFormData] = useState({ name: "", description: "" });
   const [editFormData, setEditFormData] = useState({
     name: "",
@@ -91,6 +96,10 @@ const SiteDetail = () => {
   // Alert rules
   const { data: siteRules, refetch: refetchSiteRules } = useSiteAlertRules(siteId || null);
   const { data: orgRules } = useOrgAlertRules(site?.organization_id || null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+  }, []);
 
   useEffect(() => {
     if (siteId) {
@@ -131,11 +140,12 @@ const SiteDetail = () => {
       postal_code: siteData.postal_code || "",
     });
 
-    // Load sibling sites for breadcrumb dropdown
+    // Load sibling sites for breadcrumb dropdown (only active)
     const { data: siblingsData } = await supabase
       .from("sites")
       .select("id, name")
       .eq("organization_id", siteData.organization_id)
+      .eq("is_active", true)
       .neq("id", siteId)
       .order("name");
 
@@ -147,7 +157,7 @@ const SiteDetail = () => {
       })));
     }
 
-    // Load areas with unit counts
+    // Load areas with unit counts (only active)
     const { data: areasData, error: areasError } = await supabase
       .from("areas")
       .select(`
@@ -157,6 +167,7 @@ const SiteDetail = () => {
         units (id)
       `)
       .eq("site_id", siteId)
+      .eq("is_active", true)
       .order("sort_order");
 
     if (areasError) {
@@ -262,6 +273,14 @@ const SiteDetail = () => {
       toast({ title: "Export failed", variant: "destructive" });
     }
     setIsExporting(false);
+  };
+
+  const handleDeleteSite = async () => {
+    if (!session?.user?.id || !siteId || !site) return;
+    const result = await softDeleteSite(siteId, session.user.id, true);
+    if (result.success) {
+      navigate('/sites');
+    }
   };
 
   const formatAddress = () => {
@@ -389,6 +408,17 @@ const SiteDetail = () => {
                 </div>
               </DialogContent>
             </Dialog>
+            {canDeleteEntities && !permissionsLoading && (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => setDeleteDialogOpen(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
+            )}
           </div>
         }
       />
@@ -565,6 +595,18 @@ const SiteDetail = () => {
             )}
           </CardContent>
         </Card>
+
+        {site && (
+          <DeleteConfirmationDialog
+            open={deleteDialogOpen}
+            onOpenChange={setDeleteDialogOpen}
+            entityName={site.name}
+            entityType="site"
+            onConfirm={handleDeleteSite}
+            hasChildren={areas.length > 0}
+            childrenCount={areas.length + totalUnits}
+          />
+        )}
       </div>
     </DashboardLayout>
   );

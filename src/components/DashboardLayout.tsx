@@ -11,7 +11,8 @@ import {
   Building2,
   Menu,
   X,
-  ChevronLeft
+  ChevronLeft,
+  Trash2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
@@ -20,6 +21,7 @@ import ThemeToggle from "@/components/ThemeToggle";
 import BrandedLogo from "@/components/BrandedLogo";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import { clearOfflineStorage } from "@/lib/offlineStorage";
+import { usePermissions } from "@/hooks/useUserRole";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -45,6 +47,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const location = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
   const [session, setSession] = useState<Session | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
@@ -191,6 +194,20 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 </Link>
               );
             })}
+            {canDeleteEntities && !permissionsLoading && (
+              <Link to="/admin/recently-deleted">
+                <Button
+                  variant={location.pathname === "/admin/recently-deleted" ? "secondary" : "ghost"}
+                  className={cn(
+                    "w-full justify-start gap-3 mt-4 pt-4 border-t border-border/50",
+                    location.pathname === "/admin/recently-deleted" && "bg-accent/10 text-accent"
+                  )}
+                >
+                  <Trash2 className="w-5 h-5" />
+                  Recently Deleted
+                </Button>
+              </Link>
+            )}
           </nav>
         </aside>
 
@@ -225,6 +242,23 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                     </Link>
                   );
                 })}
+                {canDeleteEntities && !permissionsLoading && (
+                  <Link 
+                    to="/admin/recently-deleted"
+                    onClick={() => setMobileNavOpen(false)}
+                  >
+                    <Button
+                      variant={location.pathname === "/admin/recently-deleted" ? "secondary" : "ghost"}
+                      className={cn(
+                        "w-full justify-start gap-3 mt-4 pt-4 border-t border-border/50",
+                        location.pathname === "/admin/recently-deleted" && "bg-accent/10 text-accent"
+                      )}
+                    >
+                      <Trash2 className="w-5 h-5" />
+                      Recently Deleted
+                    </Button>
+                  </Link>
+                )}
               </nav>
             </aside>
           </div>

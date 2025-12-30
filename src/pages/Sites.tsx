@@ -68,6 +68,7 @@ const Sites = () => {
           units (id)
         )
       `)
+      .eq("is_active", true)
       .order("name");
 
     if (error) {
