@@ -88,14 +88,16 @@ serve(async (req) => {
 
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
 
+    // Normalize base URL - remove trailing slashes and any /api/v3 suffix
+    let effectiveBaseUrl = ttnApiBaseUrl.trim().replace(/\/+$/, "");
+    if (effectiveBaseUrl.endsWith("/api/v3")) {
+      effectiveBaseUrl = effectiveBaseUrl.slice(0, -7);
+    }
+    console.log(`[ttn-provision-device] Effective TTN base URL: ${effectiveBaseUrl}`);
+
     // Helper for TTN API calls with proper URL construction
     const ttnFetch = async (endpoint: string, options: RequestInit = {}) => {
-      // Normalize base URL - remove trailing slashes and any /api/v3 suffix
-      let baseUrl = ttnApiBaseUrl.trim().replace(/\/+$/, "");
-      if (baseUrl.endsWith("/api/v3")) {
-        baseUrl = baseUrl.slice(0, -7);
-      }
-      const url = `${baseUrl}${endpoint}`;
+      const url = `${effectiveBaseUrl}${endpoint}`;
       console.log(`[ttn-provision-device] TTN API: ${options.method || "GET"} ${url}`);
       const response = await fetch(url, {
         ...options,
@@ -109,6 +111,45 @@ serve(async (req) => {
     };
 
     if (action === "create") {
+      // Step 0: Probe TTN connectivity by fetching the application
+      console.log(`[ttn-provision-device] Step 0: Probing TTN connectivity for app ${ttnAppId}`);
+      
+      const probeResponse = await ttnFetch(`/api/v3/applications/${ttnAppId}`, {
+        method: "GET",
+      });
+      
+      if (!probeResponse.ok) {
+        const probeErrorText = await probeResponse.text();
+        console.error(`[ttn-provision-device] TTN probe failed: ${probeResponse.status} - ${probeErrorText}`);
+        
+        // Parse error for more details
+        let errorDetail = probeErrorText;
+        try {
+          const parsed = JSON.parse(probeErrorText);
+          if (parsed.message) errorDetail = parsed.message;
+          if (parsed.details) errorDetail += ` (${JSON.stringify(parsed.details)})`;
+        } catch {
+          // Keep raw text
+        }
+        
+        // Update sensor status to fault
+        await supabase
+          .from("lora_sensors")
+          .update({ status: "fault" })
+          .eq("id", sensor_id);
+        
+        return new Response(
+          JSON.stringify({ 
+            success: false,
+            error: `TTN connectivity failed (${probeResponse.status})`, 
+            details: `Could not reach TTN application "${ttnAppId}" at ${effectiveBaseUrl}. Response: ${errorDetail}. Check if TTN_API_BASE_URL matches your TTN cluster and TTN_API_KEY has read/write rights.`,
+          }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      console.log(`[ttn-provision-device] TTN probe successful - application ${ttnAppId} is reachable`);
+
       // Step 1: Create device in Identity Server
       console.log(`[ttn-provision-device] Step 1: Creating device in Identity Server`);
       
