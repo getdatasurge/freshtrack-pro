@@ -12,10 +12,13 @@ interface UnitRow {
   status: string;
   last_reading_at: string | null;
   last_temp_reading: number | null;
+  last_checkin_at: string | null;
+  checkin_interval_minutes: number;
   temp_limit_high: number;
   temp_limit_low: number | null;
   temp_hysteresis: number;
   manual_log_cadence: number;
+  last_manual_log_at: string | null;
   door_state: string | null;
   door_last_changed_at: string | null;
   door_open_grace_minutes: number;
@@ -61,14 +64,59 @@ const READINGS_TO_RESTORE = 2;
 // Suspected cooling failure threshold (minutes)
 const COOLING_FAILURE_THRESHOLD_MINUTES = 45;
 
-// Calculate dynamic data gap threshold from alert rules
-function calculateDataGapThreshold(rules: Record<string, unknown> | null): number {
-  const expectedIntervalSeconds = (rules?.expected_reading_interval_seconds as number) ?? 60;
-  const multiplier = (rules?.offline_trigger_multiplier as number) ?? 2.0;
-  const additionalMinutes = (rules?.offline_trigger_additional_minutes as number) ?? 2;
+/**
+ * Compute the number of missed check-ins based on last_checkin_at and interval
+ * Uses a 30-second buffer to avoid flapping
+ */
+function computeMissedCheckins(lastCheckinAt: string | null, intervalMinutes: number): number {
+  if (!lastCheckinAt) return 0;
+  const elapsed = Date.now() - new Date(lastCheckinAt).getTime();
+  const intervalMs = intervalMinutes * 60 * 1000;
+  // Add 30-second buffer to avoid flapping
+  const bufferedElapsed = Math.max(0, elapsed - 30000);
+  return Math.max(0, Math.floor(bufferedElapsed / intervalMs));
+}
+
+/**
+ * Determine offline severity based on missed check-ins
+ */
+function computeOfflineSeverity(
+  missedCheckins: number,
+  warningThreshold: number,
+  criticalThreshold: number
+): "none" | "warning" | "critical" {
+  if (missedCheckins >= criticalThreshold) return "critical";
+  if (missedCheckins >= warningThreshold) return "warning";
+  return "none";
+}
+
+/**
+ * Check if manual logging is required
+ * Requirements: missed check-ins >= threshold AND time since last reading > cadence
+ */
+function isManualLoggingRequired(
+  missedCheckins: number,
+  missedCheckinThreshold: number,
+  lastReadingAt: string | null,
+  lastManualLogAt: string | null,
+  manualCadenceMinutes: number,
+  graceMinutes: number
+): boolean {
+  // Must have missed enough check-ins first
+  if (missedCheckins < missedCheckinThreshold) return false;
   
-  // threshold = (expected_interval * multiplier) + additional_minutes
-  return (expectedIntervalSeconds * multiplier * 1000) + (additionalMinutes * 60 * 1000);
+  // Find the most recent valid reading (sensor or manual)
+  const lastSensorTime = lastReadingAt ? new Date(lastReadingAt).getTime() : 0;
+  const lastManualTime = lastManualLogAt ? new Date(lastManualLogAt).getTime() : 0;
+  const lastKnownGoodTime = Math.max(lastSensorTime, lastManualTime);
+  
+  if (lastKnownGoodTime === 0) return true; // No readings ever, manual required
+  
+  const now = Date.now();
+  const cadenceMs = (manualCadenceMinutes + graceMinutes) * 60 * 1000;
+  const timeSinceLastGood = now - lastKnownGoodTime;
+  
+  return timeSinceLastGood > cadenceMs;
 }
 
 /**
@@ -77,7 +125,8 @@ function calculateDataGapThreshold(rules: Record<string, unknown> | null): numbe
  * Security: Requires INTERNAL_API_KEY when configured
  * 
  * This function processes all active units to:
- * - Detect data gaps and trigger monitoring_interrupted alerts
+ * - Detect offline status based on missed check-ins (WARNING at 1, CRITICAL at 5)
+ * - Trigger manual_required only when 5+ missed check-ins AND 4+ hours since last reading
  * - Detect temperature excursions and create alerts
  * - Track door states and grace periods
  * - Detect suspected cooling failures
@@ -99,13 +148,14 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    console.log("Processing unit states...");
+    console.log("Processing unit states with missed check-in logic...");
 
-    // Get all active units with door state and confirm times
+    // Get all active units with all required fields
     const { data: units, error: unitsError } = await supabase
       .from("units")
       .select(`
         id, name, status, last_reading_at, last_temp_reading, area_id,
+        last_checkin_at, checkin_interval_minutes, last_manual_log_at,
         temp_limit_high, temp_limit_low, temp_hysteresis, manual_log_cadence,
         door_state, door_last_changed_at, door_open_grace_minutes,
         confirm_time_door_closed, confirm_time_door_open, last_status_change,
@@ -128,7 +178,14 @@ Deno.serve(async (req) => {
       let newStatus: UnitStatus = currentStatus;
       let reason = "";
 
-      const lastReadingTime = u.last_reading_at ? new Date(u.last_reading_at as string).getTime() : null;
+      const lastReadingAt = u.last_reading_at as string | null;
+      const lastCheckinAt = u.last_checkin_at as string | null;
+      const lastManualLogAt = u.last_manual_log_at as string | null;
+      const checkinIntervalMinutes = (u.checkin_interval_minutes as number) || 5;
+      const manualLogCadence = u.manual_log_cadence as number || 14400; // seconds
+      const manualCadenceMinutes = Math.floor(manualLogCadence / 60); // Convert to minutes
+
+      const lastReadingTime = lastReadingAt ? new Date(lastReadingAt).getTime() : null;
       const timeSinceReading = lastReadingTime ? now - lastReadingTime : Infinity;
 
       // Door state context
@@ -141,30 +198,86 @@ Deno.serve(async (req) => {
       const isDoorOpenWithinGrace = doorState === "open" && doorOpenDuration < doorGraceMinutes;
 
       // Confirm times (in seconds, convert to ms)
-      const confirmTimeDoorClosed = ((u.confirm_time_door_closed as number) || 600) * 1000; // default 10 min
-      const confirmTimeDoorOpen = ((u.confirm_time_door_open as number) || 1200) * 1000; // default 20 min
+      const confirmTimeDoorClosed = ((u.confirm_time_door_closed as number) || 600) * 1000;
+      const confirmTimeDoorOpen = ((u.confirm_time_door_open as number) || 1200) * 1000;
       const confirmTime = doorState === "open" ? confirmTimeDoorOpen : confirmTimeDoorClosed;
 
-      // Get per-unit alert rules for dynamic threshold
+      // Get per-unit alert rules for thresholds
       const { data: effectiveRules } = await supabase.rpc("get_effective_alert_rules", { p_unit_id: u.id });
-      const dataGapThresholdMs = calculateDataGapThreshold(effectiveRules as Record<string, unknown> | null);
+      const rules = effectiveRules as Record<string, unknown> | null;
+      
+      // Extract thresholds from effective rules
+      const offlineWarningThreshold = (rules?.offline_warning_missed_checkins as number) ?? 1;
+      const offlineCriticalThreshold = (rules?.offline_critical_missed_checkins as number) ?? 5;
+      const manualLogMissedThreshold = (rules?.manual_log_missed_checkins_threshold as number) ?? 5;
+      const manualIntervalMinutes = (rules?.manual_interval_minutes as number) ?? 240; // 4 hours default
+      const manualGraceMinutes = (rules?.manual_grace_minutes as number) ?? 0;
 
-      // Check for data gap - transition to MONITORING_INTERRUPTED
-      if (timeSinceReading > dataGapThresholdMs) {
-        if (currentStatus !== "monitoring_interrupted" && currentStatus !== "manual_required") {
-          newStatus = "monitoring_interrupted";
-          reason = `No sensor data for ${Math.floor(timeSinceReading / 60000)} minutes (threshold: ${Math.floor(dataGapThresholdMs / 60000)}m)`;
+      // === MISSED CHECK-IN BASED OFFLINE DETECTION ===
+      const missedCheckins = computeMissedCheckins(lastCheckinAt, checkinIntervalMinutes);
+      const offlineSeverity = computeOfflineSeverity(missedCheckins, offlineWarningThreshold, offlineCriticalThreshold);
+      
+      // Check if manual logging is required (5+ missed check-ins AND 4+ hours since last reading)
+      const manualRequired = isManualLoggingRequired(
+        missedCheckins,
+        manualLogMissedThreshold,
+        lastReadingAt,
+        lastManualLogAt,
+        manualIntervalMinutes,
+        manualGraceMinutes
+      );
+
+      // === STATE TRANSITIONS BASED ON MISSED CHECK-INS ===
+      
+      // Handle offline states
+      if (offlineSeverity === "critical") {
+        if (manualRequired) {
+          // Critical offline AND manual logging required
+          if (currentStatus !== "manual_required") {
+            newStatus = "manual_required";
+            reason = `${missedCheckins} missed check-ins (critical) + manual logging required (>${manualIntervalMinutes}m since last reading)`;
+          }
+        } else {
+          // Critical offline but manual logging NOT required (within 4 hours)
+          if (currentStatus !== "monitoring_interrupted" && currentStatus !== "manual_required") {
+            newStatus = "monitoring_interrupted";
+            reason = `${missedCheckins} missed check-ins - critical offline (manual logging not yet required, last reading within ${manualIntervalMinutes}m)`;
+          }
         }
-        
-        // MONITORING_INTERRUPTED immediately becomes MANUAL_REQUIRED
-        if (currentStatus === "monitoring_interrupted" || newStatus === "monitoring_interrupted") {
-          newStatus = "manual_required";
-          reason = "Monitoring interrupted - manual logging required";
+      } else if (offlineSeverity === "warning") {
+        // Warning-level offline (1-4 missed check-ins)
+        // Only transition to offline state if not in a more severe state
+        if (currentStatus === "ok" || currentStatus === "restoring") {
+          newStatus = "offline";
+          reason = `${missedCheckins} missed check-in(s) - warning level offline`;
         }
       }
 
-      // Check temperature excursion (only if we have recent data)
-      if (timeSinceReading <= dataGapThresholdMs && u.last_temp_reading !== null) {
+      // === CHECK FOR DATA RECOVERY ===
+      // If we have recent data (check-in within 1 interval), transition back
+      if (missedCheckins === 0 && offlineSeverity === "none") {
+        if (currentStatus === "offline" || currentStatus === "monitoring_interrupted" || currentStatus === "manual_required") {
+          newStatus = "restoring";
+          reason = "Sensor data restored - transitioning to restoring";
+          
+          // Resolve monitoring_interrupted alert
+          await supabase
+            .from("alerts")
+            .update({
+              status: "resolved",
+              resolved_at: new Date().toISOString(),
+            })
+            .eq("unit_id", u.id)
+            .eq("alert_type", "monitoring_interrupted")
+            .in("status", ["active", "acknowledged"]);
+          
+          console.log(`Resolved monitoring_interrupted alerts for unit ${u.name}`);
+        }
+      }
+
+      // === TEMPERATURE EXCURSION LOGIC ===
+      // Only check if we have recent data and unit is not in offline states
+      if (missedCheckins === 0 && u.last_temp_reading !== null) {
         const temp = u.last_temp_reading as number;
         const highLimit = u.temp_limit_high as number;
         const lowLimit = u.temp_limit_low as number | null;
@@ -375,22 +488,6 @@ Deno.serve(async (req) => {
                 newStatus = "ok";
                 reason = "Temperature stable in range";
               }
-            } else if (currentStatus === "manual_required" || currentStatus === "monitoring_interrupted" || currentStatus === "offline") {
-              // Allow recovery from offline/manual_required states when readings arrive
-              newStatus = "restoring";
-              reason = `Monitoring resumed from ${currentStatus}`;
-              
-              await supabase
-                .from("alerts")
-                .update({
-                  status: "resolved",
-                  resolved_at: new Date().toISOString(),
-                })
-                .eq("unit_id", u.id)
-                .eq("alert_type", "monitoring_interrupted")
-                .in("status", ["active", "acknowledged"]);
-              
-              console.log(`Resolved monitoring_interrupted alerts for unit ${u.name} (was ${currentStatus})`);
             }
           }
         }
@@ -420,15 +517,18 @@ Deno.serve(async (req) => {
           reason,
         });
 
-        // Create alert for monitoring_interrupted/manual_required
+        // Create alert for offline states with appropriate severity
         if (["monitoring_interrupted", "manual_required", "offline"].includes(newStatus)) {
           const { data: existingAlert } = await supabase
             .from("alerts")
-            .select("id")
+            .select("id, severity")
             .eq("unit_id", u.id)
             .eq("alert_type", "monitoring_interrupted")
             .in("status", ["active", "acknowledged"])
             .maybeSingle();
+
+          // Determine alert severity based on offline severity
+          const alertSeverity = offlineSeverity === "critical" ? "critical" : "warning";
 
           if (!existingAlert) {
             const { data: alertData } = await supabase.from("alerts").insert({
@@ -437,16 +537,42 @@ Deno.serve(async (req) => {
               site_id: getSiteId(unit),
               area_id: getAreaId(unit),
               source: "sensor",
-              title: `${u.name}: Monitoring Interrupted`,
+              title: newStatus === "manual_required" 
+                ? `${u.name}: Manual Logging Required`
+                : `${u.name}: Monitoring Interrupted`,
               message: reason,
               alert_type: "monitoring_interrupted",
-              severity: "info",
+              severity: alertSeverity,
+              metadata: {
+                missed_checkins: missedCheckins,
+                offline_severity: offlineSeverity,
+                manual_required: manualRequired,
+              },
             }).select("id").single();
 
             if (alertData) {
               newAlertIds.push(alertData.id);
-              console.log(`Created monitoring_interrupted alert for unit ${u.name}`);
+              console.log(`Created monitoring_interrupted alert (${alertSeverity}) for unit ${u.name}`);
             }
+          } else if (existingAlert.severity !== alertSeverity) {
+            // Update existing alert severity if it changed
+            await supabase
+              .from("alerts")
+              .update({
+                severity: alertSeverity,
+                title: newStatus === "manual_required" 
+                  ? `${u.name}: Manual Logging Required`
+                  : `${u.name}: Monitoring Interrupted`,
+                message: reason,
+                metadata: {
+                  missed_checkins: missedCheckins,
+                  offline_severity: offlineSeverity,
+                  manual_required: manualRequired,
+                },
+              })
+              .eq("id", existingAlert.id);
+            
+            console.log(`Updated monitoring_interrupted alert to ${alertSeverity} for unit ${u.name}`);
           }
         }
 
@@ -457,7 +583,8 @@ Deno.serve(async (req) => {
           unit_id: u.id,
           event_type: "unit_state_change",
           category: "unit",
-          severity: newStatus === "alarm_active" ? "error" : newStatus === "excursion" ? "warning" : "info",
+          severity: newStatus === "alarm_active" ? "error" : 
+                   (newStatus === "excursion" || newStatus === "manual_required") ? "warning" : "info",
           title: `${u.name}: ${currentStatus} → ${newStatus}`,
           event_data: {
             from_status: currentStatus,
@@ -465,6 +592,9 @@ Deno.serve(async (req) => {
             reason,
             temp_reading: u.last_temp_reading,
             door_state: doorState,
+            missed_checkins: missedCheckins,
+            offline_severity: offlineSeverity,
+            manual_required: manualRequired,
           },
         });
       }

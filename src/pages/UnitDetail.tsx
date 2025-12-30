@@ -6,6 +6,7 @@ import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBr
 import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
 import LastKnownGoodCard from "@/components/unit/LastKnownGoodCard";
 import UnitSettingsSection from "@/components/unit/UnitSettingsSection";
+import UnitAlertThresholdsSection from "@/components/unit/UnitAlertThresholdsSection";
 import UnitAlertsBanner from "@/components/unit/UnitAlertsBanner";
 import BatteryHealthCard from "@/components/unit/BatteryHealthCard";
 import UnitSensorsCard from "@/components/unit/UnitSensorsCard";
@@ -710,6 +711,13 @@ const UnitDetail = () => {
           notes={(unit as any).notes}
           doorSensorEnabled={(unit as any).door_sensor_enabled}
           doorOpenGraceMinutes={(unit as any).door_open_grace_minutes}
+          onSettingsUpdated={loadUnitData}
+        />
+
+        {/* Alert Thresholds (collapsed by default) */}
+        <UnitAlertThresholdsSection
+          unitId={unit.id}
+          siteId={unit.area.site.id}
           onSettingsUpdated={loadUnitData}
         />
 
