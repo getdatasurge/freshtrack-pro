@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import { SiteComplianceSettings } from "@/components/site/SiteComplianceSettings";
+import { SiteGatewaysCard } from "@/components/site/SiteGatewaysCard";
 import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
 import { AlertRulesHistoryModal } from "@/components/settings/AlertRulesHistoryModal";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
@@ -480,6 +481,13 @@ const SiteDetail = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Gateways Section */}
+        <SiteGatewaysCard
+          siteId={site.id}
+          siteName={site.name}
+          organizationId={site.organization_id}
+        />
 
         {/* Compliance Settings Section */}
         <SiteComplianceSettings

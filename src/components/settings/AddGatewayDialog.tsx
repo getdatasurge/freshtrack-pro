@@ -56,6 +56,7 @@ interface AddGatewayDialogProps {
   onOpenChange: (open: boolean) => void;
   organizationId: string;
   sites: Site[];
+  defaultSiteId?: string;
 }
 
 export function AddGatewayDialog({
@@ -63,6 +64,7 @@ export function AddGatewayDialog({
   onOpenChange,
   organizationId,
   sites,
+  defaultSiteId,
 }: AddGatewayDialogProps) {
   const createGateway = useCreateGateway();
   
@@ -71,7 +73,7 @@ export function AddGatewayDialog({
     defaultValues: {
       name: "",
       gateway_eui: "",
-      site_id: undefined,
+      site_id: defaultSiteId || undefined,
       description: "",
     },
   });
@@ -95,7 +97,12 @@ export function AddGatewayDialog({
 
   const handleOpenChange = (newOpen: boolean) => {
     if (!newOpen) {
-      form.reset();
+      form.reset({
+        name: "",
+        gateway_eui: "",
+        site_id: defaultSiteId || undefined,
+        description: "",
+      });
     }
     onOpenChange(newOpen);
   };
