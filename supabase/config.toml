@@ -50,3 +50,11 @@ verify_jwt = false
 # User cleanup - called by app (JWT) or database trigger (service role)
 [functions.cleanup-user-sensors]
 verify_jwt = false
+
+# TTN deprovision worker - scheduled job, uses service role key
+[functions.ttn-deprovision-worker]
+verify_jwt = false
+
+# TTN list devices - requires JWT for admin access
+[functions.ttn-list-devices]
+verify_jwt = true

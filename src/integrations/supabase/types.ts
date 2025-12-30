@@ -2035,6 +2035,86 @@ export type Database = {
           },
         ]
       }
+      ttn_deprovision_jobs: {
+        Row: {
+          attempts: number
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          dev_eui: string
+          id: string
+          last_error_code: string | null
+          last_error_message: string | null
+          last_error_payload: Json | null
+          max_attempts: number
+          next_retry_at: string | null
+          organization_id: string
+          reason: string
+          sensor_id: string | null
+          sensor_name: string | null
+          site_id: string | null
+          status: string
+          ttn_application_id: string
+          ttn_device_id: string | null
+          unit_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          dev_eui: string
+          id?: string
+          last_error_code?: string | null
+          last_error_message?: string | null
+          last_error_payload?: Json | null
+          max_attempts?: number
+          next_retry_at?: string | null
+          organization_id: string
+          reason: string
+          sensor_id?: string | null
+          sensor_name?: string | null
+          site_id?: string | null
+          status?: string
+          ttn_application_id: string
+          ttn_device_id?: string | null
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          dev_eui?: string
+          id?: string
+          last_error_code?: string | null
+          last_error_message?: string | null
+          last_error_payload?: Json | null
+          max_attempts?: number
+          next_retry_at?: string | null
+          organization_id?: string
+          reason?: string
+          sensor_id?: string | null
+          sensor_name?: string | null
+          site_id?: string | null
+          status?: string
+          ttn_application_id?: string
+          ttn_device_id?: string | null
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ttn_deprovision_jobs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       unit_settings_history: {
         Row: {
           changed_at: string
@@ -2270,6 +2350,14 @@ export type Database = {
           p_unit_type?: Database["public"]["Enums"]["unit_type"]
         }
         Returns: string
+      }
+      enqueue_deprovision_jobs_for_unit: {
+        Args: { p_created_by?: string; p_reason: string; p_unit_id: string }
+        Returns: number
+      }
+      get_deprovision_job_stats: {
+        Args: { p_organization_id: string }
+        Returns: Json
       }
       get_effective_alert_rules: { Args: { p_unit_id: string }; Returns: Json }
       get_effective_notification_policy: {
