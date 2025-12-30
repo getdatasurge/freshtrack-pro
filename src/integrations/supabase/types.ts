@@ -2091,6 +2091,89 @@ export type Database = {
           },
         ]
       }
+      ttn_connections: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_enabled: boolean | null
+          last_connection_test_at: string | null
+          last_connection_test_result: Json | null
+          organization_id: string
+          ttn_api_key_encrypted: string | null
+          ttn_api_key_last4: string | null
+          ttn_api_key_updated_at: string | null
+          ttn_application_id: string | null
+          ttn_application_name: string | null
+          ttn_identity_server_url: string | null
+          ttn_region: string | null
+          ttn_stack_base_url: string | null
+          ttn_user_id: string | null
+          ttn_webhook_api_key_encrypted: string | null
+          ttn_webhook_api_key_last4: string | null
+          ttn_webhook_id: string | null
+          ttn_webhook_url: string | null
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          last_connection_test_at?: string | null
+          last_connection_test_result?: Json | null
+          organization_id: string
+          ttn_api_key_encrypted?: string | null
+          ttn_api_key_last4?: string | null
+          ttn_api_key_updated_at?: string | null
+          ttn_application_id?: string | null
+          ttn_application_name?: string | null
+          ttn_identity_server_url?: string | null
+          ttn_region?: string | null
+          ttn_stack_base_url?: string | null
+          ttn_user_id?: string | null
+          ttn_webhook_api_key_encrypted?: string | null
+          ttn_webhook_api_key_last4?: string | null
+          ttn_webhook_id?: string | null
+          ttn_webhook_url?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_enabled?: boolean | null
+          last_connection_test_at?: string | null
+          last_connection_test_result?: Json | null
+          organization_id?: string
+          ttn_api_key_encrypted?: string | null
+          ttn_api_key_last4?: string | null
+          ttn_api_key_updated_at?: string | null
+          ttn_application_id?: string | null
+          ttn_application_name?: string | null
+          ttn_identity_server_url?: string | null
+          ttn_region?: string | null
+          ttn_stack_base_url?: string | null
+          ttn_user_id?: string | null
+          ttn_webhook_api_key_encrypted?: string | null
+          ttn_webhook_api_key_last4?: string | null
+          ttn_webhook_id?: string | null
+          ttn_webhook_url?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ttn_connections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ttn_deprovision_jobs: {
         Row: {
           attempts: number
