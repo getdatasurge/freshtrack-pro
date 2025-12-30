@@ -12,6 +12,10 @@ interface ManageApplicationRequest {
 }
 
 serve(async (req) => {
+  // Version banner for deployment verification
+  const BUILD_VERSION = "dual-cluster-v1-20251230";
+  console.log(`[ttn-manage-application] Build: ${BUILD_VERSION}`);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -21,7 +25,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const ttnApiKey = Deno.env.get("TTN_API_KEY");
-    const ttnApiBaseUrl = Deno.env.get("TTN_API_BASE_URL");
+    const ttnApiBaseUrl = Deno.env.get("TTN_API_BASE_URL"); // Regional cluster for AS webhooks
+    const ttnIsBaseUrl = Deno.env.get("TTN_IS_BASE_URL") || "https://eu1.cloud.thethings.network"; // Identity Server
     const ttnWebhookApiKey = Deno.env.get("TTN_WEBHOOK_API_KEY");
     const ttnUserId = Deno.env.get("TTN_USER_ID");
 
@@ -62,15 +67,25 @@ serve(async (req) => {
     const ttnAppId = org.ttn_application_id || `fg-${org.slug}`.toLowerCase().replace(/[^a-z0-9-]/g, "-");
     console.log(`[ttn-manage-application] TTN Application ID: ${ttnAppId}`);
 
-    // Helper function for TTN API calls with proper URL construction
-    const ttnFetch = async (endpoint: string, options: RequestInit = {}) => {
-      // Normalize base URL - remove trailing slashes and any /api/v3 suffix
-      let baseUrl = ttnApiBaseUrl.trim().replace(/\/+$/, "");
-      if (baseUrl.endsWith("/api/v3")) {
-        baseUrl = baseUrl.slice(0, -7);
+    // Normalize base URLs
+    const normalizeUrl = (url: string) => {
+      let normalized = url.trim().replace(/\/+$/, "");
+      if (normalized.endsWith("/api/v3")) {
+        normalized = normalized.slice(0, -7);
       }
-      const url = `${baseUrl}${endpoint}`;
-      console.log(`[ttn-manage-application] TTN API: ${options.method || "GET"} ${url}`);
+      return normalized;
+    };
+
+    const effectiveIsBaseUrl = normalizeUrl(ttnIsBaseUrl);
+    const effectiveRegionalBaseUrl = normalizeUrl(ttnApiBaseUrl);
+
+    console.log(`[ttn-manage-application] Identity Server URL: ${effectiveIsBaseUrl}`);
+    console.log(`[ttn-manage-application] Regional Server URL: ${effectiveRegionalBaseUrl}`);
+
+    // Helper for TTN Identity Server API calls (eu1 - for application management)
+    const ttnIsFetch = async (endpoint: string, options: RequestInit = {}) => {
+      const url = `${effectiveIsBaseUrl}${endpoint}`;
+      console.log(`[ttn-manage-application] TTN IS API: ${options.method || "GET"} ${url}`);
       const response = await fetch(url, {
         ...options,
         headers: {
@@ -82,7 +97,22 @@ serve(async (req) => {
       return response;
     };
 
-    // Create or ensure TTN application exists
+    // Helper for TTN Regional Server API calls (nam1 - for AS webhooks)
+    const ttnRegionalFetch = async (endpoint: string, options: RequestInit = {}) => {
+      const url = `${effectiveRegionalBaseUrl}${endpoint}`;
+      console.log(`[ttn-manage-application] TTN Regional API: ${options.method || "GET"} ${url}`);
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          "Authorization": `Bearer ${ttnApiKey}`,
+          "Content-Type": "application/json",
+          ...options.headers,
+        },
+      });
+      return response;
+    };
+
+    // Create or ensure TTN application exists (Identity Server)
     if (action === "create" || action === "ensure") {
       // If ttn_application_id is already set and marked as created, skip creation
       if (org.ttn_application_id && org.ttn_application_created) {
@@ -90,10 +120,9 @@ serve(async (req) => {
       } else if (!org.ttn_application_created) {
         console.log(`[ttn-manage-application] Creating TTN application: ${ttnAppId}`);
 
-        // Try to create the application using the correct TTN v3 API endpoint
-        // TTN v3 requires POST /api/v3/users/{user_id}/applications
+        // Try to create the application using the correct TTN v3 API endpoint (Identity Server)
         console.log(`[ttn-manage-application] Using TTN user ID: ${ttnUserId}`);
-        const createResponse = await ttnFetch(`/api/v3/users/${ttnUserId}/applications`, {
+        const createResponse = await ttnIsFetch(`/api/v3/users/${ttnUserId}/applications`, {
           method: "POST",
           body: JSON.stringify({
             application: {
@@ -137,7 +166,7 @@ serve(async (req) => {
       }
     }
 
-    // Configure webhook for the application
+    // Configure webhook for the application (Application Server - Regional)
     if (action === "configure_webhook" || action === "ensure") {
       const { data: updatedOrg } = await supabase
         .from("organizations")
@@ -162,7 +191,8 @@ serve(async (req) => {
           },
         };
 
-        const webhookResponse = await ttnFetch(
+        // Webhooks are managed by Application Server - use Regional URL
+        const webhookResponse = await ttnRegionalFetch(
           `/api/v3/as/webhooks/${updatedOrg.ttn_application_id}`,
           {
             method: "POST",

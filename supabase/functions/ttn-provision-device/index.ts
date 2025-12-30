@@ -14,7 +14,7 @@ interface ProvisionRequest {
 
 serve(async (req) => {
   // Version banner for deployment verification
-  const BUILD_VERSION = "probe-v2-20251230-0253";
+  const BUILD_VERSION = "dual-cluster-v1-20251230";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   
   // Handle CORS preflight
@@ -26,7 +26,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const ttnApiKey = Deno.env.get("TTN_API_KEY");
-    const ttnApiBaseUrl = Deno.env.get("TTN_API_BASE_URL");
+    const ttnApiBaseUrl = Deno.env.get("TTN_API_BASE_URL"); // Regional cluster (nam1 for you)
+    const ttnIsBaseUrl = Deno.env.get("TTN_IS_BASE_URL") || "https://eu1.cloud.thethings.network"; // Identity Server
 
     if (!ttnApiKey || !ttnApiBaseUrl) {
       console.error("TTN credentials not configured");
@@ -92,17 +93,40 @@ serve(async (req) => {
 
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
 
-    // Normalize base URL - remove trailing slashes and any /api/v3 suffix
-    let effectiveBaseUrl = ttnApiBaseUrl.trim().replace(/\/+$/, "");
-    if (effectiveBaseUrl.endsWith("/api/v3")) {
-      effectiveBaseUrl = effectiveBaseUrl.slice(0, -7);
-    }
-    console.log(`[ttn-provision-device] Effective TTN base URL: ${effectiveBaseUrl}`);
+    // Normalize base URLs - remove trailing slashes and any /api/v3 suffix
+    const normalizeUrl = (url: string) => {
+      let normalized = url.trim().replace(/\/+$/, "");
+      if (normalized.endsWith("/api/v3")) {
+        normalized = normalized.slice(0, -7);
+      }
+      return normalized;
+    };
 
-    // Helper for TTN API calls with proper URL construction
-    const ttnFetch = async (endpoint: string, options: RequestInit = {}) => {
-      const url = `${effectiveBaseUrl}${endpoint}`;
-      console.log(`[ttn-provision-device] TTN API: ${options.method || "GET"} ${url}`);
+    const effectiveIsBaseUrl = normalizeUrl(ttnIsBaseUrl);
+    const effectiveRegionalBaseUrl = normalizeUrl(ttnApiBaseUrl);
+    
+    console.log(`[ttn-provision-device] Identity Server URL: ${effectiveIsBaseUrl}`);
+    console.log(`[ttn-provision-device] Regional Server URL: ${effectiveRegionalBaseUrl}`);
+
+    // Helper for TTN Identity Server API calls (eu1 - for application/device management)
+    const ttnIsFetch = async (endpoint: string, options: RequestInit = {}) => {
+      const url = `${effectiveIsBaseUrl}${endpoint}`;
+      console.log(`[ttn-provision-device] TTN IS API: ${options.method || "GET"} ${url}`);
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          "Authorization": `Bearer ${ttnApiKey}`,
+          "Content-Type": "application/json",
+          ...options.headers,
+        },
+      });
+      return response;
+    };
+
+    // Helper for TTN Regional Server API calls (nam1 - for JS/NS/AS)
+    const ttnRegionalFetch = async (endpoint: string, options: RequestInit = {}) => {
+      const url = `${effectiveRegionalBaseUrl}${endpoint}`;
+      console.log(`[ttn-provision-device] TTN Regional API: ${options.method || "GET"} ${url}`);
       const response = await fetch(url, {
         ...options,
         headers: {
@@ -115,10 +139,10 @@ serve(async (req) => {
     };
 
     if (action === "create") {
-      // Step 0: Probe TTN connectivity by fetching the application
+      // Step 0: Probe TTN connectivity by fetching the application (Identity Server)
       console.log(`[ttn-provision-device] Step 0: Probing TTN connectivity for app ${ttnAppId}`);
       
-      const probeResponse = await ttnFetch(`/api/v3/applications/${ttnAppId}`, {
+      const probeResponse = await ttnIsFetch(`/api/v3/applications/${ttnAppId}`, {
         method: "GET",
       });
       
@@ -146,7 +170,7 @@ serve(async (req) => {
           JSON.stringify({ 
             success: false,
             error: `TTN connectivity failed (${probeResponse.status})`, 
-            details: `Could not reach TTN application "${ttnAppId}" at ${effectiveBaseUrl}. Response: ${errorDetail}. Check if TTN_API_BASE_URL matches your TTN cluster and TTN_API_KEY has read/write rights.`,
+            details: `Could not reach TTN application "${ttnAppId}" at ${effectiveIsBaseUrl}. Response: ${errorDetail}. Check if TTN_IS_BASE_URL is set to the Identity Server cluster (usually eu1) and TTN_API_KEY has read/write rights.`,
           }),
           { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -154,7 +178,7 @@ serve(async (req) => {
       
       console.log(`[ttn-provision-device] TTN probe successful - application ${ttnAppId} is reachable`);
 
-      // Step 1: Create device in Identity Server
+      // Step 1: Create device in Identity Server (eu1)
       console.log(`[ttn-provision-device] Step 1: Creating device in Identity Server`);
       
       const devicePayload = {
@@ -187,7 +211,7 @@ serve(async (req) => {
         },
       };
 
-      const createDeviceResponse = await ttnFetch(
+      const createDeviceResponse = await ttnIsFetch(
         `/api/v3/applications/${ttnAppId}/devices`,
         {
           method: "POST",
@@ -211,7 +235,7 @@ serve(async (req) => {
         );
       }
 
-      // Step 2: Set device in Join Server (OTAA credentials)
+      // Step 2: Set device in Join Server (OTAA credentials) - Regional cluster
       if (sensor.app_key) {
         console.log(`[ttn-provision-device] Step 2: Setting device in Join Server`);
         
@@ -232,7 +256,7 @@ serve(async (req) => {
           },
         };
 
-        const jsResponse = await ttnFetch(
+        const jsResponse = await ttnRegionalFetch(
           `/api/v3/js/applications/${ttnAppId}/devices/${deviceId}`,
           {
             method: "PUT",
@@ -247,7 +271,7 @@ serve(async (req) => {
         }
       }
 
-      // Step 3: Set device in Network Server
+      // Step 3: Set device in Network Server - Regional cluster
       console.log(`[ttn-provision-device] Step 3: Setting device in Network Server`);
       
       const nsPayload = {
@@ -273,7 +297,7 @@ serve(async (req) => {
         },
       };
 
-      const nsResponse = await ttnFetch(
+      const nsResponse = await ttnRegionalFetch(
         `/api/v3/ns/applications/${ttnAppId}/devices/${deviceId}`,
         {
           method: "PUT",
@@ -286,7 +310,7 @@ serve(async (req) => {
         console.warn(`[ttn-provision-device] NS registration warning: ${errorText}`);
       }
 
-      // Step 4: Set device in Application Server
+      // Step 4: Set device in Application Server - Regional cluster
       console.log(`[ttn-provision-device] Step 4: Setting device in Application Server`);
       
       const asPayload = {
@@ -303,7 +327,7 @@ serve(async (req) => {
         },
       };
 
-      const asResponse = await ttnFetch(
+      const asResponse = await ttnRegionalFetch(
         `/api/v3/as/applications/${ttnAppId}/devices/${deviceId}`,
         {
           method: "PUT",
@@ -338,10 +362,10 @@ serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     } else if (action === "delete") {
-      // Delete device from TTN
+      // Delete device from TTN (Identity Server)
       console.log(`[ttn-provision-device] Deleting device from TTN: ${deviceId}`);
       
-      const deleteResponse = await ttnFetch(
+      const deleteResponse = await ttnIsFetch(
         `/api/v3/applications/${ttnAppId}/devices/${deviceId}`,
         { method: "DELETE" }
       );
