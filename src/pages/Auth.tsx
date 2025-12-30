@@ -308,8 +308,13 @@ const Auth = () => {
     setIsLoading(false);
   };
 
-  // Show Email Confirmation UI after signup
-  if (signUpComplete) {
+  // Preview mode for testing email confirmation UI
+  const previewMode = searchParams.get('preview');
+  const previewEmail = searchParams.get('email') || 'preview@example.com';
+
+  // Show Email Confirmation UI after signup OR in preview mode
+  if (signUpComplete || previewMode === 'confirmation') {
+    const displayEmail = signUpComplete ? pendingEmail : previewEmail;
     return (
       <div className="min-h-screen bg-gradient-frost flex flex-col items-center justify-center p-4">
         <Link to="/" className="flex items-center gap-2 mb-8">
@@ -327,7 +332,7 @@ const Auth = () => {
             <CardTitle className="text-2xl">Check your email</CardTitle>
             <CardDescription>
               We've sent a confirmation link to<br />
-              <strong className="text-foreground">{pendingEmail}</strong>
+              <strong className="text-foreground">{displayEmail}</strong>
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -337,7 +342,7 @@ const Auth = () => {
             <Button 
               variant="outline" 
               onClick={handleResendConfirmation}
-              disabled={isLoading}
+              disabled={isLoading || previewMode === 'confirmation'}
               className="w-full"
             >
               {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
@@ -345,7 +350,7 @@ const Auth = () => {
             </Button>
             <button
               type="button"
-              onClick={() => { setSignUpComplete(false); setActiveTab("signin"); }}
+              onClick={() => { setSignUpComplete(false); setActiveTab("signin"); navigate('/auth'); }}
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               Back to sign in
