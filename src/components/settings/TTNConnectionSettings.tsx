@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,7 @@ interface TTNConnectionSettingsProps {
 }
 
 export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsProps) {
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -99,12 +101,13 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      // Check for active session before calling edge function
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        console.warn("[TTNConnectionSettings] No active session, skipping TTN settings load");
+      // Use getUser() to force token refresh if expired
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        console.warn("[TTNConnectionSettings] No valid session, redirecting to auth");
         setHasSession(false);
         setIsLoading(false);
+        navigate("/auth");
         return;
       }
       setHasSession(true);
@@ -114,10 +117,12 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       });
 
       if (error) {
-        // Handle 401 specifically
-        if (error.message?.includes("401") || error.message?.includes("unauthorized")) {
-          console.warn("[TTNConnectionSettings] Unauthorized - session may have expired");
+        // Handle 401 specifically - session expired
+        if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
+          console.warn("[TTNConnectionSettings] Session expired, redirecting to auth");
           setHasSession(false);
+          toast.error("Session expired. Redirecting to login...");
+          navigate("/auth");
           return;
         }
         throw error;
@@ -153,11 +158,12 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // Validate session before calling edge function
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      // Use getUser() to force token refresh if expired
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
         setHasSession(false);
-        toast.error("Your login session expired. Please sign out and sign in again.");
+        toast.error("Session expired. Redirecting to login...");
+        navigate("/auth");
         return;
       }
 
@@ -186,9 +192,10 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       if (error) {
         // Handle specific error codes
-        if (error.message?.includes("401")) {
+        if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
           setHasSession(false);
-          toast.error("Your login session expired. Please sign out and sign in again.");
+          toast.error("Session expired. Redirecting to login...");
+          navigate("/auth");
           return;
         }
         if (error.message?.includes("403")) {
@@ -213,11 +220,12 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const handleTest = async () => {
     setIsTesting(true);
     try {
-      // Validate session before calling edge function
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      // Use getUser() to force token refresh if expired
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
         setHasSession(false);
-        toast.error("Your login session expired. Please sign out and sign in again.");
+        toast.error("Session expired. Redirecting to login...");
+        navigate("/auth");
         return;
       }
 
@@ -226,9 +234,10 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       });
 
       if (error) {
-        if (error.message?.includes("401")) {
+        if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
           setHasSession(false);
-          toast.error("Your login session expired. Please sign out and sign in again.");
+          toast.error("Session expired. Redirecting to login...");
+          navigate("/auth");
           return;
         }
         if (error.message?.includes("403")) {
