@@ -21,7 +21,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { toast } from "sonner";
 import { AddSensorDialog } from "./AddSensorDialog";
 import { EditSensorDialog } from "./EditSensorDialog";
 import { formatDistanceToNow } from "date-fns";
@@ -123,6 +125,24 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     return eui.toUpperCase().match(/.{1,2}/g)?.join(":") || eui.toUpperCase();
   };
 
+  const generateTtnDeviceId = (devEui: string) => {
+    const normalized = devEui.replace(/[:\-\s]/g, '').toLowerCase();
+    return `sensor-${normalized}`;
+  };
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  
+  const handleCopy = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(text);
+      toast.success(`${label} copied to clipboard`);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error("Failed to copy to clipboard");
+    }
+  };
+
   const formatLastUplink = (lastSeenAt: string | null, status: LoraSensorStatus) => {
     if (status === "pending" || status === "joining") {
       return <span className="text-muted-foreground">—</span>;
@@ -186,7 +206,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>DevEUI</TableHead>
+                <TableHead>DevEUI / TTN Device ID</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Location</TableHead>
                 <TableHead>Status</TableHead>
@@ -195,11 +215,56 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sensors.map((sensor) => (
+              {sensors.map((sensor) => {
+                const ttnDeviceId = sensor.ttn_device_id || generateTtnDeviceId(sensor.dev_eui);
+                return (
                 <TableRow key={sensor.id}>
                   <TableCell className="font-medium">{sensor.name}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {formatEUI(sensor.dev_eui)}
+                  <TableCell>
+                    <TooltipProvider>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-xs">{formatEUI(sensor.dev_eui)}</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5"
+                                onClick={() => handleCopy(sensor.dev_eui.toLowerCase().replace(/[:\-\s]/g, ''), "DevEUI")}
+                              >
+                                {copiedId === sensor.dev_eui.toLowerCase().replace(/[:\-\s]/g, '') ? (
+                                  <Check className="h-3 w-3 text-green-600" />
+                                ) : (
+                                  <Copy className="h-3 w-3 text-muted-foreground" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Copy DevEUI</TooltipContent>
+                          </Tooltip>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-xs text-muted-foreground">{ttnDeviceId}</span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5"
+                                onClick={() => handleCopy(ttnDeviceId, "TTN Device ID")}
+                              >
+                                {copiedId === ttnDeviceId ? (
+                                  <Check className="h-3 w-3 text-green-600" />
+                                ) : (
+                                  <Copy className="h-3 w-3 text-muted-foreground" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Copy TTN Device ID</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </div>
+                    </TooltipProvider>
                   </TableCell>
                   <TableCell>{getSensorTypeLabel(sensor.sensor_type)}</TableCell>
                   <TableCell>{getLocationDisplay(sensor)}</TableCell>
@@ -243,7 +308,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                     </TableCell>
                   )}
                 </TableRow>
-              ))}
+              )})}
             </TableBody>
           </Table>
         </div>

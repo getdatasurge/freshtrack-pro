@@ -5,7 +5,9 @@ import {
   testTtnConnection, 
   obfuscateKey, 
   getLast4,
-  getGlobalApplicationId 
+  getGlobalApplicationId,
+  normalizeDevEui,
+  generateTtnDeviceId,
 } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
@@ -179,7 +181,8 @@ Deno.serve(async (req: Request) => {
 
     // TEST action - Test TTN connection using org's key against global app
     if (action === "test") {
-      console.log(`[manage-ttn-settings] Testing TTN connection for org: ${organizationId}`);
+      const sensorId = body.sensor_id as string | undefined;
+      console.log(`[manage-ttn-settings] Testing TTN connection for org: ${organizationId}${sensorId ? `, sensor: ${sensorId}` : ''}`);
 
       if (!globalAppId) {
         const testResult = {
@@ -189,6 +192,7 @@ Deno.serve(async (req: Request) => {
           testedAt: new Date().toISOString(),
           endpointTested: "",
           effectiveApplicationId: "",
+          clusterTested: "",
         };
 
         return new Response(
@@ -208,6 +212,7 @@ Deno.serve(async (req: Request) => {
           testedAt: new Date().toISOString(),
           endpointTested: "",
           effectiveApplicationId: globalAppId,
+          clusterTested: "",
         };
 
         return new Response(
@@ -224,6 +229,7 @@ Deno.serve(async (req: Request) => {
           testedAt: new Date().toISOString(),
           endpointTested: "",
           effectiveApplicationId: config.applicationId,
+          clusterTested: config.region,
         };
 
         // Save test result
@@ -241,8 +247,28 @@ Deno.serve(async (req: Request) => {
         );
       }
 
+      // If sensor_id provided, look up the ttn_device_id for device-specific testing
+      let testDeviceId: string | undefined = undefined;
+      
+      if (sensorId) {
+        const { data: sensor } = await supabaseAdmin
+          .from("lora_sensors")
+          .select("dev_eui, ttn_device_id")
+          .eq("id", sensorId)
+          .eq("organization_id", organizationId)
+          .single();
+        
+        if (sensor) {
+          // Use stored ttn_device_id or generate from dev_eui
+          testDeviceId = sensor.ttn_device_id || generateTtnDeviceId(sensor.dev_eui) || undefined;
+          console.log(`[manage-ttn-settings] Testing device: ${testDeviceId} (DevEUI: ${sensor.dev_eui})`);
+        } else {
+          console.log(`[manage-ttn-settings] Sensor not found: ${sensorId}`);
+        }
+      }
+
       // Run the test
-      const testResult = await testTtnConnection(config);
+      const testResult = await testTtnConnection(config, { testDeviceId });
 
       // Save test result
       await supabaseAdmin
@@ -265,6 +291,7 @@ Deno.serve(async (req: Request) => {
           result: testResult,
           application_id: config.applicationId,
           region: config.region,
+          tested_device_id: testDeviceId,
         },
       });
 

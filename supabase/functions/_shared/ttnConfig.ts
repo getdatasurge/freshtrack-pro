@@ -6,6 +6,47 @@
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ============================================================================
+// DevEUI Normalization Helpers
+// ============================================================================
+
+/**
+ * Normalize DevEUI: strip colons/dashes/spaces, lowercase, validate 16 hex chars
+ * Returns null if invalid
+ */
+export function normalizeDevEui(devEui: string): string | null {
+  if (!devEui) return null;
+  const normalized = devEui.replace(/[:\-\s]/g, '').toLowerCase();
+  if (!/^[0-9a-f]{16}$/.test(normalized)) {
+    console.warn(`[normalizeDevEui] Invalid DevEUI format: ${devEui} → ${normalized}`);
+    return null;
+  }
+  return normalized;
+}
+
+/**
+ * Generate TTN device_id from DevEUI
+ * Format: sensor-{lowercase_normalized_deveui}
+ */
+export function generateTtnDeviceId(devEui: string): string | null {
+  const normalized = normalizeDevEui(devEui);
+  if (!normalized) return null;
+  return `sensor-${normalized}`;
+}
+
+/**
+ * Format DevEUI for display: XX:XX:XX:XX:XX:XX:XX:XX
+ */
+export function formatDevEuiForDisplay(devEui: string): string {
+  const normalized = normalizeDevEui(devEui);
+  if (!normalized) return devEui.toUpperCase();
+  return normalized.toUpperCase().match(/.{1,2}/g)?.join(':') || normalized.toUpperCase();
+}
+
+// ============================================================================
+// TTN Configuration Types and Constants
+// ============================================================================
+
 export interface TtnConfig {
   region: string;
   apiKey: string;
@@ -151,13 +192,11 @@ export async function getTtnConfigForOrg(
   };
 }
 
-/**
- * Test TTN API key permissions for the global application
- * Returns a structured result with success/error details
- */
-export async function testTtnConnection(
-  config: TtnConfig
-): Promise<{
+// ============================================================================
+// TTN Connection Test Result Type
+// ============================================================================
+
+export interface TtnTestResult {
   success: boolean;
   error?: string;
   hint?: string;
@@ -167,9 +206,26 @@ export async function testTtnConnection(
   endpointTested: string;
   effectiveApplicationId: string;
   apiKeyLast4?: string;
-}> {
+  clusterTested: string;
+  deviceTest?: {
+    deviceId: string;
+    exists: boolean;
+    error?: string;
+  };
+}
+
+/**
+ * Test TTN API key permissions for the global application
+ * Uses the REGIONAL server (not Identity Server) since that's where uplinks flow
+ * Optionally tests if a specific device exists
+ */
+export async function testTtnConnection(
+  config: TtnConfig,
+  options?: { testDeviceId?: string }
+): Promise<TtnTestResult> {
   const testedAt = new Date().toISOString();
-  const endpointTested = `/api/v3/applications/${config.applicationId}`;
+  const appEndpoint = `/api/v3/applications/${config.applicationId}`;
+  const clusterTested = config.region;
 
   if (!config.apiKey) {
     return {
@@ -177,14 +233,20 @@ export async function testTtnConnection(
       error: "No API key configured",
       hint: "Add a TTN API key in Settings → Developer → TTN Connection",
       testedAt,
-      endpointTested,
+      endpointTested: appEndpoint,
       effectiveApplicationId: config.applicationId,
+      clusterTested,
     };
   }
 
+  const apiKeyLast4 = config.apiKey.length >= 4 ? config.apiKey.slice(-4) : undefined;
+
   try {
-    const response = await fetch(
-      `${config.identityBaseUrl}${endpointTested}`,
+    // Step 1: Test application access on the REGIONAL server (where uplinks flow)
+    console.log(`[testTtnConnection] Testing app on regional server: ${config.regionalBaseUrl}${appEndpoint}`);
+    
+    const appResponse = await fetch(
+      `${config.regionalBaseUrl}${appEndpoint}`,
       {
         method: "GET",
         headers: {
@@ -194,59 +256,115 @@ export async function testTtnConnection(
       }
     );
 
-    const apiKeyLast4 = config.apiKey.length >= 4 ? config.apiKey.slice(-4) : undefined;
+    if (!appResponse.ok) {
+      const errorText = await appResponse.text();
+      console.error(`[testTtnConnection] Regional app test failed: ${appResponse.status} ${errorText}`);
 
-    if (response.ok) {
-      const data = await response.json();
+      let error: string;
+      let hint: string;
+
+      if (appResponse.status === 401) {
+        error = "Invalid or expired API key";
+        hint = "Generate a new API key in TTN Console → Applications → API keys";
+      } else if (appResponse.status === 403) {
+        error = "Insufficient permissions on this cluster";
+        hint = `Your API key may not have rights for ${config.applicationId} on the ${config.region} cluster. Check that your API key was created for this cluster.`;
+      } else if (appResponse.status === 404) {
+        error = "Application not found on this cluster";
+        hint = `Application '${config.applicationId}' doesn't exist on ${config.region}. If your gateway is on a different cluster, update the Region setting.`;
+      } else {
+        error = `TTN API error (${appResponse.status})`;
+        hint = errorText.slice(0, 200);
+      }
+
       return {
-        success: true,
-        applicationName: data.name || config.applicationId,
+        success: false,
+        error,
+        hint,
+        statusCode: appResponse.status,
         testedAt,
-        endpointTested,
+        endpointTested: appEndpoint,
         effectiveApplicationId: config.applicationId,
-        statusCode: response.status,
         apiKeyLast4,
+        clusterTested,
       };
     }
 
-    const errorText = await response.text();
-    console.error(`[testTtnConnection] TTN API error: ${response.status} ${errorText}`);
+    const appData = await appResponse.json();
+    const applicationName = appData.name || config.applicationId;
 
-    let error: string;
-    let hint: string;
+    // Step 2: Optionally test specific device exists
+    let deviceTest: TtnTestResult['deviceTest'] = undefined;
+    
+    if (options?.testDeviceId) {
+      const deviceEndpoint = `/api/v3/applications/${config.applicationId}/devices/${options.testDeviceId}`;
+      console.log(`[testTtnConnection] Testing device: ${config.regionalBaseUrl}${deviceEndpoint}`);
+      
+      const deviceResponse = await fetch(
+        `${config.regionalBaseUrl}${deviceEndpoint}`,
+        {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${config.apiKey}`,
+            "Accept": "application/json",
+          },
+        }
+      );
 
-    if (response.status === 401) {
-      error = "Invalid or expired API key";
-      hint = "Generate a new API key in TTN Console → Applications → API keys";
-    } else if (response.status === 403) {
-      error = "Insufficient permissions";
-      hint = `Your TTN API key lacks required rights. Create an API key under the TTN Application (${config.applicationId}) with at least:\n• applications:read (view application)\n• end_devices:read (view devices)\n• end_devices:write (if provisioning is needed)`;
-    } else if (response.status === 404) {
-      error = "Application not found";
-      hint = `Application '${config.applicationId}' does not exist in TTN. Contact your administrator to verify the TTN_APPLICATION_ID is correct.`;
-    } else {
-      error = `TTN API error (${response.status})`;
-      hint = errorText.slice(0, 200);
+      if (deviceResponse.ok) {
+        deviceTest = {
+          deviceId: options.testDeviceId,
+          exists: true,
+        };
+      } else {
+        const deviceError = deviceResponse.status === 404 
+          ? "Device not registered in TTN"
+          : `Device check failed (${deviceResponse.status})`;
+        
+        deviceTest = {
+          deviceId: options.testDeviceId,
+          exists: false,
+          error: deviceError,
+        };
+
+        // Return failure if device doesn't exist - this is critical for uplink routing
+        return {
+          success: false,
+          error: "Device not found in TTN",
+          hint: `Device '${options.testDeviceId}' is not registered in TTN application '${config.applicationId}' on cluster '${config.region}'. TTN will drop uplinks with "entity not found" until the device is provisioned. Click "Provision to TTN" to register this sensor.`,
+          statusCode: deviceResponse.status,
+          applicationName,
+          testedAt,
+          endpointTested: deviceEndpoint,
+          effectiveApplicationId: config.applicationId,
+          apiKeyLast4,
+          clusterTested,
+          deviceTest,
+        };
+      }
     }
 
     return {
-      success: false,
-      error,
-      hint,
-      statusCode: response.status,
+      success: true,
+      applicationName,
       testedAt,
-      endpointTested,
+      endpointTested: appEndpoint,
       effectiveApplicationId: config.applicationId,
+      statusCode: appResponse.status,
       apiKeyLast4,
+      clusterTested,
+      deviceTest,
     };
   } catch (fetchError) {
+    console.error(`[testTtnConnection] Network error:`, fetchError);
     return {
       success: false,
-      error: "Network error",
-      hint: fetchError instanceof Error ? fetchError.message : "Connection failed",
+      error: "Network error connecting to TTN",
+      hint: fetchError instanceof Error ? fetchError.message : "Connection failed - check internet connectivity",
       testedAt,
-      endpointTested,
+      endpointTested: appEndpoint,
       effectiveApplicationId: config.applicationId,
+      clusterTested,
     };
   }
 }
