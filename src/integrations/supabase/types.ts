@@ -1649,6 +1649,8 @@ export type Database = {
           notification_preferences: Json | null
           organization_id: string | null
           phone: string | null
+          site_id: string | null
+          unit_id: string | null
           updated_at: string
           user_id: string
         }
@@ -1661,6 +1663,8 @@ export type Database = {
           notification_preferences?: Json | null
           organization_id?: string | null
           phone?: string | null
+          site_id?: string | null
+          unit_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -1673,6 +1677,8 @@ export type Database = {
           notification_preferences?: Json | null
           organization_id?: string | null
           phone?: string | null
+          site_id?: string | null
+          unit_id?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -1682,6 +1688,20 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]
@@ -2442,6 +2462,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_sync_log: {
+        Row: {
+          attempts: number | null
+          created_at: string | null
+          event_type: string
+          id: string
+          last_error: string | null
+          payload: Json
+          sent_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          attempts?: number | null
+          created_at?: string | null
+          event_type: string
+          id?: string
+          last_error?: string | null
+          payload: Json
+          sent_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          attempts?: number | null
+          created_at?: string | null
+          event_type?: string
+          id?: string
+          last_error?: string | null
+          payload?: Json
+          sent_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
       }
     }
     Views: {
