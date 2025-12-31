@@ -246,6 +246,14 @@ const SiteDetail = () => {
     setIsExporting(true);
 
     try {
+      // Ensure fresh session token before invoking edge function
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast({ title: "Session expired. Please sign in again.", variant: "destructive" });
+        navigate("/auth");
+        return;
+      }
+
       const endDate = new Date();
       const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000); // Last 7 days
 
