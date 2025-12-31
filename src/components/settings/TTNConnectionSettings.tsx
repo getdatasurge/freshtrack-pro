@@ -101,22 +101,21 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      // Get session and explicitly pass token to ensure fresh auth
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      // Use getUser() to force network-verified token refresh
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
         console.warn("[TTNConnectionSettings] No valid session, redirecting to auth");
         setHasSession(false);
         setIsLoading(false);
+        toast.error("Session expired. Please sign in again.");
         navigate("/auth");
         return;
       }
       setHasSession(true);
 
+      // Let Supabase client handle Authorization header automatically
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { action: "get" },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
       });
 
       if (error) {
@@ -124,7 +123,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
           console.warn("[TTNConnectionSettings] Session expired, redirecting to auth");
           setHasSession(false);
-          toast.error("Session expired. Redirecting to login...");
+          toast.error("Session expired. Please sign in again.");
           navigate("/auth");
           return;
         }
@@ -161,11 +160,11 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // Get session and explicitly pass token
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      // Use getUser() to force network-verified token refresh
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
         setHasSession(false);
-        toast.error("Session expired. Redirecting to login...");
+        toast.error("Session expired. Please sign in again.");
         navigate("/auth");
         return;
       }
@@ -189,18 +188,16 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         updates.ttn_webhook_api_key = webhookApiKey;
       }
 
+      // Let Supabase client handle Authorization header automatically
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { action: "update", ...updates },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
       });
 
       if (error) {
         // Handle specific error codes
         if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
           setHasSession(false);
-          toast.error("Session expired. Redirecting to login...");
+          toast.error("Session expired. Please sign in again.");
           navigate("/auth");
           return;
         }
@@ -226,26 +223,24 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const handleTest = async () => {
     setIsTesting(true);
     try {
-      // Get session and explicitly pass token
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
+      // Use getUser() to force network-verified token refresh
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
         setHasSession(false);
-        toast.error("Session expired. Redirecting to login...");
+        toast.error("Session expired. Please sign in again.");
         navigate("/auth");
         return;
       }
 
+      // Let Supabase client handle Authorization header automatically
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { action: "test" },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
       });
 
       if (error) {
         if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
           setHasSession(false);
-          toast.error("Session expired. Redirecting to login...");
+          toast.error("Session expired. Please sign in again.");
           navigate("/auth");
           return;
         }
