@@ -128,7 +128,81 @@ export const simulatorRequestSchema = z.object({
 
 export type SimulatorRequestInput = z.infer<typeof simulatorRequestSchema>;
 
+// ============= Emulator Sync Schemas =============
+
+export const emulatorGatewaySchema = z.object({
+  gateway_eui: z.string().min(1, "Gateway EUI required").max(32, "Gateway EUI too long"),
+  name: z.string().min(1, "Gateway name required").max(100, "Gateway name too long"),
+  status: z.enum(["pending", "online", "offline", "maintenance"]).optional(),
+  site_id: uuidSchema.optional().nullable(),
+  description: z.string().max(500, "Description too long").optional().nullable(),
+});
+
+export const emulatorDeviceSchema = z.object({
+  serial_number: z.string().min(1, "Serial number required").max(100, "Serial number too long"),
+  unit_id: uuidSchema.optional().nullable(),
+  status: z.enum(["active", "inactive", "fault"]).optional(),
+  mac_address: z.string().max(50, "MAC address too long").optional().nullable(),
+  firmware_version: z.string().max(50, "Firmware version too long").optional().nullable(),
+});
+
+export const emulatorSensorSchema = z.object({
+  dev_eui: z.string().min(1, "Device EUI required").max(32, "Device EUI too long"),
+  name: z.string().min(1, "Sensor name required").max(100, "Sensor name too long"),
+  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo"]).optional(),
+  status: z.enum(["pending", "joining", "active", "offline", "fault"]).optional(),
+  unit_id: uuidSchema.optional().nullable(),
+  site_id: uuidSchema.optional().nullable(),
+  manufacturer: z.string().max(100, "Manufacturer too long").optional().nullable(),
+  model: z.string().max(100, "Model too long").optional().nullable(),
+});
+
+export const emulatorSyncPayloadSchema = z.object({
+  org_id: uuidSchema,
+  sync_id: z.string().max(100, "Sync ID too long").optional(),
+  synced_at: z.string().datetime({ message: "Must be a valid ISO 8601 datetime" }),
+  gateways: z.array(emulatorGatewaySchema).max(50, "Maximum 50 gateways per sync").optional().default([]),
+  devices: z.array(emulatorDeviceSchema).max(100, "Maximum 100 devices per sync").optional().default([]),
+  sensors: z.array(emulatorSensorSchema).max(100, "Maximum 100 sensors per sync").optional().default([]),
+});
+
+export type EmulatorGatewayInput = z.infer<typeof emulatorGatewaySchema>;
+export type EmulatorDeviceInput = z.infer<typeof emulatorDeviceSchema>;
+export type EmulatorSensorInput = z.infer<typeof emulatorSensorSchema>;
+export type EmulatorSyncPayloadInput = z.infer<typeof emulatorSyncPayloadSchema>;
+
 // ============= API Key Validation =============
+
+/**
+ * Validate emulator sync API key for Project 2 integration
+ * Checks for EMULATOR_SYNC_API_KEY environment variable
+ */
+export function validateEmulatorSyncApiKey(req: Request): { valid: boolean; error?: string } {
+  const expectedKey = Deno.env.get("EMULATOR_SYNC_API_KEY");
+  
+  if (!expectedKey) {
+    console.warn("EMULATOR_SYNC_API_KEY not configured - emulator sync disabled");
+    return { valid: false, error: "Emulator sync API not configured" };
+  }
+  
+  const authHeader = req.headers.get("Authorization");
+  const customHeader = req.headers.get("X-Emulator-Sync-Key");
+  
+  // Check X-Emulator-Sync-Key header first
+  if (customHeader === expectedKey) {
+    return { valid: true };
+  }
+  
+  // Check Authorization: Bearer <key> format
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    if (token === expectedKey) {
+      return { valid: true };
+    }
+  }
+  
+  return { valid: false, error: "Invalid or missing emulator sync API key" };
+}
 
 /**
  * Validate internal API key for scheduled/internal functions

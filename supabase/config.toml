@@ -1,5 +1,9 @@
 project_id = "mfwyiifehsvwnjwqoxht"
 
+# Emulator sync - accepts sync bundles from Project 2, uses API key auth
+[functions.emulator-sync]
+verify_jwt = false
+
 # User sync emitter - called by database trigger, uses service role key
 [functions.user-sync-emitter]
 verify_jwt = false
