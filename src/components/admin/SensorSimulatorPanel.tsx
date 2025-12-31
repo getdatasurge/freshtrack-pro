@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { 
   Play, 
@@ -28,8 +29,10 @@ import {
   Link2Off,
   RotateCcw,
   AlertTriangle,
-  Radio
+  Radio,
+  Route,
 } from "lucide-react";
+import { EmulatorTTNRoutingCard } from "./EmulatorTTNRoutingCard";
 
 interface Unit {
   id: string;
@@ -83,6 +86,9 @@ export function SensorSimulatorPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [recentEvents, setRecentEvents] = useState<SimulatorEvent[]>([]);
+  const [activeTab, setActiveTab] = useState<string>("readings");
+  const [routeViaTTN, setRouteViaTTN] = useState(false);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   
   // Simulated device config
   const [config, setConfig] = useState<SimulatedDeviceConfig | null>(null);
@@ -93,6 +99,24 @@ export function SensorSimulatorPanel() {
   const [batteryLevel, setBatteryLevel] = useState<number>(100);
   const [signalStrength, setSignalStrength] = useState<number>(-50);
   const [streamingInterval, setStreamingInterval] = useState<string>("60");
+
+  // Load organization ID
+  useEffect(() => {
+    const loadOrgId = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("user_id", user.id)
+          .single();
+        if (profile?.organization_id) {
+          setOrganizationId(profile.organization_id);
+        }
+      }
+    };
+    loadOrgId();
+  }, []);
 
   const loadUnits = useCallback(async () => {
     setIsLoading(true);
@@ -314,6 +338,35 @@ export function SensorSimulatorPanel() {
                   <span className="text-sm font-medium">{selectedUnitData.name}</span>
                   <Badge variant="outline">
                     {selectedUnitData.unit_type.replace(/_/g, " ")}
+                  </Badge>
+                </div>
+                <div className="text-xs text-muted-foreground grid grid-cols-2 gap-2">
+                  <p>High Limit: {selectedUnitData.temp_limit_high}°F</p>
+                  {selectedUnitData.temp_limit_low !== null && (
+                    <p>Low Limit: {selectedUnitData.temp_limit_low}°F</p>
+                  )}
+                  <p className="flex items-center gap-1">
+                    <Thermometer className="w-3 h-3" />
+                    Current: {selectedUnitData.last_temp_reading ?? "—"}°F
+                  </p>
+                  <p className="flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {selectedUnitData.last_reading_at 
+                      ? new Date(selectedUnitData.last_reading_at).toLocaleString() 
+                      : "Never"}
+                  </p>
+                </div>
+              </div>
+
+              {/* TTN Routing Card */}
+              <EmulatorTTNRoutingCard
+                organizationId={organizationId}
+                selectedUnitId={selectedUnit}
+                emulatorDevEui={config?.device_id || undefined}
+                onRoutingModeChange={setRouteViaTTN}
+              />
+
+              <Separator />
                   </Badge>
                 </div>
                 <div className="text-xs text-muted-foreground grid grid-cols-2 gap-2">
@@ -647,7 +700,17 @@ export function SensorSimulatorPanel() {
                   </Button>
                 </div>
               </div>
-            </>
+              </TabsContent>
+
+              <TabsContent value="ttn" className="mt-4">
+                <EmulatorTTNRoutingCard
+                  organizationId={organizationId}
+                  selectedUnitId={selectedUnit}
+                  emulatorDevEui={config?.device_id || undefined}
+                  onRoutingModeChange={setRouteViaTTN}
+                />
+              </TabsContent>
+            </Tabs>
           )}
         </CardContent>
       </Card>
