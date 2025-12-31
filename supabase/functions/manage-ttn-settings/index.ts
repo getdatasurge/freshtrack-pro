@@ -55,8 +55,8 @@ const regionUrls: Record<string, { base: string; is: string }> = {
   AS1: { base: "https://as1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
 };
 
-serve(async (req) => {
-  const BUILD_VERSION = "manage-ttn-settings-v1-20251230";
+Deno.serve(async (req: Request) => {
+  const BUILD_VERSION = "manage-ttn-settings-v2-20251231";
   console.log(`[manage-ttn-settings] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] Method: ${req.method}, URL: ${req.url}`);
 
@@ -78,6 +78,16 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Parse body to get action (default to "get")
+    let body: { action?: string; [key: string]: unknown } = {};
+    try {
+      body = await req.json();
+    } catch {
+      // Empty body is fine for "get" action
+    }
+    const action = body.action || "get";
+    console.log(`[manage-ttn-settings] Action: ${action}`);
 
     // Create client with user's JWT for RLS
     const supabaseUser = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -127,12 +137,8 @@ serve(async (req) => {
       );
     }
 
-    const url = new URL(req.url);
-    const pathParts = url.pathname.split("/").filter(Boolean);
-    const action = pathParts[pathParts.length - 1]; // "test" for test endpoint
-
-    // GET - Fetch current settings (masked)
-    if (req.method === "GET") {
+    // GET action - Fetch current settings (masked)
+    if (action === "get") {
       console.log(`[manage-ttn-settings] GET settings for org: ${organizationId}`);
 
       // Try to get existing settings
@@ -199,8 +205,8 @@ serve(async (req) => {
       );
     }
 
-    // POST to /test - Test TTN connection
-    if (req.method === "POST" && action === "test") {
+    // TEST action - Test TTN connection
+    if (action === "test") {
       console.log(`[manage-ttn-settings] Testing TTN connection for org: ${organizationId}`);
 
       // Get settings
@@ -364,11 +370,11 @@ serve(async (req) => {
       }
     }
 
-    // PUT - Update settings
-    if (req.method === "PUT") {
+    // UPDATE action - Update settings
+    if (action === "update") {
       console.log(`[manage-ttn-settings] Updating settings for org: ${organizationId}`);
 
-      const updates: TTNSettingsUpdate = await req.json();
+      const updates: TTNSettingsUpdate = body as TTNSettingsUpdate;
       console.log(`[manage-ttn-settings] Updates:`, { ...updates, ttn_api_key: updates.ttn_api_key ? "[REDACTED]" : undefined });
 
       // Build update object

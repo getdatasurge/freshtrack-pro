@@ -91,7 +91,7 @@ export function TTNConnectionSettings() {
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        method: "GET",
+        body: { action: "get" },
       });
 
       if (error) throw error;
@@ -146,8 +146,7 @@ export function TTNConnectionSettings() {
       }
 
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        method: "PUT",
-        body: updates,
+        body: { action: "update", ...updates },
       });
 
       if (error) throw error;
@@ -167,8 +166,8 @@ export function TTNConnectionSettings() {
   const handleTest = async () => {
     setIsTesting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("manage-ttn-settings/test", {
-        method: "POST",
+      const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
+        body: { action: "test" },
       });
 
       if (error) throw error;
