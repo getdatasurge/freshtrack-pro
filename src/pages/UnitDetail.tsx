@@ -357,6 +357,14 @@ const UnitDetail = () => {
     setIsExporting(true);
 
     try {
+      // Ensure fresh session token before invoking edge function
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast({ title: "Session expired. Please sign in again.", variant: "destructive" });
+        navigate("/auth");
+        return;
+      }
+
       const startDate = getTimeRangeDate().toISOString().split("T")[0];
       const endDate = new Date().toISOString().split("T")[0];
 

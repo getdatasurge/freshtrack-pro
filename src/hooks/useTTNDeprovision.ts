@@ -107,6 +107,12 @@ export function useScanTTNOrphans() {
       orphans: TTNDevice[];
       frostguard_sensors: number;
     }> => {
+      // Ensure fresh session token before invoking edge function
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error("Session expired. Please sign in again.");
+      }
+
       const { data, error } = await supabase.functions.invoke("ttn-list-devices", {
         body: { organization_id: organizationId },
       });

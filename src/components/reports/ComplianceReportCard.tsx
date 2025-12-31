@@ -36,6 +36,14 @@ export function ComplianceReportCard({
     setExportFormat(formatType);
 
     try {
+      // Ensure fresh session token before invoking edge function
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast.error("Session expired. Please sign in again.");
+        window.location.href = "/auth";
+        return;
+      }
+
       const requestBody: Record<string, unknown> = {
         start_date: format(startDate, "yyyy-MM-dd"),
         end_date: format(endDate, "yyyy-MM-dd"),

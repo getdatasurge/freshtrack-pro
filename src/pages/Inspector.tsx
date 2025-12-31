@@ -435,7 +435,13 @@ const Inspector = () => {
   const handleExport = async (reportType: "daily" | "exceptions") => {
     setIsExporting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      // Ensure fresh session token before invoking edge function
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast.error("Session expired. Please sign in again.");
+        navigate("/auth");
+        return;
+      }
       
       const response = await supabase.functions.invoke("export-temperature-logs", {
         body: {
