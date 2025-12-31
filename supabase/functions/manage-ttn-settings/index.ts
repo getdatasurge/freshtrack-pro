@@ -89,49 +89,62 @@ Deno.serve(async (req: Request) => {
     const action = body.action || "get";
     console.log(`[manage-ttn-settings] Action: ${action}`);
 
-    // Create service client for admin operations (used for JWT verification and admin queries)
+    // Create service client for admin operations
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Extract the token from the header and verify using admin client
-    const token = authHeader.replace("Bearer ", "");
+    // Extract the token from the header (handle with/without "Bearer " prefix)
+    const token = authHeader.startsWith("Bearer ") 
+      ? authHeader.slice(7).trim() 
+      : authHeader.trim();
+
+    // Use admin client to verify the user via the token
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
     if (userError || !user) {
-      console.error("[manage-ttn-settings] Auth verification failed:", userError?.message || "No user");
+      console.error("[manage-ttn-settings] User verification failed:", userError?.message || "No user returned");
       return new Response(
         JSON.stringify({ error: "Invalid user session", details: userError?.message }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Create client with user's JWT for RLS-protected queries
-    const supabaseUser = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    console.log(`[manage-ttn-settings] User verified: ${user.id}`);
 
-    // Get user's profile to find organization
-    const { data: profile } = await supabaseUser
+    // Get user's profile to find organization (using admin client)
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("organization_id")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
+
+    if (profileError) {
+      console.error("[manage-ttn-settings] Profile lookup error:", profileError.message);
+      return new Response(
+        JSON.stringify({ error: "Failed to retrieve user profile" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!profile?.organization_id) {
       return new Response(
-        JSON.stringify({ error: "User has no organization" }),
+        JSON.stringify({ error: "User not associated with an organization" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const organizationId = profile.organization_id;
 
-    // Check if user is admin/owner (RLS will enforce this, but let's be explicit)
-    const { data: roleCheck } = await supabaseUser
+    // Check if user has admin or owner role (using admin client)
+    const { data: roleCheck, error: roleError } = await supabaseAdmin
       .from("user_roles")
       .select("role")
       .eq("user_id", user.id)
       .eq("organization_id", organizationId)
-      .single();
+      .maybeSingle();
+
+    if (roleError) {
+      console.error("[manage-ttn-settings] Role lookup error:", roleError.message);
+    }
 
     if (!roleCheck || !["owner", "admin"].includes(roleCheck.role)) {
       return new Response(
@@ -144,12 +157,12 @@ Deno.serve(async (req: Request) => {
     if (action === "get") {
       console.log(`[manage-ttn-settings] GET settings for org: ${organizationId}`);
 
-      // Try to get existing settings
-      let { data: settings } = await supabaseUser
+      // Try to get existing settings (using admin client)
+      const { data: settings } = await supabaseAdmin
         .from("ttn_connections")
         .select("*")
         .eq("organization_id", organizationId)
-        .single();
+        .maybeSingle();
 
       // If no settings exist, return defaults
       if (!settings) {
@@ -212,12 +225,12 @@ Deno.serve(async (req: Request) => {
     if (action === "test") {
       console.log(`[manage-ttn-settings] Testing TTN connection for org: ${organizationId}`);
 
-      // Get settings
-      const { data: settings } = await supabaseUser
+      // Get settings (using admin client)
+      const { data: settings } = await supabaseAdmin
         .from("ttn_connections")
         .select("*")
         .eq("organization_id", organizationId)
-        .single();
+        .maybeSingle();
 
       // Determine which credentials to use
       let apiKey: string;
@@ -408,12 +421,12 @@ Deno.serve(async (req: Request) => {
         dbUpdates.ttn_webhook_api_key_last4 = getLast4(updates.ttn_webhook_api_key);
       }
 
-      // Check if record exists
-      const { data: existing } = await supabaseUser
+      // Check if record exists (using admin client)
+      const { data: existing } = await supabaseAdmin
         .from("ttn_connections")
         .select("id")
         .eq("organization_id", organizationId)
-        .single();
+        .maybeSingle();
 
       let result;
       if (existing) {
