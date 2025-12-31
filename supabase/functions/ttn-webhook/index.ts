@@ -102,27 +102,40 @@ Deno.serve(async (req) => {
   try {
     const payload: TTNUplinkMessage = await req.json();
     
-    console.log('Received TTN uplink:', JSON.stringify(payload, null, 2));
+    // ========================================
+    // VERBOSE LOGGING: Incoming uplink
+    // ========================================
+    const deviceId = payload.end_device_ids?.device_id || '';
+    const rawDevEui = payload.end_device_ids?.dev_eui || '';
+    const applicationId = payload.end_device_ids?.application_ids?.application_id || '';
+    const decoded = payload.uplink_message?.decoded_payload || {};
+    const rxMeta = payload.uplink_message?.rx_metadata?.[0];
+    const rssi = rxMeta?.rssi ?? rxMeta?.channel_rssi;
+    const snr = rxMeta?.snr;
+    const receivedAt = payload.uplink_message?.received_at || payload.received_at || new Date().toISOString();
+
+    console.log(`[TTN-WEBHOOK] ========== INCOMING UPLINK ==========`);
+    console.log(`[TTN-WEBHOOK] device_id: ${deviceId}`);
+    console.log(`[TTN-WEBHOOK] dev_eui: ${rawDevEui}`);
+    console.log(`[TTN-WEBHOOK] application_id: ${applicationId}`);
+    console.log(`[TTN-WEBHOOK] temperature: ${decoded.temperature ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] humidity: ${decoded.humidity ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] battery: ${decoded.battery ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] door_open: ${decoded.door_open ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] rssi: ${rssi ?? 'N/A'}, snr: ${snr ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] received_at: ${receivedAt}`);
 
     // Validate required fields
-    if (!payload.end_device_ids?.dev_eui) {
-      console.error('Missing dev_eui in payload');
+    if (!rawDevEui) {
+      console.error('[TTN-WEBHOOK] Missing dev_eui in payload');
       return new Response(
         JSON.stringify({ error: 'Missing dev_eui in payload' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const devEui = payload.end_device_ids.dev_eui.toLowerCase();
-    const devEuiUpper = payload.end_device_ids.dev_eui.toUpperCase();
-    const deviceId = payload.end_device_ids.device_id;
-    const applicationId = payload.end_device_ids.application_ids?.application_id;
-    
-    // Extract decoded payload data
-    const decoded = payload.uplink_message?.decoded_payload || {};
-    const rxMeta = payload.uplink_message?.rx_metadata?.[0];
-    const rssi = rxMeta?.rssi ?? rxMeta?.channel_rssi;
-    const receivedAt = payload.uplink_message?.received_at || payload.received_at || new Date().toISOString();
+    const devEui = rawDevEui.toLowerCase();
+    const devEuiUpper = rawDevEui.toUpperCase();
 
     // Initialize Supabase client with service role for bypassing RLS
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -135,21 +148,56 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // ========================================
-    // PRIMARY: Look up in lora_sensors table
+    // PRIMARY: Look up by ttn_device_id (exact match to device_id)
     // ========================================
-    const { data: loraSensor, error: sensorError } = await supabase
-      .from('lora_sensors')
-      .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
-      .or(`dev_eui.eq.${devEui},dev_eui.eq.${devEuiUpper}`)
-      .maybeSingle();
+    let loraSensor: LoraSensor | null = null;
 
-    if (sensorError) {
-      console.error('Database error looking up lora_sensor:', sensorError);
-      throw sensorError;
+    if (deviceId) {
+      console.log(`[TTN-WEBHOOK] Looking up sensor by ttn_device_id: ${deviceId}`);
+      const { data: sensorByDeviceId, error: deviceIdError } = await supabase
+        .from('lora_sensors')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
+        .eq('ttn_device_id', deviceId)
+        .maybeSingle();
+
+      if (deviceIdError) {
+        console.error('[TTN-WEBHOOK] Database error looking up by ttn_device_id:', deviceIdError);
+      } else if (sensorByDeviceId) {
+        console.log(`[TTN-WEBHOOK] ✓ Found sensor by ttn_device_id: ${sensorByDeviceId.id} (${sensorByDeviceId.name})`);
+        loraSensor = sensorByDeviceId;
+      }
+    }
+
+    // ========================================
+    // FALLBACK: Look up by dev_eui (case insensitive)
+    // ========================================
+    if (!loraSensor) {
+      console.log(`[TTN-WEBHOOK] Looking up sensor by dev_eui: ${devEui}`);
+      const { data: sensorByDevEui, error: devEuiError } = await supabase
+        .from('lora_sensors')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
+        .or(`dev_eui.eq.${devEui},dev_eui.eq.${devEuiUpper}`)
+        .maybeSingle();
+
+      if (devEuiError) {
+        console.error('[TTN-WEBHOOK] Database error looking up by dev_eui:', devEuiError);
+        throw devEuiError;
+      } else if (sensorByDevEui) {
+        console.log(`[TTN-WEBHOOK] ✓ Found sensor by dev_eui: ${sensorByDevEui.id} (${sensorByDevEui.name})`);
+        loraSensor = sensorByDevEui;
+      }
     }
 
     // If found in lora_sensors, use new ownership model
     if (loraSensor) {
+      console.log(`[TTN-WEBHOOK] ========== MATCHED SENSOR ==========`);
+      console.log(`[TTN-WEBHOOK] sensor_id: ${loraSensor.id}`);
+      console.log(`[TTN-WEBHOOK] sensor_name: ${loraSensor.name}`);
+      console.log(`[TTN-WEBHOOK] unit_id: ${loraSensor.unit_id || 'NOT ASSIGNED'}`);
+      console.log(`[TTN-WEBHOOK] organization_id: ${loraSensor.organization_id}`);
+      console.log(`[TTN-WEBHOOK] is_primary: ${loraSensor.is_primary}`);
+      console.log(`[TTN-WEBHOOK] status: ${loraSensor.status}`);
+
       return await handleLoraSensor(supabase, loraSensor, {
         devEui,
         deviceId,
@@ -161,8 +209,9 @@ Deno.serve(async (req) => {
     }
 
     // ========================================
-    // FALLBACK: Look up in devices table (legacy BLE)
+    // LEGACY FALLBACK: Look up in devices table (BLE)
     // ========================================
+    console.log(`[TTN-WEBHOOK] No lora_sensor found, checking legacy devices table...`);
     const { data: device, error: deviceError } = await supabase
       .from('devices')
       .select('id, unit_id, status')
@@ -170,11 +219,12 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (deviceError) {
-      console.error('Database error looking up device:', deviceError);
+      console.error('[TTN-WEBHOOK] Database error looking up device:', deviceError);
       throw deviceError;
     }
 
     if (device) {
+      console.log(`[TTN-WEBHOOK] ✓ Found legacy device: ${device.id}`);
       return await handleLegacyDevice(supabase, device, {
         devEui,
         deviceId,
@@ -187,28 +237,24 @@ Deno.serve(async (req) => {
 
     // ========================================
     // UNKNOWN: DevEUI not found in either table
+    // Return 202 Accepted (don't retry) but log for debugging
     // ========================================
-    console.warn(`[SECURITY] Unknown device with DevEUI: ${devEui}, application: ${applicationId}`);
-    
-    // Log unknown device attempt (to console only - event_logs requires org_id)
-    console.log(JSON.stringify({
-      event: 'ttn_unknown_device',
-      severity: 'warn',
-      dev_eui: devEui,
-      application_id: applicationId,
-      gateway_id: rxMeta?.gateway_ids?.gateway_id,
-      rssi,
-      received_at: receivedAt,
-    }));
+    console.warn(`[TTN-WEBHOOK] ✗ UNKNOWN DEVICE - Not found in database`);
+    console.warn(`[TTN-WEBHOOK]   device_id: ${deviceId}`);
+    console.warn(`[TTN-WEBHOOK]   dev_eui: ${devEui}`);
+    console.warn(`[TTN-WEBHOOK]   application_id: ${applicationId}`);
+    console.warn(`[TTN-WEBHOOK]   gateway: ${rxMeta?.gateway_ids?.gateway_id || 'unknown'}`);
 
     return new Response(
       JSON.stringify({ 
-        error: 'Unknown device', 
+        accepted: true,
+        processed: false,
+        reason: 'Unknown device - not registered in FrostGuard',
         dev_eui: devEui,
-        quarantined: true,
+        device_id: deviceId,
         hint: 'Register this sensor in FrostGuard with the correct DevEUI'
       }),
-      { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error: unknown) {
@@ -322,7 +368,7 @@ async function handleLoraSensor(
     const currentDoorOpen = decoded.door_open as boolean | undefined;
 
     // Insert sensor reading (temperature can be null for door-only sensors)
-    const { error: insertError } = await supabase
+    const { data: insertedReading, error: insertError } = await supabase
       .from('sensor_readings')
       .insert({
         unit_id: sensor.unit_id,
@@ -335,14 +381,24 @@ async function handleLoraSensor(
         door_open: currentDoorOpen,
         source: 'ttn',
         recorded_at: receivedAt,
-      });
+      })
+      .select('id')
+      .single();
 
     if (insertError) {
-      console.error('Error inserting sensor reading:', insertError);
+      console.error('[TTN-WEBHOOK] Error inserting sensor reading:', insertError);
       throw insertError;
     }
 
-    console.log(`Inserted sensor reading for unit ${sensor.unit_id} from sensor ${sensor.id}`);
+    console.log(`[TTN-WEBHOOK] ========== INSERTED READING ==========`);
+    console.log(`[TTN-WEBHOOK] reading_id: ${insertedReading?.id}`);
+    console.log(`[TTN-WEBHOOK] unit_id: ${sensor.unit_id}`);
+    console.log(`[TTN-WEBHOOK] sensor_id: ${sensor.id}`);
+    console.log(`[TTN-WEBHOOK] temperature: ${decoded.temperature ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] humidity: ${decoded.humidity ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] battery: ${decoded.battery ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] door_open: ${currentDoorOpen ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] is_primary: ${sensor.is_primary}`);
 
     // Build unit update - only update temperature fields from PRIMARY sensors
     const unitUpdate: Record<string, unknown> = {
