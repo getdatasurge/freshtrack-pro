@@ -471,6 +471,7 @@ export type Database = {
           last_calibrated_at: string | null
           last_seen_at: string | null
           mac_address: string | null
+          organization_id: string | null
           serial_number: string
           signal_strength: number | null
           status: Database["public"]["Enums"]["device_status"]
@@ -492,6 +493,7 @@ export type Database = {
           last_calibrated_at?: string | null
           last_seen_at?: string | null
           mac_address?: string | null
+          organization_id?: string | null
           serial_number: string
           signal_strength?: number | null
           status?: Database["public"]["Enums"]["device_status"]
@@ -513,6 +515,7 @@ export type Database = {
           last_calibrated_at?: string | null
           last_seen_at?: string | null
           mac_address?: string | null
+          organization_id?: string | null
           serial_number?: string
           signal_strength?: number | null
           status?: Database["public"]["Enums"]["device_status"]
@@ -526,6 +529,13 @@ export type Database = {
             columns: ["hub_id"]
             isOneToOne: false
             referencedRelation: "hubs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -571,6 +581,56 @@ export type Database = {
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      emulator_sync_runs: {
+        Row: {
+          counts: Json
+          created_at: string
+          errors: Json
+          id: string
+          organization_id: string
+          payload_summary: Json | null
+          processed_at: string
+          status: string
+          sync_id: string | null
+          synced_at: string
+          warnings: Json
+        }
+        Insert: {
+          counts?: Json
+          created_at?: string
+          errors?: Json
+          id?: string
+          organization_id: string
+          payload_summary?: Json | null
+          processed_at?: string
+          status?: string
+          sync_id?: string | null
+          synced_at: string
+          warnings?: Json
+        }
+        Update: {
+          counts?: Json
+          created_at?: string
+          errors?: Json
+          id?: string
+          organization_id?: string
+          payload_summary?: Json | null
+          processed_at?: string
+          status?: string
+          sync_id?: string | null
+          synced_at?: string
+          warnings?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "emulator_sync_runs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
