@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getTtnConfigForOrg, getGlobalApplicationId } from "../_shared/ttnConfig.ts";
+import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,7 +14,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v5-global-app-20251231";
+  const BUILD_VERSION = "ttn-provision-device-v6-perorg-20251231";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -25,13 +25,6 @@ serve(async (req) => {
 
   // Health check / diagnostics endpoint (GET request)
   if (req.method === "GET") {
-    let globalAppId: string | null = null;
-    try {
-      globalAppId = getGlobalApplicationId();
-    } catch {
-      // Not set
-    }
-
     return new Response(
       JSON.stringify({
         status: "ok",
@@ -41,9 +34,8 @@ serve(async (req) => {
         environment: {
           hasSupabaseUrl: !!Deno.env.get("SUPABASE_URL"),
           hasServiceKey: !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
-          hasTTNApplicationId: !!globalAppId,
-          ttnApplicationId: globalAppId || "not set",
         },
+        note: "Per-org model: TTN application IDs come from ttn_connections table",
       }),
       {
         status: 200,
@@ -62,22 +54,6 @@ serve(async (req) => {
         JSON.stringify({
           success: false,
           error: "Server configuration error: Missing database credentials",
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Get global TTN Application ID
-    let ttnAppId: string;
-    try {
-      ttnAppId = getGlobalApplicationId();
-    } catch (e) {
-      console.error("[ttn-provision-device] TTN_APPLICATION_ID not configured");
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "TTN not configured",
-          hint: "TTN_APPLICATION_ID environment variable is not set",
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -115,7 +91,7 @@ serve(async (req) => {
     const { action, sensor_id, organization_id } = body;
     console.log(`[ttn-provision-device] Action: ${action}, Sensor: ${sensor_id}, Org: ${organization_id}`);
 
-    // Get TTN config for this org (API key and region)
+    // Get TTN config for this org (per-org model: app ID comes from ttn_connections)
     const ttnConfig = await getTtnConfigForOrg(supabase, organization_id, { requireEnabled: true });
 
     if (!ttnConfig) {
@@ -123,7 +99,18 @@ serve(async (req) => {
         JSON.stringify({
           success: false,
           error: "TTN not configured for this organization",
-          hint: "Enable TTN integration and add an API key in Settings → Developer → TTN Connection",
+          hint: "Provision a TTN application in Settings → Developer → TTN Connection first",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!ttnConfig.applicationId) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "No TTN application provisioned",
+          hint: "Click 'Provision TTN Application' in Settings → Developer → TTN Connection",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -134,11 +121,13 @@ serve(async (req) => {
         JSON.stringify({
           success: false,
           error: "No TTN API key configured",
-          hint: "Add a TTN API key in Settings → Developer → TTN Connection",
+          hint: "TTN application was provisioned but API key is missing. Re-provision or contact support.",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const ttnAppId = ttnConfig.applicationId;
 
     // Fetch sensor details
     const { data: sensor, error: sensorError } = await supabase
@@ -160,7 +149,7 @@ serve(async (req) => {
     console.log(`[ttn-provision-device] Identity Server URL: ${ttnConfig.identityBaseUrl}`);
     console.log(`[ttn-provision-device] Regional Server URL: ${ttnConfig.regionalBaseUrl}`);
 
-    // Helper for TTN Identity Server API calls (eu1 - for application/device management)
+    // Helper for TTN Identity Server API calls
     const ttnIsFetch = async (endpoint: string, options: RequestInit = {}) => {
       const url = `${ttnConfig.identityBaseUrl}${endpoint}`;
       console.log(`[ttn-provision-device] TTN IS API: ${options.method || "GET"} ${url}`);
@@ -175,7 +164,7 @@ serve(async (req) => {
       return response;
     };
 
-    // Helper for TTN Regional Server API calls (for JS/NS/AS)
+    // Helper for TTN Regional Server API calls
     const ttnRegionalFetch = async (endpoint: string, options: RequestInit = {}) => {
       const url = `${ttnConfig.regionalBaseUrl}${endpoint}`;
       console.log(`[ttn-provision-device] TTN Regional API: ${options.method || "GET"} ${url}`);
@@ -211,7 +200,7 @@ serve(async (req) => {
           JSON.stringify({ 
             success: false,
             error: `TTN connectivity failed (${probeResponse.status})`, 
-            details: `Could not reach TTN application "${ttnAppId}". Check your API key permissions.`,
+            details: `Could not reach TTN application "${ttnAppId}". The application may need to be re-provisioned.`,
           }),
           { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -231,10 +220,10 @@ serve(async (req) => {
             application_ids: { application_id: ttnAppId },
           },
           name: sensor.name,
-          description: sensor.description || `FrostGuard ${sensor.sensor_type} sensor`,
+          description: sensor.description || `FreshTracker ${sensor.sensor_type} sensor`,
           lorawan_version: "MAC_V1_0_3",
           lorawan_phy_version: "PHY_V1_0_3_REV_A",
-          frequency_plan_id: "US_902_928_FSB_2",
+          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : "US_902_928_FSB_2",
           supports_join: true,
         },
         field_mask: {
@@ -323,7 +312,7 @@ serve(async (req) => {
           },
           lorawan_version: "MAC_V1_0_3",
           lorawan_phy_version: "PHY_V1_0_3_REV_A",
-          frequency_plan_id: "US_902_928_FSB_2",
+          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : "US_902_928_FSB_2",
           supports_join: true,
         },
         field_mask: {

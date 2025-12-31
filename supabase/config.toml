@@ -48,7 +48,7 @@ verify_jwt = false
 [functions.run-simulator-heartbeats]
 verify_jwt = false
 
-# TTN webhook - no JWT, uses device lookup for auth
+# TTN webhook - no JWT, uses per-org webhook secret for auth
 [functions.ttn-webhook]
 verify_jwt = false
 
@@ -61,6 +61,10 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.ttn-provision-device]
+verify_jwt = false
+
+# TTN org provisioning - handles CORS preflight and custom JWT verification
+[functions.ttn-provision-org]
 verify_jwt = false
 
 # User cleanup - called by app (JWT) or database trigger (service role)

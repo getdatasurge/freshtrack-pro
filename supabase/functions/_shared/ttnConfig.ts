@@ -1,7 +1,10 @@
 /**
  * Shared TTN configuration helper for all edge functions
- * Uses a single global TTN_APPLICATION_ID for the entire platform
- * Multi-tenancy is enforced in Supabase, not by separate TTN applications
+ * 
+ * ARCHITECTURE: Per-Organization TTN Applications
+ * Each organization has its own TTN Application, API key, and webhook secret.
+ * This provides complete tenant isolation - uplinks from Org A cannot be 
+ * processed under Org B even if device payloads are spoofed.
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -50,11 +53,13 @@ export function formatDevEuiForDisplay(devEui: string): string {
 export interface TtnConfig {
   region: string;
   apiKey: string;
-  applicationId: string;       // Always from TTN_APPLICATION_ID env var
+  applicationId: string;       // Per-org TTN application ID
   identityBaseUrl: string;     // Always eu1
   regionalBaseUrl: string;     // Based on region
   webhookSecret?: string;
+  webhookUrl?: string;
   isEnabled: boolean;
+  provisioningStatus: string;
 }
 
 export interface TtnConnectionRow {
@@ -62,10 +67,15 @@ export interface TtnConnectionRow {
   organization_id: string;
   is_enabled: boolean;
   ttn_region: string;
+  ttn_application_id: string | null;
   ttn_api_key_encrypted: string | null;
   ttn_api_key_last4: string | null;
   ttn_webhook_secret_encrypted: string | null;
   ttn_webhook_secret_last4: string | null;
+  ttn_webhook_url: string | null;
+  provisioning_status: string | null;
+  provisioning_error: string | null;
+  ttn_application_provisioned_at: string | null;
 }
 
 // Identity Server is always on eu1 for all TTN v3 clusters
@@ -106,21 +116,68 @@ export function getLast4(key: string): string {
 }
 
 /**
- * Get the global TTN Application ID from environment
- * This is the single shared application for the entire platform
+ * Generate a unique webhook secret for an organization
  */
-export function getGlobalApplicationId(): string {
-  const appId = Deno.env.get("TTN_APPLICATION_ID");
-  if (!appId) {
-    throw new Error("TTN_APPLICATION_ID environment variable is not set");
+export function generateWebhookSecret(): string {
+  return crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+}
+
+/**
+ * Generate TTN application ID from organization slug or ID
+ * Format: freshtracker-{slug} (max 36 chars, lowercase, alphanumeric + dash)
+ */
+export function generateTtnApplicationId(orgSlug: string): string {
+  // Clean and normalize the slug
+  const cleanSlug = orgSlug
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')  // Replace invalid chars with dash
+    .replace(/-+/g, '-')          // Collapse multiple dashes
+    .replace(/^-|-$/g, '');       // Remove leading/trailing dashes
+  
+  // TTN app IDs must be <= 36 chars, start with letter
+  const prefix = 'ft-';
+  const maxSlugLen = 36 - prefix.length;
+  const truncatedSlug = cleanSlug.slice(0, maxSlugLen);
+  
+  return `${prefix}${truncatedSlug}`;
+}
+
+/**
+ * Look up organization by webhook secret
+ * Used by ttn-webhook to authenticate incoming webhooks
+ * Returns org_id if found, null otherwise
+ */
+export async function lookupOrgByWebhookSecret(
+  supabaseAdmin: SupabaseClient,
+  webhookSecret: string
+): Promise<{ organizationId: string; applicationId: string } | null> {
+  const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || 
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.slice(0, 32) || "";
+  
+  // Encrypt the incoming secret to compare against stored values
+  const encryptedSecret = obfuscateKey(webhookSecret, encryptionSalt);
+  
+  const { data, error } = await supabaseAdmin
+    .from("ttn_connections")
+    .select("organization_id, ttn_application_id")
+    .eq("ttn_webhook_secret_encrypted", encryptedSecret)
+    .eq("is_enabled", true)
+    .maybeSingle();
+  
+  if (error || !data) {
+    console.log(`[lookupOrgByWebhookSecret] No match for secret (error: ${error?.message || 'no data'})`);
+    return null;
   }
-  return appId;
+  
+  return {
+    organizationId: data.organization_id,
+    applicationId: data.ttn_application_id || '',
+  };
 }
 
 /**
  * Get TTN configuration for a specific organization
- * Uses the global TTN_APPLICATION_ID, combined with org's API key and region
- * Returns null if TTN is not configured/enabled for the org
+ * Returns the org's own TTN application configuration
  */
 export async function getTtnConfigForOrg(
   supabaseAdmin: SupabaseClient,
@@ -129,15 +186,6 @@ export async function getTtnConfigForOrg(
 ): Promise<TtnConfig | null> {
   const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || 
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.slice(0, 32) || "";
-
-  // Get global application ID
-  let applicationId: string;
-  try {
-    applicationId = getGlobalApplicationId();
-  } catch (e) {
-    console.error("[getTtnConfigForOrg] Missing TTN_APPLICATION_ID:", e);
-    return null;
-  }
 
   // Get TTN connection settings for this org
   const { data: settings, error: settingsError } = await supabaseAdmin
@@ -163,6 +211,13 @@ export async function getTtnConfigForOrg(
     return null;
   }
 
+  // Per-org model: application ID comes from the org's settings
+  const applicationId = settings.ttn_application_id;
+  if (!applicationId && options?.requireEnabled) {
+    console.log("[getTtnConfigForOrg] No TTN application provisioned for org:", organizationId);
+    return null;
+  }
+
   // Decrypt API key
   const apiKey = settings.ttn_api_key_encrypted 
     ? deobfuscateKey(settings.ttn_api_key_encrypted, encryptionSalt)
@@ -184,11 +239,13 @@ export async function getTtnConfigForOrg(
   return {
     region,
     apiKey,
-    applicationId,
+    applicationId: applicationId || "",
     identityBaseUrl: IDENTITY_SERVER_URL,
     regionalBaseUrl: REGIONAL_URLS[region] || REGIONAL_URLS.nam1,
     webhookSecret,
+    webhookUrl: settings.ttn_webhook_url || undefined,
     isEnabled: settings.is_enabled || false,
+    provisioningStatus: settings.provisioning_status || "not_started",
   };
 }
 
@@ -215,7 +272,7 @@ export interface TtnTestResult {
 }
 
 /**
- * Test TTN API key permissions for the global application
+ * Test TTN API key permissions for the org's application
  * Uses the REGIONAL server (not Identity Server) since that's where uplinks flow
  * Optionally tests if a specific device exists
  */
@@ -226,6 +283,18 @@ export async function testTtnConnection(
   const testedAt = new Date().toISOString();
   const appEndpoint = `/api/v3/applications/${config.applicationId}`;
   const clusterTested = config.region;
+
+  if (!config.applicationId) {
+    return {
+      success: false,
+      error: "No TTN application provisioned",
+      hint: "Click 'Provision TTN Application' to create your organization's TTN application",
+      testedAt,
+      endpointTested: appEndpoint,
+      effectiveApplicationId: "",
+      clusterTested,
+    };
+  }
 
   if (!config.apiKey) {
     return {
@@ -367,4 +436,20 @@ export async function testTtnConnection(
       clusterTested,
     };
   }
+}
+
+// ============================================================================
+// DEPRECATED: Global Application ID (for backwards compatibility during migration)
+// ============================================================================
+
+/**
+ * @deprecated Use per-org application IDs from ttn_connections table instead
+ * Get the global TTN Application ID from environment (legacy support only)
+ */
+export function getGlobalApplicationId(): string {
+  const appId = Deno.env.get("TTN_APPLICATION_ID");
+  if (!appId) {
+    throw new Error("TTN_APPLICATION_ID environment variable is not set");
+  }
+  return appId;
 }
