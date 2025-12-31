@@ -161,10 +161,10 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Process devices
+  // Process devices (now org-scoped)
   for (const device of payload.devices) {
     try {
-      const result = await upsertDevice(supabase, device);
+      const result = await upsertDevice(supabase, payload.org_id, device);
       counts.devices[result]++;
     } catch (err) {
       const msg = `Device ${device.serial_number}: ${err instanceof Error ? err.message : String(err)}`;
@@ -185,6 +185,33 @@ Deno.serve(async (req) => {
       console.error(`[emulator-sync] ${msg}`);
       counts.sensors.skipped++;
     }
+  }
+
+  // Persist sync run to database for audit trail
+  const syncRunData = {
+    id: syncRunId,
+    organization_id: payload.org_id,
+    sync_id: payload.sync_id || null,
+    synced_at: payload.synced_at,
+    processed_at: processedAt,
+    status: errors.length > 0 ? "partial" : "completed",
+    counts,
+    warnings,
+    errors,
+    payload_summary: {
+      gateways_count: payload.gateways.length,
+      devices_count: payload.devices.length,
+      sensors_count: payload.sensors.length,
+    },
+  };
+
+  const { error: syncRunError } = await supabase
+    .from("emulator_sync_runs")
+    .insert(syncRunData);
+
+  if (syncRunError) {
+    console.error(`[emulator-sync] Failed to persist sync run: ${syncRunError.message}`);
+    warnings.push(`Failed to persist sync run: ${syncRunError.message}`);
   }
 
   const response: SyncResponse = {
@@ -258,16 +285,19 @@ async function upsertGateway(
 
 async function upsertDevice(
   supabase: SupabaseClient,
+  orgId: string,
   device: EmulatorDeviceInput
 ): Promise<UpsertResult> {
-  // Check if device exists by serial_number
+  // Check if device exists by org + serial_number (org-scoped uniqueness)
   const { data: existing } = await supabase
     .from("devices")
     .select("id, updated_at")
+    .eq("organization_id", orgId)
     .eq("serial_number", device.serial_number)
     .single();
 
   const upsertData = {
+    organization_id: orgId,
     serial_number: device.serial_number,
     unit_id: device.unit_id || null,
     status: device.status || "inactive",
