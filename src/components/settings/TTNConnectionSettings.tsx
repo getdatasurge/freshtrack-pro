@@ -18,52 +18,43 @@ import {
   CheckCircle,
   XCircle,
   Key,
-  Globe,
   AlertTriangle,
   Eye,
   EyeOff,
+  Info,
 } from "lucide-react";
 
 interface TTNSettings {
   exists: boolean;
   is_enabled: boolean;
   ttn_region: string | null;
-  ttn_stack_base_url: string | null;
-  ttn_identity_server_url: string | null;
   ttn_user_id: string | null;
   ttn_application_id: string | null;
   ttn_application_name: string | null;
-  ttn_webhook_id: string | null;
+  derived_application_id: string;
   has_api_key: boolean;
   api_key_last4: string | null;
   api_key_updated_at: string | null;
-  has_webhook_api_key: boolean;
-  webhook_api_key_last4: string | null;
+  has_webhook_secret: boolean;
+  webhook_secret_last4: string | null;
   last_connection_test_at: string | null;
   last_connection_test_result: {
     success: boolean;
     error?: string;
     hint?: string;
     message?: string;
-    applications_count?: number;
-    application_name?: string;
+    applicationName?: string;
+    statusCode?: number;
+    effectiveApplicationId?: string;
+    apiKeyLast4?: string;
   } | null;
-  using_global_defaults: boolean;
 }
 
 const TTN_REGIONS = [
-  { value: "NAM1", label: "North America (nam1)" },
-  { value: "EU1", label: "Europe (eu1)" },
-  { value: "AU1", label: "Australia (au1)" },
-  { value: "AS1", label: "Asia (as1)" },
+  { value: "nam1", label: "North America (nam1)" },
+  { value: "eu1", label: "Europe (eu1)" },
+  { value: "au1", label: "Australia (au1)" },
 ];
-
-const REGION_URLS: Record<string, { base: string; is: string }> = {
-  NAM1: { base: "https://nam1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-  EU1: { base: "https://eu1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-  AU1: { base: "https://au1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-  AS1: { base: "https://as1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-};
 
 interface TTNConnectionSettingsProps {
   organizationId: string | null;
@@ -79,15 +70,12 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   
   // Form state
   const [isEnabled, setIsEnabled] = useState(false);
-  const [region, setRegion] = useState("NAM1");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [isUrl, setIsUrl] = useState("");
+  const [region, setRegion] = useState("nam1");
   const [userId, setUserId] = useState("");
   const [appId, setAppId] = useState("");
   const [appName, setAppName] = useState("");
-  const [webhookId, setWebhookId] = useState("frostguard");
   const [apiKey, setApiKey] = useState("");
-  const [webhookApiKey, setWebhookApiKey] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
@@ -101,7 +89,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      // Use getUser() to force network-verified token refresh
+      // Force network-verified token refresh
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) {
         console.warn("[TTNConnectionSettings] No valid session, redirecting to auth");
@@ -113,13 +101,17 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       }
       setHasSession(true);
 
-      // Let Supabase client handle Authorization header automatically
+      // Get fresh session for auth header
+      const { data: { session } } = await supabase.auth.getSession();
+
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        body: { action: "get" },
+        body: { action: "get", organization_id: organizationId },
+        headers: session?.access_token 
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : undefined,
       });
 
       if (error) {
-        // Handle 401 specifically - session expired
         if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
           console.warn("[TTNConnectionSettings] Session expired, redirecting to auth");
           setHasSession(false);
@@ -132,13 +124,10 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       setSettings(data);
       setIsEnabled(data.is_enabled || false);
-      setRegion(data.ttn_region || "NAM1");
-      setBaseUrl(data.ttn_stack_base_url || REGION_URLS[data.ttn_region || "NAM1"]?.base || "");
-      setIsUrl(data.ttn_identity_server_url || REGION_URLS[data.ttn_region || "NAM1"]?.is || "");
+      setRegion(data.ttn_region || "nam1");
       setUserId(data.ttn_user_id || "");
       setAppId(data.ttn_application_id || "");
       setAppName(data.ttn_application_name || "");
-      setWebhookId(data.ttn_webhook_id || "frostguard");
     } catch (error) {
       console.error("Failed to load TTN settings:", error);
       toast.error("Failed to load TTN settings");
@@ -147,20 +136,10 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     }
   };
 
-  const handleRegionChange = (newRegion: string) => {
-    setRegion(newRegion);
-    // Auto-populate URLs based on region
-    const urls = REGION_URLS[newRegion];
-    if (urls) {
-      setBaseUrl(urls.base);
-      setIsUrl(urls.is);
-    }
-  };
-
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // Use getUser() to force network-verified token refresh
+      // Force token refresh
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) {
         setHasSession(false);
@@ -169,32 +148,32 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         return;
       }
 
+      const { data: { session } } = await supabase.auth.getSession();
+
       const updates: Record<string, unknown> = {
         is_enabled: isEnabled,
         ttn_region: region,
-        ttn_stack_base_url: baseUrl,
-        ttn_identity_server_url: isUrl,
-        ttn_user_id: userId,
+        ttn_user_id: userId || null,
         ttn_application_id: appId || null,
         ttn_application_name: appName || null,
-        ttn_webhook_id: webhookId,
       };
 
-      // Only include API key if it was changed
+      // Only include keys if changed
       if (apiKey) {
         updates.ttn_api_key = apiKey;
       }
-      if (webhookApiKey) {
-        updates.ttn_webhook_api_key = webhookApiKey;
+      if (webhookSecret) {
+        updates.ttn_webhook_secret = webhookSecret;
       }
 
-      // Let Supabase client handle Authorization header automatically
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        body: { action: "update", ...updates },
+        body: { action: "update", organization_id: organizationId, ...updates },
+        headers: session?.access_token 
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : undefined,
       });
 
       if (error) {
-        // Handle specific error codes
         if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
           setHasSession(false);
           toast.error("Session expired. Please sign in again.");
@@ -208,10 +187,15 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         throw error;
       }
 
+      if (data?.error) {
+        toast.error(data.error, { description: data.details });
+        return;
+      }
+
       toast.success("TTN settings saved");
-      setApiKey(""); // Clear after save
-      setWebhookApiKey("");
-      await loadSettings(); // Reload to get updated state
+      setApiKey("");
+      setWebhookSecret("");
+      await loadSettings();
     } catch (error) {
       console.error("Failed to save TTN settings:", error);
       toast.error("Failed to save settings");
@@ -223,7 +207,6 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const handleTest = async () => {
     setIsTesting(true);
     try {
-      // Use getUser() to force network-verified token refresh
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) {
         setHasSession(false);
@@ -232,9 +215,13 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         return;
       }
 
-      // Let Supabase client handle Authorization header automatically
+      const { data: { session } } = await supabase.auth.getSession();
+
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        body: { action: "test" },
+        body: { action: "test", organization_id: organizationId },
+        headers: session?.access_token 
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : undefined,
       });
 
       if (error) {
@@ -252,15 +239,19 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       }
 
       if (data.success) {
-        toast.success(data.message || "Connection successful!");
+        toast.success("Connection successful!", {
+          description: data.applicationName 
+            ? `Connected to application: ${data.applicationName}`
+            : undefined,
+        });
       } else {
         toast.error(data.error || "Connection test failed", {
           description: data.hint,
-          duration: 8000,
+          duration: 10000,
         });
       }
 
-      await loadSettings(); // Reload to show test result
+      await loadSettings();
     } catch (error) {
       console.error("Connection test failed:", error);
       toast.error("Connection test failed");
@@ -297,6 +288,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   }
 
   const testResult = settings?.last_connection_test_result;
+  const derivedAppId = settings?.derived_application_id || "fg-your-org";
 
   return (
     <Card>
@@ -314,11 +306,6 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {settings?.using_global_defaults && (
-              <Badge variant="outline" className="text-muted-foreground">
-                Using Global Defaults
-              </Badge>
-            )}
             <Switch
               checked={isEnabled}
               onCheckedChange={setIsEnabled}
@@ -347,11 +334,16 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   {testResult.success ? "Connection Successful" : testResult.error || "Connection Failed"}
                 </p>
                 {testResult.hint && (
-                  <p className="text-sm text-muted-foreground mt-1">{testResult.hint}</p>
+                  <p className="text-sm text-muted-foreground mt-1 whitespace-pre-line">{testResult.hint}</p>
                 )}
-                {testResult.applications_count !== undefined && (
+                {testResult.applicationName && (
                   <p className="text-sm text-muted-foreground mt-1">
-                    Found {testResult.applications_count} application(s)
+                    Application: {testResult.applicationName}
+                  </p>
+                )}
+                {testResult.statusCode && !testResult.success && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Status code: {testResult.statusCode}
                   </p>
                 )}
                 {settings?.last_connection_test_at && (
@@ -368,7 +360,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           {/* Region Selection */}
           <div className="space-y-2">
             <Label htmlFor="ttn-region">TTN Region</Label>
-            <Select value={region} onValueChange={handleRegionChange}>
+            <Select value={region} onValueChange={setRegion}>
               <SelectTrigger id="ttn-region">
                 <SelectValue placeholder="Select region" />
               </SelectTrigger>
@@ -380,11 +372,14 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Regional server: {region}.cloud.thethings.network
+            </p>
           </div>
 
           {/* User ID */}
           <div className="space-y-2">
-            <Label htmlFor="ttn-user-id">TTN User ID</Label>
+            <Label htmlFor="ttn-user-id">TTN User ID (Optional)</Label>
             <Input
               id="ttn-user-id"
               value={userId}
@@ -394,65 +389,32 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           </div>
         </div>
 
-        {/* URLs */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Globe className="h-4 w-4 text-muted-foreground" />
-            <Label>Server URLs</Label>
-          </div>
-          
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="ttn-base-url" className="text-sm text-muted-foreground">
-                Regional Server (NS/AS/JS)
-              </Label>
-              <Input
-                id="ttn-base-url"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://nam1.cloud.thethings.network"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="ttn-is-url" className="text-sm text-muted-foreground">
-                Identity Server (always eu1)
-              </Label>
-              <Input
-                id="ttn-is-url"
-                value={isUrl}
-                onChange={(e) => setIsUrl(e.target.value)}
-                placeholder="https://eu1.cloud.thethings.network"
-              />
-            </div>
-          </div>
-        </div>
-
         <Separator />
 
         {/* Application Settings */}
         <div className="space-y-4">
-          <Label>Application Settings (Optional)</Label>
-          <p className="text-sm text-muted-foreground">
-            Leave blank to auto-generate from organization slug
-          </p>
+          <Label>Application Settings</Label>
           
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="ttn-app-id" className="text-sm text-muted-foreground">
-                Application ID
+                Application ID (Optional Override)
               </Label>
               <Input
                 id="ttn-app-id"
                 value={appId}
                 onChange={(e) => setAppId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
-                placeholder="fg-your-org-slug"
+                placeholder={derivedAppId}
               />
+              <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                <Info className="h-3 w-3 mt-0.5 shrink-0" />
+                <span>Leave blank to auto-generate: <code className="bg-muted px-1 rounded">{derivedAppId}</code></span>
+              </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="ttn-app-name" className="text-sm text-muted-foreground">
-                Application Name
+                Application Name (Optional)
               </Label>
               <Input
                 id="ttn-app-name"
@@ -503,39 +465,43 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Generate an API key in TTN Console with at least "applications:read" and "applications:write:all" permissions
+                Create an API key in TTN Console → Applications → {appId || derivedAppId} → API keys with:
+                <br />• applications:read • end_devices:read • end_devices:write
               </p>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="ttn-webhook-key" className="text-sm">Webhook Secret (Optional)</Label>
-                {settings?.has_webhook_api_key && (
+                <Label htmlFor="ttn-webhook-secret" className="text-sm">Webhook Secret (Optional)</Label>
+                {settings?.has_webhook_secret && (
                   <Badge variant="outline" className="text-xs">
-                    Set (****{settings.webhook_api_key_last4})
+                    Set (****{settings.webhook_secret_last4})
                   </Badge>
                 )}
               </div>
               <Input
-                id="ttn-webhook-key"
+                id="ttn-webhook-secret"
                 type="password"
-                value={webhookApiKey}
-                onChange={(e) => setWebhookApiKey(e.target.value)}
-                placeholder={settings?.has_webhook_api_key ? "Enter new secret to replace" : "webhook-secret"}
+                value={webhookSecret}
+                onChange={(e) => setWebhookSecret(e.target.value)}
+                placeholder={settings?.has_webhook_secret ? "Enter new secret to replace" : "webhook-secret"}
               />
+              <p className="text-xs text-muted-foreground">
+                Used to verify webhook requests from TTN (optional but recommended)
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Warning for disabled state */}
-        {!isEnabled && settings?.exists && (
+        {/* Warning when disabled but has settings */}
+        {!isEnabled && settings?.exists && settings?.has_api_key && (
           <div className="p-4 rounded-lg bg-warning/10 border border-warning/30">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
               <div>
-                <p className="font-medium text-warning">Custom Settings Disabled</p>
+                <p className="font-medium text-warning">TTN Integration Disabled</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  TTN operations will use global default credentials. Enable to use your custom configuration.
+                  Enable the toggle above to use your TTN configuration for device provisioning.
                 </p>
               </div>
             </div>
@@ -547,7 +513,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           <Button
             variant="outline"
             onClick={handleTest}
-            disabled={isTesting || isSaving}
+            disabled={isTesting || isSaving || (!settings?.has_api_key && !apiKey)}
           >
             {isTesting ? (
               <>

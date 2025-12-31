@@ -2189,9 +2189,9 @@ export type Database = {
           ttn_region: string | null
           ttn_stack_base_url: string | null
           ttn_user_id: string | null
-          ttn_webhook_api_key_encrypted: string | null
-          ttn_webhook_api_key_last4: string | null
           ttn_webhook_id: string | null
+          ttn_webhook_secret_encrypted: string | null
+          ttn_webhook_secret_last4: string | null
           ttn_webhook_url: string | null
           updated_at: string | null
           updated_by: string | null
@@ -2213,9 +2213,9 @@ export type Database = {
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
           ttn_user_id?: string | null
-          ttn_webhook_api_key_encrypted?: string | null
-          ttn_webhook_api_key_last4?: string | null
           ttn_webhook_id?: string | null
+          ttn_webhook_secret_encrypted?: string | null
+          ttn_webhook_secret_last4?: string | null
           ttn_webhook_url?: string | null
           updated_at?: string | null
           updated_by?: string | null
@@ -2237,9 +2237,9 @@ export type Database = {
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
           ttn_user_id?: string | null
-          ttn_webhook_api_key_encrypted?: string | null
-          ttn_webhook_api_key_last4?: string | null
           ttn_webhook_id?: string | null
+          ttn_webhook_secret_encrypted?: string | null
+          ttn_webhook_secret_last4?: string | null
           ttn_webhook_url?: string | null
           updated_at?: string | null
           updated_by?: string | null
