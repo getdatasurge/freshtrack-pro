@@ -2180,11 +2180,15 @@ export type Database = {
           last_connection_test_at: string | null
           last_connection_test_result: Json | null
           organization_id: string
+          provisioning_error: string | null
+          provisioning_status: string | null
           ttn_api_key_encrypted: string | null
+          ttn_api_key_id: string | null
           ttn_api_key_last4: string | null
           ttn_api_key_updated_at: string | null
           ttn_application_id: string | null
           ttn_application_name: string | null
+          ttn_application_provisioned_at: string | null
           ttn_identity_server_url: string | null
           ttn_region: string | null
           ttn_stack_base_url: string | null
@@ -2204,11 +2208,15 @@ export type Database = {
           last_connection_test_at?: string | null
           last_connection_test_result?: Json | null
           organization_id: string
+          provisioning_error?: string | null
+          provisioning_status?: string | null
           ttn_api_key_encrypted?: string | null
+          ttn_api_key_id?: string | null
           ttn_api_key_last4?: string | null
           ttn_api_key_updated_at?: string | null
           ttn_application_id?: string | null
           ttn_application_name?: string | null
+          ttn_application_provisioned_at?: string | null
           ttn_identity_server_url?: string | null
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
@@ -2228,11 +2236,15 @@ export type Database = {
           last_connection_test_at?: string | null
           last_connection_test_result?: Json | null
           organization_id?: string
+          provisioning_error?: string | null
+          provisioning_status?: string | null
           ttn_api_key_encrypted?: string | null
+          ttn_api_key_id?: string | null
           ttn_api_key_last4?: string | null
           ttn_api_key_updated_at?: string | null
           ttn_application_id?: string | null
           ttn_application_name?: string | null
+          ttn_application_provisioned_at?: string | null
           ttn_identity_server_url?: string | null
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
