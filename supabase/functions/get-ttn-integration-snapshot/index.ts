@@ -1,7 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { deobfuscateKey } from "../_shared/ttnConfig.ts";
 
-const BUILD_VERSION = "get-ttn-integration-snapshot-v1.1-20251231";
+const BUILD_VERSION = "get-ttn-integration-snapshot-v1.2-20251231";
 
 // CORS headers - allow all origins and Project 2's x-sync-shared-secret header
 const corsHeaders = {
@@ -80,6 +81,10 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Get encryption salt for decrypting API keys
+    const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || 
+      supabaseServiceKey.slice(0, 32);
+
     // Resolve organization_id from user_id if needed
     let resolvedOrgId = organization_id;
     
@@ -104,7 +109,7 @@ serve(async (req) => {
       console.log(`[${requestId}] Resolved org_id: ${resolvedOrgId}`);
     }
 
-    // Fetch TTN integration from ttn_connections table
+    // Fetch TTN integration from ttn_connections table (including encrypted fields)
     const { data: ttnConnection, error: ttnError } = await supabaseAdmin
       .from("ttn_connections")
       .select(`
@@ -114,8 +119,10 @@ serve(async (req) => {
         ttn_application_id,
         ttn_api_key_id,
         ttn_api_key_last4,
+        ttn_api_key_encrypted,
         ttn_webhook_id,
         ttn_webhook_url,
+        ttn_webhook_secret_encrypted,
         is_enabled,
         provisioning_status,
         last_connection_test_at,
@@ -127,7 +134,7 @@ serve(async (req) => {
 
     if (ttnError) {
       if (ttnError.code === "PGRST116") {
-        // No rows returned - match Project 2's expected format
+        // No rows returned
         console.log(`[${requestId}] No TTN integration found for org: ${resolvedOrgId}`);
         return new Response(
           JSON.stringify({ ok: false, error: "No TTN integration configured for this organization", code: "NOT_FOUND" }),
@@ -142,17 +149,41 @@ serve(async (req) => {
       );
     }
 
+    // Decrypt the API key and webhook secret
+    let decryptedApiKey = "";
+    let decryptedWebhookSecret = "";
+
+    if (ttnConnection.ttn_api_key_encrypted && encryptionSalt) {
+      try {
+        decryptedApiKey = deobfuscateKey(ttnConnection.ttn_api_key_encrypted, encryptionSalt);
+        console.log(`[${requestId}] Successfully decrypted API key`);
+      } catch (err) {
+        console.error(`[${requestId}] Failed to decrypt API key:`, err);
+      }
+    }
+
+    if (ttnConnection.ttn_webhook_secret_encrypted && encryptionSalt) {
+      try {
+        decryptedWebhookSecret = deobfuscateKey(ttnConnection.ttn_webhook_secret_encrypted, encryptionSalt);
+        console.log(`[${requestId}] Successfully decrypted webhook secret`);
+      } catch (err) {
+        console.error(`[${requestId}] Failed to decrypt webhook secret:`, err);
+      }
+    }
+
     // Extract test result from JSON column
     const testResult = ttnConnection.last_connection_test_result as Record<string, unknown> | null;
 
-    // Build snapshot in Project 2's expected TTNSnapshot format
-    const snapshot = {
+    // Build response in Project 2's expected format: { ok: true, settings: {...} }
+    const settings = {
       cluster: ttnConnection.ttn_region || "nam1",
       application_id: ttnConnection.ttn_application_id || "",
+      api_key: decryptedApiKey, // Full decrypted key for emulator to use
       api_key_last4: ttnConnection.ttn_api_key_last4 || "****",
       api_key_id: ttnConnection.ttn_api_key_id || undefined,
-      ttn_enabled: ttnConnection.is_enabled ?? true,
+      enabled: ttnConnection.is_enabled ?? true,
       webhook_id: ttnConnection.ttn_webhook_id || undefined,
+      webhook_secret: decryptedWebhookSecret, // Decrypted secret
       webhook_enabled: !!ttnConnection.ttn_webhook_id,
       webhook_base_url: ttnConnection.ttn_webhook_url || undefined,
       updated_at: ttnConnection.updated_at || new Date().toISOString(),
@@ -161,11 +192,11 @@ serve(async (req) => {
       last_test_message: (testResult?.message as string) || undefined,
     };
 
-    console.log(`[${requestId}] Returning snapshot for org: ${resolvedOrgId}, app_id: ${ttnConnection.ttn_application_id}`);
+    console.log(`[${requestId}] Returning settings for org: ${resolvedOrgId}, app_id: ${ttnConnection.ttn_application_id}, api_key_present: ${!!decryptedApiKey}`);
 
-    // Return snapshot directly (not wrapped) to match Project 2's expected format
+    // Return in Project 2's expected format
     return new Response(
-      JSON.stringify(snapshot),
+      JSON.stringify({ ok: true, settings }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
@@ -180,10 +211,13 @@ serve(async (req) => {
 
 /**
  * Validate shared secret for service-to-service authentication.
- * Supports multiple header names for compatibility with Project 2.
+ * Supports multiple header names and secret env vars for compatibility.
  */
 function validateSharedSecret(req: Request): { valid: boolean; error?: string } {
-  const expectedKey = Deno.env.get("EMULATOR_SYNC_API_KEY");
+  // Support both secret names
+  const expectedKey = 
+    Deno.env.get("FROSTGUARD_SYNC_SHARED_SECRET") ||
+    Deno.env.get("EMULATOR_SYNC_API_KEY");
   
   if (!expectedKey) {
     return { valid: false, error: "Server not configured for integration access" };
