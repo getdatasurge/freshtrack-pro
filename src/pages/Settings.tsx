@@ -1029,7 +1029,7 @@ const Settings = () => {
             <TTNConnectionSettings organizationId={organization?.id || null} />
             <EmulatorSyncHistory organizationId={organization?.id || null} />
             <EdgeFunctionDiagnostics />
-            <SensorSimulatorPanel />
+            <SensorSimulatorPanel organizationId={organization?.id || null} />
           </TabsContent>
         )}
       </Tabs>
