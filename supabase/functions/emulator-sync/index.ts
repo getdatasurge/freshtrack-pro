@@ -166,6 +166,26 @@ Deno.serve(async (req) => {
     try {
       const result = await upsertDevice(supabase, payload.org_id, device);
       counts.devices[result]++;
+      
+      // If device has dev_eui, also create corresponding lora_sensor
+      if (device.dev_eui) {
+        try {
+          const sensorResult = await upsertSensor(supabase, payload.org_id, {
+            dev_eui: device.dev_eui,
+            name: device.name || `Sensor ${device.serial_number}`,
+            sensor_type: device.sensor_type || "temperature",
+            status: "pending",
+            unit_id: device.unit_id || null,
+            site_id: null,
+          });
+          counts.sensors[sensorResult]++;
+          console.log(`[emulator-sync] Auto-created sensor for device ${device.serial_number}: ${sensorResult}`);
+        } catch (sensorErr) {
+          const msg = `Auto-sensor for ${device.serial_number}: ${sensorErr instanceof Error ? sensorErr.message : String(sensorErr)}`;
+          warnings.push(msg);
+          console.warn(`[emulator-sync] ${msg}`);
+        }
+      }
     } catch (err) {
       const msg = `Device ${device.serial_number}: ${err instanceof Error ? err.message : String(err)}`;
       errors.push(msg);
