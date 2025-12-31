@@ -12,6 +12,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeDevEui, formatDevEuiForDisplay } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -134,8 +135,25 @@ Deno.serve(async (req) => {
       );
     }
 
-    const devEui = rawDevEui.toLowerCase();
-    const devEuiUpper = rawDevEui.toUpperCase();
+    // Normalize DevEUI to handle all formats (with/without colons/dashes/spaces)
+    const normalizedDevEui = normalizeDevEui(rawDevEui);
+    if (!normalizedDevEui) {
+      console.error(`[TTN-WEBHOOK] Invalid DevEUI format: ${rawDevEui}`);
+      return new Response(
+        JSON.stringify({ error: 'Invalid dev_eui format' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    // Generate all possible match variants for database lookup
+    const devEuiLower = normalizedDevEui;                                    // e.g. "0f8fe95caba665d4"
+    const devEuiUpper = normalizedDevEui.toUpperCase();                      // e.g. "0F8FE95CABA665D4"
+    const devEuiColonUpper = formatDevEuiForDisplay(normalizedDevEui);       // e.g. "0F:8F:E9:5C:AB:A6:65:D4"
+    const devEuiColonLower = devEuiColonUpper.toLowerCase();                 // e.g. "0f:8f:e9:5c:ab:a6:65:d4"
+    const devEui = devEuiLower; // Keep for backwards compatibility
+    
+    console.log(`[TTN-WEBHOOK] DevEUI normalized: "${rawDevEui}" → "${normalizedDevEui}"`);
+    console.log(`[TTN-WEBHOOK] Will match variants: ${devEuiLower}, ${devEuiUpper}, ${devEuiColonUpper}, ${devEuiColonLower}`);
 
     // Initialize Supabase client with service role for bypassing RLS
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -169,14 +187,14 @@ Deno.serve(async (req) => {
     }
 
     // ========================================
-    // FALLBACK: Look up by dev_eui (case insensitive)
+    // FALLBACK: Look up by dev_eui (match ALL common formats)
     // ========================================
     if (!loraSensor) {
-      console.log(`[TTN-WEBHOOK] Looking up sensor by dev_eui: ${devEui}`);
+      console.log(`[TTN-WEBHOOK] Looking up sensor by dev_eui variants...`);
       const { data: sensorByDevEui, error: devEuiError } = await supabase
         .from('lora_sensors')
         .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
-        .or(`dev_eui.eq.${devEui},dev_eui.eq.${devEuiUpper}`)
+        .or(`dev_eui.eq.${devEuiLower},dev_eui.eq.${devEuiUpper},dev_eui.eq.${devEuiColonUpper},dev_eui.eq.${devEuiColonLower}`)
         .maybeSingle();
 
       if (devEuiError) {
@@ -184,6 +202,7 @@ Deno.serve(async (req) => {
         throw devEuiError;
       } else if (sensorByDevEui) {
         console.log(`[TTN-WEBHOOK] ✓ Found sensor by dev_eui: ${sensorByDevEui.id} (${sensorByDevEui.name})`);
+        console.log(`[TTN-WEBHOOK]   Matched DB dev_eui value: "${sensorByDevEui.dev_eui}"`);
         loraSensor = sensorByDevEui;
       }
     }
@@ -209,13 +228,13 @@ Deno.serve(async (req) => {
     }
 
     // ========================================
-    // LEGACY FALLBACK: Look up in devices table (BLE)
+    // LEGACY FALLBACK: Look up in devices table (BLE) - match ALL formats
     // ========================================
     console.log(`[TTN-WEBHOOK] No lora_sensor found, checking legacy devices table...`);
     const { data: device, error: deviceError } = await supabase
       .from('devices')
       .select('id, unit_id, status')
-      .or(`serial_number.eq.${devEui},serial_number.eq.${devEuiUpper}`)
+      .or(`serial_number.eq.${devEuiLower},serial_number.eq.${devEuiUpper},serial_number.eq.${devEuiColonUpper},serial_number.eq.${devEuiColonLower}`)
       .maybeSingle();
 
     if (deviceError) {
@@ -284,6 +303,9 @@ async function handleLoraSensor(
   }
 ): Promise<Response> {
   const { devEui, deviceId, applicationId, decoded, rssi, receivedAt } = data;
+  
+  // Handle battery_level vs battery field name inconsistency from TTN decoders
+  const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
 
   console.log(`Processing LoRa sensor: ${sensor.name} (${sensor.dev_eui}), org: ${sensor.organization_id}`);
 
@@ -323,9 +345,9 @@ async function handleLoraSensor(
     console.log(`Sensor ${sensor.name} activated (${sensor.status} → active)`);
   }
 
-  // Update telemetry fields
-  if (decoded.battery !== undefined) {
-    sensorUpdate.battery_level = decoded.battery;
+  // Update telemetry fields (use normalized battery)
+  if (battery !== undefined) {
+    sensorUpdate.battery_level = battery;
   }
   if (rssi !== undefined) {
     sensorUpdate.signal_strength = rssi;
@@ -376,7 +398,7 @@ async function handleLoraSensor(
         device_id: null, // lora_sensors don't use devices table
         temperature: decoded.temperature ?? null,
         humidity: decoded.humidity,
-        battery_level: decoded.battery,
+        battery_level: battery, // Use normalized battery
         signal_strength: rssi,
         door_open: currentDoorOpen,
         source: 'ttn',
@@ -396,7 +418,7 @@ async function handleLoraSensor(
     console.log(`[TTN-WEBHOOK] sensor_id: ${sensor.id}`);
     console.log(`[TTN-WEBHOOK] temperature: ${decoded.temperature ?? 'N/A'}`);
     console.log(`[TTN-WEBHOOK] humidity: ${decoded.humidity ?? 'N/A'}`);
-    console.log(`[TTN-WEBHOOK] battery: ${decoded.battery ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] battery: ${battery ?? 'N/A'} (from decoded.battery=${decoded.battery}, decoded.battery_level=${decoded.battery_level})`);
     console.log(`[TTN-WEBHOOK] door_open: ${currentDoorOpen ?? 'N/A'}`);
     console.log(`[TTN-WEBHOOK] is_primary: ${sensor.is_primary}`);
 
