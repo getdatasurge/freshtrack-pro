@@ -358,36 +358,22 @@ export function SensorSimulatorPanel() {
                 </div>
               </div>
 
-              {/* TTN Routing Card */}
-              <EmulatorTTNRoutingCard
-                organizationId={organizationId}
-                selectedUnitId={selectedUnit}
-                emulatorDevEui={config?.device_id || undefined}
-                onRoutingModeChange={setRouteViaTTN}
-              />
-
               <Separator />
-                  </Badge>
-                </div>
-                <div className="text-xs text-muted-foreground grid grid-cols-2 gap-2">
-                  <p>High Limit: {selectedUnitData.temp_limit_high}°F</p>
-                  {selectedUnitData.temp_limit_low !== null && (
-                    <p>Low Limit: {selectedUnitData.temp_limit_low}°F</p>
-                  )}
-                  <p className="flex items-center gap-1">
-                    <Thermometer className="w-3 h-3" />
-                    Current: {selectedUnitData.last_temp_reading ?? "—"}°F
-                  </p>
-                  <p className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {selectedUnitData.last_reading_at 
-                      ? new Date(selectedUnitData.last_reading_at).toLocaleString() 
-                      : "Never"}
-                  </p>
-                </div>
-              </div>
 
-              <Separator />
+              {/* Tabs for Readings vs TTN Routing */}
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="readings" className="flex items-center gap-2">
+                    <Thermometer className="w-4 h-4" />
+                    Readings
+                  </TabsTrigger>
+                  <TabsTrigger value="ttn" className="flex items-center gap-2">
+                    <Route className="w-4 h-4" />
+                    TTN Routing
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="readings" className="mt-4 space-y-6">
 
               {/* Device State Section */}
               <div className="space-y-4">
@@ -700,17 +686,18 @@ export function SensorSimulatorPanel() {
                   </Button>
                 </div>
               </div>
-              </TabsContent>
+                </TabsContent>
 
-              <TabsContent value="ttn" className="mt-4">
-                <EmulatorTTNRoutingCard
-                  organizationId={organizationId}
-                  selectedUnitId={selectedUnit}
-                  emulatorDevEui={config?.device_id || undefined}
-                  onRoutingModeChange={setRouteViaTTN}
-                />
-              </TabsContent>
-            </Tabs>
+                <TabsContent value="ttn" className="mt-4">
+                  <EmulatorTTNRoutingCard
+                    organizationId={organizationId}
+                    selectedUnitId={selectedUnit}
+                    emulatorDevEui={config?.device_id || undefined}
+                    onRoutingModeChange={setRouteViaTTN}
+                  />
+                </TabsContent>
+              </Tabs>
+            </>
           )}
         </CardContent>
       </Card>
