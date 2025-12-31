@@ -8,8 +8,9 @@ verify_jwt = false
 [functions.user-sync-emitter]
 verify_jwt = false
 
+# TTN settings management - handles CORS preflight and custom JWT verification
 [functions.manage-ttn-settings]
-verify_jwt = true
+verify_jwt = false
 
 [functions.check-password-breach]
 verify_jwt = false
@@ -26,12 +27,13 @@ verify_jwt = false
 [functions.stripe-portal]
 verify_jwt = true
 
-# User-facing functions - require JWT authentication
+# User-facing functions - handle CORS preflight and custom JWT verification
 [functions.sensor-simulator]
 verify_jwt = true
 
+# Export temperature logs - handles CORS preflight and custom JWT verification
 [functions.export-temperature-logs]
-verify_jwt = true
+verify_jwt = false
 
 # Internal/scheduled functions - use API key validation in code
 [functions.process-unit-states]
@@ -69,6 +71,6 @@ verify_jwt = false
 [functions.ttn-deprovision-worker]
 verify_jwt = false
 
-# TTN list devices - requires JWT for admin access
+# TTN list devices - handles CORS preflight and custom JWT verification
 [functions.ttn-list-devices]
-verify_jwt = true
+verify_jwt = false
