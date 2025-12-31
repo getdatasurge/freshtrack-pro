@@ -5,7 +5,7 @@ import {
   testTtnConnection, 
   obfuscateKey, 
   getLast4,
-  deriveApplicationId 
+  getGlobalApplicationId 
 } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
@@ -16,15 +16,12 @@ const corsHeaders = {
 interface TTNSettingsUpdate {
   is_enabled?: boolean;
   ttn_region?: string;
-  ttn_application_id?: string;
-  ttn_application_name?: string;
-  ttn_user_id?: string;
   ttn_api_key?: string;
   ttn_webhook_secret?: string;
 }
 
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v3-20251231";
+  const BUILD_VERSION = "manage-ttn-settings-v4-simplified-20251231";
   console.log(`[manage-ttn-settings] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] Method: ${req.method}, URL: ${req.url}`);
 
@@ -37,6 +34,14 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || supabaseServiceKey.slice(0, 32);
+
+    // Check for global TTN_APPLICATION_ID
+    let globalAppId: string | null = null;
+    try {
+      globalAppId = getGlobalApplicationId();
+    } catch {
+      // Will be null if not set
+    }
 
     // Get authorization header for user context
     const authHeader = req.headers.get("Authorization");
@@ -125,17 +130,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Get org slug for derived application ID
-    const { data: org } = await supabaseAdmin
-      .from("organizations")
-      .select("slug")
-      .eq("id", organizationId)
-      .single();
-
-    const orgSlug = org?.slug || "";
-    const derivedAppId = deriveApplicationId(orgSlug);
-
-    // GET action - Fetch current settings (no global fallback)
+    // GET action - Fetch current settings (simplified)
     if (action === "get") {
       console.log(`[manage-ttn-settings] GET settings for org: ${organizationId}`);
 
@@ -145,24 +140,20 @@ Deno.serve(async (req: Request) => {
         .eq("organization_id", organizationId)
         .maybeSingle();
 
-      // If no settings exist, return empty state (no global defaults)
+      // If no settings exist, return empty state
       if (!settings) {
         return new Response(
           JSON.stringify({
             exists: false,
             is_enabled: false,
             ttn_region: "nam1",
-            ttn_user_id: null,
-            ttn_application_id: null,
-            ttn_application_name: null,
-            derived_application_id: derivedAppId,
             has_api_key: false,
             api_key_last4: null,
-            api_key_updated_at: null,
             has_webhook_secret: false,
             webhook_secret_last4: null,
             last_connection_test_at: null,
             last_connection_test_result: null,
+            global_application_id: globalAppId,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -174,27 +165,39 @@ Deno.serve(async (req: Request) => {
           exists: true,
           is_enabled: settings.is_enabled,
           ttn_region: settings.ttn_region || "nam1",
-          ttn_user_id: settings.ttn_user_id,
-          ttn_application_id: settings.ttn_application_id,
-          ttn_application_name: settings.ttn_application_name,
-          derived_application_id: derivedAppId,
           has_api_key: !!settings.ttn_api_key_encrypted,
           api_key_last4: settings.ttn_api_key_last4,
-          api_key_updated_at: settings.ttn_api_key_updated_at,
           has_webhook_secret: !!settings.ttn_webhook_secret_encrypted,
           webhook_secret_last4: settings.ttn_webhook_secret_last4,
           last_connection_test_at: settings.last_connection_test_at,
           last_connection_test_result: settings.last_connection_test_result,
+          global_application_id: globalAppId,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // TEST action - Test TTN connection using org's key only
+    // TEST action - Test TTN connection using org's key against global app
     if (action === "test") {
       console.log(`[manage-ttn-settings] Testing TTN connection for org: ${organizationId}`);
 
-      // Get config for this org (NOT using global defaults)
+      if (!globalAppId) {
+        const testResult = {
+          success: false,
+          error: "TTN not configured on server",
+          hint: "The TTN_APPLICATION_ID environment variable is not set. Contact your administrator.",
+          testedAt: new Date().toISOString(),
+          endpointTested: "",
+          effectiveApplicationId: "",
+        };
+
+        return new Response(
+          JSON.stringify(testResult),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Get config for this org
       const config = await getTtnConfigForOrg(supabaseAdmin, organizationId);
 
       if (!config) {
@@ -204,7 +207,7 @@ Deno.serve(async (req: Request) => {
           hint: "Save TTN settings first before testing the connection.",
           testedAt: new Date().toISOString(),
           endpointTested: "",
-          effectiveApplicationId: derivedAppId,
+          effectiveApplicationId: globalAppId,
         };
 
         return new Response(
@@ -271,13 +274,14 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // UPDATE action - Update settings
+    // UPDATE action - Update settings (simplified: only enabled, region, api_key, webhook_secret)
     if (action === "update") {
       console.log(`[manage-ttn-settings] Updating settings for org: ${organizationId}`);
 
       const updates: TTNSettingsUpdate = body as TTNSettingsUpdate;
       console.log(`[manage-ttn-settings] Updates:`, { 
-        ...updates, 
+        is_enabled: updates.is_enabled,
+        ttn_region: updates.ttn_region,
         ttn_api_key: updates.ttn_api_key ? "[REDACTED]" : undefined,
         ttn_webhook_secret: updates.ttn_webhook_secret ? "[REDACTED]" : undefined,
       });
@@ -304,7 +308,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Build update object
+      // Build update object (only the simplified fields)
       const dbUpdates: Record<string, unknown> = {
         updated_by: user.id,
       };
@@ -312,9 +316,6 @@ Deno.serve(async (req: Request) => {
       // Copy simple fields (normalize region to lowercase)
       if (updates.is_enabled !== undefined) dbUpdates.is_enabled = updates.is_enabled;
       if (updates.ttn_region !== undefined) dbUpdates.ttn_region = updates.ttn_region.toLowerCase();
-      if (updates.ttn_application_id !== undefined) dbUpdates.ttn_application_id = updates.ttn_application_id || null;
-      if (updates.ttn_application_name !== undefined) dbUpdates.ttn_application_name = updates.ttn_application_name || null;
-      if (updates.ttn_user_id !== undefined) dbUpdates.ttn_user_id = updates.ttn_user_id || null;
 
       // Handle API key encryption
       if (updates.ttn_api_key) {
@@ -365,17 +366,10 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      // Update organizations.ttn_application_id for webhook routing
-      const effectiveAppId = result.data.ttn_application_id || derivedAppId;
-      await supabaseAdmin
-        .from("organizations")
-        .update({ ttn_application_id: effectiveAppId })
-        .eq("id", organizationId);
-
       // Log to event_logs
-      const changedFields = Object.keys(updates).filter(
-        k => k !== "ttn_api_key" && k !== "ttn_webhook_secret"
-      );
+      const changedFields: string[] = [];
+      if (updates.is_enabled !== undefined) changedFields.push("is_enabled");
+      if (updates.ttn_region !== undefined) changedFields.push("ttn_region");
       if (updates.ttn_api_key) changedFields.push("api_key");
       if (updates.ttn_webhook_secret) changedFields.push("webhook_secret");
 
@@ -393,7 +387,7 @@ Deno.serve(async (req: Request) => {
         event_data: {
           changed_fields: changedFields,
           is_enabled: result.data.is_enabled,
-          application_id: effectiveAppId,
+          application_id: globalAppId,
         },
       });
 
@@ -403,8 +397,7 @@ Deno.serve(async (req: Request) => {
           is_enabled: result.data.is_enabled,
           has_api_key: !!result.data.ttn_api_key_encrypted,
           api_key_last4: result.data.ttn_api_key_last4,
-          derived_application_id: derivedAppId,
-          effective_application_id: effectiveAppId,
+          global_application_id: globalAppId,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );

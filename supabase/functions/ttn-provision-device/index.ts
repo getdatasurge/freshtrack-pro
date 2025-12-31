@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getTtnConfigForOrg, getGlobalApplicationId } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,19 +13,8 @@ interface ProvisionRequest {
   organization_id: string;
 }
 
-// Safe environment variable getter with logging
-function getEnvVar(name: string, required: boolean = false): string | undefined {
-  const value = Deno.env.get(name);
-  if (required && !value) {
-    console.error(`[ttn-provision-device] Missing required environment variable: ${name}`);
-  }
-  return value;
-}
-
 serve(async (req) => {
-  // Version banner for deployment verification
-  // ENDPOINT ROUTER: TTN Sandbox Identity Server HTTP API is on eu1; use cluster host only for regional operations
-  const BUILD_VERSION = "endpoint-router-v2-diagnostics-20251230";
+  const BUILD_VERSION = "ttn-provision-device-v5-global-app-20251231";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -35,11 +25,12 @@ serve(async (req) => {
 
   // Health check / diagnostics endpoint (GET request)
   if (req.method === "GET") {
-    const supabaseUrl = getEnvVar("SUPABASE_URL");
-    const hasServiceKey = !!getEnvVar("SUPABASE_SERVICE_ROLE_KEY");
-    const hasTTNApiKey = !!getEnvVar("TTN_API_KEY");
-    const ttnApiBaseUrl = getEnvVar("TTN_API_BASE_URL");
-    const ttnIsBaseUrl = getEnvVar("TTN_IS_BASE_URL");
+    let globalAppId: string | null = null;
+    try {
+      globalAppId = getGlobalApplicationId();
+    } catch {
+      // Not set
+    }
 
     return new Response(
       JSON.stringify({
@@ -48,11 +39,10 @@ serve(async (req) => {
         version: BUILD_VERSION,
         timestamp: new Date().toISOString(),
         environment: {
-          hasSupabaseUrl: !!supabaseUrl,
-          hasServiceKey,
-          hasTTNApiKey,
-          ttnApiBaseUrl: ttnApiBaseUrl ? ttnApiBaseUrl.replace(/\/api\/v3$/, "") : "not set",
-          ttnIsBaseUrl: ttnIsBaseUrl || "default (eu1)",
+          hasSupabaseUrl: !!Deno.env.get("SUPABASE_URL"),
+          hasServiceKey: !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+          hasTTNApplicationId: !!globalAppId,
+          ttnApplicationId: globalAppId || "not set",
         },
       }),
       {
@@ -65,30 +55,29 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const ttnApiKey = Deno.env.get("TTN_API_KEY");
-    const ttnApiBaseUrl = Deno.env.get("TTN_API_BASE_URL"); // Regional cluster (nam1 for you)
-    const ttnIsBaseUrl = Deno.env.get("TTN_IS_BASE_URL") || "https://eu1.cloud.thethings.network"; // Identity Server
 
-    // Check for required environment variables
     if (!supabaseUrl || !supabaseServiceKey) {
       console.error("[ttn-provision-device] Missing Supabase credentials");
       return new Response(
         JSON.stringify({
           success: false,
           error: "Server configuration error: Missing database credentials",
-          hint: "Ensure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in Edge Function secrets",
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (!ttnApiKey || !ttnApiBaseUrl) {
-      console.error("[ttn-provision-device] TTN credentials not configured");
+    // Get global TTN Application ID
+    let ttnAppId: string;
+    try {
+      ttnAppId = getGlobalApplicationId();
+    } catch (e) {
+      console.error("[ttn-provision-device] TTN_APPLICATION_ID not configured");
       return new Response(
         JSON.stringify({
           success: false,
-          error: "TTN credentials not configured",
-          hint: "Set TTN_API_KEY and TTN_API_BASE_URL in Edge Function secrets",
+          error: "TTN not configured",
+          hint: "TTN_APPLICATION_ID environment variable is not set",
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -96,7 +85,7 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Parse request body safely
+    // Parse request body
     let body: ProvisionRequest;
     try {
       const bodyText = await req.text();
@@ -122,9 +111,34 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    const { action, sensor_id, organization_id } = body;
 
+    const { action, sensor_id, organization_id } = body;
     console.log(`[ttn-provision-device] Action: ${action}, Sensor: ${sensor_id}, Org: ${organization_id}`);
+
+    // Get TTN config for this org (API key and region)
+    const ttnConfig = await getTtnConfigForOrg(supabase, organization_id, { requireEnabled: true });
+
+    if (!ttnConfig) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "TTN not configured for this organization",
+          hint: "Enable TTN integration and add an API key in Settings → Developer → TTN Connection",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!ttnConfig.apiKey) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "No TTN API key configured",
+          hint: "Add a TTN API key in Settings → Developer → TTN Connection",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Fetch sensor details
     const { data: sensor, error: sensorError } = await supabase
@@ -141,122 +155,19 @@ serve(async (req) => {
       );
     }
 
-    // Ensure TTN application exists for this org
-    console.log(`[ttn-provision-device] Ensuring TTN application for org: ${organization_id}`);
-
-    const ensureAppResponse = await supabase.functions.invoke("ttn-manage-application", {
-      body: { action: "ensure", organization_id },
-    });
-
-    // Log full response for debugging
-    console.log(`[ttn-provision-device] ttn-manage-application response:`, {
-      data: ensureAppResponse.data,
-      error: ensureAppResponse.error,
-      errorMessage: ensureAppResponse.error?.message,
-      errorContext: ensureAppResponse.error?.context,
-    });
-
-    if (ensureAppResponse.error) {
-      console.error("Failed to ensure TTN application:", ensureAppResponse.error);
-
-      // Try to extract more details from the error context
-      let detailedError = ensureAppResponse.error.message;
-      let hint = "";
-
-      // Check if there's response data even with an error
-      if (ensureAppResponse.data) {
-        console.log("[ttn-provision-device] Error response data:", ensureAppResponse.data);
-        if (ensureAppResponse.data.error) {
-          detailedError = ensureAppResponse.data.error;
-        }
-        if (ensureAppResponse.data.hint) {
-          hint = ensureAppResponse.data.hint;
-        }
-        if (ensureAppResponse.data.details) {
-          detailedError += `: ${ensureAppResponse.data.details}`;
-        }
-      }
-
-      // Try to read the error context if available
-      try {
-        const errorContext = (ensureAppResponse.error as any)?.context;
-        if (errorContext?.json) {
-          const contextData = await errorContext.clone().json();
-          console.log("[ttn-provision-device] Error context data:", contextData);
-          if (contextData.error) detailedError = contextData.error;
-          if (contextData.hint) hint = contextData.hint;
-        }
-      } catch (e) {
-        // Context parsing failed, use what we have
-      }
-
-      return new Response(
-        JSON.stringify({
-          error: "Failed to ensure TTN application",
-          details: detailedError,
-          hint: hint || "Check that TTN_USER_ID, TTN_API_KEY, and TTN_API_BASE_URL are correctly configured in Edge Function secrets",
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Check for application-level errors in the response data
-    if (ensureAppResponse.data?.error) {
-      console.error("TTN application error:", ensureAppResponse.data);
-      return new Response(
-        JSON.stringify({
-          error: ensureAppResponse.data.error,
-          hint: ensureAppResponse.data.hint,
-          ttn_app_id: ensureAppResponse.data.ttn_app_id,
-          details: ensureAppResponse.data.details,
-        }),
-        { status: ensureAppResponse.data.hint ? 403 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Fetch org to get TTN app ID
-    const { data: org, error: orgError } = await supabase
-      .from("organizations")
-      .select("ttn_application_id")
-      .eq("id", organization_id)
-      .single();
-
-    if (orgError || !org?.ttn_application_id) {
-      console.error("TTN application ID not found:", orgError);
-      return new Response(
-        JSON.stringify({ error: "TTN application not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const ttnAppId = org.ttn_application_id;
     const deviceId = `sensor-${sensor.dev_eui.toLowerCase()}`;
-
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
-
-    // Normalize base URLs - remove trailing slashes and any /api/v3 suffix
-    const normalizeUrl = (url: string) => {
-      let normalized = url.trim().replace(/\/+$/, "");
-      if (normalized.endsWith("/api/v3")) {
-        normalized = normalized.slice(0, -7);
-      }
-      return normalized;
-    };
-
-    const effectiveIsBaseUrl = normalizeUrl(ttnIsBaseUrl);
-    const effectiveRegionalBaseUrl = normalizeUrl(ttnApiBaseUrl);
-    
-    console.log(`[ttn-provision-device] Identity Server URL: ${effectiveIsBaseUrl}`);
-    console.log(`[ttn-provision-device] Regional Server URL: ${effectiveRegionalBaseUrl}`);
+    console.log(`[ttn-provision-device] Identity Server URL: ${ttnConfig.identityBaseUrl}`);
+    console.log(`[ttn-provision-device] Regional Server URL: ${ttnConfig.regionalBaseUrl}`);
 
     // Helper for TTN Identity Server API calls (eu1 - for application/device management)
     const ttnIsFetch = async (endpoint: string, options: RequestInit = {}) => {
-      const url = `${effectiveIsBaseUrl}${endpoint}`;
+      const url = `${ttnConfig.identityBaseUrl}${endpoint}`;
       console.log(`[ttn-provision-device] TTN IS API: ${options.method || "GET"} ${url}`);
       const response = await fetch(url, {
         ...options,
         headers: {
-          "Authorization": `Bearer ${ttnApiKey}`,
+          "Authorization": `Bearer ${ttnConfig.apiKey}`,
           "Content-Type": "application/json",
           ...options.headers,
         },
@@ -264,14 +175,14 @@ serve(async (req) => {
       return response;
     };
 
-    // Helper for TTN Regional Server API calls (nam1 - for JS/NS/AS)
+    // Helper for TTN Regional Server API calls (for JS/NS/AS)
     const ttnRegionalFetch = async (endpoint: string, options: RequestInit = {}) => {
-      const url = `${effectiveRegionalBaseUrl}${endpoint}`;
+      const url = `${ttnConfig.regionalBaseUrl}${endpoint}`;
       console.log(`[ttn-provision-device] TTN Regional API: ${options.method || "GET"} ${url}`);
       const response = await fetch(url, {
         ...options,
         headers: {
-          "Authorization": `Bearer ${ttnApiKey}`,
+          "Authorization": `Bearer ${ttnConfig.apiKey}`,
           "Content-Type": "application/json",
           ...options.headers,
         },
@@ -280,7 +191,7 @@ serve(async (req) => {
     };
 
     if (action === "create") {
-      // Step 0: Probe TTN connectivity by fetching the application (Identity Server)
+      // Step 0: Probe TTN connectivity
       console.log(`[ttn-provision-device] Step 0: Probing TTN connectivity for app ${ttnAppId}`);
       
       const probeResponse = await ttnIsFetch(`/api/v3/applications/${ttnAppId}`, {
@@ -291,17 +202,6 @@ serve(async (req) => {
         const probeErrorText = await probeResponse.text();
         console.error(`[ttn-provision-device] TTN probe failed: ${probeResponse.status} - ${probeErrorText}`);
         
-        // Parse error for more details
-        let errorDetail = probeErrorText;
-        try {
-          const parsed = JSON.parse(probeErrorText);
-          if (parsed.message) errorDetail = parsed.message;
-          if (parsed.details) errorDetail += ` (${JSON.stringify(parsed.details)})`;
-        } catch {
-          // Keep raw text
-        }
-        
-        // Update sensor status to fault
         await supabase
           .from("lora_sensors")
           .update({ status: "fault" })
@@ -311,15 +211,15 @@ serve(async (req) => {
           JSON.stringify({ 
             success: false,
             error: `TTN connectivity failed (${probeResponse.status})`, 
-            details: `Could not reach TTN application "${ttnAppId}" at ${effectiveIsBaseUrl}. Response: ${errorDetail}. Check if TTN_IS_BASE_URL is set to the Identity Server cluster (usually eu1) and TTN_API_KEY has read/write rights.`,
+            details: `Could not reach TTN application "${ttnAppId}". Check your API key permissions.`,
           }),
           { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       
-      console.log(`[ttn-provision-device] TTN probe successful - application ${ttnAppId} is reachable`);
+      console.log(`[ttn-provision-device] TTN probe successful`);
 
-      // Step 1: Create device in Identity Server (eu1)
+      // Step 1: Create device in Identity Server
       console.log(`[ttn-provision-device] Step 1: Creating device in Identity Server`);
       
       const devicePayload = {
@@ -334,7 +234,7 @@ serve(async (req) => {
           description: sensor.description || `FrostGuard ${sensor.sensor_type} sensor`,
           lorawan_version: "MAC_V1_0_3",
           lorawan_phy_version: "PHY_V1_0_3_REV_A",
-          frequency_plan_id: "US_902_928_FSB_2", // Default to US frequency plan
+          frequency_plan_id: "US_902_928_FSB_2",
           supports_join: true,
         },
         field_mask: {
@@ -364,7 +264,6 @@ serve(async (req) => {
         const errorText = await createDeviceResponse.text();
         console.error(`[ttn-provision-device] Failed to create device in IS: ${errorText}`);
         
-        // Update sensor status to fault
         await supabase
           .from("lora_sensors")
           .update({ status: "fault" })
@@ -376,7 +275,7 @@ serve(async (req) => {
         );
       }
 
-      // Step 2: Set device in Join Server (OTAA credentials) - Regional cluster
+      // Step 2: Set device in Join Server (OTAA credentials)
       if (sensor.app_key) {
         console.log(`[ttn-provision-device] Step 2: Setting device in Join Server`);
         
@@ -408,11 +307,10 @@ serve(async (req) => {
         if (!jsResponse.ok) {
           const errorText = await jsResponse.text();
           console.warn(`[ttn-provision-device] JS registration warning: ${errorText}`);
-          // Continue - device might still work
         }
       }
 
-      // Step 3: Set device in Network Server - Regional cluster
+      // Step 3: Set device in Network Server
       console.log(`[ttn-provision-device] Step 3: Setting device in Network Server`);
       
       const nsPayload = {
@@ -451,7 +349,7 @@ serve(async (req) => {
         console.warn(`[ttn-provision-device] NS registration warning: ${errorText}`);
       }
 
-      // Step 4: Set device in Application Server - Regional cluster
+      // Step 4: Set device in Application Server
       console.log(`[ttn-provision-device] Step 4: Setting device in Application Server`);
       
       const asPayload = {
@@ -481,9 +379,7 @@ serve(async (req) => {
         console.warn(`[ttn-provision-device] AS registration warning: ${errorText}`);
       }
 
-      // Update sensor status to joining and store TTN device ID
-      console.log(`[ttn-provision-device] Updating sensor status to 'joining'`);
-      
+      // Update sensor with TTN info
       await supabase
         .from("lora_sensors")
         .update({
@@ -493,19 +389,22 @@ serve(async (req) => {
         })
         .eq("id", sensor_id);
 
+      console.log(`[ttn-provision-device] Device ${deviceId} provisioned successfully`);
+
       return new Response(
         JSON.stringify({
           success: true,
-          ttn_device_id: deviceId,
-          ttn_application_id: ttnAppId,
+          device_id: deviceId,
+          application_id: ttnAppId,
           status: "joining",
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
-    } else if (action === "delete") {
-      // Delete device from TTN (Identity Server)
-      console.log(`[ttn-provision-device] Deleting device from TTN: ${deviceId}`);
-      
+    }
+
+    if (action === "delete") {
+      console.log(`[ttn-provision-device] Deleting device ${deviceId} from TTN`);
+
       const deleteResponse = await ttnIsFetch(
         `/api/v3/applications/${ttnAppId}/devices/${deviceId}`,
         { method: "DELETE" }
@@ -513,11 +412,25 @@ serve(async (req) => {
 
       if (!deleteResponse.ok && deleteResponse.status !== 404) {
         const errorText = await deleteResponse.text();
-        console.warn(`[ttn-provision-device] Delete warning: ${errorText}`);
+        console.error(`[ttn-provision-device] Failed to delete device: ${errorText}`);
+        return new Response(
+          JSON.stringify({ error: "Failed to delete device from TTN", details: errorText }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
+      // Clear TTN fields from sensor
+      await supabase
+        .from("lora_sensors")
+        .update({
+          ttn_device_id: null,
+          ttn_application_id: null,
+          status: "pending",
+        })
+        .eq("id", sensor_id);
+
       return new Response(
-        JSON.stringify({ success: true, deleted: true }),
+        JSON.stringify({ success: true, message: "Device deleted from TTN" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -527,29 +440,10 @@ serve(async (req) => {
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
-    // Comprehensive error logging for debugging
-    console.error("=== [ttn-provision-device] UNHANDLED ERROR ===");
-    console.error("Error type:", typeof error);
-    if (error instanceof Error) {
-      console.error("Error name:", error.name);
-      console.error("Error message:", error.message);
-      console.error("Error stack:", error.stack);
-    } else {
-      console.error("Error value:", error);
-    }
-
+    console.error("[ttn-provision-device] Error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
-    const name = error instanceof Error ? error.name : "Error";
-
     return new Response(
-      JSON.stringify({
-        success: false,
-        error: "Internal server error",
-        details: {
-          name,
-          message,
-        },
-      }),
+      JSON.stringify({ error: message }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

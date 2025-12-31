@@ -1,6 +1,7 @@
 /**
  * Shared TTN configuration helper for all edge functions
- * Loads per-org TTN settings and derives URLs from region
+ * Uses a single global TTN_APPLICATION_ID for the entire platform
+ * Multi-tenancy is enforced in Supabase, not by separate TTN applications
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -8,12 +9,10 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 export interface TtnConfig {
   region: string;
   apiKey: string;
-  applicationId: string;
-  identityBaseUrl: string;  // Always eu1
-  regionalBaseUrl: string;  // Based on region
+  applicationId: string;       // Always from TTN_APPLICATION_ID env var
+  identityBaseUrl: string;     // Always eu1
+  regionalBaseUrl: string;     // Based on region
   webhookSecret?: string;
-  userId?: string;
-  applicationName?: string;
   isEnabled: boolean;
 }
 
@@ -22,9 +21,6 @@ export interface TtnConnectionRow {
   organization_id: string;
   is_enabled: boolean;
   ttn_region: string;
-  ttn_user_id: string | null;
-  ttn_application_id: string | null;
-  ttn_application_name: string | null;
   ttn_api_key_encrypted: string | null;
   ttn_api_key_last4: string | null;
   ttn_webhook_secret_encrypted: string | null;
@@ -69,21 +65,20 @@ export function getLast4(key: string): string {
 }
 
 /**
- * Derive the TTN Application ID from organization slug
+ * Get the global TTN Application ID from environment
+ * This is the single shared application for the entire platform
  */
-export function deriveApplicationId(orgSlug: string): string {
-  // Normalize: lowercase, replace spaces/underscores with hyphens, remove invalid chars
-  const normalized = orgSlug
-    .toLowerCase()
-    .replace(/[_\s]+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return `fg-${normalized}`;
+export function getGlobalApplicationId(): string {
+  const appId = Deno.env.get("TTN_APPLICATION_ID");
+  if (!appId) {
+    throw new Error("TTN_APPLICATION_ID environment variable is not set");
+  }
+  return appId;
 }
 
 /**
  * Get TTN configuration for a specific organization
+ * Uses the global TTN_APPLICATION_ID, combined with org's API key and region
  * Returns null if TTN is not configured/enabled for the org
  */
 export async function getTtnConfigForOrg(
@@ -94,15 +89,12 @@ export async function getTtnConfigForOrg(
   const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || 
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.slice(0, 32) || "";
 
-  // Get org slug for application ID derivation
-  const { data: org, error: orgError } = await supabaseAdmin
-    .from("organizations")
-    .select("slug, ttn_application_id")
-    .eq("id", organizationId)
-    .single();
-
-  if (orgError || !org) {
-    console.error("[getTtnConfigForOrg] Organization not found:", organizationId);
+  // Get global application ID
+  let applicationId: string;
+  try {
+    applicationId = getGlobalApplicationId();
+  } catch (e) {
+    console.error("[getTtnConfigForOrg] Missing TTN_APPLICATION_ID:", e);
     return null;
   }
 
@@ -145,29 +137,22 @@ export async function getTtnConfigForOrg(
     ? deobfuscateKey(settings.ttn_webhook_secret_encrypted, encryptionSalt)
     : undefined;
 
-  // Derive/use application ID
-  const effectiveAppId = settings.ttn_application_id || 
-    org.ttn_application_id || 
-    deriveApplicationId(org.slug);
-
   // Normalize region (ensure lowercase)
   const region = (settings.ttn_region || "nam1").toLowerCase();
 
   return {
     region,
     apiKey,
-    applicationId: effectiveAppId,
+    applicationId,
     identityBaseUrl: IDENTITY_SERVER_URL,
     regionalBaseUrl: REGIONAL_URLS[region] || REGIONAL_URLS.nam1,
     webhookSecret,
-    userId: settings.ttn_user_id || undefined,
-    applicationName: settings.ttn_application_name || undefined,
     isEnabled: settings.is_enabled || false,
   };
 }
 
 /**
- * Test TTN API key permissions for a specific application
+ * Test TTN API key permissions for the global application
  * Returns a structured result with success/error details
  */
 export async function testTtnConnection(
@@ -238,7 +223,7 @@ export async function testTtnConnection(
       hint = `Your TTN API key lacks required rights. Create an API key under the TTN Application (${config.applicationId}) with at least:\n• applications:read (view application)\n• end_devices:read (view devices)\n• end_devices:write (if provisioning is needed)`;
     } else if (response.status === 404) {
       error = "Application not found";
-      hint = `Application '${config.applicationId}' does not exist in TTN. Create it first, or check the Application ID.`;
+      hint = `Application '${config.applicationId}' does not exist in TTN. Contact your administrator to verify the TTN_APPLICATION_ID is correct.`;
     } else {
       error = `TTN API error (${response.status})`;
       hint = errorText.slice(0, 200);

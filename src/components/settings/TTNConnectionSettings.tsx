@@ -21,20 +21,14 @@ import {
   AlertTriangle,
   Eye,
   EyeOff,
-  Info,
 } from "lucide-react";
 
 interface TTNSettings {
   exists: boolean;
   is_enabled: boolean;
   ttn_region: string | null;
-  ttn_user_id: string | null;
-  ttn_application_id: string | null;
-  ttn_application_name: string | null;
-  derived_application_id: string;
   has_api_key: boolean;
   api_key_last4: string | null;
-  api_key_updated_at: string | null;
   has_webhook_secret: boolean;
   webhook_secret_last4: string | null;
   last_connection_test_at: string | null;
@@ -48,6 +42,7 @@ interface TTNSettings {
     effectiveApplicationId?: string;
     apiKeyLast4?: string;
   } | null;
+  global_application_id: string | null;
 }
 
 const TTN_REGIONS = [
@@ -68,12 +63,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const [settings, setSettings] = useState<TTNSettings | null>(null);
   const [hasSession, setHasSession] = useState<boolean | null>(null);
   
-  // Form state
+  // Form state (simplified - only region, api key, webhook secret)
   const [isEnabled, setIsEnabled] = useState(false);
   const [region, setRegion] = useState("nam1");
-  const [userId, setUserId] = useState("");
-  const [appId, setAppId] = useState("");
-  const [appName, setAppName] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
@@ -125,9 +117,6 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       setSettings(data);
       setIsEnabled(data.is_enabled || false);
       setRegion(data.ttn_region || "nam1");
-      setUserId(data.ttn_user_id || "");
-      setAppId(data.ttn_application_id || "");
-      setAppName(data.ttn_application_name || "");
     } catch (error) {
       console.error("Failed to load TTN settings:", error);
       toast.error("Failed to load TTN settings");
@@ -153,9 +142,6 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       const updates: Record<string, unknown> = {
         is_enabled: isEnabled,
         ttn_region: region,
-        ttn_user_id: userId || null,
-        ttn_application_id: appId || null,
-        ttn_application_name: appName || null,
       };
 
       // Only include keys if changed
@@ -288,7 +274,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   }
 
   const testResult = settings?.last_connection_test_result;
-  const derivedAppId = settings?.derived_application_id || "fg-your-org";
+  const globalAppId = settings?.global_application_id;
 
   return (
     <Card>
@@ -356,74 +342,51 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           </div>
         )}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* Region Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="ttn-region">TTN Region</Label>
-            <Select value={region} onValueChange={setRegion}>
-              <SelectTrigger id="ttn-region">
-                <SelectValue placeholder="Select region" />
-              </SelectTrigger>
-              <SelectContent>
-                {TTN_REGIONS.map((r) => (
-                  <SelectItem key={r.value} value={r.value}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Regional server: {region}.cloud.thethings.network
+        {/* Global Application ID notice */}
+        {globalAppId && (
+          <div className="p-3 rounded-lg bg-muted/50 border">
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium">TTN Application:</span>{" "}
+              <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{globalAppId}</code>
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              All devices are registered under this shared application. Your API key must have access to this application.
             </p>
           </div>
+        )}
 
-          {/* User ID */}
-          <div className="space-y-2">
-            <Label htmlFor="ttn-user-id">TTN User ID (Optional)</Label>
-            <Input
-              id="ttn-user-id"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              placeholder="your-ttn-username"
-            />
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Application Settings */}
-        <div className="space-y-4">
-          <Label>Application Settings</Label>
-          
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="ttn-app-id" className="text-sm text-muted-foreground">
-                Application ID (Optional Override)
-              </Label>
-              <Input
-                id="ttn-app-id"
-                value={appId}
-                onChange={(e) => setAppId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
-                placeholder={derivedAppId}
-              />
-              <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                <Info className="h-3 w-3 mt-0.5 shrink-0" />
-                <span>Leave blank to auto-generate: <code className="bg-muted px-1 rounded">{derivedAppId}</code></span>
+        {!globalAppId && (
+          <div className="p-4 rounded-lg bg-warning/10 border border-warning/30">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
+              <div>
+                <p className="font-medium text-warning">TTN Application Not Configured</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  The TTN_APPLICATION_ID environment variable is not set. Contact your administrator.
+                </p>
               </div>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="ttn-app-name" className="text-sm text-muted-foreground">
-                Application Name (Optional)
-              </Label>
-              <Input
-                id="ttn-app-name"
-                value={appName}
-                onChange={(e) => setAppName(e.target.value)}
-                placeholder="FrostGuard - Your Org"
-              />
-            </div>
           </div>
+        )}
+
+        {/* Region Selection */}
+        <div className="space-y-2">
+          <Label htmlFor="ttn-region">TTN Region</Label>
+          <Select value={region} onValueChange={setRegion}>
+            <SelectTrigger id="ttn-region">
+              <SelectValue placeholder="Select region" />
+            </SelectTrigger>
+            <SelectContent>
+              {TTN_REGIONS.map((r) => (
+                <SelectItem key={r.value} value={r.value}>
+                  {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Regional server: {region}.cloud.thethings.network
+          </p>
         </div>
 
         <Separator />
@@ -465,7 +428,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Create an API key in TTN Console → Applications → {appId || derivedAppId} → API keys with:
+                Create an API key in TTN Console → Applications → {globalAppId || "your-app"} → API keys with:
                 <br />• applications:read • end_devices:read • end_devices:write
               </p>
             </div>
@@ -501,23 +464,26 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
               <div>
                 <p className="font-medium text-warning">TTN Integration Disabled</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Enable the toggle above to use your TTN configuration for device provisioning.
+                  TTN settings are configured but the integration is disabled. 
+                  Enable it to start receiving sensor data.
                 </p>
               </div>
             </div>
           </div>
         )}
 
+        <Separator />
+
         {/* Actions */}
-        <div className="flex items-center justify-between pt-4">
+        <div className="flex items-center justify-between">
           <Button
             variant="outline"
             onClick={handleTest}
-            disabled={isTesting || isSaving || (!settings?.has_api_key && !apiKey)}
+            disabled={isTesting || !settings?.has_api_key || !globalAppId}
           >
             {isTesting ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 Testing...
               </>
             ) : (
@@ -528,10 +494,10 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
             )}
           </Button>
 
-          <Button onClick={handleSave} disabled={isSaving || isTesting}>
+          <Button onClick={handleSave} disabled={isSaving}>
             {isSaving ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 Saving...
               </>
             ) : (
