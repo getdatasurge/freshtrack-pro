@@ -10,6 +10,7 @@ import {
   DoorClosed,
   Star,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDistanceToNow } from "date-fns";
 import { useLoraSensorsByUnit, useLinkSensorToUnit, useProvisionLoraSensor } from "@/hooks/useLoraSensors";
 import { useSetPrimarySensor } from "@/hooks/useSetPrimarySensor";
@@ -18,6 +19,7 @@ import { useState } from "react";
 import { AssignSensorToUnitDialog } from "./AssignSensorToUnitDialog";
 import { SensorDetailsPopover } from "./SensorDetailsPopover";
 import { cn } from "@/lib/utils";
+import { UNIT_SENSOR_STATUS_CONFIG } from "@/lib/entityStatusConfig";
 
 interface UnitSensorsCardProps {
   unitId: string;
@@ -29,20 +31,12 @@ interface UnitSensorsCardProps {
 }
 
 const getStatusBadge = (status: LoraSensorStatus) => {
-  switch (status) {
-    case "pending":
-      return { label: "Pending", className: "bg-muted text-muted-foreground" };
-    case "joining":
-      return { label: "Joining", className: "bg-warning/20 text-warning" };
-    case "active":
-      return { label: "Active", className: "bg-safe/20 text-safe" };
-    case "offline":
-      return { label: "Offline", className: "bg-warning/20 text-warning" };
-    case "fault":
-      return { label: "Fault", className: "bg-alarm/20 text-alarm" };
-    default:
-      return { label: status, className: "bg-muted text-muted-foreground" };
-  }
+  const config = UNIT_SENSOR_STATUS_CONFIG[status] || UNIT_SENSOR_STATUS_CONFIG.pending;
+  return { 
+    label: config.label, 
+    className: config.className,
+    tooltip: config.tooltip
+  };
 };
 
 const getSensorIcon = (type: string) => {
@@ -67,6 +61,30 @@ const getSensorTypeLabel = (type: string): string => {
     case "combo": return "Combo";
     default: return type;
   }
+};
+
+// Status badge with tooltip for unit sensors card
+const StatusBadgeWithTooltip = ({ status }: { status: LoraSensorStatus }) => {
+  const statusBadge = getStatusBadge(status);
+  
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge className={`${statusBadge.className} border-0 text-xs cursor-help`}>
+          {statusBadge.label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs p-3">
+        <div className="space-y-1.5 text-sm">
+          <p><span className="font-medium">Status:</span> {statusBadge.tooltip.meaning}</p>
+          <p><span className="font-medium">System:</span> {statusBadge.tooltip.systemState}</p>
+          {statusBadge.tooltip.userAction && (
+            <p className="text-primary"><span className="font-medium">Action:</span> {statusBadge.tooltip.userAction}</p>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
 };
 
 export function UnitSensorsCard({ 
@@ -115,12 +133,8 @@ export function UnitSensorsCard({
     );
   }
 
-  // Separate door sensors from temperature sensors for display
-  const doorSensors = sensors?.filter(s => isDoorSensor(s.sensor_type)) || [];
-  const tempSensors = sensors?.filter(s => !isDoorSensor(s.sensor_type) || s.sensor_type === 'combo') || [];
-
   return (
-    <>
+    <TooltipProvider>
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -147,7 +161,6 @@ export function UnitSensorsCard({
           {sensors && sensors.length > 0 ? (
             <div className="space-y-2">
               {sensors.map((sensor) => {
-                const statusBadge = getStatusBadge(sensor.status);
                 const isDoor = isDoorSensor(sensor.sensor_type);
                 const showDoorState = isDoor && sensor.status === 'active';
 
@@ -224,10 +237,8 @@ export function UnitSensorsCard({
                           </Badge>
                         )}
 
-                        {/* Status Badge */}
-                        <Badge className={`${statusBadge.className} border-0 text-xs`}>
-                          {statusBadge.label}
-                        </Badge>
+                        {/* Status Badge with Tooltip */}
+                        <StatusBadgeWithTooltip status={sensor.status} />
                       </div>
                     </div>
                   </SensorDetailsPopover>
@@ -262,7 +273,7 @@ export function UnitSensorsCard({
         organizationId={organizationId}
         siteId={siteId}
       />
-    </>
+    </TooltipProvider>
   );
 }
 
