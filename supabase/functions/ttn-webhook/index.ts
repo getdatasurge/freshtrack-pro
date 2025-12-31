@@ -102,13 +102,28 @@ function secureCompare(a: string, b: string): boolean {
 }
 
 Deno.serve(async (req) => {
+  // Generate unique request ID for tracing
+  const requestId = crypto.randomUUID().slice(0, 8);
+  
+  // ========================================
+  // REQUEST ENTRY LOGGING - Log EVERY request immediately
+  // ========================================
+  console.log(`[TTN-WEBHOOK] ========== REQUEST ${requestId} ==========`);
+  console.log(`[TTN-WEBHOOK] ${requestId} | method: ${req.method}`);
+  console.log(`[TTN-WEBHOOK] ${requestId} | url: ${req.url}`);
+  console.log(`[TTN-WEBHOOK] ${requestId} | X-Webhook-Secret present: ${req.headers.has('x-webhook-secret')}`);
+  console.log(`[TTN-WEBHOOK] ${requestId} | X-Downlink-Apikey present: ${req.headers.has('x-downlink-apikey')}`);
+  console.log(`[TTN-WEBHOOK] ${requestId} | Content-Type: ${req.headers.get('content-type') || 'not set'}`);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
+    console.log(`[TTN-WEBHOOK] ${requestId} | Response: 200 OK - CORS preflight`);
     return new Response(null, { headers: corsHeaders });
   }
 
   // Only accept POST requests
   if (req.method !== 'POST') {
+    console.log(`[TTN-WEBHOOK] ${requestId} | Response: 405 Method Not Allowed`);
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
       { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -117,18 +132,35 @@ Deno.serve(async (req) => {
 
   // ========================================
   // SECURITY: Validate webhook secret (constant-time comparison)
+  // Accept from EITHER X-Webhook-Secret OR X-Downlink-Apikey headers
   // ========================================
   const webhookSecret = Deno.env.get('TTN_WEBHOOK_API_KEY');
+  const providedSecretFromHeader = req.headers.get('x-webhook-secret');
+  const providedSecretFromApikey = req.headers.get('x-downlink-apikey');
+  const providedSecret = providedSecretFromHeader || providedSecretFromApikey || '';
+  
+  console.log(`[TTN-WEBHOOK] ${requestId} | Expected secret configured: ${webhookSecret ? 'YES' : 'NO'}`);
+  console.log(`[TTN-WEBHOOK] ${requestId} | Provided secret length: ${providedSecret.length}`);
+  console.log(`[TTN-WEBHOOK] ${requestId} | Secret source: ${providedSecretFromHeader ? 'X-Webhook-Secret' : providedSecretFromApikey ? 'X-Downlink-Apikey' : 'NONE'}`);
+  
   if (webhookSecret) {
-    // Accept secret from either header (TTN uses different headers depending on config)
-    const providedSecret = req.headers.get('X-Webhook-Secret') || req.headers.get('X-Downlink-Apikey') || '';
     if (!secureCompare(providedSecret, webhookSecret)) {
-      console.warn('[SECURITY] Invalid or missing webhook secret');
+      console.warn(`[TTN-WEBHOOK] ${requestId} | AUTH FAILED - Secret mismatch`);
+      console.warn(`[TTN-WEBHOOK] ${requestId} |   Expected length: ${webhookSecret.length}`);
+      console.warn(`[TTN-WEBHOOK] ${requestId} |   Provided length: ${providedSecret.length}`);
+      console.log(`[TTN-WEBHOOK] ${requestId} | Response: 401 Unauthorized`);
+      
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ 
+          error: 'Unauthorized',
+          message: 'Invalid webhook secret'
+        }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    console.log(`[TTN-WEBHOOK] ${requestId} | AUTH SUCCESS - Secret validated`);
+  } else {
+    console.warn(`[TTN-WEBHOOK] ${requestId} | WARNING: No TTN_WEBHOOK_API_KEY configured - skipping auth`);
   }
 
   try {
@@ -148,9 +180,10 @@ Deno.serve(async (req) => {
                         payload.service_data ? 'service_data' :
                         'unknown';
       
-      console.log(`[TTN-WEBHOOK] Non-uplink event received: ${eventType}`);
-      console.log(`[TTN-WEBHOOK] device_id: ${payload.end_device_ids?.device_id || 'N/A'}`);
-      console.log(`[TTN-WEBHOOK] correlation_ids: ${JSON.stringify(payload.correlation_ids || [])}`);
+      console.log(`[TTN-WEBHOOK] ${requestId} | Non-uplink event received: ${eventType}`);
+      console.log(`[TTN-WEBHOOK] ${requestId} | device_id: ${payload.end_device_ids?.device_id || 'N/A'}`);
+      console.log(`[TTN-WEBHOOK] ${requestId} | correlation_ids: ${JSON.stringify(payload.correlation_ids || [])}`);
+      console.log(`[TTN-WEBHOOK] ${requestId} | Response: 202 Accepted - Non-uplink event`);
       
       return new Response(
         JSON.stringify({ 
@@ -178,18 +211,18 @@ Deno.serve(async (req) => {
     const receivedAt = ttnPayload.uplink_message?.received_at || ttnPayload.received_at || new Date().toISOString();
     const correlationIds = ttnPayload.correlation_ids || [];
 
-    console.log(`[TTN-WEBHOOK] ========== INCOMING UPLINK ==========`);
-    console.log(`[TTN-WEBHOOK] device_id: ${deviceId}`);
-    console.log(`[TTN-WEBHOOK] dev_eui: ${rawDevEui}`);
-    console.log(`[TTN-WEBHOOK] application_id: ${applicationId}`);
-    console.log(`[TTN-WEBHOOK] correlation_ids: ${JSON.stringify(correlationIds.slice(0, 3))}`);
-    console.log(`[TTN-WEBHOOK] raw temperature: ${decoded.temperature ?? 'N/A'}`);
-    console.log(`[TTN-WEBHOOK] temperature_scale: ${decoded.temperature_scale ?? '1 (default)'}`);
-    console.log(`[TTN-WEBHOOK] humidity: ${decoded.humidity ?? 'N/A'}`);
-    console.log(`[TTN-WEBHOOK] battery: ${decoded.battery ?? decoded.battery_level ?? 'N/A'}`);
-    console.log(`[TTN-WEBHOOK] door_open: ${decoded.door_open ?? 'N/A'}`);
-    console.log(`[TTN-WEBHOOK] rssi: ${rssi ?? 'N/A'}, snr: ${snr ?? 'N/A'}`);
-    console.log(`[TTN-WEBHOOK] received_at: ${receivedAt}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | ========== INCOMING UPLINK ==========`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | device_id: ${deviceId}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | dev_eui: ${rawDevEui}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | application_id: ${applicationId}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | correlation_id: ${correlationIds[0] || 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | received_at: ${receivedAt}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | raw temperature: ${decoded.temperature ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | temperature_scale: ${decoded.temperature_scale ?? '1 (default)'}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | humidity: ${decoded.humidity ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | battery: ${decoded.battery ?? decoded.battery_level ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | door_open: ${decoded.door_open ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | rssi: ${rssi ?? 'N/A'}, snr: ${snr ?? 'N/A'}`);
 
     // Validate required fields
     if (!rawDevEui) {
@@ -323,11 +356,12 @@ Deno.serve(async (req) => {
     // UNKNOWN: DevEUI not found in either table
     // Return 202 Accepted (don't retry) but log for debugging
     // ========================================
-    console.warn(`[TTN-WEBHOOK] ✗ UNKNOWN DEVICE - Not found in database`);
-    console.warn(`[TTN-WEBHOOK]   device_id: ${deviceId}`);
-    console.warn(`[TTN-WEBHOOK]   dev_eui: ${devEui}`);
-    console.warn(`[TTN-WEBHOOK]   application_id: ${applicationId}`);
-    console.warn(`[TTN-WEBHOOK]   gateway: ${rxMeta?.gateway_ids?.gateway_id || 'unknown'}`);
+    console.warn(`[TTN-WEBHOOK] ${requestId} | ✗ UNKNOWN DEVICE - Not found in database`);
+    console.warn(`[TTN-WEBHOOK] ${requestId} |   device_id: ${deviceId}`);
+    console.warn(`[TTN-WEBHOOK] ${requestId} |   dev_eui: ${devEui}`);
+    console.warn(`[TTN-WEBHOOK] ${requestId} |   application_id: ${applicationId}`);
+    console.warn(`[TTN-WEBHOOK] ${requestId} |   gateway: ${rxMeta?.gateway_ids?.gateway_id || 'unknown'}`);
+    console.log(`[TTN-WEBHOOK] ${requestId} | Response: 202 Accepted - Unknown device`);
 
     return new Response(
       JSON.stringify({ 
@@ -343,8 +377,9 @@ Deno.serve(async (req) => {
 
   } catch (error: unknown) {
     // Never return 500 to TTN - always return 2xx to prevent retries
-    console.error('[TTN-WEBHOOK] Unhandled error:', error);
+    console.error(`[TTN-WEBHOOK] ${requestId} | Unhandled error:`, error);
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+    console.log(`[TTN-WEBHOOK] ${requestId} | Response: 202 Accepted - Error caught`);
     return new Response(
       JSON.stringify({ 
         accepted: true,
