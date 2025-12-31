@@ -11,7 +11,7 @@ export interface PendingManualLog {
   notes: string | null;
   logged_at: string;
   created_at: string;
-  synced: boolean;
+  synced: 0 | 1; // Use 0/1 instead of boolean for IndexedDB compatibility
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -45,59 +45,83 @@ export async function savePendingLog(log: PendingManualLog): Promise<void> {
 }
 
 export async function getPendingLogs(): Promise<PendingManualLog[]> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const store = tx.objectStore(STORE_NAME);
-    const index = store.index("synced");
-    const request = index.getAll(IDBKeyRange.only(false));
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    tx.oncomplete = () => db.close();
-  });
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      const index = store.index("synced");
+      // Use 0 instead of false for IndexedDB key compatibility
+      const request = index.getAll(IDBKeyRange.only(0));
+      request.onerror = () => {
+        console.warn("[offlineStorage] getPendingLogs query error:", request.error);
+        resolve([]);
+      };
+      request.onsuccess = () => resolve(request.result || []);
+      tx.oncomplete = () => db.close();
+    });
+  } catch (error) {
+    console.warn("[offlineStorage] getPendingLogs error:", error);
+    return [];
+  }
 }
 
 export async function markLogSynced(id: string): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    const getReq = store.get(id);
-    getReq.onsuccess = () => {
-      const log = getReq.result;
-      if (log) {
-        log.synced = true;
-        store.put(log);
-      }
-      resolve();
-    };
-    getReq.onerror = () => reject(getReq.error);
-    tx.oncomplete = () => db.close();
-  });
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const getReq = store.get(id);
+      getReq.onsuccess = () => {
+        const log = getReq.result;
+        if (log) {
+          log.synced = 1; // Use 1 instead of true
+          store.put(log);
+        }
+        resolve();
+      };
+      getReq.onerror = () => {
+        console.warn("[offlineStorage] markLogSynced error:", getReq.error);
+        resolve();
+      };
+      tx.oncomplete = () => db.close();
+    });
+  } catch (error) {
+    console.warn("[offlineStorage] markLogSynced error:", error);
+  }
 }
 
 export async function deleteSyncedLogs(): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    const index = store.index("synced");
-    const request = index.openCursor(IDBKeyRange.only(true));
-    
-    request.onsuccess = (event) => {
-      const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
-      if (cursor) {
-        cursor.delete();
-        cursor.continue();
-      }
-    };
-    
-    request.onerror = () => reject(request.error);
-    tx.oncomplete = () => {
-      db.close();
-      resolve();
-    };
-  });
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const index = store.index("synced");
+      // Use 1 instead of true for IndexedDB key compatibility
+      const request = index.openCursor(IDBKeyRange.only(1));
+      
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        }
+      };
+      
+      request.onerror = () => {
+        console.warn("[offlineStorage] deleteSyncedLogs error:", request.error);
+        resolve();
+      };
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+    });
+  } catch (error) {
+    console.warn("[offlineStorage] deleteSyncedLogs error:", error);
+  }
 }
 
 export async function getAllLogs(): Promise<PendingManualLog[]> {
