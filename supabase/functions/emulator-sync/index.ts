@@ -1,0 +1,343 @@
+/**
+ * Emulator Sync Ingestion Endpoint
+ * 
+ * Accepts sync bundles from Project 2's emulator containing gateways, devices, and sensors.
+ * Validates payload, enforces org tenancy, and upserts data atomically.
+ * 
+ * Authentication: EMULATOR_SYNC_API_KEY via Authorization: Bearer or X-Emulator-Sync-Key header
+ */
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { 
+  validateEmulatorSyncApiKey, 
+  emulatorSyncPayloadSchema,
+  validationErrorResponse,
+  unauthorizedResponse,
+  type EmulatorGatewayInput,
+  type EmulatorDeviceInput,
+  type EmulatorSensorInput,
+} from "../_shared/validation.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-emulator-sync-key",
+};
+
+interface SyncCounts {
+  created: number;
+  updated: number;
+  skipped: number;
+}
+
+interface SyncResponse {
+  success: boolean;
+  sync_run_id: string;
+  counts: {
+    gateways: SyncCounts;
+    devices: SyncCounts;
+    sensors: SyncCounts;
+  };
+  warnings: string[];
+  errors: string[];
+  processed_at: string;
+}
+
+Deno.serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  // Only accept POST
+  if (req.method !== "POST") {
+    return new Response(
+      JSON.stringify({ error: "Method not allowed" }),
+      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  const syncRunId = crypto.randomUUID();
+  const processedAt = new Date().toISOString();
+  
+  console.log(`[emulator-sync] Starting sync run: ${syncRunId}`);
+
+  // Validate API key
+  const authResult = validateEmulatorSyncApiKey(req);
+  if (!authResult.valid) {
+    console.warn(`[emulator-sync] Auth failed: ${authResult.error}`);
+    return unauthorizedResponse(authResult.error || "Unauthorized", corsHeaders);
+  }
+
+  // Check content length (1MB limit)
+  const contentLength = req.headers.get("content-length");
+  if (contentLength && parseInt(contentLength) > 1024 * 1024) {
+    console.warn(`[emulator-sync] Payload too large: ${contentLength} bytes`);
+    return new Response(
+      JSON.stringify({ error: "Payload too large", max_bytes: 1048576 }),
+      { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Parse JSON body
+  let rawPayload: unknown;
+  try {
+    rawPayload = await req.json();
+  } catch {
+    console.error(`[emulator-sync] Invalid JSON in request body`);
+    return new Response(
+      JSON.stringify({ error: "Invalid JSON in request body" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Validate payload schema
+  const parseResult = emulatorSyncPayloadSchema.safeParse(rawPayload);
+  if (!parseResult.success) {
+    console.warn(`[emulator-sync] Validation failed:`, parseResult.error.issues);
+    return validationErrorResponse(parseResult.error, corsHeaders);
+  }
+
+  const payload = parseResult.data;
+  console.log(`[emulator-sync] Validated payload for org: ${payload.org_id}, gateways: ${payload.gateways.length}, devices: ${payload.devices.length}, sensors: ${payload.sensors.length}`);
+
+  // Initialize Supabase client with service role
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error(`[emulator-sync] Missing Supabase configuration`);
+    return new Response(
+      JSON.stringify({ error: "Server misconfiguration" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  // Verify org_id exists
+  const { data: org, error: orgError } = await supabase
+    .from("organizations")
+    .select("id, name, deleted_at")
+    .eq("id", payload.org_id)
+    .single();
+
+  if (orgError || !org) {
+    console.warn(`[emulator-sync] Organization not found: ${payload.org_id}`);
+    return new Response(
+      JSON.stringify({ error: "Organization not found", org_id: payload.org_id }),
+      { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  if (org.deleted_at) {
+    console.warn(`[emulator-sync] Organization is deleted: ${payload.org_id}`);
+    return new Response(
+      JSON.stringify({ error: "Organization is deleted", org_id: payload.org_id }),
+      { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  console.log(`[emulator-sync] Org verified: ${org.name} (${payload.org_id})`);
+
+  // Initialize tracking
+  const counts: SyncResponse["counts"] = {
+    gateways: { created: 0, updated: 0, skipped: 0 },
+    devices: { created: 0, updated: 0, skipped: 0 },
+    sensors: { created: 0, updated: 0, skipped: 0 },
+  };
+  const warnings: string[] = [];
+  const errors: string[] = [];
+
+  // Process gateways
+  for (const gateway of payload.gateways) {
+    try {
+      const result = await upsertGateway(supabase, payload.org_id, gateway);
+      counts.gateways[result]++;
+    } catch (err) {
+      const msg = `Gateway ${gateway.gateway_eui}: ${err instanceof Error ? err.message : String(err)}`;
+      errors.push(msg);
+      console.error(`[emulator-sync] ${msg}`);
+      counts.gateways.skipped++;
+    }
+  }
+
+  // Process devices
+  for (const device of payload.devices) {
+    try {
+      const result = await upsertDevice(supabase, device);
+      counts.devices[result]++;
+    } catch (err) {
+      const msg = `Device ${device.serial_number}: ${err instanceof Error ? err.message : String(err)}`;
+      errors.push(msg);
+      console.error(`[emulator-sync] ${msg}`);
+      counts.devices.skipped++;
+    }
+  }
+
+  // Process sensors
+  for (const sensor of payload.sensors) {
+    try {
+      const result = await upsertSensor(supabase, payload.org_id, sensor);
+      counts.sensors[result]++;
+    } catch (err) {
+      const msg = `Sensor ${sensor.dev_eui}: ${err instanceof Error ? err.message : String(err)}`;
+      errors.push(msg);
+      console.error(`[emulator-sync] ${msg}`);
+      counts.sensors.skipped++;
+    }
+  }
+
+  const response: SyncResponse = {
+    success: errors.length === 0,
+    sync_run_id: syncRunId,
+    counts,
+    warnings,
+    errors,
+    processed_at: processedAt,
+  };
+
+  console.log(`[emulator-sync] Sync complete: ${JSON.stringify(counts)}, errors: ${errors.length}`);
+
+  return new Response(
+    JSON.stringify(response),
+    { 
+      status: errors.length === 0 ? 200 : 207,
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    }
+  );
+});
+
+// ============= Upsert Functions =============
+// deno-lint-ignore no-explicit-any
+type SupabaseClient = any;
+
+type UpsertResult = "created" | "updated" | "skipped";
+
+async function upsertGateway(
+  supabase: SupabaseClient,
+  orgId: string,
+  gateway: EmulatorGatewayInput
+): Promise<UpsertResult> {
+  // Check if gateway exists
+  const { data: existing } = await supabase
+    .from("gateways")
+    .select("id, updated_at")
+    .eq("organization_id", orgId)
+    .eq("gateway_eui", gateway.gateway_eui)
+    .single();
+
+  const upsertData = {
+    organization_id: orgId,
+    gateway_eui: gateway.gateway_eui,
+    name: gateway.name,
+    status: gateway.status || "pending",
+    site_id: gateway.site_id || null,
+    description: gateway.description || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    // Update existing
+    const { error } = await supabase
+      .from("gateways")
+      .update(upsertData)
+      .eq("id", existing.id);
+
+    if (error) throw new Error(error.message);
+    return "updated";
+  } else {
+    // Insert new
+    const { error } = await supabase
+      .from("gateways")
+      .insert(upsertData);
+
+    if (error) throw new Error(error.message);
+    return "created";
+  }
+}
+
+async function upsertDevice(
+  supabase: SupabaseClient,
+  device: EmulatorDeviceInput
+): Promise<UpsertResult> {
+  // Check if device exists by serial_number
+  const { data: existing } = await supabase
+    .from("devices")
+    .select("id, updated_at")
+    .eq("serial_number", device.serial_number)
+    .single();
+
+  const upsertData = {
+    serial_number: device.serial_number,
+    unit_id: device.unit_id || null,
+    status: device.status || "inactive",
+    mac_address: device.mac_address || null,
+    firmware_version: device.firmware_version || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    // Update existing
+    const { error } = await supabase
+      .from("devices")
+      .update(upsertData)
+      .eq("id", existing.id);
+
+    if (error) throw new Error(error.message);
+    return "updated";
+  } else {
+    // Insert new
+    const { error } = await supabase
+      .from("devices")
+      .insert(upsertData);
+
+    if (error) throw new Error(error.message);
+    return "created";
+  }
+}
+
+async function upsertSensor(
+  supabase: SupabaseClient,
+  orgId: string,
+  sensor: EmulatorSensorInput
+): Promise<UpsertResult> {
+  // Check if sensor exists by org + dev_eui
+  const { data: existing } = await supabase
+    .from("lora_sensors")
+    .select("id, updated_at")
+    .eq("organization_id", orgId)
+    .eq("dev_eui", sensor.dev_eui)
+    .single();
+
+  const upsertData = {
+    organization_id: orgId,
+    dev_eui: sensor.dev_eui,
+    name: sensor.name,
+    sensor_type: sensor.sensor_type || "temperature",
+    status: sensor.status || "pending",
+    unit_id: sensor.unit_id || null,
+    site_id: sensor.site_id || null,
+    manufacturer: sensor.manufacturer || null,
+    model: sensor.model || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing) {
+    // Update existing
+    const { error } = await supabase
+      .from("lora_sensors")
+      .update(upsertData)
+      .eq("id", existing.id);
+
+    if (error) throw new Error(error.message);
+    return "updated";
+  } else {
+    // Insert new
+    const { error } = await supabase
+      .from("lora_sensors")
+      .insert(upsertData);
+
+    if (error) throw new Error(error.message);
+    return "created";
+  }
+}
