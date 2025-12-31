@@ -1,5 +1,9 @@
 project_id = "mfwyiifehsvwnjwqoxht"
 
+# User sync emitter - called by database trigger, uses service role key
+[functions.user-sync-emitter]
+verify_jwt = false
+
 [functions.manage-ttn-settings]
 verify_jwt = true
 
