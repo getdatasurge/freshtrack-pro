@@ -6,6 +6,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface UserSite {
+  site_id: string;
+  site_name: string;
+}
+
 interface TriggerPayload {
   event_type: 'INSERT' | 'UPDATE';
   user_id: string;
@@ -15,6 +20,8 @@ interface TriggerPayload {
   site_id: string | null;
   unit_id: string | null;
   updated_at: string;
+  default_site_id: string | null;
+  user_sites: UserSite[];
 }
 
 interface Project2Payload {
@@ -26,6 +33,8 @@ interface Project2Payload {
     site_id: string | null;
     unit_id: string | null;
     updated_at: string;
+    default_site_id: string | null;
+    user_sites: UserSite[];
   }>;
 }
 
@@ -54,8 +63,9 @@ serve(async (req) => {
     const triggerPayload: TriggerPayload = await req.json();
     
     console.log(`[user-sync-emitter] Received ${triggerPayload.event_type} event for user ${triggerPayload.user_id}`);
+    console.log(`[user-sync-emitter] Site data: default_site_id=${triggerPayload.default_site_id}, user_sites=${JSON.stringify(triggerPayload.user_sites)}`);
 
-    // Build the outbound payload for Project 2
+    // Build the outbound payload for Project 2 with site membership data
     const outboundPayload: Project2Payload = {
       users: [
         {
@@ -66,11 +76,14 @@ serve(async (req) => {
           site_id: triggerPayload.site_id,
           unit_id: triggerPayload.unit_id,
           updated_at: triggerPayload.updated_at,
+          default_site_id: triggerPayload.default_site_id,
+          user_sites: triggerPayload.user_sites || [],
         }
       ]
     };
 
     console.log(`[user-sync-emitter] Sending to Project 2: ${project2Endpoint}`);
+    console.log(`[user-sync-emitter] Outbound payload:`, JSON.stringify(outboundPayload, null, 2));
 
     // POST to Project 2's user-sync endpoint
     const response = await fetch(project2Endpoint, {
