@@ -42,6 +42,7 @@ import { BillingTab } from "@/components/billing/BillingTab";
 import { AlertRulesScopedEditor } from "@/components/settings/AlertRulesScopedEditor";
 import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
 import { EdgeFunctionDiagnostics } from "@/components/debug/EdgeFunctionDiagnostics";
+import { MultiTenantTestContext } from "@/components/emulator/MultiTenantTestContext";
 import { NotificationSettingsCard } from "@/components/settings/NotificationSettingsCard";
 import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
 import { GatewayManager } from "@/components/settings/GatewayManager";
@@ -1025,6 +1026,7 @@ const Settings = () => {
         {/* Developer Tab (Admin Only) */}
         {canManageUsers && (
           <TabsContent value="developer" className="space-y-6">
+            <MultiTenantTestContext />
             <TTNConnectionSettings />
             <EdgeFunctionDiagnostics />
             <SensorSimulatorPanel />
