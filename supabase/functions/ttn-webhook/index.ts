@@ -121,12 +121,22 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Only accept POST requests
-  if (req.method !== 'POST') {
-    console.log(`[TTN-WEBHOOK] ${requestId} | Response: 405 Method Not Allowed`);
+  // Handle GET/HEAD probes (load balancers, TTN health checks)
+  // Return 200 to keep webhook status healthy
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    console.log(`[TTN-WEBHOOK] ${requestId} | Response: 200 OK - Health probe (${req.method})`);
     return new Response(
-      JSON.stringify({ error: 'Method not allowed' }),
-      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ ok: true, service: 'ttn-webhook', timestamp: new Date().toISOString() }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  // Only process POST requests for actual webhook payloads
+  if (req.method !== 'POST') {
+    console.log(`[TTN-WEBHOOK] ${requestId} | Response: 200 OK - Non-POST method ignored`);
+    return new Response(
+      JSON.stringify({ ok: true, message: 'Method accepted but not processed' }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 
@@ -224,22 +234,24 @@ Deno.serve(async (req) => {
     console.log(`[TTN-WEBHOOK] ${requestId} | door_open: ${decoded.door_open ?? 'N/A'}`);
     console.log(`[TTN-WEBHOOK] ${requestId} | rssi: ${rssi ?? 'N/A'}, snr: ${snr ?? 'N/A'}`);
 
-    // Validate required fields
+    // Validate required fields - return 202 (not 400) to prevent TTN retries
     if (!rawDevEui) {
-      console.error('[TTN-WEBHOOK] Missing dev_eui in payload');
+      console.warn(`[TTN-WEBHOOK] ${requestId} | Missing dev_eui in payload`);
+      console.log(`[TTN-WEBHOOK] ${requestId} | Response: 202 Accepted - Missing dev_eui`);
       return new Response(
-        JSON.stringify({ error: 'Missing dev_eui in payload' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ accepted: true, processed: false, reason: 'Missing dev_eui in payload' }),
+        { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     // Normalize DevEUI to handle all formats (with/without colons/dashes/spaces)
     const normalizedDevEui = normalizeDevEui(rawDevEui);
     if (!normalizedDevEui) {
-      console.error(`[TTN-WEBHOOK] Invalid DevEUI format: ${rawDevEui}`);
+      console.warn(`[TTN-WEBHOOK] ${requestId} | Invalid DevEUI format: ${rawDevEui}`);
+      console.log(`[TTN-WEBHOOK] ${requestId} | Response: 202 Accepted - Invalid dev_eui format`);
       return new Response(
-        JSON.stringify({ error: 'Invalid dev_eui format' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ accepted: true, processed: false, reason: 'Invalid dev_eui format', dev_eui: rawDevEui }),
+        { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
@@ -456,14 +468,17 @@ async function handleLoraSensor(
     console.error(`  Expected: ${sensor.ttn_application_id}`);
     console.error(`  Received: ${applicationId}`);
     console.error(`  Org ID: ${sensor.organization_id}`);
+    console.log(`[TTN-WEBHOOK] Response: 202 Accepted - Application ID mismatch (security event logged)`);
     
+    // Return 202 instead of 403 to prevent TTN retries, but log the security event
     return new Response(
       JSON.stringify({ 
-        error: 'Application ID mismatch',
+        accepted: true,
+        processed: false,
+        reason: 'Application ID mismatch - security event logged',
         quarantined: true,
-        security_event: true,
       }),
-      { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 
