@@ -51,7 +51,7 @@ const FREQUENCY_PLANS: Record<string, string> = {
 };
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v1-perorg-20251231";
+  const BUILD_VERSION = "ttn-provision-org-v1.1-webhook-fix-20251231";
   console.log(`[ttn-provision-org] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] Method: ${req.method}, URL: ${req.url}`);
 
@@ -233,7 +233,7 @@ serve(async (req) => {
               join_accept: {},
             },
             field_mask: {
-              paths: ["headers", "base_url"],
+              paths: ["headers", "base_url", "format", "uplink_message", "join_accept"],
             },
           }),
         }
@@ -381,36 +381,86 @@ serve(async (req) => {
         const webhookUrl = `${supabaseUrl}/functions/v1/ttn-webhook`;
         const regionalUrl = REGIONAL_URLS[region] || REGIONAL_URLS.nam1;
 
-        const createWebhookResponse = await fetch(
-          `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}`,
-          {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${newApiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              webhook: {
-                ids: {
-                  webhook_id: "freshtracker",
-                  application_ids: { application_id: ttnAppId },
-                },
-                base_url: webhookUrl,
-                format: "json",
-                headers: {
-                  "X-Webhook-Secret": webhookSecret,
-                },
-                uplink_message: {},
-                join_accept: {},
+        // Enhanced webhook creation with retry and PUT fallback
+        let webhookCreated = false;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const createWebhookResponse = await fetch(
+            `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}`,
+            {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${newApiKey}`,
+                "Content-Type": "application/json",
               },
-            }),
-          }
-        );
+              body: JSON.stringify({
+                webhook: {
+                  ids: {
+                    webhook_id: "freshtracker",
+                    application_ids: { application_id: ttnAppId },
+                  },
+                  base_url: webhookUrl,
+                  format: "json",
+                  headers: { "X-Webhook-Secret": webhookSecret },
+                  uplink_message: {},
+                  join_accept: {},
+                },
+              }),
+            }
+          );
 
-        if (!createWebhookResponse.ok) {
-          const errorText = await createWebhookResponse.text();
-          console.warn(`[ttn-provision-org] Webhook creation warning: ${errorText}`);
-          // Continue anyway - webhook can be created later
+          if (createWebhookResponse.ok) {
+            webhookCreated = true;
+            console.log(`[ttn-provision-org] Webhook created successfully`);
+            break;
+          } else if (createWebhookResponse.status === 409) {
+            // Webhook exists, try PUT to update
+            console.log(`[ttn-provision-org] Webhook exists, updating...`);
+            const updateResponse = await fetch(
+              `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}/freshtracker`,
+              {
+                method: "PUT",
+                headers: {
+                  "Authorization": `Bearer ${newApiKey}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  webhook: {
+                    ids: {
+                      webhook_id: "freshtracker",
+                      application_ids: { application_id: ttnAppId },
+                    },
+                    base_url: webhookUrl,
+                    format: "json",
+                    headers: { "X-Webhook-Secret": webhookSecret },
+                    uplink_message: {},
+                    join_accept: {},
+                  },
+                  field_mask: {
+                    paths: ["headers", "base_url", "format", "uplink_message", "join_accept"],
+                  },
+                }),
+              }
+            );
+            if (updateResponse.ok) {
+              webhookCreated = true;
+              console.log(`[ttn-provision-org] Webhook updated successfully`);
+              break;
+            } else {
+              const updateError = await updateResponse.text();
+              console.warn(`[ttn-provision-org] Webhook update failed: ${updateError}`);
+            }
+          } else {
+            const errorText = await createWebhookResponse.text();
+            console.warn(`[ttn-provision-org] Webhook creation attempt ${attempt + 1} failed: ${errorText}`);
+          }
+
+          if (attempt === 0) {
+            await new Promise(r => setTimeout(r, 500)); // Brief delay before retry
+          }
+        }
+
+        if (!webhookCreated) {
+          console.warn(`[ttn-provision-org] Webhook creation failed - will need manual setup`);
         }
 
         // Step 4: Save all credentials to database
@@ -463,6 +513,7 @@ serve(async (req) => {
             ttn_application_id: ttnAppId,
             provisioning_status: "completed",
             webhook_url: webhookUrl,
+            webhook_created: webhookCreated,
             api_key_last4: getLast4(newApiKey),
             webhook_secret_last4: getLast4(webhookSecret),
           }),
