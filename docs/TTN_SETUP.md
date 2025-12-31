@@ -46,13 +46,15 @@ To enable TTN provisioning, you need:
 
 ## Step 3: Configure Supabase Secrets
 
-Add the TTN credentials as secrets to your Supabase project:
+Add the TTN credentials as secrets to your Supabase project.
+
+> **Quick Setup**: If your credentials are already configured, see [TTN_PRODUCTION_SETUP.md](./TTN_PRODUCTION_SETUP.md) for your specific setup instructions.
 
 ### Using Supabase Dashboard:
 
 1. Go to [Supabase Dashboard](https://supabase.com/dashboard)
 2. Select your project
-3. Navigate to **Project Settings** → **Edge Functions** → **Secrets**
+3. Navigate to **Project Settings** → **Edge Functions** → **Manage secrets**
 4. Add the following secrets:
    - **Name**: `TTN_ADMIN_API_KEY`
      - **Value**: (paste your TTN admin API key from Step 1)
@@ -68,6 +70,17 @@ supabase secrets set TTN_ADMIN_API_KEY="your-ttn-admin-api-key-here"
 # Set TTN User ID
 supabase secrets set TTN_USER_ID="your-ttn-user-id-here"
 ```
+
+### For Local Development:
+
+Create a `supabase/.env.local` file:
+
+```bash
+TTN_USER_ID=your-ttn-user-id
+TTN_ADMIN_API_KEY=your-ttn-admin-api-key
+```
+
+This file is gitignored and won't be committed to version control.
 
 ## Step 4: Verify Configuration
 
