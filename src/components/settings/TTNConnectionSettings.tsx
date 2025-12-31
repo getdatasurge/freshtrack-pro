@@ -220,10 +220,11 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       if (error) throw error;
 
-      if (data?.test_result?.success) {
+      // The test action returns success directly, not nested under test_result
+      if (data?.success) {
         toast.success("Connection successful!");
       } else {
-        toast.error(data?.test_result?.message || "Connection test failed");
+        toast.error(data?.error || data?.message || "Connection test failed");
       }
       await loadSettings();
     } catch (err: any) {
