@@ -235,15 +235,23 @@ const Settings = () => {
       }
 
       // Get current user's role
-      const { data: roleData } = await supabase
+      const { data: roleData, error: roleError } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", session!.user.id)
         .eq("organization_id", profileData.organization_id)
         .maybeSingle();
 
+      if (roleError) {
+        console.error("[Settings] Failed to load user role:", roleError);
+        toast.error("Failed to load user permissions. Some features may be hidden.");
+      }
+
       if (roleData) {
+        console.log("[Settings] User role loaded:", roleData.role, "for org:", profileData.organization_id);
         setUserRole(roleData.role);
+      } else if (!roleError) {
+        console.warn("[Settings] No role found for user in organization. User:", session!.user.id, "Org:", profileData.organization_id);
       }
 
       // Get all users in org
@@ -527,7 +535,7 @@ const Settings = () => {
   return (
     <DashboardLayout title="Settings">
       <Tabs defaultValue={defaultTab} className="space-y-6">
-        <TabsList className={`grid w-full max-w-4xl ${canManageUsers ? 'grid-cols-8' : 'grid-cols-6'}`}>
+        <TabsList className={`grid w-full max-w-4xl ${canManageUsers ? 'grid-cols-8' : 'grid-cols-7'}`}>
           <TabsTrigger value="organization" className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <span className="hidden sm:inline">Organization</span>
@@ -560,12 +568,10 @@ const Settings = () => {
               <span className="hidden sm:inline">Sensors</span>
             </TabsTrigger>
           )}
-          {canManageUsers && (
-            <TabsTrigger value="developer" className="flex items-center gap-2">
-              <Code2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Developer</span>
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="developer" className="flex items-center gap-2">
+            <Code2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Developer</span>
+          </TabsTrigger>
         </TabsList>
 
         {/* Organization Tab */}
@@ -1023,15 +1029,30 @@ const Settings = () => {
           </TabsContent>
         )}
 
-        {/* Developer Tab (Admin Only) */}
-        {canManageUsers && (
-          <TabsContent value="developer" className="space-y-6">
-            <TTNConnectionSettings organizationId={organization?.id || null} />
-            <EmulatorSyncHistory organizationId={organization?.id || null} />
-            <EdgeFunctionDiagnostics />
-            <SensorSimulatorPanel organizationId={organization?.id || null} />
-          </TabsContent>
-        )}
+        {/* Developer Tab - always render content, show permission message if no access */}
+        <TabsContent value="developer" className="space-y-6">
+          {canManageUsers ? (
+            <>
+              <TTNConnectionSettings organizationId={organization?.id || null} />
+              <EmulatorSyncHistory organizationId={organization?.id || null} />
+              <EdgeFunctionDiagnostics />
+              <SensorSimulatorPanel organizationId={organization?.id || null} />
+            </>
+          ) : (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <AlertTriangle className="h-8 w-8 mx-auto text-warning mb-4" />
+                <h3 className="font-medium">Developer Tools Unavailable</h3>
+                <p className="text-sm text-muted-foreground mt-2">
+                  This section requires Owner or Admin role. Current role: {userRole || "Not loaded"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-4">
+                  Debug: Org ID {organization?.id?.slice(0, 8) || "none"}...
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
     </DashboardLayout>
   );
