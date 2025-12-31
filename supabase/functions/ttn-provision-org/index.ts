@@ -51,7 +51,7 @@ const FREQUENCY_PLANS: Record<string, string> = {
 };
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v1-perorg-20251231";
+  const BUILD_VERSION = "ttn-provision-org-v1.1-webhook-fix-20251231";
   console.log(`[ttn-provision-org] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] Method: ${req.method}, URL: ${req.url}`);
 
@@ -225,12 +225,9 @@ serve(async (req) => {
                 application_ids: { application_id: ttnConn.ttn_application_id },
               },
               base_url: webhookUrl,
-              format: "json",
               headers: {
                 "X-Webhook-Secret": newSecret,
               },
-              uplink_message: {},
-              join_accept: {},
             },
             field_mask: {
               paths: ["headers", "base_url"],
