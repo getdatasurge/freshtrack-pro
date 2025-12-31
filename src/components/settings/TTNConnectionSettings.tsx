@@ -47,6 +47,10 @@ interface TTNSettings {
     message?: string;
     applications_count?: number;
     application_name?: string;
+    status_code?: number;
+    endpoint_tested?: string;
+    details?: string;
+    ttn_error_code?: string;
   } | null;
   using_global_defaults: boolean;
 }
@@ -220,7 +224,35 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     }
   };
 
+  // Validate required fields for test connection
+  const validateForTest = (): { valid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+
+    if (!region) {
+      errors.push("TTN Region is required");
+    }
+    if (!userId?.trim()) {
+      errors.push("TTN User ID is required");
+    }
+    // API key required if no existing key and not using global defaults
+    if (!settings?.has_api_key && !apiKey && !settings?.using_global_defaults) {
+      errors.push("TTN API Key is required");
+    }
+
+    return { valid: errors.length === 0, errors };
+  };
+
   const handleTest = async () => {
+    // Validate before making API call
+    const validation = validateForTest();
+    if (!validation.valid) {
+      toast.error("Cannot test connection", {
+        description: validation.errors.join(". "),
+        duration: 6000,
+      });
+      return;
+    }
+
     setIsTesting(true);
     try {
       // Use getUser() to force network-verified token refresh
@@ -332,8 +364,8 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         {/* Connection Status */}
         {testResult && (
           <div className={`p-4 rounded-lg border ${
-            testResult.success 
-              ? "bg-safe/10 border-safe/30" 
+            testResult.success
+              ? "bg-safe/10 border-safe/30"
               : "bg-destructive/10 border-destructive/30"
           }`}>
             <div className="flex items-start gap-3">
@@ -343,15 +375,42 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                 <XCircle className="h-5 w-5 text-destructive mt-0.5" />
               )}
               <div className="flex-1">
-                <p className={`font-medium ${testResult.success ? "text-safe" : "text-destructive"}`}>
-                  {testResult.success ? "Connection Successful" : testResult.error || "Connection Failed"}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className={`font-medium ${testResult.success ? "text-safe" : "text-destructive"}`}>
+                    {testResult.success ? "Connection Successful" : testResult.error || "Connection Failed"}
+                  </p>
+                  {testResult.status_code && !testResult.success && (
+                    <Badge variant="outline" className="text-xs">
+                      HTTP {testResult.status_code}
+                    </Badge>
+                  )}
+                </div>
                 {testResult.hint && (
                   <p className="text-sm text-muted-foreground mt-1">{testResult.hint}</p>
+                )}
+                {testResult.ttn_error_code && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    TTN Error: <code className="bg-muted px-1 rounded">{testResult.ttn_error_code}</code>
+                  </p>
+                )}
+                {testResult.details && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
+                      View raw error details
+                    </summary>
+                    <pre className="mt-1 p-2 bg-muted rounded text-xs overflow-x-auto max-h-32">
+                      {testResult.details}
+                    </pre>
+                  </details>
                 )}
                 {testResult.applications_count !== undefined && (
                   <p className="text-sm text-muted-foreground mt-1">
                     Found {testResult.applications_count} application(s)
+                  </p>
+                )}
+                {testResult.application_name && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Application: {testResult.application_name}
                   </p>
                 )}
                 {settings?.last_connection_test_at && (
@@ -503,8 +562,14 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Generate an API key in TTN Console with at least "applications:read" and "applications:write:all" permissions
+                Generate an API key in TTN Console → API Keys with these rights:
               </p>
+              <ul className="text-xs text-muted-foreground list-disc list-inside mt-1 space-y-0.5">
+                <li><code className="bg-muted px-1 rounded">applications</code> — Read/write applications</li>
+                <li><code className="bg-muted px-1 rounded">gateways</code> — Read gateways</li>
+                <li><code className="bg-muted px-1 rounded">organization</code> — Read organization info</li>
+                <li><code className="bg-muted px-1 rounded">devices</code> — Read/write end devices</li>
+              </ul>
             </div>
 
             <div className="space-y-2">

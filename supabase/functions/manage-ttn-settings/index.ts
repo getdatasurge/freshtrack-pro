@@ -56,7 +56,7 @@ const regionUrls: Record<string, { base: string; is: string }> = {
 };
 
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v2-20251231";
+  const BUILD_VERSION = "manage-ttn-settings-v3-20251231";
   console.log(`[manage-ttn-settings] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] Method: ${req.method}, URL: ${req.url}`);
 
@@ -254,10 +254,26 @@ Deno.serve(async (req: Request) => {
         userId = Deno.env.get("TTN_USER_ID") || "";
       }
 
+      // Validate required fields
+      const validationErrors: string[] = [];
       if (!apiKey) {
+        validationErrors.push("No API key configured");
+      }
+      if (!userId?.trim()) {
+        validationErrors.push("TTN User ID is required");
+      }
+      // Check for placeholder Application ID
+      if (appId && (appId.includes("your-org") || appId.includes("your_org") || appId === "fg-")) {
+        validationErrors.push(`Application ID '${appId}' appears to be a placeholder`);
+      }
+
+      if (validationErrors.length > 0) {
         const testResult = {
           success: false,
-          error: "No API key configured",
+          error: validationErrors[0],
+          hint: validationErrors.length > 1
+            ? `Additional issues: ${validationErrors.slice(1).join(", ")}`
+            : "Configure the missing fields and try again.",
           tested_at: new Date().toISOString(),
         };
 
@@ -280,6 +296,11 @@ Deno.serve(async (req: Request) => {
       // Normalize URLs
       const normalizeUrl = (url: string) => url.trim().replace(/\/+$/, "").replace(/\/api\/v3$/, "");
       const effectiveIsUrl = normalizeUrl(isUrl);
+
+      // Validate Identity Server URL is eu1 (all TTN regions use eu1 for IS)
+      if (!effectiveIsUrl.includes("eu1.cloud.thethings.network")) {
+        console.warn(`[manage-ttn-settings] Non-standard IS URL: ${effectiveIsUrl}, expected eu1.cloud.thethings.network`);
+      }
 
       // Test: Try to list user's applications
       console.log(`[manage-ttn-settings] Testing TTN API at ${effectiveIsUrl}`);
@@ -306,7 +327,7 @@ Deno.serve(async (req: Request) => {
         if (response.ok) {
           testResult.success = true;
           testResult.message = "Connection successful";
-          
+
           const data = await response.json();
           if (appId) {
             testResult.application_name = data.name || appId;
@@ -316,20 +337,43 @@ Deno.serve(async (req: Request) => {
         } else {
           const errorText = await response.text();
           testResult.success = false;
-          
+
+          // Try to parse TTN error response for better messages
+          let ttnError: { code?: number; message?: string; details?: unknown[] } | null = null;
+          try {
+            const errorJson = JSON.parse(errorText);
+            ttnError = errorJson;
+            if (errorJson.code) {
+              testResult.ttn_error_code = errorJson.code.toString();
+            }
+            if (errorJson.message) {
+              testResult.ttn_message = errorJson.message;
+            }
+          } catch {
+            // Not JSON, use raw text
+          }
+
+          console.log(`[manage-ttn-settings] TTN API error: ${response.status}`, errorText.slice(0, 500));
+
           if (response.status === 401) {
             testResult.error = "Invalid API key";
-            testResult.hint = "The API key is invalid or expired. Generate a new one in TTN Console.";
+            testResult.hint = "The API key is invalid or expired. Generate a new one in TTN Console → API Keys.";
+            testResult.details = ttnError?.message || errorText.slice(0, 500);
           } else if (response.status === 403) {
+            // Parse which permission is missing from TTN error
+            const missingPermission = ttnError?.message?.match(/`([^`]+)`/)?.[1] || "applications";
             testResult.error = "Insufficient permissions";
-            testResult.hint = "The API key lacks required permissions. Ensure it has 'applications:read' rights.";
+            testResult.hint = `The API key lacks the required '${missingPermission}' permission. In TTN Console → API Keys, create a new key with: applications, gateways, organization, and devices rights.`;
+            testResult.details = ttnError?.message || errorText.slice(0, 500);
           } else if (response.status === 404) {
             testResult.error = "Not found";
-            testResult.hint = appId 
-              ? `Application '${appId}' not found. Check the Application ID.`
-              : `User '${userId}' not found. Check the TTN User ID.`;
+            testResult.hint = appId
+              ? `Application '${appId}' not found. Verify the Application ID exists in your TTN Console.`
+              : `User '${userId}' not found. Verify the TTN User ID matches your TTN account username.`;
+            testResult.details = ttnError?.message || errorText.slice(0, 500);
           } else {
-            testResult.error = `TTN API error (${response.status})`;
+            testResult.error = `TTN API error (HTTP ${response.status})`;
+            testResult.hint = ttnError?.message || "Check your TTN configuration and try again.";
             testResult.details = errorText.slice(0, 500);
           }
         }
