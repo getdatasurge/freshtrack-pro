@@ -144,6 +144,10 @@ export const emulatorDeviceSchema = z.object({
   status: z.enum(["active", "inactive", "fault"]).optional(),
   mac_address: z.string().max(50, "MAC address too long").optional().nullable(),
   firmware_version: z.string().max(50, "Firmware version too long").optional().nullable(),
+  // Optional dev_eui - if present, also creates a corresponding lora_sensor
+  dev_eui: z.string().max(32, "Device EUI too long").optional().nullable(),
+  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo"]).optional(),
+  name: z.string().max(100, "Name too long").optional().nullable(),
 });
 
 export const emulatorSensorSchema = z.object({

@@ -91,8 +91,8 @@ export function AssignSensorToUnitDialog({
               <p className="text-sm text-muted-foreground">
                 No unassigned sensors available
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Register sensors in Settings → Sensors first
+              <p className="text-xs text-muted-foreground mt-2 max-w-xs mx-auto">
+                Sync sensors from emulator or register new sensors in Settings → Sensors
               </p>
             </div>
           ) : (
