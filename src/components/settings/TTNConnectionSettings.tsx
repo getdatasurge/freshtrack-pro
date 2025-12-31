@@ -101,9 +101,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      // Use getUser() to force token refresh if expired
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
+      // Get session and explicitly pass token to ensure fresh auth
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
         console.warn("[TTNConnectionSettings] No valid session, redirecting to auth");
         setHasSession(false);
         setIsLoading(false);
@@ -114,6 +114,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { action: "get" },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
       if (error) {
@@ -158,9 +161,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // Use getUser() to force token refresh if expired
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
+      // Get session and explicitly pass token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
         setHasSession(false);
         toast.error("Session expired. Redirecting to login...");
         navigate("/auth");
@@ -188,6 +191,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { action: "update", ...updates },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
       if (error) {
@@ -220,9 +226,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const handleTest = async () => {
     setIsTesting(true);
     try {
-      // Use getUser() to force token refresh if expired
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
+      // Get session and explicitly pass token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
         setHasSession(false);
         toast.error("Session expired. Redirecting to login...");
         navigate("/auth");
@@ -231,6 +237,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { action: "test" },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
       if (error) {

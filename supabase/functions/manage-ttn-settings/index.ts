@@ -89,22 +89,25 @@ Deno.serve(async (req: Request) => {
     const action = body.action || "get";
     console.log(`[manage-ttn-settings] Action: ${action}`);
 
-    // Create client with user's JWT for RLS
-    const supabaseUser = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    // Create service client for admin operations
+    // Create service client for admin operations (used for JWT verification and admin queries)
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get user's organization
-    const { data: { user }, error: userError } = await supabaseUser.auth.getUser();
+    // Extract the token from the header and verify using admin client
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
+
     if (userError || !user) {
+      console.error("[manage-ttn-settings] Auth verification failed:", userError?.message || "No user");
       return new Response(
-        JSON.stringify({ error: "Invalid user session" }),
+        JSON.stringify({ error: "Invalid user session", details: userError?.message }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Create client with user's JWT for RLS-protected queries
+    const supabaseUser = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
     // Get user's profile to find organization
     const { data: profile } = await supabaseUser
