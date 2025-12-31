@@ -151,6 +151,32 @@ const UnitDetail = () => {
     if (unitId) loadUnitData();
   }, [unitId, timeRange]);
 
+  // Realtime subscription for sensor_readings - auto-refresh when new readings arrive
+  useEffect(() => {
+    if (!unitId) return;
+    
+    const channel = supabase
+      .channel(`unit-readings-${unitId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'sensor_readings',
+          filter: `unit_id=eq.${unitId}`,
+        },
+        (payload) => {
+          console.log('[Realtime] New reading received:', payload.new);
+          loadUnitData(); // Refresh all data when new reading arrives
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [unitId]);
+
   const getTimeRangeDate = () => {
     const now = new Date();
     switch (timeRange) {

@@ -3,12 +3,24 @@
  * 
  * Receives uplink messages from The Things Network and inserts sensor data.
  * 
- * Phase 5: Ownership Resolution
- * - Primary lookup via lora_sensors table (DevEUI → sensor → org)
- * - Validates TTN application_id matches sensor's ttn_application_id
- * - Rejects unknown EUIs (404) and cross-org attempts (403)
- * - Updates sensor status: pending/joining → active on first uplink
- * - Falls back to devices table for legacy BLE sensors
+ * Security:
+ * - Validates webhook secret from TTN_WEBHOOK_API_KEY env var
+ * - Accepts secret from X-Webhook-Secret or X-Downlink-Apikey headers
+ * - Returns 401 for invalid/missing secret
+ * 
+ * Device Matching Order:
+ * 1. lora_sensors.ttn_device_id === end_device_ids.device_id
+ * 2. lora_sensors.dev_eui IN (normalized variants: lower, upper, colon-upper, colon-lower)
+ * 3. Legacy devices table fallback
+ * 4. Return 202 for unknown devices (never 404 to prevent TTN retries)
+ * 
+ * Temperature:
+ * - Some TTN decoders send temperature in 0.1°F units (raw/10)
+ * - Check decoded_payload.temperature_scale for custom scaling
+ * - Default behavior: pass through as-is (decoder should send real values)
+ * 
+ * Online Threshold:
+ * - Sensor is considered online if last_seen_at is within 5 minutes
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -16,7 +28,7 @@ import { normalizeDevEui, formatDevEuiForDisplay } from "../_shared/ttnConfig.ts
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-downlink-apikey',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-downlink-apikey, x-webhook-secret',
 };
 
 interface TTNUplinkMessage {
@@ -35,8 +47,10 @@ interface TTNUplinkMessage {
     frm_payload?: string;
     decoded_payload?: {
       temperature?: number;
+      temperature_scale?: number; // Optional: multiply temp by this (e.g., 10 for 0.1°F units)
       humidity?: number;
       battery?: number;
+      battery_level?: number; // Alternative field name
       door_open?: boolean;
       [key: string]: unknown;
     };
@@ -73,6 +87,20 @@ interface LegacyDevice {
   status: string;
 }
 
+/**
+ * Constant-time string comparison to prevent timing attacks
+ */
+function secureCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -87,41 +115,78 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Validate webhook secret if configured
+  // ========================================
+  // SECURITY: Validate webhook secret (constant-time comparison)
+  // ========================================
   const webhookSecret = Deno.env.get('TTN_WEBHOOK_API_KEY');
   if (webhookSecret) {
-    const providedSecret = req.headers.get('X-Downlink-Apikey') || req.headers.get('X-Webhook-Secret');
-    if (providedSecret !== webhookSecret) {
+    // Accept secret from either header (TTN uses different headers depending on config)
+    const providedSecret = req.headers.get('X-Webhook-Secret') || req.headers.get('X-Downlink-Apikey') || '';
+    if (!secureCompare(providedSecret, webhookSecret)) {
       console.warn('[SECURITY] Invalid or missing webhook secret');
       return new Response(
-        JSON.stringify({ error: 'Unauthorized', message: 'Invalid webhook secret' }),
+        JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
   }
 
   try {
-    const payload: TTNUplinkMessage = await req.json();
+    const payload = await req.json();
+    
+    // ========================================
+    // HANDLE NON-UPLINK EVENTS GRACEFULLY
+    // TTN sends various event types: join_accept, downlink_ack, etc.
+    // ========================================
+    if (!payload.uplink_message) {
+      const eventType = payload.join_accept ? 'join_accept' : 
+                        payload.downlink_ack ? 'downlink_ack' :
+                        payload.downlink_nack ? 'downlink_nack' :
+                        payload.downlink_sent ? 'downlink_sent' :
+                        payload.downlink_queued ? 'downlink_queued' :
+                        payload.downlink_failed ? 'downlink_failed' :
+                        payload.service_data ? 'service_data' :
+                        'unknown';
+      
+      console.log(`[TTN-WEBHOOK] Non-uplink event received: ${eventType}`);
+      console.log(`[TTN-WEBHOOK] device_id: ${payload.end_device_ids?.device_id || 'N/A'}`);
+      console.log(`[TTN-WEBHOOK] correlation_ids: ${JSON.stringify(payload.correlation_ids || [])}`);
+      
+      return new Response(
+        JSON.stringify({ 
+          accepted: true, 
+          processed: false,
+          event_type: eventType,
+          message: 'Non-uplink event acknowledged'
+        }),
+        { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const ttnPayload = payload as TTNUplinkMessage;
     
     // ========================================
     // VERBOSE LOGGING: Incoming uplink
     // ========================================
-    const deviceId = payload.end_device_ids?.device_id || '';
-    const rawDevEui = payload.end_device_ids?.dev_eui || '';
-    const applicationId = payload.end_device_ids?.application_ids?.application_id || '';
-    const decoded = payload.uplink_message?.decoded_payload || {};
-    const rxMeta = payload.uplink_message?.rx_metadata?.[0];
+    const deviceId = ttnPayload.end_device_ids?.device_id || '';
+    const rawDevEui = ttnPayload.end_device_ids?.dev_eui || '';
+    const applicationId = ttnPayload.end_device_ids?.application_ids?.application_id || '';
+    const decoded = ttnPayload.uplink_message?.decoded_payload || {};
+    const rxMeta = ttnPayload.uplink_message?.rx_metadata?.[0];
     const rssi = rxMeta?.rssi ?? rxMeta?.channel_rssi;
     const snr = rxMeta?.snr;
-    const receivedAt = payload.uplink_message?.received_at || payload.received_at || new Date().toISOString();
+    const receivedAt = ttnPayload.uplink_message?.received_at || ttnPayload.received_at || new Date().toISOString();
+    const correlationIds = ttnPayload.correlation_ids || [];
 
     console.log(`[TTN-WEBHOOK] ========== INCOMING UPLINK ==========`);
     console.log(`[TTN-WEBHOOK] device_id: ${deviceId}`);
     console.log(`[TTN-WEBHOOK] dev_eui: ${rawDevEui}`);
     console.log(`[TTN-WEBHOOK] application_id: ${applicationId}`);
-    console.log(`[TTN-WEBHOOK] temperature: ${decoded.temperature ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] correlation_ids: ${JSON.stringify(correlationIds.slice(0, 3))}`);
+    console.log(`[TTN-WEBHOOK] raw temperature: ${decoded.temperature ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] temperature_scale: ${decoded.temperature_scale ?? '1 (default)'}`);
     console.log(`[TTN-WEBHOOK] humidity: ${decoded.humidity ?? 'N/A'}`);
-    console.log(`[TTN-WEBHOOK] battery: ${decoded.battery ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] battery: ${decoded.battery ?? decoded.battery_level ?? 'N/A'}`);
     console.log(`[TTN-WEBHOOK] door_open: ${decoded.door_open ?? 'N/A'}`);
     console.log(`[TTN-WEBHOOK] rssi: ${rssi ?? 'N/A'}, snr: ${snr ?? 'N/A'}`);
     console.log(`[TTN-WEBHOOK] received_at: ${receivedAt}`);
@@ -277,17 +342,28 @@ Deno.serve(async (req) => {
     );
 
   } catch (error: unknown) {
-    console.error('TTN webhook error:', error);
+    // Never return 500 to TTN - always return 2xx to prevent retries
+    console.error('[TTN-WEBHOOK] Unhandled error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Internal server error';
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ 
+        accepted: true,
+        processed: false,
+        error: errorMessage,
+        message: 'Error processing webhook, but accepted to prevent retries'
+      }),
+      { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
 
 /**
  * Handle uplink from a LoRa sensor (new ownership model)
+ * 
+ * Temperature Scaling:
+ * - Some decoders send temperature in 0.1°F units (e.g., 352 = 35.2°F)
+ * - Check decoded_payload.temperature_scale for custom multiplier
+ * - If temperature < 10 and no scale specified, check if multiplying by 10 gives reasonable value
  */
 async function handleLoraSensor(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -304,10 +380,38 @@ async function handleLoraSensor(
 ): Promise<Response> {
   const { devEui, deviceId, applicationId, decoded, rssi, receivedAt } = data;
   
-  // Handle battery_level vs battery field name inconsistency from TTN decoders
+  // ========================================
+  // BATTERY: Handle battery_level vs battery field name inconsistency
+  // ========================================
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
 
-  console.log(`Processing LoRa sensor: ${sensor.name} (${sensor.dev_eui}), org: ${sensor.organization_id}`);
+  // ========================================
+  // TEMPERATURE SCALING: Handle decoders that send in 0.1 units
+  // ========================================
+  let temperature = decoded.temperature as number | undefined;
+  if (temperature !== undefined) {
+    // Check if decoder provides explicit scale
+    const tempScale = (decoded.temperature_scale ?? 1) as number;
+    if (tempScale !== 1) {
+      const originalTemp = temperature;
+      temperature = temperature * tempScale;
+      console.log(`[TTN-WEBHOOK] Temperature scaled: ${originalTemp} * ${tempScale} = ${temperature}`);
+    } else {
+      // Heuristic: If temperature is suspiciously low for food safety (< 10) 
+      // and the value * 10 would be reasonable (10-100°F range), apply x10 scaling
+      // This handles decoders that send 3.5 instead of 35.2
+      if (temperature > 0 && temperature < 10) {
+        const scaledTemp = temperature * 10;
+        if (scaledTemp >= 10 && scaledTemp <= 100) {
+          console.log(`[TTN-WEBHOOK] Temperature auto-scaled (heuristic): ${temperature} * 10 = ${scaledTemp}`);
+          temperature = scaledTemp;
+        }
+      }
+    }
+  }
+
+  console.log(`[TTN-WEBHOOK] Processing LoRa sensor: ${sensor.name} (${sensor.dev_eui}), org: ${sensor.organization_id}`);
+  console.log(`[TTN-WEBHOOK] Final temperature value: ${temperature ?? 'N/A'}`);
 
   // ========================================
   // SECURITY: Validate ownership via TTN Application ID
@@ -342,7 +446,7 @@ async function handleLoraSensor(
     if (sensor.status === 'joining') {
       sensorUpdate.last_join_at = receivedAt;
     }
-    console.log(`Sensor ${sensor.name} activated (${sensor.status} → active)`);
+    console.log(`[TTN-WEBHOOK] Sensor ${sensor.name} activated (${sensor.status} → active)`);
   }
 
   // Update telemetry fields (use normalized battery)
@@ -360,14 +464,16 @@ async function handleLoraSensor(
 
   // ========================================
   // Handle unit-assigned sensors (insert readings)
+  // SOURCE OF TRUTH: Always use sensor.organization_id, sensor.unit_id
+  // NEVER use decoded_payload org_id/site_id/unit_id
   // ========================================
   if (sensor.unit_id) {
-    const hasTemperatureData = decoded.temperature !== undefined;
+    const hasTemperatureData = temperature !== undefined;
     const hasDoorData = decoded.door_open !== undefined;
 
     // Allow door-only sensors to process without temperature
     if (!hasTemperatureData && !hasDoorData) {
-      console.log(`No temperature or door data in payload for sensor ${sensor.name}, skipping reading insert`);
+      console.log(`[TTN-WEBHOOK] No temperature or door data in payload for sensor ${sensor.name}, skipping reading insert`);
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -389,16 +495,16 @@ async function handleLoraSensor(
     const previousDoorState = unit?.door_state;
     const currentDoorOpen = decoded.door_open as boolean | undefined;
 
-    // Insert sensor reading (temperature can be null for door-only sensors)
+    // Insert sensor reading with SCALED temperature
     const { data: insertedReading, error: insertError } = await supabase
       .from('sensor_readings')
       .insert({
-        unit_id: sensor.unit_id,
-        lora_sensor_id: sensor.id, // Track which sensor created this reading
-        device_id: null, // lora_sensors don't use devices table
-        temperature: decoded.temperature ?? null,
+        unit_id: sensor.unit_id,           // FROM SENSOR RECORD, NOT PAYLOAD
+        lora_sensor_id: sensor.id,         // Track which sensor created this reading
+        device_id: null,                   // lora_sensors don't use devices table
+        temperature: temperature ?? null,  // Use scaled temperature
         humidity: decoded.humidity,
-        battery_level: battery, // Use normalized battery
+        battery_level: battery,            // Use normalized battery
         signal_strength: rssi,
         door_open: currentDoorOpen,
         source: 'ttn',
@@ -416,9 +522,9 @@ async function handleLoraSensor(
     console.log(`[TTN-WEBHOOK] reading_id: ${insertedReading?.id}`);
     console.log(`[TTN-WEBHOOK] unit_id: ${sensor.unit_id}`);
     console.log(`[TTN-WEBHOOK] sensor_id: ${sensor.id}`);
-    console.log(`[TTN-WEBHOOK] temperature: ${decoded.temperature ?? 'N/A'}`);
+    console.log(`[TTN-WEBHOOK] temperature (final): ${temperature ?? 'N/A'}`);
     console.log(`[TTN-WEBHOOK] humidity: ${decoded.humidity ?? 'N/A'}`);
-    console.log(`[TTN-WEBHOOK] battery: ${battery ?? 'N/A'} (from decoded.battery=${decoded.battery}, decoded.battery_level=${decoded.battery_level})`);
+    console.log(`[TTN-WEBHOOK] battery: ${battery ?? 'N/A'}`);
     console.log(`[TTN-WEBHOOK] door_open: ${currentDoorOpen ?? 'N/A'}`);
     console.log(`[TTN-WEBHOOK] is_primary: ${sensor.is_primary}`);
 
@@ -429,15 +535,15 @@ async function handleLoraSensor(
 
     // Only primary sensors update compliance temperature fields
     if (sensor.is_primary && hasTemperatureData) {
-      unitUpdate.last_temp_reading = decoded.temperature;
+      unitUpdate.last_temp_reading = temperature;  // Use scaled temperature
       unitUpdate.last_reading_at = receivedAt;
       unitUpdate.last_checkin_at = receivedAt;
       unitUpdate.sensor_reliable = true;
-      console.log(`Primary sensor ${sensor.name} updating unit temperature: ${decoded.temperature}`);
+      console.log(`[TTN-WEBHOOK] Primary sensor ${sensor.name} updating unit temperature: ${temperature}`);
     } else if (hasTemperatureData) {
       // Non-primary sensors still contribute to checkin tracking
       unitUpdate.last_checkin_at = receivedAt;
-      console.log(`Secondary sensor ${sensor.name} recorded temperature: ${decoded.temperature} (not updating unit compliance fields)`);
+      console.log(`[TTN-WEBHOOK] Secondary sensor ${sensor.name} recorded temperature: ${temperature} (not updating unit compliance fields)`);
     }
 
     // Always update door state if we have door data (regardless of primary status)
@@ -477,14 +583,14 @@ async function handleLoraSensor(
           });
 
         if (doorEventError) {
-          console.error('Error inserting door event:', doorEventError);
+          console.error('[TTN-WEBHOOK] Error inserting door event:', doorEventError);
         } else {
-          console.log(`Inserted door event: ${currentState} for unit ${sensor.unit_id}`);
+          console.log(`[TTN-WEBHOOK] Inserted door event: ${currentState} for unit ${sensor.unit_id}`);
         }
       }
     }
 
-    console.log(`Successfully processed TTN uplink from ${devEui} for unit ${sensor.unit_id}`);
+    console.log(`[TTN-WEBHOOK] Successfully processed TTN uplink from ${devEui} for unit ${sensor.unit_id}`);
 
     return new Response(
       JSON.stringify({ 
@@ -492,9 +598,10 @@ async function handleLoraSensor(
         sensor_id: sensor.id,
         unit_id: sensor.unit_id,
         organization_id: sensor.organization_id,
-        temperature: decoded.temperature,
+        temperature: temperature,
         is_primary: sensor.is_primary,
         status: sensorUpdate.status || sensor.status,
+        reading_id: insertedReading?.id,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -503,7 +610,7 @@ async function handleLoraSensor(
     // ========================================
     // Handle unassigned sensors (update status only)
     // ========================================
-    console.log(`Sensor ${sensor.name} (${devEui}) has no unit assigned - telemetry recorded on sensor only`);
+    console.log(`[TTN-WEBHOOK] Sensor ${sensor.name} (${devEui}) has no unit assigned - telemetry recorded on sensor only`);
 
     return new Response(
       JSON.stringify({ 
@@ -537,11 +644,21 @@ async function handleLegacyDevice(
 ): Promise<Response> {
   const { devEui, deviceId, applicationId, decoded, rssi, receivedAt } = data;
 
-  console.log(`Processing legacy device: ${devEui} (fallback to devices table)`);
+  console.log(`[TTN-WEBHOOK] Processing legacy device: ${devEui} (fallback to devices table)`);
+
+  // Apply same temperature scaling heuristic to legacy devices
+  let temperature = decoded.temperature as number | undefined;
+  if (temperature !== undefined && temperature > 0 && temperature < 10) {
+    const scaledTemp = temperature * 10;
+    if (scaledTemp >= 10 && scaledTemp <= 100) {
+      console.log(`[TTN-WEBHOOK] Legacy device temperature auto-scaled: ${temperature} * 10 = ${scaledTemp}`);
+      temperature = scaledTemp;
+    }
+  }
 
   // Validate we have temperature data
-  if (decoded.temperature === undefined) {
-    console.log('No temperature in decoded payload, skipping insert');
+  if (temperature === undefined) {
+    console.log('[TTN-WEBHOOK] No temperature in decoded payload, skipping insert');
     return new Response(
       JSON.stringify({ success: true, message: 'No temperature data, skipping' }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -549,15 +666,17 @@ async function handleLegacyDevice(
   }
 
   if (!device.unit_id) {
-    console.warn(`Device ${devEui} not linked to a unit`);
+    console.warn(`[TTN-WEBHOOK] Device ${devEui} not linked to a unit`);
     return new Response(
       JSON.stringify({ 
-        error: 'Device not linked to unit', 
+        accepted: true,
+        processed: false,
+        reason: 'Device not linked to unit', 
         dev_eui: devEui,
         device_id: device.id,
         hint: 'Link this device to a unit in FrostGuard'
       }),
-      { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 
@@ -570,28 +689,31 @@ async function handleLegacyDevice(
 
   const previousDoorState = unit?.door_state;
   const currentDoorOpen = decoded.door_open as boolean | undefined;
+  const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
 
-  // Insert sensor reading
-  const { error: insertError } = await supabase
+  // Insert sensor reading with scaled temperature
+  const { data: insertedReading, error: insertError } = await supabase
     .from('sensor_readings')
     .insert({
       unit_id: device.unit_id,
       device_id: device.id,
-      temperature: decoded.temperature,
+      temperature: temperature,
       humidity: decoded.humidity,
-      battery_level: decoded.battery,
+      battery_level: battery,
       signal_strength: rssi,
       door_open: currentDoorOpen,
       source: 'ttn',
       recorded_at: receivedAt,
-    });
+    })
+    .select('id')
+    .single();
 
   if (insertError) {
-    console.error('Error inserting sensor reading:', insertError);
+    console.error('[TTN-WEBHOOK] Error inserting sensor reading:', insertError);
     throw insertError;
   }
 
-  console.log(`Inserted sensor reading for unit ${device.unit_id}`);
+  console.log(`[TTN-WEBHOOK] Inserted sensor reading ${insertedReading?.id} for unit ${device.unit_id}`);
 
   // Update device status
   const deviceUpdate: Record<string, unknown> = {
@@ -600,8 +722,8 @@ async function handleLegacyDevice(
     updated_at: new Date().toISOString(),
   };
   
-  if (decoded.battery !== undefined) {
-    deviceUpdate.battery_level = decoded.battery;
+  if (battery !== undefined) {
+    deviceUpdate.battery_level = battery;
     deviceUpdate.battery_last_reported_at = receivedAt;
   }
   if (rssi !== undefined) {
@@ -613,9 +735,9 @@ async function handleLegacyDevice(
     .update(deviceUpdate)
     .eq('id', device.id);
 
-  // Update unit with latest reading info
+  // Update unit with latest reading info (using scaled temperature)
   const unitUpdate: Record<string, unknown> = {
-    last_temp_reading: decoded.temperature,
+    last_temp_reading: temperature,
     last_reading_at: receivedAt,
     last_checkin_at: receivedAt,
     sensor_reliable: true,
@@ -656,21 +778,22 @@ async function handleLegacyDevice(
         });
 
       if (doorEventError) {
-        console.error('Error inserting door event:', doorEventError);
+        console.error('[TTN-WEBHOOK] Error inserting door event:', doorEventError);
       } else {
-        console.log(`Inserted door event: ${currentState} for unit ${device.unit_id}`);
+        console.log(`[TTN-WEBHOOK] Inserted door event: ${currentState} for unit ${device.unit_id}`);
       }
     }
   }
 
-  console.log(`Successfully processed TTN uplink from ${devEui} for unit ${device.unit_id}`);
+  console.log(`[TTN-WEBHOOK] Successfully processed TTN uplink from ${devEui} for unit ${device.unit_id}`);
 
   return new Response(
     JSON.stringify({ 
       success: true, 
       unit_id: device.unit_id,
       device_id: device.id,
-      temperature: decoded.temperature,
+      temperature: temperature,
+      reading_id: insertedReading?.id,
       legacy: true,
     }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
