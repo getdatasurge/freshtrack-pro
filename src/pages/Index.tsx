@@ -65,7 +65,13 @@ const Index = () => {
 
       {/* Hero Section */}
       <section className="relative pt-32 pb-20 md:pt-40 md:pb-32 overflow-hidden hero-gradient">
-        <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10" />
+        <div 
+          className="absolute inset-0 opacity-10" 
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1'%3E%3Cpath d='M0 20h40M20 0v40'/%3E%3C/g%3E%3C/svg%3E")`,
+            backgroundSize: '40px 40px'
+          }} 
+        />
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative">
           <motion.div 
             className="max-w-4xl mx-auto text-center"

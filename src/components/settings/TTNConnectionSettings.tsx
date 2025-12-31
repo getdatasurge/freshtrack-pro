@@ -64,11 +64,16 @@ const REGION_URLS: Record<string, { base: string; is: string }> = {
   AS1: { base: "https://as1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
 };
 
-export function TTNConnectionSettings() {
+interface TTNConnectionSettingsProps {
+  organizationId: string | null;
+}
+
+export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [settings, setSettings] = useState<TTNSettings | null>(null);
+  const [hasSession, setHasSession] = useState<boolean | null>(null);
   
   // Form state
   const [isEnabled, setIsEnabled] = useState(false);
@@ -84,17 +89,39 @@ export function TTNConnectionSettings() {
   const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
-    loadSettings();
-  }, []);
+    if (organizationId) {
+      loadSettings();
+    } else {
+      setIsLoading(false);
+    }
+  }, [organizationId]);
 
   const loadSettings = async () => {
     setIsLoading(true);
     try {
+      // Check for active session before calling edge function
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.warn("[TTNConnectionSettings] No active session, skipping TTN settings load");
+        setHasSession(false);
+        setIsLoading(false);
+        return;
+      }
+      setHasSession(true);
+
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { action: "get" },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Handle 401 specifically
+        if (error.message?.includes("401") || error.message?.includes("unauthorized")) {
+          console.warn("[TTNConnectionSettings] Unauthorized - session may have expired");
+          setHasSession(false);
+          return;
+        }
+        throw error;
+      }
 
       setSettings(data);
       setIsEnabled(data.is_enabled || false);
@@ -189,6 +216,20 @@ export function TTNConnectionSettings() {
       setIsTesting(false);
     }
   };
+
+  // Show sign-in message if no organization or no session
+  if (!organizationId || hasSession === false) {
+    return (
+      <Card>
+        <CardContent className="py-8">
+          <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+            <Radio className="h-8 w-8 text-muted-foreground/50" />
+            <span>Please sign in to configure TTN settings</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isLoading) {
     return (

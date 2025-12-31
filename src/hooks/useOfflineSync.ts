@@ -48,7 +48,7 @@ export function useOfflineSync() {
 
   const saveLogOffline = useCallback(
     async (log: Omit<PendingManualLog, "synced">) => {
-      await savePendingLog({ ...log, synced: false });
+      await savePendingLog({ ...log, synced: 0 }); // Use 0 instead of false
       await refreshPendingCount();
     },
     [refreshPendingCount]
