@@ -153,6 +153,14 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      // Validate session before calling edge function
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setHasSession(false);
+        toast.error("Your login session expired. Please sign out and sign in again.");
+        return;
+      }
+
       const updates: Record<string, unknown> = {
         is_enabled: isEnabled,
         ttn_region: region,
@@ -176,7 +184,19 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         body: { action: "update", ...updates },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Handle specific error codes
+        if (error.message?.includes("401")) {
+          setHasSession(false);
+          toast.error("Your login session expired. Please sign out and sign in again.");
+          return;
+        }
+        if (error.message?.includes("403")) {
+          toast.error("You need admin access to manage TTN settings.");
+          return;
+        }
+        throw error;
+      }
 
       toast.success("TTN settings saved");
       setApiKey(""); // Clear after save
@@ -193,11 +213,30 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const handleTest = async () => {
     setIsTesting(true);
     try {
+      // Validate session before calling edge function
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setHasSession(false);
+        toast.error("Your login session expired. Please sign out and sign in again.");
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { action: "test" },
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes("401")) {
+          setHasSession(false);
+          toast.error("Your login session expired. Please sign out and sign in again.");
+          return;
+        }
+        if (error.message?.includes("403")) {
+          toast.error("You need admin access to test TTN connection.");
+          return;
+        }
+        throw error;
+      }
 
       if (data.success) {
         toast.success(data.message || "Connection successful!");
