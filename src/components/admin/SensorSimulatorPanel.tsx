@@ -80,7 +80,11 @@ interface SimulatorEvent {
   event_data: Record<string, unknown>;
 }
 
-export function SensorSimulatorPanel() {
+interface SensorSimulatorPanelProps {
+  organizationId: string | null;
+}
+
+export function SensorSimulatorPanel({ organizationId }: SensorSimulatorPanelProps) {
   const [units, setUnits] = useState<Unit[]>([]);
   const [selectedUnit, setSelectedUnit] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
@@ -88,7 +92,6 @@ export function SensorSimulatorPanel() {
   const [recentEvents, setRecentEvents] = useState<SimulatorEvent[]>([]);
   const [activeTab, setActiveTab] = useState<string>("readings");
   const [routeViaTTN, setRouteViaTTN] = useState(false);
-  const [organizationId, setOrganizationId] = useState<string | null>(null);
   
   // Simulated device config
   const [config, setConfig] = useState<SimulatedDeviceConfig | null>(null);
@@ -100,35 +103,25 @@ export function SensorSimulatorPanel() {
   const [signalStrength, setSignalStrength] = useState<number>(-50);
   const [streamingInterval, setStreamingInterval] = useState<string>("60");
 
-  // Load organization ID
-  useEffect(() => {
-    const loadOrgId = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("organization_id")
-          .eq("user_id", user.id)
-          .single();
-        if (profile?.organization_id) {
-          setOrganizationId(profile.organization_id);
-        }
-      }
-    };
-    loadOrgId();
-  }, []);
-
   const loadUnits = useCallback(async () => {
+    if (!organizationId) {
+      setUnits([]);
+      return;
+    }
+    
     setIsLoading(true);
     try {
+      // Query units with explicit organization filter via join
       const { data, error } = await supabase
         .from("units")
         .select(`
           id, name, unit_type, temp_limit_high, temp_limit_low, 
           last_reading_at, last_temp_reading, door_state,
-          area:areas(name, site:sites(name))
+          area:areas!inner(name, site:sites!inner(name, organization_id))
         `)
+        .eq("area.site.organization_id", organizationId)
         .eq("is_active", true)
+        .is("deleted_at", null)
         .order("name");
 
       if (error) throw error;
@@ -153,7 +146,7 @@ export function SensorSimulatorPanel() {
       toast.error("Failed to load units");
     }
     setIsLoading(false);
-  }, []);
+  }, [organizationId]);
 
   const loadSimConfig = useCallback(async (unitId: string) => {
     try {
@@ -195,8 +188,10 @@ export function SensorSimulatorPanel() {
   }, []);
 
   useEffect(() => {
-    loadUnits();
-  }, [loadUnits]);
+    if (organizationId) {
+      loadUnits();
+    }
+  }, [organizationId, loadUnits]);
 
   useEffect(() => {
     if (selectedUnit) {
@@ -316,18 +311,31 @@ export function SensorSimulatorPanel() {
           {/* Unit Selector */}
           <div className="space-y-2">
             <Label>Select Unit</Label>
-            <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a unit to simulate..." />
-              </SelectTrigger>
-              <SelectContent>
-                {units.map((unit) => (
-                  <SelectItem key={unit.id} value={unit.id}>
-                    {unit.name} ({unit.area.site.name} / {unit.area.name})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {!organizationId ? (
+              <div className="text-center py-6 text-muted-foreground border rounded-lg bg-muted/30">
+                <Loader2 className="w-5 h-5 mx-auto mb-2 animate-spin" />
+                <p className="text-sm">Loading organization...</p>
+              </div>
+            ) : units.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground border rounded-lg bg-muted/30">
+                <AlertTriangle className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                <p className="text-sm font-medium">No units found</p>
+                <p className="text-xs mt-1">Create units in Sites → [Site] → [Area] first.</p>
+              </div>
+            ) : (
+              <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a unit to simulate..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {units.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>
+                      {unit.name} ({unit.area.site.name} / {unit.area.name})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {selectedUnitData && (
