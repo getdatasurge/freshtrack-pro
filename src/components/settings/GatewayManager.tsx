@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useGateways, useDeleteGateway } from "@/hooks/useGateways";
-import { Gateway } from "@/types/ttn";
+import { Gateway, GatewayStatus } from "@/types/ttn";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,9 +22,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Radio, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Radio, Plus, Pencil, Trash2, Loader2, Info } from "lucide-react";
 import { AddGatewayDialog } from "./AddGatewayDialog";
 import { EditGatewayDialog } from "./EditGatewayDialog";
+import { GATEWAY_STATUS_CONFIG, GATEWAY_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
+import { cn } from "@/lib/utils";
 
 interface Site {
   id: string;
@@ -36,6 +39,74 @@ interface GatewayManagerProps {
   sites: Site[];
   canEdit: boolean;
 }
+
+// Reusable column header tooltip component
+const ColumnHeaderTooltip = ({ content }: { content: string }) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <button
+        type="button"
+        className="inline-flex ml-1 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 rounded"
+        aria-label="Column information"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+    </TooltipTrigger>
+    <TooltipContent side="top" className="max-w-xs">
+      {content}
+    </TooltipContent>
+  </Tooltip>
+);
+
+// Status badge with tooltip showing meaning, system state, and user action
+const GatewayStatusBadgeWithTooltip = ({ 
+  status, 
+  siteName 
+}: { 
+  status: GatewayStatus; 
+  siteName: string | null;
+}) => {
+  const statusConfig = GATEWAY_STATUS_CONFIG[status] || GATEWAY_STATUS_CONFIG.pending;
+  
+  // Special case for pending with linked site
+  if (status === "pending" && siteName) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge className="bg-primary/15 text-primary border-primary/30 cursor-help">
+            Linked to {siteName}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs p-3">
+          <div className="space-y-1.5 text-sm">
+            <p><span className="font-medium">Status:</span> Gateway is registered and linked to a site</p>
+            <p><span className="font-medium">System:</span> Awaiting first connection to TTN network</p>
+            <p className="text-primary"><span className="font-medium">Action:</span> Power on gateway and connect to network</p>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge className={cn("cursor-help", statusConfig.className)}>
+          {statusConfig.label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs p-3">
+        <div className="space-y-1.5 text-sm">
+          <p><span className="font-medium">Status:</span> {statusConfig.tooltip.meaning}</p>
+          <p><span className="font-medium">System:</span> {statusConfig.tooltip.systemState}</p>
+          {statusConfig.tooltip.userAction && (
+            <p className="text-primary"><span className="font-medium">Action:</span> {statusConfig.tooltip.userAction}</p>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+};
 
 export function GatewayManager({ organizationId, sites, canEdit }: GatewayManagerProps) {
   const { data: gateways, isLoading } = useGateways(organizationId);
@@ -49,25 +120,6 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
     if (!siteId) return null;
     const site = sites.find(s => s.id === siteId);
     return site?.name || null;
-  };
-
-  const getStatusBadge = (gateway: Gateway) => {
-    const siteName = getSiteName(gateway.site_id);
-    
-    if (gateway.status === "online") {
-      return <Badge className="bg-safe/15 text-safe border-safe/30">Online</Badge>;
-    }
-    if (gateway.status === "offline") {
-      return <Badge className="bg-warning/15 text-warning border-warning/30">Offline</Badge>;
-    }
-    if (gateway.status === "maintenance") {
-      return <Badge className="bg-muted text-muted-foreground border-border">Maintenance</Badge>;
-    }
-    // pending status
-    if (siteName) {
-      return <Badge className="bg-primary/15 text-primary border-primary/30">Linked to {siteName}</Badge>;
-    }
-    return <Badge variant="secondary">Registered</Badge>;
   };
 
   const handleDelete = async () => {
@@ -95,7 +147,7 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
   }
 
   return (
-    <>
+    <TooltipProvider>
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -121,48 +173,76 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Gateway EUI</TableHead>
-                  <TableHead>Site</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Name
+                      <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.name} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Gateway EUI
+                      <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.gatewayEui} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Site
+                      <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.site} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Status
+                      <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.status} />
+                    </span>
+                  </TableHead>
                   {canEdit && <TableHead className="w-[100px]">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {gateways.map((gateway) => (
-                  <TableRow key={gateway.id}>
-                    <TableCell className="font-medium">{gateway.name}</TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {formatEUI(gateway.gateway_eui)}
-                    </TableCell>
-                    <TableCell>
-                      {getSiteName(gateway.site_id) || (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(gateway)}</TableCell>
-                    {canEdit && (
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setEditGateway(gateway)}
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setDeleteGateway(gateway)}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </div>
+                {gateways.map((gateway) => {
+                  const siteName = getSiteName(gateway.site_id);
+                  return (
+                    <TableRow key={gateway.id}>
+                      <TableCell className="font-medium">{gateway.name}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {formatEUI(gateway.gateway_eui)}
                       </TableCell>
-                    )}
-                  </TableRow>
-                ))}
+                      <TableCell>
+                        {siteName || (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <GatewayStatusBadgeWithTooltip 
+                          status={gateway.status} 
+                          siteName={siteName} 
+                        />
+                      </TableCell>
+                      {canEdit && (
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setEditGateway(gateway)}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteGateway(gateway)}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           ) : (
@@ -225,6 +305,6 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </TooltipProvider>
   );
 }

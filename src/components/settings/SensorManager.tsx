@@ -21,12 +21,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { AddSensorDialog } from "./AddSensorDialog";
 import { EditSensorDialog } from "./EditSensorDialog";
 import { formatDistanceToNow } from "date-fns";
+import { SENSOR_STATUS_CONFIG, SENSOR_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
+import { cn } from "@/lib/utils";
 
 interface Site {
   id: string;
@@ -46,6 +48,51 @@ interface SensorManagerProps {
   canEdit: boolean;
   autoOpenAdd?: boolean;
 }
+
+// Reusable column header tooltip component
+const ColumnHeaderTooltip = ({ content }: { content: string }) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <button
+        type="button"
+        className="inline-flex ml-1 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 rounded"
+        aria-label="Column information"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+    </TooltipTrigger>
+    <TooltipContent side="top" className="max-w-xs">
+      {content}
+    </TooltipContent>
+  </Tooltip>
+);
+
+// Status badge with tooltip showing meaning, system state, and user action
+const StatusBadgeWithTooltip = ({ status }: { status: LoraSensorStatus }) => {
+  const statusConfig = SENSOR_STATUS_CONFIG[status] || SENSOR_STATUS_CONFIG.pending;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          variant={statusConfig.variant}
+          className={cn("cursor-help", statusConfig.className)}
+        >
+          {statusConfig.label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs p-3">
+        <div className="space-y-1.5 text-sm">
+          <p><span className="font-medium">Status:</span> {statusConfig.tooltip.meaning}</p>
+          <p><span className="font-medium">System:</span> {statusConfig.tooltip.systemState}</p>
+          {statusConfig.tooltip.userAction && (
+            <p className="text-primary"><span className="font-medium">Action:</span> {statusConfig.tooltip.userAction}</p>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+};
 
 export function SensorManager({ organizationId, sites, units, canEdit, autoOpenAdd }: SensorManagerProps) {
   const { data: sensors, isLoading } = useLoraSensors(organizationId);
@@ -86,23 +133,6 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
       return unitName;
     }
     return "—";
-  };
-
-  const getStatusBadge = (status: LoraSensorStatus) => {
-    switch (status) {
-      case "pending":
-        return <Badge variant="secondary">Pending Provisioning</Badge>;
-      case "joining":
-        return <Badge variant="outline" className="border-yellow-500 text-yellow-600">Joining...</Badge>;
-      case "active":
-        return <Badge variant="default" className="bg-green-600">Active</Badge>;
-      case "offline":
-        return <Badge variant="outline" className="border-yellow-500 text-yellow-600">Offline</Badge>;
-      case "fault":
-        return <Badge variant="destructive">Fault</Badge>;
-      default:
-        return <Badge variant="secondary">{status}</Badge>;
-    }
   };
 
   const getSensorTypeLabel = (type: LoraSensorType) => {
@@ -184,44 +214,74 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-medium">LoRa Sensors</h3>
-          <p className="text-sm text-muted-foreground">
-            Register and manage your LoRaWAN temperature sensors
-          </p>
+    <TooltipProvider>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-medium">LoRa Sensors</h3>
+            <p className="text-sm text-muted-foreground">
+              Register and manage your LoRaWAN temperature sensors
+            </p>
+          </div>
+          {canEdit && (
+            <Button onClick={() => setAddDialogOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Sensor
+            </Button>
+          )}
         </div>
-        {canEdit && (
-          <Button onClick={() => setAddDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Sensor
-          </Button>
-        )}
-      </div>
 
-      {sensors && sensors.length > 0 ? (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>DevEUI / TTN Device ID</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last Uplink</TableHead>
-                {canEdit && <TableHead className="w-[140px]">Actions</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sensors.map((sensor) => {
-                const ttnDeviceId = sensor.ttn_device_id || generateTtnDeviceId(sensor.dev_eui);
-                return (
-                <TableRow key={sensor.id}>
-                  <TableCell className="font-medium">{sensor.name}</TableCell>
-                  <TableCell>
-                    <TooltipProvider>
+        {sensors && sensors.length > 0 ? (
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Name
+                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.name} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      DevEUI / TTN Device ID
+                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.devEui} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Type
+                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.type} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Location
+                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.location} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Status
+                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.status} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Last Uplink
+                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.lastUplink} />
+                    </span>
+                  </TableHead>
+                  {canEdit && <TableHead className="w-[140px]">Actions</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sensors.map((sensor) => {
+                  const ttnDeviceId = sensor.ttn_device_id || generateTtnDeviceId(sensor.dev_eui);
+                  return (
+                  <TableRow key={sensor.id}>
+                    <TableCell className="font-medium">{sensor.name}</TableCell>
+                    <TableCell>
                       <div className="space-y-1">
                         <div className="flex items-center gap-1">
                           <span className="font-mono text-xs">{formatEUI(sensor.dev_eui)}</span>
@@ -264,111 +324,117 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                           </Tooltip>
                         </div>
                       </div>
-                    </TooltipProvider>
-                  </TableCell>
-                  <TableCell>{getSensorTypeLabel(sensor.sensor_type)}</TableCell>
-                  <TableCell>{getLocationDisplay(sensor)}</TableCell>
-                  <TableCell>{getStatusBadge(sensor.status)}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {formatLastUplink(sensor.last_seen_at, sensor.status)}
-                  </TableCell>
-                  {canEdit && (
+                    </TableCell>
+                    <TableCell>{getSensorTypeLabel(sensor.sensor_type)}</TableCell>
+                    <TableCell>{getLocationDisplay(sensor)}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        {sensor.status === "pending" && (
+                      <StatusBadgeWithTooltip status={sensor.status} />
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {formatLastUplink(sensor.last_seen_at, sensor.status)}
+                    </TableCell>
+                    {canEdit && (
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          {sensor.status === "pending" && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleProvision(sensor)}
+                                  disabled={provisionSensor.isProvisioning(sensor.id)}
+                                >
+                                  {provisionSensor.isProvisioning(sensor.id) ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <CloudUpload className="h-4 w-4 text-blue-600" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Provision to TTN</TooltipContent>
+                            </Tooltip>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => handleProvision(sensor)}
-                            disabled={provisionSensor.isProvisioning(sensor.id)}
-                            title="Provision to TTN"
+                            onClick={() => setEditSensor(sensor)}
                           >
-                            {provisionSensor.isProvisioning(sensor.id) ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <CloudUpload className="h-4 w-4 text-blue-600" />
-                            )}
+                            <Pencil className="h-4 w-4" />
                           </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setEditSensor(sensor)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteSensor(sensor)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  )}
-                </TableRow>
-              )})}
-            </TableBody>
-          </Table>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
-          <Thermometer className="h-12 w-12 text-muted-foreground/50" />
-          <h3 className="mt-4 text-lg font-medium">No sensors registered</h3>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Add your first LoRa sensor to start monitoring temperatures.
-          </p>
-          {canEdit && (
-            <Button className="mt-4" onClick={() => setAddDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Sensor
-            </Button>
-          )}
-        </div>
-      )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setDeleteSensor(sensor)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                )})}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
+            <Thermometer className="h-12 w-12 text-muted-foreground/50" />
+            <h3 className="mt-4 text-lg font-medium">No sensors registered</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Add your first LoRa sensor to start monitoring temperatures.
+            </p>
+            {canEdit && (
+              <Button className="mt-4" onClick={() => setAddDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Sensor
+              </Button>
+            )}
+          </div>
+        )}
 
-      <AddSensorDialog
-        open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
-        organizationId={organizationId}
-        sites={sites}
-        units={units}
-      />
-
-      {editSensor && (
-        <EditSensorDialog
-          open={!!editSensor}
-          onOpenChange={(open) => !open && setEditSensor(null)}
-          sensor={editSensor}
+        <AddSensorDialog
+          open={addDialogOpen}
+          onOpenChange={setAddDialogOpen}
+          organizationId={organizationId}
           sites={sites}
           units={units}
         />
-      )}
 
-      <AlertDialog open={!!deleteSensor_} onOpenChange={(open) => !open && setDeleteSensor(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Sensor</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete "{deleteSensor_?.name}"? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteSensor.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                "Delete"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+        {editSensor && (
+          <EditSensorDialog
+            open={!!editSensor}
+            onOpenChange={(open) => !open && setEditSensor(null)}
+            sensor={editSensor}
+            sites={sites}
+            units={units}
+          />
+        )}
+
+        <AlertDialog open={!!deleteSensor_} onOpenChange={(open) => !open && setDeleteSensor(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Sensor</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete "{deleteSensor_?.name}"? This action cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {deleteSensor.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  "Delete"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    </TooltipProvider>
   );
 }
