@@ -78,7 +78,17 @@ serve(async (req) => {
     
     console.log(`[user-sync-emitter] Received ${triggerPayload.event_type} event for user ${triggerPayload.user_id}`);
     console.log(`[user-sync-emitter] Site data: default_site_id=${triggerPayload.default_site_id}, user_sites=${JSON.stringify(triggerPayload.user_sites)}`);
-    console.log(`[user-sync-emitter] TTN data: enabled=${triggerPayload.ttn?.enabled}, status=${triggerPayload.ttn?.provisioning_status}, app_id=${triggerPayload.ttn?.application_id}`);
+    console.log(`[user-sync-emitter] TTN bundle:`, JSON.stringify({
+      enabled: triggerPayload.ttn?.enabled,
+      provisioning_status: triggerPayload.ttn?.provisioning_status,
+      cluster: triggerPayload.ttn?.cluster,
+      application_id: triggerPayload.ttn?.application_id,
+      webhook_id: triggerPayload.ttn?.webhook_id,
+      webhook_url: triggerPayload.ttn?.webhook_url,
+      api_key_last4: triggerPayload.ttn?.api_key_last4,
+      webhook_secret_last4: triggerPayload.ttn?.webhook_secret_last4,
+      updated_at: triggerPayload.ttn?.updated_at,
+    }));
 
     // Build the outbound payload for Project 2 with site membership data and TTN connection
     const outboundPayload: Project2Payload = {

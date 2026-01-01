@@ -4,10 +4,6 @@ project_id = "mfwyiifehsvwnjwqoxht"
 [functions.emulator-sync]
 verify_jwt = false
 
-# TTN integration snapshot - read-only endpoint for Project 2 (Emulator)
-[functions.get-ttn-integration-snapshot]
-verify_jwt = false
-
 # User sync emitter - called by database trigger, uses service role key
 [functions.user-sync-emitter]
 verify_jwt = false
