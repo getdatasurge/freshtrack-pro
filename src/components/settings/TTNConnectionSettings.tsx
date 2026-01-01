@@ -317,7 +317,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
   const isProvisioned = settings?.provisioning_status === 'completed';
   const isFailed = settings?.provisioning_status === 'failed';
-  const isProvisioning = settings?.provisioning_status === 'provisioning';
+  const isProvisioningStatus = settings?.provisioning_status === 'provisioning';
 
   return (
     <Card>
@@ -332,7 +332,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Provisioning In Progress State */}
-        {isProvisioning && (
+        {isProvisioningStatus && (
           <div className="p-6 rounded-lg border-2 border-primary/30 bg-primary/5">
             <div className="text-center space-y-4">
               <Loader2 className="h-12 w-12 mx-auto text-primary animate-spin" />
@@ -351,7 +351,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         )}
 
         {/* Not Provisioned State */}
-        {!isProvisioned && !isFailed && !isProvisioning && (
+        {!isProvisioned && !isFailed && !isProvisioningStatus && (
           <div className="p-6 rounded-lg border-2 border-dashed border-muted-foreground/30">
             <div className="text-center space-y-4">
               <Radio className="h-12 w-12 mx-auto text-muted-foreground/50" />
