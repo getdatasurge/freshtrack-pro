@@ -165,8 +165,7 @@ const UnitDetail = () => {
           table: 'sensor_readings',
           filter: `unit_id=eq.${unitId}`,
         },
-        (payload) => {
-          console.log('[Realtime] New reading received:', payload.new);
+        () => {
           loadUnitData(); // Refresh all data when new reading arrives
         }
       )

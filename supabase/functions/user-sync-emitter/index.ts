@@ -153,12 +153,12 @@ serve(async (req) => {
 
     if (!response.ok) {
       console.error(`[user-sync-emitter] Project 2 returned ${response.status}: ${responseText}`);
-      
+
       // Update sync log to failed
       await supabase
         .from('user_sync_log')
-        .update({ 
-          status: 'failed', 
+        .update({
+          status: 'failed',
           last_error: `HTTP ${response.status}: ${responseText}`,
           attempts: 1
         })
@@ -178,8 +178,8 @@ serve(async (req) => {
     // Update sync log to sent
     await supabase
       .from('user_sync_log')
-      .update({ 
-        status: 'sent', 
+      .update({
+        status: 'sent',
         sent_at: new Date().toISOString(),
         attempts: 1
       })

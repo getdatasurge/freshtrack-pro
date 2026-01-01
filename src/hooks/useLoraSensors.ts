@@ -125,9 +125,7 @@ export function useCreateLoraSensor() {
       }
       toast.success("LoRa sensor created successfully");
 
-      // Trigger TTN provisioning (fire-and-forget) - currently disabled until Phase 4
-      // Sensor will remain in 'pending' status until TTN integration is implemented
-      console.log("[useLoraSensors] Sensor registered with status 'pending'. TTN provisioning not yet implemented.");
+      // Sensor registered with 'pending' status - TTN provisioning handled separately
     },
     onError: (error: Error) => {
       toast.error(`Failed to create LoRa sensor: ${error.message}`);
@@ -191,8 +189,6 @@ export function useDeleteLoraSensor() {
         .eq("id", id);
 
       if (error) throw error;
-      
-      console.log(`[useDeleteLoraSensor] Sensor ${id} deleted. TTN cleanup job enqueued by database trigger.`);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["lora-sensors", variables.orgId] });
