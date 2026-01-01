@@ -11,6 +11,18 @@ interface UserSite {
   site_name: string;
 }
 
+interface TTNConnection {
+  enabled: boolean;
+  provisioning_status: string;
+  cluster: string | null;
+  application_id: string | null;
+  webhook_id: string | null;
+  webhook_url: string | null;
+  api_key_last4: string | null;
+  webhook_secret_last4: string | null;
+  updated_at: string | null;
+}
+
 interface TriggerPayload {
   event_type: 'INSERT' | 'UPDATE';
   user_id: string;
@@ -22,6 +34,7 @@ interface TriggerPayload {
   updated_at: string;
   default_site_id: string | null;
   user_sites: UserSite[];
+  ttn?: TTNConnection;
 }
 
 interface Project2Payload {
@@ -35,6 +48,7 @@ interface Project2Payload {
     updated_at: string;
     default_site_id: string | null;
     user_sites: UserSite[];
+    ttn?: TTNConnection;
   }>;
 }
 
@@ -64,8 +78,9 @@ serve(async (req) => {
     
     console.log(`[user-sync-emitter] Received ${triggerPayload.event_type} event for user ${triggerPayload.user_id}`);
     console.log(`[user-sync-emitter] Site data: default_site_id=${triggerPayload.default_site_id}, user_sites=${JSON.stringify(triggerPayload.user_sites)}`);
+    console.log(`[user-sync-emitter] TTN data: enabled=${triggerPayload.ttn?.enabled}, status=${triggerPayload.ttn?.provisioning_status}, app_id=${triggerPayload.ttn?.application_id}`);
 
-    // Build the outbound payload for Project 2 with site membership data
+    // Build the outbound payload for Project 2 with site membership data and TTN connection
     const outboundPayload: Project2Payload = {
       users: [
         {
@@ -78,6 +93,7 @@ serve(async (req) => {
           updated_at: triggerPayload.updated_at,
           default_site_id: triggerPayload.default_site_id,
           user_sites: triggerPayload.user_sites || [],
+          ttn: triggerPayload.ttn || { enabled: false, provisioning_status: 'not_started', cluster: null, application_id: null, webhook_id: null, webhook_url: null, api_key_last4: null, webhook_secret_last4: null, updated_at: null },
         }
       ]
     };
