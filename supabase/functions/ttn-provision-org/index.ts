@@ -225,12 +225,9 @@ serve(async (req) => {
                 application_ids: { application_id: ttnConn.ttn_application_id },
               },
               base_url: webhookUrl,
-              format: "json",
               headers: {
                 "X-Webhook-Secret": newSecret,
               },
-              uplink_message: {},
-              join_accept: {},
             },
             field_mask: {
               paths: ["headers", "base_url", "format", "uplink_message", "join_accept"],

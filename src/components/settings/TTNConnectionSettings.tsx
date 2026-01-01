@@ -27,7 +27,7 @@ interface TTNSettings {
   is_enabled: boolean;
   ttn_region: string | null;
   ttn_application_id: string | null;
-  provisioning_status: 'not_started' | 'in_progress' | 'completed' | 'failed';
+  provisioning_status: 'not_started' | 'provisioning' | 'completed' | 'failed';
   provisioning_error: string | null;
   provisioned_at: string | null;
   has_api_key: boolean;
@@ -133,7 +133,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
   const handleProvision = async () => {
     if (!organizationId) return;
-    
+
     setIsProvisioning(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -146,8 +146,8 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       const token = sessionData?.session?.access_token;
 
       const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
-        body: { 
-          action: "provision", 
+        body: {
+          action: "provision",
           organization_id: organizationId,
           ttn_region: region,
         },
@@ -160,11 +160,25 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         toast.success("TTN Application provisioned successfully!");
         await loadSettings();
       } else {
-        toast.error(data?.error || "Provisioning failed");
+        // Show more helpful error messages
+        const errorMsg = data?.error || "Provisioning failed";
+        const hint = data?.hint || "";
+
+        if (errorMsg.includes("TTN admin credentials not configured")) {
+          toast.error("TTN credentials not configured. Please contact your administrator to set up TTN_ADMIN_API_KEY and TTN_USER_ID in Supabase secrets.");
+        } else {
+          toast.error(hint ? `${errorMsg}: ${hint}` : errorMsg);
+        }
       }
     } catch (err: any) {
       console.error("Provisioning error:", err);
-      toast.error(err.message || "Failed to provision TTN application");
+
+      // Check for specific error messages
+      if (err.message?.includes("TTN admin credentials")) {
+        toast.error("TTN credentials not configured. Please contact your administrator.");
+      } else {
+        toast.error(err.message || "Failed to provision TTN application");
+      }
     } finally {
       setIsProvisioning(false);
     }
@@ -303,6 +317,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
   const isProvisioned = settings?.provisioning_status === 'completed';
   const isFailed = settings?.provisioning_status === 'failed';
+  const isProvisioning = settings?.provisioning_status === 'provisioning';
 
   return (
     <Card>
@@ -316,8 +331,27 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Provisioning In Progress State */}
+        {isProvisioning && (
+          <div className="p-6 rounded-lg border-2 border-primary/30 bg-primary/5">
+            <div className="text-center space-y-4">
+              <Loader2 className="h-12 w-12 mx-auto text-primary animate-spin" />
+              <div>
+                <h3 className="font-medium">Provisioning TTN Application...</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Creating your dedicated TTN application. This may take a moment.
+                </p>
+              </div>
+              <Button onClick={loadSettings} variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Check Status
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Not Provisioned State */}
-        {!isProvisioned && !isFailed && (
+        {!isProvisioned && !isFailed && !isProvisioning && (
           <div className="p-6 rounded-lg border-2 border-dashed border-muted-foreground/30">
             <div className="text-center space-y-4">
               <Radio className="h-12 w-12 mx-auto text-muted-foreground/50" />
