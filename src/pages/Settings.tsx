@@ -248,10 +248,7 @@ const Settings = () => {
       }
 
       if (roleData) {
-        console.log("[Settings] User role loaded:", roleData.role, "for org:", profileData.organization_id);
         setUserRole(roleData.role);
-      } else if (!roleError) {
-        console.warn("[Settings] No role found for user in organization. User:", session!.user.id, "Org:", profileData.organization_id);
       }
 
       // Get all users in org
@@ -418,8 +415,6 @@ const Settings = () => {
           organizationId: organization.id,
         },
       });
-
-      console.log("SMS Response:", data, error);
 
       if (error) throw error;
       

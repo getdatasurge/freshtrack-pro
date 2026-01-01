@@ -23,6 +23,15 @@
 | Inline `statusConfig` objects | **REMOVED** | Consolidated to `src/lib/statusConfig.ts` | All pages now import from shared module |
 | Inline `alertTypeConfig` objects | **REMOVED** | Consolidated to `src/lib/alertConfig.ts` | All components now import from shared module |
 
+### Hooks & Utilities (Deleted 2026-01-01)
+
+| Item | Status | Reason | Notes |
+|------|--------|--------|-------|
+| `src/hooks/useSlugAvailability.ts` | **DELETED** | Zero imports, never integrated | Edge function `check-slug-available` exists for future use |
+| `src/hooks/useCoolingFailureDetection.ts` | **DELETED** | Zero imports, orphaned feature | Detection logic preserved in git history |
+| `src/lib/ingestTypes.ts` | **DELETED** | Duplicate types | Superseded by `supabase/functions/_shared/validation.ts` |
+| `src/components/ui/use-toast.ts` | **DELETED** | Redundant re-export | Use `@/hooks/use-toast` directly |
+
 ## Migration Notes
 
 ### notification_settings → notification_policies
