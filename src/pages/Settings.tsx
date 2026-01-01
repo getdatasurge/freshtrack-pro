@@ -48,6 +48,7 @@ import { GatewayManager } from "@/components/settings/GatewayManager";
 import { SensorManager } from "@/components/settings/SensorManager";
 import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
 import { EmulatorSyncHistory } from "@/components/settings/EmulatorSyncHistory";
+import { EmulatorResyncCard } from "@/components/settings/EmulatorResyncCard";
 
 // E.164 phone number validation regex
 const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -1029,6 +1030,7 @@ const Settings = () => {
           {canManageUsers ? (
             <>
               <TTNConnectionSettings organizationId={organization?.id || null} />
+              <EmulatorResyncCard organizationId={organization?.id || null} />
               <EmulatorSyncHistory organizationId={organization?.id || null} />
               <EdgeFunctionDiagnostics />
               <SensorSimulatorPanel organizationId={organization?.id || null} />

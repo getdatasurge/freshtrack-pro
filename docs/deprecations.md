@@ -32,6 +32,12 @@
 | `src/lib/ingestTypes.ts` | **DELETED** | Duplicate types | Superseded by `supabase/functions/_shared/validation.ts` |
 | `src/components/ui/use-toast.ts` | **DELETED** | Redundant re-export | Use `@/hooks/use-toast` directly |
 
+### Edge Functions (Deleted 2026-01-01)
+
+| Item | Status | Reason | Notes |
+|------|--------|--------|-------|
+| `get-ttn-integration-snapshot` | **DELETED** | Legacy TTN lookup | Replaced by user_sync as single source of truth for Emulator TTN config |
+
 ## Migration Notes
 
 ### notification_settings → notification_policies
