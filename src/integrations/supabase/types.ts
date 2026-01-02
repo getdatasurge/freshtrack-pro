@@ -2793,6 +2793,7 @@ export type Database = {
         | "temperature_humidity"
         | "door"
         | "combo"
+        | "contact"
       notification_channel: "push" | "email" | "sms"
       notification_status: "pending" | "sent" | "delivered" | "failed"
       pairing_status:
@@ -2973,6 +2974,7 @@ export const Constants = {
         "temperature_humidity",
         "door",
         "combo",
+        "contact",
       ],
       notification_channel: ["push", "email", "sms"],
       notification_status: ["pending", "sent", "delivered", "failed"],

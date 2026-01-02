@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info, MapPin, Box, RefreshCw, Code, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info, MapPin, Box, RefreshCw, Code, AlertTriangle, DoorOpen } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -432,12 +432,39 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
       case "temperature_humidity":
         return "Temp + Humidity";
       case "door":
+      case "contact":
         return "Door";
       case "combo":
         return "Combo";
       default:
         return type;
     }
+  };
+
+  const getSensorTypeIcon = (type: LoraSensorType) => {
+    switch (type) {
+      case "door":
+      case "contact":
+        return <DoorOpen className="h-4 w-4 text-muted-foreground" />;
+      case "temperature":
+      case "temperature_humidity":
+      case "combo":
+      default:
+        return <Thermometer className="h-4 w-4 text-muted-foreground" />;
+    }
+  };
+
+  // Compute effective status based on last_seen_at staleness
+  const getEffectiveStatus = (sensor: LoraSensor): LoraSensorStatus => {
+    // If status is 'active' but last_seen_at is stale (>5 min), show 'offline'
+    if (sensor.status === 'active' && sensor.last_seen_at) {
+      const staleThresholdMs = 5 * 60 * 1000; // 5 minutes
+      const lastSeen = new Date(sensor.last_seen_at).getTime();
+      if (Date.now() - lastSeen > staleThresholdMs) {
+        return 'offline';
+      }
+    }
+    return sensor.status;
   };
 
   const formatEUI = (eui: string) => {
@@ -805,7 +832,12 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>{getSensorTypeLabel(sensor.sensor_type)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {getSensorTypeIcon(sensor.sensor_type)}
+                        <span>{getSensorTypeLabel(sensor.sensor_type)}</span>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       {canEdit ? (
                         <SensorSiteSelector
@@ -833,7 +865,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                       )}
                     </TableCell>
                     <TableCell>
-                      <StatusBadgeWithTooltip status={sensor.status} />
+                      <StatusBadgeWithTooltip status={getEffectiveStatus(sensor)} />
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatLastUplink(sensor.last_seen_at, sensor.status)}
@@ -886,7 +918,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
             <Thermometer className="h-12 w-12 text-muted-foreground/50" />
             <h3 className="mt-4 text-lg font-medium">No sensors registered</h3>
             <p className="mt-2 text-sm text-muted-foreground">
-              Add your first LoRa sensor to start monitoring temperatures.
+              Add your first LoRa sensor to start monitoring.
             </p>
             {canEdit && (
               <Button className="mt-4" onClick={() => setAddDialogOpen(true)}>
