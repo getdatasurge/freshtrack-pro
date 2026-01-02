@@ -160,6 +160,8 @@ Deno.serve(async (req: Request) => {
           has_webhook_secret: !!settings.ttn_webhook_secret_encrypted,
           webhook_secret_last4: settings.ttn_webhook_secret_last4,
           webhook_url: settings.ttn_webhook_url,
+          webhook_id: settings.ttn_webhook_id || "freshtracker",
+          webhook_events: settings.ttn_webhook_events || ["uplink_message", "join_accept"],
           last_connection_test_at: settings.last_connection_test_at,
           last_connection_test_result: settings.last_connection_test_result,
           last_updated_source: settings.ttn_last_updated_source,
