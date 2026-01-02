@@ -218,6 +218,11 @@ export function AccountDeletionModal({
             id="confirm-delete"
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && canDelete) {
+                handleDelete();
+              }
+            }}
             placeholder="Type DELETE"
             className="font-mono"
             autoComplete="off"
@@ -228,7 +233,14 @@ export function AccountDeletionModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog 
+      open={open} 
+      onOpenChange={(newOpen) => {
+        // Prevent closing during deletion
+        if (isDeleting && !newOpen) return;
+        onOpenChange(newOpen);
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
