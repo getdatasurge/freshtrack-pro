@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_deletion_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          current_step: string | null
+          deleted_user_email: string | null
+          error_message: string | null
+          id: string
+          org_deleted: boolean | null
+          org_had_other_users: boolean | null
+          organization_id: string | null
+          request_id: string | null
+          status: string
+          steps_completed: Json | null
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          deleted_user_email?: string | null
+          error_message?: string | null
+          id?: string
+          org_deleted?: boolean | null
+          org_had_other_users?: boolean | null
+          organization_id?: string | null
+          request_id?: string | null
+          status?: string
+          steps_completed?: Json | null
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          deleted_user_email?: string | null
+          error_message?: string | null
+          id?: string
+          org_deleted?: boolean | null
+          org_had_other_users?: boolean | null
+          organization_id?: string | null
+          request_id?: string | null
+          status?: string
+          steps_completed?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       alert_rules: {
         Row: {
           created_at: string
@@ -2655,6 +2703,7 @@ export type Database = {
         }
         Returns: string
       }
+      delete_user_account: { Args: { p_user_id: string }; Returns: Json }
       enqueue_deprovision_jobs_for_unit: {
         Args: { p_created_by?: string; p_reason: string; p_unit_id: string }
         Returns: number

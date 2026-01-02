@@ -24,6 +24,7 @@ import EventHistory from "./pages/EventHistory";
 import RecentlyDeleted from "./pages/RecentlyDeleted";
 import TTNCleanup from "./pages/TTNCleanup";
 import DataMaintenance from "./pages/DataMaintenance";
+import AccountDeleted from "./pages/AccountDeleted";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -56,6 +57,7 @@ const App = () => (
             <Route path="/admin/recently-deleted" element={<RecentlyDeleted />} />
             <Route path="/admin/ttn-cleanup" element={<TTNCleanup />} />
             <Route path="/admin/data-maintenance" element={<DataMaintenance />} />
+            <Route path="/account-deleted" element={<AccountDeleted />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

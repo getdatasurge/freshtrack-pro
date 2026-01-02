@@ -49,6 +49,7 @@ import { SensorManager } from "@/components/settings/SensorManager";
 import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
 import { EmulatorSyncHistory } from "@/components/settings/EmulatorSyncHistory";
 import { EmulatorResyncCard } from "@/components/settings/EmulatorResyncCard";
+import { AccountDeletionModal } from "@/components/settings/AccountDeletionModal";
 
 // E.164 phone number validation regex
 const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -138,6 +139,12 @@ const Settings = () => {
   const [userRole, setUserRole] = useState<AppRole | null>(null);
   const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
   const [units, setUnits] = useState<{ id: string; name: string; site_id: string }[]>([]);
+  
+  // Account deletion state
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [sensorCount, setSensorCount] = useState(0);
+  const [gatewayCount, setGatewayCount] = useState(0);
+  const [hasOtherUsers, setHasOtherUsers] = useState(false);
 
   // Form states
   const [orgName, setOrgName] = useState("");
@@ -309,6 +316,24 @@ const Settings = () => {
         }));
         setUnits(formattedUnits);
       }
+
+      // Load sensor count for deletion modal
+      const { count: sensorCountResult } = await supabase
+        .from("lora_sensors")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", profileData.organization_id);
+      setSensorCount(sensorCountResult || 0);
+
+      // Load gateway count for deletion modal
+      const { count: gatewayCountResult } = await supabase
+        .from("gateways")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", profileData.organization_id);
+      setGatewayCount(gatewayCountResult || 0);
+
+      // Check if there are other users in the org
+      setHasOtherUsers((usersData?.length || 0) > 1);
+
     } catch (error) {
       console.error("Error loading settings:", error);
       toast.error("Failed to load settings");
@@ -652,6 +677,50 @@ const Settings = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Danger Zone - Account Deletion */}
+          <Card className="border-destructive/50 mt-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+                Danger Zone
+              </CardTitle>
+              <CardDescription>
+                Irreversible actions that affect your account
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Delete Account</p>
+                  <p className="text-sm text-muted-foreground">
+                    Permanently delete your account and all associated data
+                  </p>
+                </div>
+                <Button 
+                  variant="destructive" 
+                  onClick={() => setDeleteAccountOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Account
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Account Deletion Modal */}
+          {session?.user && profile && (
+            <AccountDeletionModal
+              open={deleteAccountOpen}
+              onOpenChange={setDeleteAccountOpen}
+              userId={session.user.id}
+              userEmail={profile.email}
+              isOwner={userRole === "owner"}
+              hasOtherUsers={hasOtherUsers}
+              sensorCount={sensorCount}
+              gatewayCount={gatewayCount}
+            />
+          )}
         </TabsContent>
 
         {/* Alert Rules Tab */}
