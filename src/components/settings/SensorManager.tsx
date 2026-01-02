@@ -290,67 +290,61 @@ const ProvisionButton = ({
   const hasTtnConfig = ttnConfig?.isEnabled && ttnConfig?.hasApiKey && ttnConfig?.applicationId;
   const hasOtaaKeys = sensor.dev_eui && sensor.app_key;
 
-  // TTN not configured
+  // TTN not configured - show inline action hint
   if (!hasTtnConfig) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <span>
-            <Button variant="ghost" size="icon" disabled className="cursor-not-allowed">
-              <CloudUpload className="h-4 w-4 text-muted-foreground" />
-            </Button>
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap cursor-help">
+            <CloudUpload className="h-3.5 w-3.5" />
+            <span>Configure TTN</span>
           </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs">
           <p className="font-medium">TTN not configured</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Configure TTN connection in Developer settings first
+            Go to Developer settings to configure TTN connection first
           </p>
         </TooltipContent>
       </Tooltip>
     );
   }
 
-  // Sensor missing OTAA keys
+  // Sensor missing OTAA keys - show inline action hint
   if (!hasOtaaKeys) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <span>
-            <Button variant="ghost" size="icon" disabled className="cursor-not-allowed">
-              <CloudUpload className="h-4 w-4 text-muted-foreground" />
-            </Button>
-          </span>
+          <Badge variant="outline" className="text-warning border-warning/30 bg-warning/10 cursor-help">
+            Add Keys
+          </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs">
           <p className="font-medium">Missing OTAA credentials</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Sensor requires AppKey for OTAA provisioning. Edit sensor to add credentials.
+            Edit this sensor to add AppKey for OTAA provisioning
           </p>
         </TooltipContent>
       </Tooltip>
     );
   }
 
-  // Ready to provision
+  // Ready to provision - show prominent button
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onProvision}
-          disabled={isProvisioning}
-        >
-          {isProvisioning ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <CloudUpload className="h-4 w-4 text-blue-600" />
-          )}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>Provision to TTN</TooltipContent>
-    </Tooltip>
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={onProvision}
+      disabled={isProvisioning}
+      className="gap-1.5 h-7 px-2.5 text-primary border-primary/30 hover:bg-primary/10 hover:border-primary/50"
+    >
+      {isProvisioning ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <CloudUpload className="h-3.5 w-3.5" />
+      )}
+      <span className="text-xs font-medium">Provision</span>
+    </Button>
   );
 };
 
