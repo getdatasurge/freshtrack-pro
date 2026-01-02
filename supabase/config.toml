@@ -98,3 +98,7 @@ verify_jwt = false
 # Sensor assignment endpoint for Emulator - uses API key auth
 [functions.update-sensor-assignment]
 verify_jwt = false
+
+# Health check - public endpoint for system monitoring
+[functions.health-check]
+verify_jwt = false
