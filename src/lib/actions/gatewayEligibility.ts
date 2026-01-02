@@ -62,6 +62,24 @@ export function canProvisionGateway(
     };
   }
 
+  // Check for wrong API key type (application keys can't provision gateways)
+  if (ttnConfig?.credentialType === "application_api_key") {
+    return {
+      allowed: false,
+      code: "TTN_WRONG_KEY_TYPE",
+      reason: "Application API keys cannot provision gateways. Use a Personal API key with gateway rights.",
+    };
+  }
+
+  // Check for missing gateway rights
+  if (ttnConfig?.gatewayRightsVerified === false) {
+    return {
+      allowed: false,
+      code: "TTN_MISSING_GATEWAY_RIGHTS",
+      reason: "TTN API key lacks gateway provisioning permissions. Regenerate with gateways:write rights.",
+    };
+  }
+
   // Gateway EUI
   if (!gateway.gateway_eui) {
     return {

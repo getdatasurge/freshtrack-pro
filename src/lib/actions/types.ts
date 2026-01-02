@@ -23,6 +23,8 @@ export type ActionCode =
   | "TTN_NOT_CONFIGURED"
   | "TTN_MISSING_API_KEY"
   | "TTN_MISSING_APPLICATION"
+  | "TTN_WRONG_KEY_TYPE"
+  | "TTN_MISSING_GATEWAY_RIGHTS"
   // Sensor specific
   | "MISSING_DEV_EUI"
   | "MISSING_APP_KEY"
@@ -41,6 +43,10 @@ export interface TTNConfigState {
   isEnabled?: boolean;
   hasApiKey?: boolean;
   applicationId?: string | null;
+  // New fields for gateway provisioning
+  ownerScope?: "user" | "organization" | null;
+  credentialType?: "personal_api_key" | "organization_api_key" | "application_api_key" | null;
+  gatewayRightsVerified?: boolean;
 }
 
 /**
