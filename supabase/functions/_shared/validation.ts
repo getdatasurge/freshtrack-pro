@@ -159,6 +159,12 @@ export const emulatorSensorSchema = z.object({
   site_id: uuidSchema.optional().nullable(),
   manufacturer: z.string().max(100, "Manufacturer too long").optional().nullable(),
   model: z.string().max(100, "Model too long").optional().nullable(),
+  // OTAA credentials for TTN provisioning
+  app_eui: z.string().max(32, "App EUI too long").optional().nullable(),
+  app_key: z.string().max(64, "App Key too long").optional().nullable(), // 32 bytes hex = 64 chars
+  // TTN registration info
+  ttn_device_id: z.string().max(100, "TTN Device ID too long").optional().nullable(),
+  ttn_application_id: z.string().max(100, "TTN Application ID too long").optional().nullable(),
 });
 
 export const emulatorSyncPayloadSchema = z.object({

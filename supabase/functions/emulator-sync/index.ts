@@ -354,32 +354,76 @@ async function upsertSensor(
   // Check if sensor exists by org + dev_eui
   const { data: existing } = await supabase
     .from("lora_sensors")
-    .select("id, updated_at")
+    .select("id, updated_at, status, ttn_device_id, app_key")
     .eq("organization_id", orgId)
     .eq("dev_eui", sensor.dev_eui)
     .single();
 
-  const upsertData = {
+  // Status priority: don't downgrade from more advanced states
+  const statusPriority: Record<string, number> = { 
+    active: 4, 
+    offline: 3, 
+    joining: 2, 
+    pending: 1, 
+    fault: 0 
+  };
+  
+  const incomingStatus = sensor.status || "pending";
+  const existingStatus = existing?.status || "pending";
+  const existingPriority = statusPriority[existingStatus] ?? 0;
+  const incomingPriority = statusPriority[incomingStatus] ?? 0;
+  
+  // Only use incoming status if it's more advanced
+  const finalStatus = existingPriority >= incomingPriority ? existingStatus : incomingStatus;
+
+  // deno-lint-ignore no-explicit-any
+  const upsertData: Record<string, any> = {
     organization_id: orgId,
     dev_eui: sensor.dev_eui,
     name: sensor.name,
     sensor_type: sensor.sensor_type || "temperature",
-    status: sensor.status || "pending",
+    status: finalStatus,
     unit_id: sensor.unit_id || null,
     site_id: sensor.site_id || null,
     manufacturer: sensor.manufacturer || null,
     model: sensor.model || null,
     updated_at: new Date().toISOString(),
   };
+  
+  // Include OTAA credentials if provided (don't overwrite existing with null)
+  if (sensor.app_eui) {
+    upsertData.app_eui = sensor.app_eui;
+  }
+  if (sensor.app_key) {
+    upsertData.app_key = sensor.app_key;
+  }
+  
+  // Include TTN registration info if provided (don't overwrite existing with null)
+  if (sensor.ttn_device_id) {
+    upsertData.ttn_device_id = sensor.ttn_device_id;
+  }
+  if (sensor.ttn_application_id) {
+    upsertData.ttn_application_id = sensor.ttn_application_id;
+  }
 
   if (existing) {
-    // Update existing
+    // Update existing - preserve fields that shouldn't be overwritten
+    // Don't clear app_key if we already have one and incoming is empty
+    if (existing.app_key && !sensor.app_key) {
+      delete upsertData.app_key;
+    }
+    if (existing.ttn_device_id && !sensor.ttn_device_id) {
+      delete upsertData.ttn_device_id;
+    }
+    
     const { error } = await supabase
       .from("lora_sensors")
       .update(upsertData)
       .eq("id", existing.id);
 
     if (error) throw new Error(error.message);
+    
+    console.log(`[emulator-sync] Updated sensor ${sensor.dev_eui}: status=${finalStatus} (was ${existingStatus}), has_app_key=${!!upsertData.app_key || !!existing.app_key}`);
     return "updated";
   } else {
     // Insert new
@@ -388,6 +432,8 @@ async function upsertSensor(
       .insert(upsertData);
 
     if (error) throw new Error(error.message);
+    
+    console.log(`[emulator-sync] Created sensor ${sensor.dev_eui}: status=${finalStatus}, has_app_key=${!!upsertData.app_key}`);
     return "created";
   }
 }
