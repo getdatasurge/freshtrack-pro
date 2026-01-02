@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 import { useTTNConfig } from "@/contexts/TTNConfigContext";
 import { TTNConfigSourceBadge } from "@/components/ttn/TTNConfigSourceBadge";
 import { TTNDiagnosticsDownload } from "@/components/ttn/TTNDiagnosticsDownload";
-import { TTNValidationResultPanel, TTNValidationResult } from "@/components/ttn/TTNValidationResultPanel";
+import { TTNValidationResultPanel, TTNValidationResult, REQUIRED_SCOPES } from "@/components/ttn/TTNValidationResultPanel";
 import { hashConfigValues } from "@/types/ttnState";
 
 interface TTNTestResult {
@@ -782,6 +782,49 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     }
   };
 
+  // TIP 1: Generate TTN Setup Instructions for clipboard copy
+  const generateTTNSetupInstructions = () => {
+    const appId = newApplicationId.trim() || settings?.ttn_application_id || "<your-app-id>";
+    const clusterLabel = TTN_REGIONS.find(r => r.value === region)?.label || region;
+    
+    return `TTN API Key Setup Instructions for FrostGuard
+
+1. Open TTN Console: https://console.cloud.thethings.network
+2. Select region: ${clusterLabel}
+3. Navigate to: Applications → ${appId}
+4. Click: API Keys (left sidebar)
+5. Click: "+ Add API Key"
+6. Name it: "FrostGuard Integration"
+7. Select one of:
+   ☐ "Grant all current and future rights" (recommended)
+   OR check these specific rights:
+   ☑ Read application info
+   ☑ Read devices
+   ☑ Write devices  
+   ☑ Read uplink traffic
+   ☑ Write downlink traffic
+   ☑ Manage application settings (for webhooks)
+8. Click "Create API Key"
+9. IMPORTANT: Copy the full key immediately (it won't be shown again)
+10. Paste into FrostGuard and click "Validate"
+
+Application ID: ${appId}
+Cluster: ${region}
+`;
+  };
+
+  const handleCopySetupInstructions = async () => {
+    const instructions = generateTTNSetupInstructions();
+    try {
+      await navigator.clipboard.writeText(instructions);
+      toast.success("Setup instructions copied!", {
+        description: "Paste into your notes or share with team members"
+      });
+    } catch (err) {
+      toast.error("Failed to copy to clipboard");
+    }
+  };
+
   const formatSourceLabel = (source: string | null) => {
     if (!source) return "Unknown";
     return source === "emulator" ? "Emulator" : "FrostGuard";
@@ -1000,10 +1043,21 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   <Label className="text-base font-medium">TTN API Configuration</Label>
                   <InfoTooltip>Enter your TTN Application ID and API key. Webhook will be configured automatically.</InfoTooltip>
                 </div>
-                <Button variant="ghost" size="sm" onClick={loadSettings} disabled={isLoading}>
-                  <RefreshCw className={`h-3 w-3 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={handleCopySetupInstructions}
+                    className="text-xs h-7 px-2"
+                  >
+                    <Copy className="h-3 w-3 mr-1" />
+                    Copy Setup Instructions
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={loadSettings} disabled={isLoading} className="h-7 px-2">
+                    <RefreshCw className={`h-3 w-3 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
               </div>
 
               {/* Current Configuration Status */}
@@ -1188,8 +1242,19 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                         </span>
                       </TooltipTrigger>
                       {validationResult && !validationResult.valid && (
-                        <TooltipContent>
-                          <p>Validate configuration first to enable saving</p>
+                        <TooltipContent className="max-w-xs">
+                          <p className="font-medium mb-1">Cannot save - fix these issues:</p>
+                          <ul className="text-xs space-y-0.5">
+                            {validationResult.permissions?.missing_core?.map(p => {
+                              const scope = REQUIRED_SCOPES.find(s => s.right === p);
+                              return (
+                                <li key={p}>• Missing: {scope?.label || p.replace("RIGHT_APPLICATION_", "").toLowerCase().replace(/_/g, " ")}</li>
+                              );
+                            })}
+                            {validationResult.error && !validationResult.permissions?.missing_core?.length && (
+                              <li>• {validationResult.error.message}</li>
+                            )}
+                          </ul>
                         </TooltipContent>
                       )}
                     </Tooltip>
