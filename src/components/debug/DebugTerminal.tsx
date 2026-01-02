@@ -18,12 +18,16 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
-  Bug
+  Bug,
+  HelpCircle,
+  FileJson
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { debugLog } from '@/lib/debugLogger';
+import { ErrorExplanationModal } from './ErrorExplanationModal';
+import { buildSupportSnapshot, downloadSnapshot } from '@/lib/snapshotBuilder';
 
 const LEVEL_COLORS: Record<DebugLogLevel, string> = {
   debug: 'text-muted-foreground',
@@ -51,7 +55,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   auth: 'bg-red-500/20 text-red-300',
 };
 
-function LogEntry({ entry }: { entry: DebugLogEntry }) {
+interface LogEntryProps {
+  entry: DebugLogEntry;
+  onExplain?: (entry: DebugLogEntry) => void;
+}
+
+function LogEntry({ entry, onExplain }: LogEntryProps) {
   const [expanded, setExpanded] = useState(false);
   
   const time = entry.timestamp.toLocaleTimeString('en-US', { 
@@ -60,6 +69,8 @@ function LogEntry({ entry }: { entry: DebugLogEntry }) {
     minute: '2-digit', 
     second: '2-digit'
   }) + '.' + entry.timestamp.getMilliseconds().toString().padStart(3, '0');
+
+  const showExplainButton = (entry.level === 'error' || entry.level === 'warn') && onExplain;
 
   return (
     <div 
@@ -86,6 +97,20 @@ function LogEntry({ entry }: { entry: DebugLogEntry }) {
         {entry.duration !== undefined && (
           <span className="text-muted-foreground shrink-0">{entry.duration}ms</span>
         )}
+        {showExplainButton && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-5 px-2 text-xs shrink-0 hover:bg-primary/20"
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              onExplain(entry); 
+            }}
+          >
+            <HelpCircle className="h-3 w-3 mr-1" />
+            Explain
+          </Button>
+        )}
         {entry.payload && (
           <Button variant="ghost" size="sm" className="h-4 w-4 p-0 shrink-0">
             {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
@@ -110,7 +135,10 @@ export function DebugTerminal() {
     hideTerminal, 
     clearLogs,
     pauseLogging,
-    resumeLogging 
+    resumeLogging,
+    selectedErrorForExplanation,
+    showExplanation,
+    hideExplanation
   } = useDebugContext();
   const { toast } = useToast();
   
@@ -191,12 +219,43 @@ export function DebugTerminal() {
     toast({ title: "Logs exported" });
   }, [toast]);
 
+  const handleExportSupportSnapshot = useCallback(async () => {
+    try {
+      const snapshot = await buildSupportSnapshot({
+        logs: debugLog.getLogs(),
+        userEmail: userEmail || undefined,
+        orgId: orgId || undefined,
+        currentRoute: window.location.pathname,
+      });
+      downloadSnapshot(snapshot);
+      toast({ 
+        title: "Snapshot exported (redacted)", 
+        description: "Safe to share with support." 
+      });
+    } catch (error) {
+      toast({ 
+        title: "Export failed", 
+        description: "Could not generate snapshot",
+        variant: "destructive"
+      });
+    }
+  }, [userEmail, orgId, toast]);
+
   if (!isDebugEnabled || !isTerminalVisible) return null;
 
   const environment = window.location.hostname.includes('localhost') ? 'dev' : 
                       window.location.hostname.includes('staging') ? 'staging' : 'prod';
 
   return (
+    <>
+      <ErrorExplanationModal
+        entry={selectedErrorForExplanation}
+        allLogs={logs}
+        isOpen={!!selectedErrorForExplanation}
+        onClose={hideExplanation}
+        userEmail={userEmail || undefined}
+        orgId={orgId || undefined}
+      />
     <div 
       className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur border-t border-border shadow-2xl"
       style={{ height: isMinimized ? 40 : height }}
@@ -304,8 +363,18 @@ export function DebugTerminal() {
                 <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handleCopy} title="Copy">
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handleExport} title="Export">
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handleExport} title="Export Logs">
                   <Download className="h-3.5 w-3.5" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 px-2 text-xs" 
+                  onClick={handleExportSupportSnapshot}
+                  title="Export Support Snapshot"
+                >
+                  <FileJson className="h-3.5 w-3.5 mr-1" />
+                  Snapshot
                 </Button>
               </div>
             </div>
@@ -320,7 +389,7 @@ export function DebugTerminal() {
             ) : (
               <div className="divide-y divide-border/30">
                 {filteredLogs.map(entry => (
-                  <LogEntry key={entry.id} entry={entry} />
+                  <LogEntry key={entry.id} entry={entry} onExplain={showExplanation} />
                 ))}
               </div>
             )}
@@ -328,5 +397,6 @@ export function DebugTerminal() {
         </>
       )}
     </div>
+    </>
   );
 }
