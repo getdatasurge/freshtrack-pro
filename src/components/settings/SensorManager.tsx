@@ -39,6 +39,7 @@ import { formatDistanceToNow } from "date-fns";
 import { SENSOR_STATUS_CONFIG, SENSOR_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
 import { cn } from "@/lib/utils";
 import { debugLog } from "@/lib/debugLogger";
+import { canProvisionSensor } from "@/lib/actions";
 
 interface Site {
   id: string;
@@ -265,7 +266,7 @@ const SensorUnitSelector = ({
   );
 };
 
-// Provision button component with TTN config validation
+// Provision button component using centralized eligibility helper
 const ProvisionButton = ({
   sensor,
   ttnConfig,
@@ -286,12 +287,25 @@ const ProvisionButton = ({
     );
   }
 
-  // Determine if provisioning is possible
-  const hasTtnConfig = ttnConfig?.isEnabled && ttnConfig?.hasApiKey && ttnConfig?.applicationId;
-  const hasOtaaKeys = sensor.dev_eui && sensor.app_key;
+  // Use centralized eligibility helper
+  const eligibility = canProvisionSensor(
+    {
+      dev_eui: sensor.dev_eui,
+      app_key: sensor.app_key,
+      ttn_device_id: sensor.ttn_device_id,
+      status: sensor.status,
+    },
+    ttnConfig ? {
+      isEnabled: ttnConfig.isEnabled,
+      hasApiKey: ttnConfig.hasApiKey,
+      applicationId: ttnConfig.applicationId,
+    } : null
+  );
 
   // TTN not configured - show inline action hint
-  if (!hasTtnConfig) {
+  if (eligibility.code === "TTN_NOT_CONFIGURED" || 
+      eligibility.code === "TTN_MISSING_API_KEY" || 
+      eligibility.code === "TTN_MISSING_APPLICATION") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -303,7 +317,7 @@ const ProvisionButton = ({
         <TooltipContent className="max-w-xs">
           <p className="font-medium">TTN not configured</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Go to Developer settings to configure TTN connection first
+            {eligibility.reason}
           </p>
         </TooltipContent>
       </Tooltip>
@@ -311,7 +325,7 @@ const ProvisionButton = ({
   }
 
   // Sensor missing OTAA keys - show inline action hint
-  if (!hasOtaaKeys) {
+  if (eligibility.code === "MISSING_DEV_EUI" || eligibility.code === "MISSING_APP_KEY") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -322,8 +336,25 @@ const ProvisionButton = ({
         <TooltipContent className="max-w-xs">
           <p className="font-medium">Missing OTAA credentials</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Edit this sensor to add AppKey for OTAA provisioning
+            {eligibility.reason}
           </p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Other disabled reasons (permission denied, etc.)
+  if (!eligibility.allowed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap cursor-help">
+            <CloudUpload className="h-3.5 w-3.5" />
+            <span>Unavailable</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          <p className="text-sm">{eligibility.reason}</p>
         </TooltipContent>
       </Tooltip>
     );
