@@ -1530,6 +1530,41 @@ export type Database = {
           },
         ]
       }
+      org_sync_state: {
+        Row: {
+          is_dirty: boolean
+          last_change_at: string
+          last_synced_at: string | null
+          last_synced_version: number | null
+          organization_id: string
+          sync_version: number
+        }
+        Insert: {
+          is_dirty?: boolean
+          last_change_at?: string
+          last_synced_at?: string | null
+          last_synced_version?: number | null
+          organization_id: string
+          sync_version?: number
+        }
+        Update: {
+          is_dirty?: boolean
+          last_change_at?: string
+          last_synced_at?: string | null
+          last_synced_version?: number | null
+          organization_id?: string
+          sync_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "org_sync_state_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           accent_color: string | null
@@ -2584,6 +2619,7 @@ export type Database = {
         Args: { _target_org_id: string; _viewer_id: string }
         Returns: boolean
       }
+      check_org_dirty: { Args: { p_org_id: string }; Returns: Json }
       check_slug_available: { Args: { p_slug: string }; Returns: boolean }
       create_area_for_site: {
         Args: { p_description?: string; p_name: string; p_site_id: string }
@@ -2649,6 +2685,7 @@ export type Database = {
         Args: { p_alert_type: string; p_unit_id: string }
         Returns: Json
       }
+      get_org_sync_payload: { Args: { p_org_id: string }; Returns: Json }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
       hard_delete_organization: { Args: { p_org_id: string }; Returns: Json }
       has_role: {
