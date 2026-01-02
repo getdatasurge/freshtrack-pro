@@ -15,10 +15,11 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { 
-  generateTtnApplicationId, 
+import {
+  generateTtnApplicationId,
   generateWebhookSecret,
   obfuscateKey,
+  deobfuscateKey,
   getLast4,
 } from "../_shared/ttnConfig.ts";
 
@@ -28,7 +29,7 @@ const corsHeaders = {
 };
 
 interface ProvisionOrgRequest {
-  action: "provision" | "status" | "delete" | "regenerate_webhook_secret";
+  action: "provision" | "status" | "delete" | "regenerate_webhook_secret" | "verify_webhook";
   organization_id: string;
   ttn_region?: string;
 }
@@ -203,31 +204,50 @@ serve(async (req) => {
         );
       }
 
+      // Get the org's API key - prefer org's own key over admin key
+      let apiKeyToUse = ttnAdminKey;
+      if (ttnConn.ttn_api_key_encrypted) {
+        const decryptedOrgKey = deobfuscateKey(ttnConn.ttn_api_key_encrypted, encryptionSalt);
+        if (decryptedOrgKey) {
+          apiKeyToUse = decryptedOrgKey;
+          console.log(`[ttn-provision-org] Using org's own API key (last4: ${ttnConn.ttn_api_key_last4})`);
+        }
+      }
+
+      // Use the region from the database, not the request body
+      const storedRegion = (ttnConn.ttn_region || "nam1").toLowerCase();
+      const regionalUrl = REGIONAL_URLS[storedRegion] || REGIONAL_URLS.nam1;
+      const webhookId = ttnConn.ttn_webhook_id || "freshtracker";
+
+      console.log(`[ttn-provision-org] Regenerating webhook secret for ${ttnConn.ttn_application_id} on ${storedRegion}`);
+
       const newSecret = generateWebhookSecret();
       const encryptedSecret = obfuscateKey(newSecret, encryptionSalt);
-      
+
       // Update webhook in TTN with new secret
-      const webhookUrl = `${supabaseUrl}/functions/v1/ttn-webhook`;
-      const regionalUrl = REGIONAL_URLS[region] || REGIONAL_URLS.nam1;
-      
+      const webhookUrl = ttnConn.ttn_webhook_url || `${supabaseUrl}/functions/v1/ttn-webhook`;
+
       const updateWebhookResponse = await fetch(
-        `${regionalUrl}/api/v3/as/webhooks/${ttnConn.ttn_application_id}/freshtracker`,
+        `${regionalUrl}/api/v3/as/webhooks/${ttnConn.ttn_application_id}/${webhookId}`,
         {
           method: "PUT",
           headers: {
-            "Authorization": `Bearer ${ttnAdminKey}`,
+            "Authorization": `Bearer ${apiKeyToUse}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
             webhook: {
               ids: {
-                webhook_id: "freshtracker",
+                webhook_id: webhookId,
                 application_ids: { application_id: ttnConn.ttn_application_id },
               },
               base_url: webhookUrl,
+              format: "json",
               headers: {
                 "X-Webhook-Secret": newSecret,
               },
+              uplink_message: {},
+              join_accept: {},
             },
             field_mask: {
               paths: ["headers", "base_url", "format", "uplink_message", "join_accept"],
@@ -238,10 +258,26 @@ serve(async (req) => {
 
       if (!updateWebhookResponse.ok) {
         const errorText = await updateWebhookResponse.text();
-        console.error(`[ttn-provision-org] Failed to update webhook: ${errorText}`);
+        console.error(`[ttn-provision-org] Failed to update webhook: ${updateWebhookResponse.status} ${errorText}`);
+
+        // Provide helpful error messages
+        let errorMsg = "Failed to update webhook in TTN";
+        let hint = errorText.slice(0, 200);
+
+        if (updateWebhookResponse.status === 401) {
+          errorMsg = "API key authentication failed";
+          hint = "The stored API key may be invalid or expired. Try updating the API key in TTN settings.";
+        } else if (updateWebhookResponse.status === 403) {
+          errorMsg = "API key lacks webhook write permission";
+          hint = "Create a new API key with 'Write application settings' permission in TTN Console.";
+        } else if (updateWebhookResponse.status === 404) {
+          errorMsg = "Webhook not found in TTN";
+          hint = "The webhook may have been deleted. Try saving the TTN configuration again to recreate it.";
+        }
+
         return new Response(
-          JSON.stringify({ success: false, error: "Failed to update webhook in TTN", details: errorText }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ success: false, error: errorMsg, hint, details: errorText }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -255,6 +291,20 @@ serve(async (req) => {
         })
         .eq("id", ttnConn.id);
 
+      // Log event
+      await supabase.from("event_logs").insert({
+        organization_id: organization_id,
+        event_type: "ttn.webhook_secret.regenerated",
+        category: "settings",
+        severity: "info",
+        title: "TTN Webhook Secret Regenerated",
+        actor_id: user.id,
+        event_data: {
+          ttn_application_id: ttnConn.ttn_application_id,
+          region: storedRegion,
+        },
+      });
+
       return new Response(
         JSON.stringify({
           success: true,
@@ -263,6 +313,164 @@ serve(async (req) => {
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // ========================================
+    // ACTION: VERIFY_WEBHOOK - Check webhook sync status
+    // ========================================
+    if (action === "verify_webhook") {
+      if (!ttnConn?.ttn_application_id) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            status: "not_configured",
+            message: "TTN application not provisioned yet",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Get the org's API key
+      let apiKeyToUse = ttnAdminKey;
+      if (ttnConn.ttn_api_key_encrypted) {
+        const decryptedOrgKey = deobfuscateKey(ttnConn.ttn_api_key_encrypted, encryptionSalt);
+        if (decryptedOrgKey) {
+          apiKeyToUse = decryptedOrgKey;
+        }
+      }
+
+      const storedRegion = (ttnConn.ttn_region || "nam1").toLowerCase();
+      const regionalUrl = REGIONAL_URLS[storedRegion] || REGIONAL_URLS.nam1;
+      const webhookId = ttnConn.ttn_webhook_id || "freshtracker";
+      const expectedWebhookUrl = ttnConn.ttn_webhook_url || `${supabaseUrl}/functions/v1/ttn-webhook`;
+
+      console.log(`[ttn-provision-org] Verifying webhook ${webhookId} for ${ttnConn.ttn_application_id}`);
+
+      try {
+        const getWebhookResponse = await fetch(
+          `${regionalUrl}/api/v3/as/webhooks/${ttnConn.ttn_application_id}/${webhookId}`,
+          {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${apiKeyToUse}`,
+              "Accept": "application/json",
+            },
+          }
+        );
+
+        if (!getWebhookResponse.ok) {
+          if (getWebhookResponse.status === 404) {
+            return new Response(
+              JSON.stringify({
+                success: true,
+                status: "not_found",
+                message: "Webhook not found in TTN",
+                hint: "The webhook may have been deleted. Save your TTN configuration to recreate it.",
+                expected: {
+                  webhook_id: webhookId,
+                  base_url: expectedWebhookUrl,
+                },
+              }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          if (getWebhookResponse.status === 401 || getWebhookResponse.status === 403) {
+            return new Response(
+              JSON.stringify({
+                success: false,
+                status: "auth_error",
+                message: "Cannot verify webhook - API key lacks permission",
+                hint: "Update your API key with 'Read application settings' permission.",
+              }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          const errorText = await getWebhookResponse.text();
+          return new Response(
+            JSON.stringify({
+              success: false,
+              status: "error",
+              message: `TTN API error (${getWebhookResponse.status})`,
+              details: errorText.slice(0, 200),
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        const webhookData = await getWebhookResponse.json();
+        const ttnWebhook = webhookData.webhook || webhookData;
+
+        // Compare configurations
+        const differences: string[] = [];
+
+        const ttnBaseUrl = ttnWebhook.base_url || "";
+        if (ttnBaseUrl !== expectedWebhookUrl) {
+          differences.push(`URL: TTN has "${ttnBaseUrl}", expected "${expectedWebhookUrl}"`);
+        }
+
+        const ttnFormat = ttnWebhook.format || "json";
+        if (ttnFormat !== "json") {
+          differences.push(`Format: TTN has "${ttnFormat}", expected "json"`);
+        }
+
+        // Check if secret header is configured (we can't compare the actual value)
+        const ttnHeaders = ttnWebhook.headers || {};
+        const hasSecretHeader = "X-Webhook-Secret" in ttnHeaders || "x-webhook-secret" in ttnHeaders;
+        if (!hasSecretHeader && ttnConn.ttn_webhook_secret_encrypted) {
+          differences.push("Secret: TTN webhook has no X-Webhook-Secret header configured");
+        }
+
+        // Check enabled events
+        const hasUplinkMessage = ttnWebhook.uplink_message !== undefined;
+        const hasJoinAccept = ttnWebhook.join_accept !== undefined;
+        if (!hasUplinkMessage) {
+          differences.push("Events: uplink_message not enabled");
+        }
+        if (!hasJoinAccept) {
+          differences.push("Events: join_accept not enabled");
+        }
+
+        const isInSync = differences.length === 0;
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            status: isInSync ? "in_sync" : "out_of_sync",
+            message: isInSync ? "Webhook configuration is in sync" : "Webhook configuration differs",
+            differences: isInSync ? [] : differences,
+            ttn_config: {
+              webhook_id: ttnWebhook.ids?.webhook_id || webhookId,
+              base_url: ttnBaseUrl,
+              format: ttnFormat,
+              has_secret_header: hasSecretHeader,
+              uplink_message_enabled: hasUplinkMessage,
+              join_accept_enabled: hasJoinAccept,
+            },
+            expected_config: {
+              webhook_id: webhookId,
+              base_url: expectedWebhookUrl,
+              format: "json",
+              has_secret_header: !!ttnConn.ttn_webhook_secret_encrypted,
+              uplink_message_enabled: true,
+              join_accept_enabled: true,
+            },
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (fetchError) {
+        console.error(`[ttn-provision-org] Verify webhook error:`, fetchError);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            status: "network_error",
+            message: "Failed to connect to TTN",
+            hint: fetchError instanceof Error ? fetchError.message : "Check network connectivity",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // ========================================

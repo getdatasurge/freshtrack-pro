@@ -73,6 +73,30 @@ interface BootstrapResult {
   };
 }
 
+interface WebhookVerifyResult {
+  success: boolean;
+  status: "in_sync" | "out_of_sync" | "not_found" | "not_configured" | "auth_error" | "error" | "network_error";
+  message: string;
+  hint?: string;
+  differences?: string[];
+  ttn_config?: {
+    webhook_id: string;
+    base_url: string;
+    format: string;
+    has_secret_header: boolean;
+    uplink_message_enabled: boolean;
+    join_accept_enabled: boolean;
+  };
+  expected_config?: {
+    webhook_id: string;
+    base_url: string;
+    format: string;
+    has_secret_header: boolean;
+    uplink_message_enabled: boolean;
+    join_accept_enabled: boolean;
+  };
+}
+
 interface TTNSettings {
   exists: boolean;
   is_enabled: boolean;
@@ -134,6 +158,8 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const [newApplicationId, setNewApplicationId] = useState("");
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
+  const [isVerifyingWebhook, setIsVerifyingWebhook] = useState(false);
+  const [webhookVerifyResult, setWebhookVerifyResult] = useState<WebhookVerifyResult | null>(null);
 
   const loadSettings = useCallback(async () => {
     if (!organizationId) return;
@@ -279,6 +305,53 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       toast.error(err.message || "Failed to regenerate webhook secret");
     } finally {
       setIsRegenerating(false);
+    }
+  };
+
+  const handleVerifyWebhook = async () => {
+    if (!organizationId) return;
+
+    setIsVerifyingWebhook(true);
+    setWebhookVerifyResult(null);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
+        body: {
+          action: "verify_webhook",
+          organization_id: organizationId,
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (error) throw error;
+
+      setWebhookVerifyResult(data as WebhookVerifyResult);
+
+      if (data?.status === "in_sync") {
+        toast.success("Webhook configuration is in sync with TTN");
+      } else if (data?.status === "out_of_sync") {
+        toast.warning("Webhook configuration differs from TTN", {
+          description: data.differences?.[0] || "See details below",
+        });
+      } else if (data?.status === "not_found") {
+        toast.error("Webhook not found in TTN", {
+          description: data.hint,
+        });
+      } else if (data?.status === "auth_error") {
+        toast.error(data.message, {
+          description: data.hint,
+        });
+      } else {
+        toast.error(data?.message || "Verification failed");
+      }
+    } catch (err: any) {
+      console.error("Verify webhook error:", err);
+      toast.error(err.message || "Failed to verify webhook");
+    } finally {
+      setIsVerifyingWebhook(false);
     }
   };
 
@@ -833,6 +906,74 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   Regenerate
                 </Button>
               </div>
+
+              {/* Verify Webhook Sync */}
+              <div className="flex items-center justify-between pt-2 border-t">
+                <div>
+                  <p className="text-sm font-medium">Verify Webhook Sync</p>
+                  <p className="text-xs text-muted-foreground">
+                    Check if TTN webhook matches FrostGuard configuration
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleVerifyWebhook}
+                  disabled={isVerifyingWebhook || !settings.has_webhook_secret}
+                >
+                  {isVerifyingWebhook ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Verify
+                </Button>
+              </div>
+
+              {/* Webhook Verification Result */}
+              {webhookVerifyResult && (
+                <div className={`p-3 rounded-lg text-sm ${
+                  webhookVerifyResult.status === "in_sync"
+                    ? "bg-safe/10 border border-safe/30"
+                    : webhookVerifyResult.status === "out_of_sync"
+                    ? "bg-warning/10 border border-warning/30"
+                    : "bg-destructive/10 border border-destructive/30"
+                }`}>
+                  <div className="flex items-start gap-2">
+                    {webhookVerifyResult.status === "in_sync" ? (
+                      <CheckCircle className="h-4 w-4 text-safe mt-0.5 flex-shrink-0" />
+                    ) : webhookVerifyResult.status === "out_of_sync" ? (
+                      <AlertTriangle className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 space-y-2">
+                      <span className={`font-medium ${
+                        webhookVerifyResult.status === "in_sync"
+                          ? "text-safe"
+                          : webhookVerifyResult.status === "out_of_sync"
+                          ? "text-warning"
+                          : "text-destructive"
+                      }`}>
+                        {webhookVerifyResult.message}
+                      </span>
+                      {webhookVerifyResult.hint && (
+                        <p className="text-xs text-muted-foreground">{webhookVerifyResult.hint}</p>
+                      )}
+                      {webhookVerifyResult.differences && webhookVerifyResult.differences.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium mb-1">Differences:</p>
+                          <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                            {webhookVerifyResult.differences.map((diff, i) => (
+                              <li key={i}>{diff}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Connection Test */}
