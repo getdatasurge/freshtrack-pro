@@ -38,11 +38,25 @@ const ERROR_MAP: Record<string, TTNErrorGuidance> = {
     severity: 'error',
   },
   TTN_KEY_INVALID: {
+    message: 'API key lacks permission to access this application',
+    howToFix: 'The key must be created inside the target application (not another app or user-level)',
+    consoleSteps: [
+      '1. Go to TTN Console → Applications → {application_id}',
+      '2. Navigate to API Keys (left sidebar)',
+      '3. Click "+ Add API Key"',
+      '4. Name it "FrostGuard Integration"',
+      '5. Select "Grant all current and future rights" OR add specific rights',
+      '6. Click "Create API Key" and copy the full key immediately',
+      '7. Paste the key in FrostGuard and re-validate',
+    ],
+    severity: 'error',
+  },
+  TTN_KEY_FORMAT_INVALID: {
     message: 'The API key format is invalid',
     howToFix: 'The key doesn\'t appear to be a valid TTN API key',
     consoleSteps: [
       '1. TTN API keys start with "NNSXS."',
-      '2. Go to TTN Console → Personal API keys',
+      '2. Go to TTN Console → Your App → API Keys',
       '3. Copy the full key value (it\'s only shown once)',
       '4. Paste it carefully without extra spaces',
     ],
