@@ -36,6 +36,7 @@ import { EditGatewayDialog } from "./EditGatewayDialog";
 import { GATEWAY_STATUS_CONFIG, GATEWAY_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
 import { cn } from "@/lib/utils";
 import { debugLog } from "@/lib/debugLogger";
+import { canProvisionGateway } from "@/lib/actions";
 
 interface Site {
   id: string;
@@ -124,7 +125,7 @@ const GatewayStatusBadgeWithTooltip = ({
   );
 };
 
-// Gateway TTN Provision Button
+// Gateway TTN Provision Button using centralized eligibility helper
 interface GatewayProvisionButtonProps {
   gateway: Gateway & { ttn_gateway_id?: string | null; ttn_last_error?: string | null };
   ttnConfig?: TTNConfig | null;
@@ -155,7 +156,7 @@ const GatewayProvisionButton = ({
     );
   }
 
-  // Has error from previous attempt
+  // Has error from previous attempt - allow retry
   if (gateway.ttn_last_error) {
     return (
       <Tooltip>
@@ -183,39 +184,75 @@ const GatewayProvisionButton = ({
     );
   }
 
-  // TTN not configured
-  if (!ttnConfig?.isEnabled || !ttnConfig?.hasApiKey) {
+  // Use centralized eligibility helper
+  const eligibility = canProvisionGateway(
+    {
+      gateway_eui: gateway.gateway_eui,
+      ttn_gateway_id: gateway.ttn_gateway_id,
+      status: gateway.status,
+    },
+    ttnConfig ? {
+      isEnabled: ttnConfig.isEnabled,
+      hasApiKey: ttnConfig.hasApiKey,
+      applicationId: ttnConfig.applicationId,
+    } : null
+  );
+
+  // TTN not configured - show disabled with reason
+  if (eligibility.code === "TTN_NOT_CONFIGURED" || 
+      eligibility.code === "TTN_MISSING_API_KEY" || 
+      eligibility.code === "TTN_MISSING_APPLICATION") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" disabled>
-            <CloudUpload className="h-4 w-4 text-muted-foreground" />
-          </Button>
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap cursor-help">
+            <CloudUpload className="h-3.5 w-3.5" />
+            <span>Configure TTN</span>
+          </span>
         </TooltipTrigger>
-        <TooltipContent>Configure TTN connection in Developer settings first</TooltipContent>
+        <TooltipContent className="max-w-xs">
+          <p className="font-medium">TTN not configured</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {eligibility.reason}
+          </p>
+        </TooltipContent>
       </Tooltip>
     );
   }
 
-  // Ready to provision
+  // Other disabled reasons (permission denied, missing EUI, etc.)
+  if (!eligibility.allowed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap cursor-help">
+            <CloudUpload className="h-3.5 w-3.5" />
+            <span>Unavailable</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          <p className="text-sm">{eligibility.reason}</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Ready to provision - show prominent button
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onProvision}
-          disabled={isProvisioning}
-        >
-          {isProvisioning ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <CloudUpload className="h-4 w-4 text-blue-600" />
-          )}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>Register in TTN</TooltipContent>
-    </Tooltip>
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={onProvision}
+      disabled={isProvisioning}
+      className="gap-1.5 h-7 px-2.5 text-primary border-primary/30 hover:bg-primary/10 hover:border-primary/50"
+    >
+      {isProvisioning ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <CloudUpload className="h-3.5 w-3.5" />
+      )}
+      <span className="text-xs font-medium">Register</span>
+    </Button>
   );
 };
 
