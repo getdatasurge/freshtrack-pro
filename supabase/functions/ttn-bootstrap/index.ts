@@ -153,6 +153,18 @@ async function upsertWebhook(
   webhookUrl: string,
   requestId: string
 ): Promise<{ success: boolean; action?: "created" | "updated"; error?: string; hint?: string }> {
+  // Validate webhook URL is absolute before sending to TTN
+  if (!webhookUrl || !webhookUrl.startsWith("https://")) {
+    console.error(`[ttn-bootstrap] [${requestId}] Invalid webhookUrl passed to upsertWebhook: ${webhookUrl}`);
+    return {
+      success: false,
+      error: "Invalid webhook URL configuration",
+      hint: `Expected https:// URL, got: ${webhookUrl?.slice(0, 50) || 'undefined'}. Contact support.`,
+    };
+  }
+  
+  console.log(`[ttn-bootstrap] [${requestId}] Webhook base_url to be sent to TTN: ${webhookUrl}`);
+  
   const webhookId = "freshtracker";
   const regionalUrl = REGIONAL_URLS[cluster] || REGIONAL_URLS.nam1;
 
@@ -336,7 +348,21 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    // Validate and get SUPABASE_URL with fallback
+    const rawSupabaseUrl = Deno.env.get("SUPABASE_URL");
+    const FALLBACK_SUPABASE_URL = "https://mfwyiifehsvwnjwqoxht.supabase.co";
+    
+    // Validate URL is absolute and starts with https://
+    const supabaseUrl = (() => {
+      if (rawSupabaseUrl && rawSupabaseUrl.startsWith("https://")) {
+        return rawSupabaseUrl;
+      }
+      console.warn(`[ttn-bootstrap] [${requestId}] SUPABASE_URL invalid or undefined (value: ${rawSupabaseUrl?.slice(0, 20) || 'undefined'}), using fallback`);
+      return FALLBACK_SUPABASE_URL;
+    })();
+    
+    console.log(`[ttn-bootstrap] [${requestId}] Using SUPABASE_URL: ${supabaseUrl}`);
+    
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || supabaseServiceKey.slice(0, 32);
 
