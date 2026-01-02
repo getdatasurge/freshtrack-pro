@@ -20,7 +20,7 @@ export interface Gateway {
   updated_at: string;
 }
 
-export type LoraSensorType = 'temperature' | 'temperature_humidity' | 'door' | 'combo';
+export type LoraSensorType = 'temperature' | 'temperature_humidity' | 'door' | 'combo' | 'contact';
 export type LoraSensorStatus = 'pending' | 'joining' | 'active' | 'offline' | 'fault';
 
 export interface LoraSensor {

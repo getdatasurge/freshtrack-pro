@@ -34,7 +34,7 @@ import { Loader2, Lock } from "lucide-react";
 
 const editSensorSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
-  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo"] as const),
+  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo", "contact"] as const),
   site_id: z.string().optional(),
   unit_id: z.string().optional(),
   description: z.string().max(500, "Description must be less than 500 characters").optional(),

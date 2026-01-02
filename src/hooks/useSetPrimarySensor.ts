@@ -9,8 +9,8 @@ import { toast } from "sonner";
  * - Door-only sensors have their own primary (if no combo sensor)
  */
 function getSameTypeGroup(sensorType: LoraSensorType): LoraSensorType[] {
-  if (sensorType === 'door') {
-    return ['door'];
+  if (sensorType === 'door' || sensorType === 'contact') {
+    return ['door', 'contact'];
   }
   // Temperature-capable sensors (temperature, temperature_humidity, combo)
   return ['temperature', 'temperature_humidity', 'combo'];

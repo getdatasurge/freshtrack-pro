@@ -50,7 +50,7 @@ const addSensorSchema = z.object({
     .string()
     .min(1, "AppKey is required")
     .regex(APPKEY_REGEX, "AppKey must be exactly 32 hexadecimal characters"),
-  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo"] as const),
+  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo", "contact"] as const),
   site_id: z.string().min(1, "Site is required"),
   unit_id: z.string().optional(),
   description: z.string().max(500, "Description must be less than 500 characters").optional(),
