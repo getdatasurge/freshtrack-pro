@@ -142,23 +142,75 @@ export function useDeleteGateway() {
   });
 }
 
+interface ProvisionErrorDetails {
+  message: string;
+  hint?: string;
+  requestId?: string;
+}
+
 /**
- * Helper to get user-friendly error messages for gateway provisioning
+ * Helper to parse and format gateway provisioning errors
  */
-function getGatewayProvisionErrorMessage(error: string): string {
-  if (error.includes('PERMISSION_MISSING') || error.includes('403')) {
-    return "TTN API key missing required permissions. Regenerate key with gateways:write permission.";
+function parseGatewayProvisionError(error: unknown): ProvisionErrorDetails {
+  // Try to extract structured error from response
+  if (typeof error === 'object' && error !== null) {
+    const err = error as Record<string, unknown>;
+    
+    // Check for hint and request_id from edge function response
+    const hint = typeof err.hint === 'string' ? err.hint : undefined;
+    const requestId = typeof err.request_id === 'string' ? err.request_id : undefined;
+    const errorCode = typeof err.error_code === 'string' ? err.error_code : undefined;
+    const errorMessage = typeof err.error === 'string' ? err.error : undefined;
+    
+    if (errorCode || errorMessage) {
+      let message = errorMessage || 'Provisioning failed';
+      
+      // Map error codes to user-friendly messages
+      switch (errorCode) {
+        case 'TTN_PERMISSION_DENIED':
+          message = 'TTN API key lacks gateway permissions';
+          break;
+        case 'EUI_CONFLICT':
+          message = 'Gateway EUI is already registered elsewhere';
+          break;
+        case 'INVALID_API_KEY':
+          message = 'TTN API key is invalid or expired';
+          break;
+        case 'TTN_NOT_CONFIGURED':
+          message = 'TTN connection not configured';
+          break;
+        case 'API_KEY_MISSING':
+          message = 'TTN API key not configured';
+          break;
+      }
+      
+      return { message, hint, requestId };
+    }
   }
-  if (error.includes('TTN_NOT_CONFIGURED') || error.includes('API_KEY_MISSING')) {
-    return "TTN not configured. Go to Developer settings to set up TTN connection.";
+  
+  // Fallback for string errors
+  const errorStr = error instanceof Error ? error.message : String(error);
+  
+  if (errorStr.includes('PERMISSION') || errorStr.includes('403')) {
+    return { 
+      message: 'TTN API key lacks gateway permissions',
+      hint: "Regenerate your TTN API key with 'Write gateway access' permission"
+    };
   }
-  if (error.includes('CONFLICT') || error.includes('409')) {
-    return "Gateway EUI already registered to another TTN account.";
+  if (errorStr.includes('CONFLICT') || errorStr.includes('409')) {
+    return { 
+      message: 'Gateway EUI already registered',
+      hint: 'This EUI is registered to another account. Use TTN Console to claim or delete it.'
+    };
   }
-  if (error.includes('INVALID_API_KEY') || error.includes('401')) {
-    return "TTN API key is invalid or expired. Check your TTN connection settings.";
+  if (errorStr.includes('401')) {
+    return { 
+      message: 'TTN API key invalid',
+      hint: 'Generate a new API key in TTN Console'
+    };
   }
-  return error;
+  
+  return { message: errorStr };
 }
 
 /**
@@ -208,16 +260,19 @@ export function useProvisionGateway() {
           throw new Error(error.message);
         }
 
-        if (data && !data.success) {
+        if (data && !data.success && !data.ok) {
           debugLog.error('ttn', 'TTN_PROVISION_GATEWAY_ERROR', {
-            request_id: requestId,
+            request_id: data.request_id || requestId,
             gateway_id: gatewayId,
             error_code: data.error_code,
             error: data.error,
             hint: data.hint,
             duration_ms: durationMs,
           });
-          throw new Error(data.error || "Provisioning failed");
+          // Throw error object with structured data for better error handling
+          const errorObj = new Error(data.error || "Provisioning failed");
+          (errorObj as Error & { details?: unknown }).details = data;
+          throw errorObj;
         }
 
         debugLog.info('ttn', 'TTN_PROVISION_GATEWAY_SUCCESS', {
@@ -241,9 +296,21 @@ export function useProvisionGateway() {
         toast.success("Gateway registered in TTN successfully");
       }
     },
-    onError: (error: Error) => {
-      const message = getGatewayProvisionErrorMessage(error.message);
-      toast.error(`Gateway registration failed: ${message}`);
+    onError: (error: Error & { details?: unknown }) => {
+      const parsed = parseGatewayProvisionError(error.details || error);
+      
+      // Build toast message with hint if available
+      let toastMessage = `Gateway registration failed: ${parsed.message}`;
+      if (parsed.hint) {
+        toastMessage += `. ${parsed.hint}`;
+      }
+      if (parsed.requestId) {
+        toastMessage += ` (ref: ${parsed.requestId})`;
+      }
+      
+      toast.error(toastMessage, {
+        duration: 8000, // Longer duration for actionable errors
+      });
     },
   });
 

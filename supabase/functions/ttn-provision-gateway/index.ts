@@ -14,10 +14,30 @@ interface ProvisionRequest {
   organization_id: string;
 }
 
+interface AuthInfo {
+  is_admin?: boolean;
+  universal_rights?: string[];
+  user_ids?: Array<{ user_id: string }>;
+  organization_ids?: Array<{ organization_id: string }>;
+  application_ids?: Array<{ application_id: string }>;
+}
+
+interface RegistrationResult {
+  success: boolean;
+  ttn_gateway_id?: string;
+  already_exists?: boolean;
+  error?: string;
+  error_code?: string;
+  hint?: string;
+  details?: string;
+}
+
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-gateway-v1-20250102";
+  const BUILD_VERSION = "ttn-provision-gateway-v2-multi-strategy-20250102";
+  const requestId = crypto.randomUUID().slice(0, 8);
+  
   console.log(`[ttn-provision-gateway] Build: ${BUILD_VERSION}`);
-  console.log(`[ttn-provision-gateway] Method: ${req.method}, URL: ${req.url}`);
+  console.log(`[ttn-provision-gateway] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -28,10 +48,12 @@ serve(async (req) => {
   if (req.method === "GET") {
     return new Response(
       JSON.stringify({
-        status: "ok",
+        ok: true,
+        status: "healthy",
         function: "ttn-provision-gateway",
         version: BUILD_VERSION,
         timestamp: new Date().toISOString(),
+        request_id: requestId,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -42,12 +64,13 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error("[ttn-provision-gateway] Missing Supabase credentials");
+      console.error(`[ttn-provision-gateway] [${requestId}] Missing Supabase credentials`);
       return new Response(
         JSON.stringify({
-          success: false,
+          ok: false,
           error: "Server configuration error",
           error_code: "CONFIG_MISSING",
+          request_id: requestId,
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -59,31 +82,31 @@ serve(async (req) => {
     let body: ProvisionRequest;
     try {
       const bodyText = await req.text();
-      console.log("[ttn-provision-gateway] Raw request body:", bodyText);
+      console.log(`[ttn-provision-gateway] [${requestId}] Raw request body:`, bodyText);
 
       if (!bodyText || bodyText.trim() === "") {
         return new Response(
-          JSON.stringify({ success: false, error: "Empty request body" }),
+          JSON.stringify({ ok: false, error: "Empty request body", request_id: requestId }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
       body = JSON.parse(bodyText);
-      console.log("[ttn-provision-gateway] Parsed payload:", JSON.stringify(body));
+      console.log(`[ttn-provision-gateway] [${requestId}] Parsed payload:`, JSON.stringify(body));
     } catch (parseError) {
-      console.error("[ttn-provision-gateway] JSON parse error:", parseError);
+      console.error(`[ttn-provision-gateway] [${requestId}] JSON parse error:`, parseError);
       return new Response(
         JSON.stringify({
-          success: false,
+          ok: false,
           error: "Invalid JSON in request body",
           error_code: "PARSE_ERROR",
+          request_id: requestId,
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const { action, gateway_id, organization_id } = body;
-    const requestId = crypto.randomUUID().slice(0, 8);
     console.log(`[ttn-provision-gateway] [${requestId}] Action: ${action}, Gateway: ${gateway_id}, Org: ${organization_id}`);
 
     // Get TTN config for this org
@@ -92,7 +115,7 @@ serve(async (req) => {
     if (!ttnConfig) {
       return new Response(
         JSON.stringify({
-          success: false,
+          ok: false,
           error: "TTN not configured for this organization",
           error_code: "TTN_NOT_CONFIGURED",
           hint: "Configure TTN connection in Settings → Developer first",
@@ -105,7 +128,7 @@ serve(async (req) => {
     if (!ttnConfig.apiKey) {
       return new Response(
         JSON.stringify({
-          success: false,
+          ok: false,
           error: "No TTN API key configured",
           error_code: "API_KEY_MISSING",
           hint: "Add TTN API key in Settings → Developer → TTN Connection",
@@ -114,23 +137,6 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Validate TTN_USER_ID is set (required for user-scoped gateway creation)
-    const ttnUserId = Deno.env.get("TTN_USER_ID");
-    if (!ttnUserId) {
-      console.error(`[ttn-provision-gateway] [${requestId}] Missing TTN_USER_ID environment variable`);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "TTN user ID not configured",
-          error_code: "CONFIG_MISSING",
-          hint: "Set TTN_USER_ID in Supabase secrets",
-          request_id: requestId,
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    console.log(`[ttn-provision-gateway] [${requestId}] TTN User ID: ${ttnUserId}`);
 
     // Fetch gateway details
     const { data: gateway, error: gatewayError } = await supabase
@@ -143,7 +149,7 @@ serve(async (req) => {
       console.error(`[ttn-provision-gateway] [${requestId}] Gateway not found:`, gatewayError);
       return new Response(
         JSON.stringify({ 
-          success: false, 
+          ok: false, 
           error: "Gateway not found",
           error_code: "GATEWAY_NOT_FOUND",
           request_id: requestId,
@@ -158,13 +164,14 @@ serve(async (req) => {
     console.log(`[ttn-provision-gateway] [${requestId}] TTN Gateway ID: ${ttnGatewayId}`);
 
     // Helper for TTN Identity Server API calls
-    const ttnFetch = async (endpoint: string, options: RequestInit = {}) => {
+    const ttnFetch = async (endpoint: string, options: RequestInit = {}, apiKey?: string) => {
       const url = `${ttnConfig.identityBaseUrl}${endpoint}`;
+      const key = apiKey || ttnConfig.apiKey;
       console.log(`[ttn-provision-gateway] [${requestId}] TTN API: ${options.method || "GET"} ${url}`);
       const response = await fetch(url, {
         ...options,
         headers: {
-          "Authorization": `Bearer ${ttnConfig.apiKey}`,
+          "Authorization": `Bearer ${key}`,
           "Content-Type": "application/json",
           ...options.headers,
         },
@@ -195,6 +202,7 @@ serve(async (req) => {
 
         return new Response(
           JSON.stringify({
+            ok: true,
             success: true,
             gateway_id: ttnGatewayId,
             already_exists: true,
@@ -206,33 +214,52 @@ serve(async (req) => {
       }
 
       if (checkResponse.status !== 404) {
-        // Some other error
         const errorText = await checkResponse.text();
         console.error(`[ttn-provision-gateway] [${requestId}] Check failed: ${checkResponse.status} - ${errorText}`);
         
-        // Check for permission errors
-        if (checkResponse.status === 403) {
+        if (checkResponse.status === 403 || checkResponse.status === 401) {
+          // API key doesn't have gateway read rights - continue and try to create
+          console.log(`[ttn-provision-gateway] [${requestId}] Cannot check gateway existence (${checkResponse.status}), proceeding to create`);
+        } else {
           await supabase
             .from("gateways")
-            .update({ ttn_last_error: "Permission denied - API key lacks gateways:read permission" })
+            .update({ ttn_last_error: `Check failed: ${checkResponse.status}` })
             .eq("id", gateway_id);
           
           return new Response(
             JSON.stringify({
-              success: false,
-              error: "Permission denied",
-              error_code: "PERMISSION_MISSING",
-              hint: "TTN API key must include gateways:read and gateways:write permissions",
+              ok: false,
+              error: `TTN API error (${checkResponse.status})`,
+              error_code: "TTN_API_ERROR",
+              hint: "Check TTN API key permissions",
+              details: errorText.slice(0, 500),
               request_id: requestId,
             }),
-            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            { status: checkResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
       }
 
-      // Step 2: Register gateway in TTN
-      console.log(`[ttn-provision-gateway] [${requestId}] Registering gateway in TTN`);
+      // Step 2: Determine API key scope using auth_info
+      console.log(`[ttn-provision-gateway] [${requestId}] Checking API key scope via auth_info`);
       
+      const authInfoResponse = await ttnFetch("/api/v3/auth_info");
+      let authInfo: AuthInfo | null = null;
+      
+      if (authInfoResponse.ok) {
+        authInfo = await authInfoResponse.json();
+        console.log(`[ttn-provision-gateway] [${requestId}] Auth info:`, JSON.stringify({
+          is_admin: authInfo?.is_admin,
+          user_ids: authInfo?.user_ids?.map(u => u.user_id),
+          organization_ids: authInfo?.organization_ids?.map(o => o.organization_id),
+          application_ids: authInfo?.application_ids?.map(a => a.application_id),
+          universal_rights: authInfo?.universal_rights?.slice(0, 5),
+        }));
+      } else {
+        console.warn(`[ttn-provision-gateway] [${requestId}] Could not get auth_info: ${authInfoResponse.status}`);
+      }
+
+      // Build gateway payload
       const gatewayPayload = {
         gateway: {
           ids: {
@@ -249,77 +276,174 @@ serve(async (req) => {
         },
       };
 
-      // Use user-scoped endpoint for gateway creation (POST /api/v3/gateways returns 501)
-      console.log(`[ttn-provision-gateway] [${requestId}] Using user-scoped endpoint: /api/v3/users/${ttnUserId}/gateways`);
-      const createResponse = await ttnFetch(`/api/v3/users/${ttnUserId}/gateways`, {
-        method: "POST",
-        body: JSON.stringify(gatewayPayload),
-      });
+      // Step 3: Try multiple registration strategies
+      const strategies: Array<{
+        name: string;
+        endpoint: string;
+        useAdminKey?: boolean;
+        condition: () => boolean;
+      }> = [];
 
-      if (!createResponse.ok) {
-        const errorText = await createResponse.text();
-        console.error(`[ttn-provision-gateway] [${requestId}] Registration failed: ${createResponse.status} - ${errorText}`);
-        
-        let errorCode = "TTN_REQUEST_FAILED";
-        let errorMessage = "Failed to register gateway in TTN";
-        let hint = "Check TTN console for details";
-        
-        if (createResponse.status === 403) {
-          errorCode = "PERMISSION_MISSING";
-          errorMessage = "Permission denied";
-          hint = "TTN API key must include gateways:write permission";
-        } else if (createResponse.status === 409) {
-          errorCode = "CONFLICT";
-          errorMessage = "Gateway EUI already registered";
-          hint = "This gateway EUI is registered to another TTN account";
-        } else if (createResponse.status === 401) {
-          errorCode = "INVALID_API_KEY";
-          errorMessage = "Invalid API key";
-          hint = "Check that your TTN API key is valid and not expired";
-        }
-        
-        await supabase
-          .from("gateways")
-          .update({ 
-            ttn_last_error: `${errorMessage}: ${errorText.substring(0, 200)}`,
-          })
-          .eq("id", gateway_id);
-
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: errorMessage,
-            error_code: errorCode,
-            hint,
-            details: errorText,
-            request_id: requestId,
-          }),
-          { status: createResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      // Strategy A: User-scoped registration (if API key is user-scoped)
+      if (authInfo?.user_ids && authInfo.user_ids.length > 0) {
+        const userId = authInfo.user_ids[0].user_id;
+        strategies.push({
+          name: `user-scoped (${userId})`,
+          endpoint: `/api/v3/users/${userId}/gateways`,
+          condition: () => true,
+        });
       }
 
-      // Success! Update database
-      console.log(`[ttn-provision-gateway] [${requestId}] Gateway registered successfully`);
+      // Strategy B: Organization-scoped registration (if API key is org-scoped)
+      if (authInfo?.organization_ids && authInfo.organization_ids.length > 0) {
+        const ttnOrgId = authInfo.organization_ids[0].organization_id;
+        strategies.push({
+          name: `org-scoped (${ttnOrgId})`,
+          endpoint: `/api/v3/organizations/${ttnOrgId}/gateways`,
+          condition: () => true,
+        });
+      }
+
+      // Strategy C: Admin key fallback (if available)
+      const adminApiKey = Deno.env.get("TTN_ADMIN_API_KEY");
+      const adminUserId = Deno.env.get("TTN_USER_ID");
+      if (adminApiKey && adminUserId) {
+        strategies.push({
+          name: `admin-user-scoped (${adminUserId})`,
+          endpoint: `/api/v3/users/${adminUserId}/gateways`,
+          useAdminKey: true,
+          condition: () => true,
+        });
+      }
+
+      // Strategy D: Direct registration (rarely works but try as last resort)
+      strategies.push({
+        name: "direct",
+        endpoint: "/api/v3/gateways",
+        condition: () => true,
+      });
+
+      let lastResult: RegistrationResult = {
+        success: false,
+        error: "No registration strategy succeeded",
+        error_code: "NO_STRATEGY_WORKED",
+      };
+
+      for (const strategy of strategies) {
+        if (!strategy.condition()) continue;
+
+        console.log(`[ttn-provision-gateway] [${requestId}] Trying strategy: ${strategy.name}`);
+        console.log(`[ttn-provision-gateway] [${requestId}] Endpoint: ${strategy.endpoint}`);
+
+        const apiKey = strategy.useAdminKey ? adminApiKey : ttnConfig.apiKey;
+        const createResponse = await ttnFetch(strategy.endpoint, {
+          method: "POST",
+          body: JSON.stringify(gatewayPayload),
+        }, apiKey);
+
+        if (createResponse.ok) {
+          console.log(`[ttn-provision-gateway] [${requestId}] Gateway registered via ${strategy.name}`);
+          
+          // Success! Update database
+          await supabase
+            .from("gateways")
+            .update({
+              ttn_gateway_id: ttnGatewayId,
+              ttn_registered_at: new Date().toISOString(),
+              ttn_last_error: null,
+              status: "online",
+            })
+            .eq("id", gateway_id);
+
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              success: true,
+              gateway_id: ttnGatewayId,
+              already_exists: false,
+              message: "Gateway registered in TTN successfully",
+              strategy: strategy.name,
+              request_id: requestId,
+            }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Check error type
+        const errorText = await createResponse.text();
+        console.error(`[ttn-provision-gateway] [${requestId}] Strategy ${strategy.name} failed: ${createResponse.status} - ${errorText}`);
+
+        // Parse TTN error for better messaging
+        let parsedError = { message: errorText };
+        try {
+          parsedError = JSON.parse(errorText);
+        } catch { /* ignore */ }
+
+        if (createResponse.status === 409) {
+          // Conflict - gateway EUI already registered elsewhere
+          lastResult = {
+            success: false,
+            error: "Gateway EUI already registered",
+            error_code: "EUI_CONFLICT",
+            hint: "This gateway EUI is registered to another TTN account. Use TTN Console to claim or delete it.",
+            details: errorText.slice(0, 300),
+          };
+          break; // No point trying other strategies for 409
+        }
+
+        if (createResponse.status === 403) {
+          // Permission denied - try next strategy
+          const ttnErrorName = (parsedError as Record<string, unknown>).name || "";
+          const ttnErrorMessage = (parsedError as Record<string, unknown>).message || "";
+          
+          lastResult = {
+            success: false,
+            error: "Permission denied",
+            error_code: "TTN_PERMISSION_DENIED",
+            hint: `API key lacks gateway provisioning rights. TTN error: ${ttnErrorName || ttnErrorMessage}. Regenerate your TTN API key with 'Write gateway access' permission.`,
+            details: errorText.slice(0, 300),
+          };
+          continue; // Try next strategy
+        }
+
+        if (createResponse.status === 401) {
+          lastResult = {
+            success: false,
+            error: "Invalid API key",
+            error_code: "INVALID_API_KEY",
+            hint: "TTN API key is invalid or expired. Generate a new one in TTN Console.",
+            details: errorText.slice(0, 300),
+          };
+          continue;
+        }
+
+        // Other error
+        lastResult = {
+          success: false,
+          error: `TTN API error (${createResponse.status})`,
+          error_code: "TTN_API_ERROR",
+          hint: "Unexpected error from TTN. Check gateway EUI format and try again.",
+          details: errorText.slice(0, 300),
+        };
+      }
+
+      // All strategies failed
+      console.error(`[ttn-provision-gateway] [${requestId}] All strategies failed:`, lastResult);
       
       await supabase
         .from("gateways")
-        .update({
-          ttn_gateway_id: ttnGatewayId,
-          ttn_registered_at: new Date().toISOString(),
-          ttn_last_error: null,
-          status: "online",
+        .update({ 
+          ttn_last_error: `${lastResult.error}: ${lastResult.hint || ''}`.slice(0, 500),
         })
         .eq("id", gateway_id);
 
       return new Response(
         JSON.stringify({
-          success: true,
-          gateway_id: ttnGatewayId,
-          already_exists: false,
-          message: "Gateway registered in TTN successfully",
+          ok: false,
+          ...lastResult,
           request_id: requestId,
         }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -335,7 +459,7 @@ serve(async (req) => {
         console.error(`[ttn-provision-gateway] [${requestId}] Delete failed: ${errorText}`);
         return new Response(
           JSON.stringify({ 
-            success: false,
+            ok: false,
             error: "Failed to delete gateway from TTN", 
             details: errorText,
             request_id: requestId,
@@ -357,6 +481,7 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({
+          ok: true,
           success: true,
           message: "Gateway deleted from TTN",
           request_id: requestId,
@@ -366,14 +491,19 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ success: false, error: "Unknown action", request_id: requestId }),
+      JSON.stringify({ ok: false, error: "Unknown action", request_id: requestId }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
-    console.error("[ttn-provision-gateway] Error:", error);
+    console.error(`[ttn-provision-gateway] [${requestId}] Error:`, error);
     const message = error instanceof Error ? error.message : "Unknown error";
     return new Response(
-      JSON.stringify({ success: false, error: message, error_code: "INTERNAL_ERROR" }),
+      JSON.stringify({ 
+        ok: false, 
+        error: message, 
+        error_code: "INTERNAL_ERROR",
+        request_id: requestId,
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
