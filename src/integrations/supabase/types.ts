@@ -2291,6 +2291,7 @@ export type Database = {
           ttn_region: string | null
           ttn_stack_base_url: string | null
           ttn_user_id: string | null
+          ttn_webhook_events: string[] | null
           ttn_webhook_id: string | null
           ttn_webhook_last_updated_at: string | null
           ttn_webhook_last_updated_by: string | null
@@ -2327,6 +2328,7 @@ export type Database = {
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
           ttn_user_id?: string | null
+          ttn_webhook_events?: string[] | null
           ttn_webhook_id?: string | null
           ttn_webhook_last_updated_at?: string | null
           ttn_webhook_last_updated_by?: string | null
@@ -2363,6 +2365,7 @@ export type Database = {
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
           ttn_user_id?: string | null
+          ttn_webhook_events?: string[] | null
           ttn_webhook_id?: string | null
           ttn_webhook_last_updated_at?: string | null
           ttn_webhook_last_updated_by?: string | null
