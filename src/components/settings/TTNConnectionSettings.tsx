@@ -140,6 +140,15 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
 
+  // Health check state
+  const [bootstrapHealthError, setBootstrapHealthError] = useState<string | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<{
+    valid: boolean;
+    warnings: string[];
+    permissions?: BootstrapResult["permissions"];
+  } | null>(null);
+
   // Webhook edit mode state
   const [isEditingWebhook, setIsEditingWebhook] = useState(false);
   const [webhookDraft, setWebhookDraft] = useState({
@@ -219,9 +228,94 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     }
   }, [organizationId]);
 
+  // Check bootstrap service health on mount
+  const checkBootstrapHealth = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `https://mfwyiifehsvwnjwqoxht.supabase.co/functions/v1/ttn-bootstrap`,
+        { method: "GET" }
+      );
+      
+      if (!response.ok) {
+        setBootstrapHealthError(`Service returned status ${response.status}`);
+        return;
+      }
+      
+      const data = await response.json();
+      if (data.status !== "ok") {
+        setBootstrapHealthError("Service health check failed");
+        return;
+      }
+      
+      // Check for expected capabilities
+      if (!data.capabilities?.validate_only) {
+        setBootstrapHealthError("Service version outdated - missing validate_only capability");
+        return;
+      }
+      
+      setBootstrapHealthError(null);
+    } catch (err) {
+      console.error("Bootstrap health check failed:", err);
+      setBootstrapHealthError("Unable to reach TTN bootstrap service");
+    }
+  }, []);
+
+  // Preflight validation (validate_only) before save
+  const runPreflightValidation = useCallback(async () => {
+    if (!organizationId) return;
+    
+    const effectiveAppId = newApplicationId.trim() || settings?.ttn_application_id;
+    if (!effectiveAppId || !region) {
+      setValidationResult(null);
+      return;
+    }
+
+    setIsValidating(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const { data, error } = await supabase.functions.invoke("ttn-bootstrap", {
+        body: {
+          action: "validate_only",
+          organization_id: organizationId,
+          cluster: region,
+          application_id: effectiveAppId,
+          api_key: newApiKey.trim() || undefined,
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (error) {
+        console.error("Preflight validation error:", error);
+        setValidationResult({ valid: false, warnings: [error.message] });
+        return;
+      }
+
+      if (data?.valid) {
+        setValidationResult({
+          valid: true,
+          warnings: data.warnings || [],
+          permissions: data.permissions,
+        });
+      } else {
+        setValidationResult({
+          valid: false,
+          warnings: [data?.error?.message || "Validation failed"],
+        });
+      }
+    } catch (err) {
+      console.error("Preflight validation error:", err);
+      setValidationResult({ valid: false, warnings: ["Validation check failed"] });
+    } finally {
+      setIsValidating(false);
+    }
+  }, [organizationId, region, newApplicationId, newApiKey, settings?.ttn_application_id]);
+
   useEffect(() => {
     loadSettings();
-  }, [loadSettings]);
+    checkBootstrapHealth();
+  }, [loadSettings, checkBootstrapHealth]);
 
   const handleProvision = async () => {
     if (!organizationId) return;
@@ -669,6 +763,21 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Bootstrap Service Health Warning */}
+        {bootstrapHealthError && (
+          <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-warning">TTN Bootstrap Service Issue</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {bootstrapHealthError}. Some TTN configuration features may not work correctly.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Provisioning In Progress State */}
         {isProvisioningStatus && (
           <div className="p-6 rounded-lg border-2 border-primary/30 bg-primary/5">
@@ -932,24 +1041,74 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   )}
                 </div>
 
-                {/* Save Button */}
-                <Button
-                  onClick={handleSaveApiKey}
-                  disabled={isSavingApiKey || !newApiKey.trim() || !newApplicationId.trim()}
-                  className="w-full"
-                >
-                  {isSavingApiKey ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Validating & Configuring Webhook...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Save & Configure Webhook
-                    </>
-                  )}
-                </Button>
+                {/* Preflight Validation Status */}
+                {validationResult && (
+                  <div className={cn(
+                    "p-2 rounded border text-xs",
+                    validationResult.valid 
+                      ? "bg-green-500/10 border-green-500/30" 
+                      : "bg-destructive/10 border-destructive/30"
+                  )}>
+                    <div className="flex items-start gap-2">
+                      {validationResult.valid ? (
+                        <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-destructive shrink-0" />
+                      )}
+                      <div>
+                        <span className={validationResult.valid ? "text-green-700 dark:text-green-400" : "text-destructive"}>
+                          {validationResult.valid ? "Configuration valid" : "Configuration issues detected"}
+                        </span>
+                        {validationResult.warnings.length > 0 && (
+                          <ul className="mt-1 text-muted-foreground list-disc list-inside">
+                            {validationResult.warnings.map((w, i) => (
+                              <li key={i}>{w}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Validate & Save Buttons */}
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={runPreflightValidation}
+                    disabled={isValidating || !newApplicationId.trim()}
+                    className="flex-1"
+                  >
+                    {isValidating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Validating...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Validate
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={handleSaveApiKey}
+                    disabled={isSavingApiKey || !newApiKey.trim() || !newApplicationId.trim()}
+                    className="flex-1"
+                  >
+                    {isSavingApiKey ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Configuring...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4 mr-2" />
+                        Save & Configure
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
 

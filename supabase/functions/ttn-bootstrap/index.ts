@@ -72,7 +72,7 @@ const PERMISSION_LABELS: Record<string, string> = {
 };
 
 interface BootstrapRequest {
-  action: "validate" | "configure" | "save_and_configure";
+  action: "validate" | "validate_only" | "configure" | "save_and_configure";
   organization_id: string;
   cluster: string;
   application_id: string;
@@ -453,7 +453,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Health check
+  // Health check with contract metadata
   if (req.method === "GET") {
     return new Response(
       JSON.stringify({
@@ -461,6 +461,31 @@ serve(async (req) => {
         function: "ttn-bootstrap",
         version: BUILD_VERSION,
         timestamp: new Date().toISOString(),
+        contract: {
+          required_fields: [
+            "organization_id",
+            "cluster",
+            "application_id",
+            "action"
+          ],
+          optional_fields: [
+            "api_key",
+            "owner_scope",
+            "credential_type"
+          ],
+          supported_actions: [
+            "validate",
+            "validate_only",
+            "configure",
+            "save_and_configure"
+          ],
+          supported_clusters: Object.keys(REGIONAL_URLS),
+        },
+        capabilities: {
+          validate_only: true,
+          webhook_management: true,
+          permission_detection: true,
+        },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -605,6 +630,99 @@ serve(async (req) => {
           request_id: requestId,
         } as BootstrapResult),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ========================================
+    // ACTION: VALIDATE_ONLY - Dry-run validation without persisting state
+    // ========================================
+    if (action === "validate_only") {
+      console.log(`[ttn-bootstrap] [${requestId}] Validate-only mode - no state changes will be made`);
+      
+      // Build validation errors for required fields
+      const validationErrors: string[] = [];
+      if (!organization_id) validationErrors.push("organization_id is required");
+      if (!cluster) validationErrors.push("cluster is required");
+      if (!application_id) validationErrors.push("application_id is required");
+      
+      if (!REGIONAL_URLS[cluster]) {
+        validationErrors.push(`Invalid cluster: ${cluster}. Valid: ${Object.keys(REGIONAL_URLS).join(", ")}`);
+      }
+      
+      if (validationErrors.length > 0) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            valid: false,
+            action: "validate_only",
+            validation_errors: validationErrors,
+            request_id: requestId,
+            dry_run: true,
+            state_modified: false,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      // If api_key provided, test permissions against TTN
+      let permissionCheck = null;
+      const warnings: string[] = [];
+      
+      if (effectiveApiKey) {
+        const keyValidation = await validateApiKeyPermissions(effectiveApiKey, application_id, requestId);
+        
+        if (!keyValidation.success) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              valid: false,
+              action: "validate_only",
+              error: { 
+                code: "TTN_KEY_INVALID",
+                message: keyValidation.error || "API key validation failed",
+                hint: keyValidation.hint,
+              },
+              request_id: requestId,
+              dry_run: true,
+              state_modified: false,
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+        
+        // Analyze permissions
+        permissionCheck = analyzePermissions(keyValidation.rights || []);
+        
+        if (!permissionCheck.can_configure_webhook) {
+          warnings.push("API key may lack webhook management permissions");
+        }
+        if (!permissionCheck.can_manage_devices) {
+          warnings.push("API key cannot manage devices - you won't be able to provision sensors");
+        }
+      } else {
+        warnings.push("No API key provided - cannot verify TTN permissions");
+      }
+      
+      // Return validation result (no state changes made)
+      console.log(`[ttn-bootstrap] [${requestId}] Validate-only completed - valid: true, warnings: ${warnings.length}`);
+      
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          valid: true,
+          action: "validate_only",
+          request_id: requestId,
+          resolved: {
+            cluster,
+            application_id,
+            organization_id,
+          },
+          permissions: permissionCheck,
+          warnings,
+          dry_run: true,
+          state_modified: false,
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
