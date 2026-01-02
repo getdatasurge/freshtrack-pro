@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
+import { getTtnConfigForOrg, getGatewayApiKeyForOrg } from "../_shared/ttnConfig.ts";
+import { validateGatewayPermissions, checkGatewayRights, type AuthInfoResponse } from "../_shared/ttnPermissions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -146,6 +147,46 @@ serve(async (req) => {
       });
     }
 
+    // ========================================
+    // GATEWAY API KEY CHECK (Priority Order)
+    // 1. Check for gateway-specific API key (Personal/Org with gateway rights)
+    // 2. Fall back to application API key (will likely fail for gateways)
+    // ========================================
+
+    // First, check if there's a dedicated gateway API key configured
+    const gatewayKeyConfig = await getGatewayApiKeyForOrg(supabase, organization_id);
+
+    if (gatewayKeyConfig?.apiKey) {
+      console.log(`[ttn-gateway-preflight] [${requestId}] Found gateway-specific API key, validating...`);
+
+      const permCheck = await validateGatewayPermissions(ttnConfig.region, gatewayKeyConfig.apiKey, requestId);
+
+      if (permCheck.success && permCheck.report?.can_provision_gateways) {
+        // Gateway key is valid and has proper permissions
+        const result: PreflightResult = {
+          ok: true,
+          request_id: requestId,
+          allowed: true,
+          key_type: permCheck.report.key_type,
+          owner_scope: permCheck.report.key_type === "personal" ? "user" : permCheck.report.key_type === "organization" ? "organization" : null,
+          scope_id: permCheck.report.scope_id,
+          has_gateway_rights: true,
+          missing_rights: [],
+        };
+
+        console.log(`[ttn-gateway-preflight] [${requestId}] Gateway API key is valid - provisioning allowed`);
+
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } else {
+        // Gateway key exists but has issues
+        console.warn(`[ttn-gateway-preflight] [${requestId}] Gateway key has issues:`, permCheck.report?.missing_rights);
+      }
+    }
+
+    // No valid gateway key - check the application API key
     if (!ttnConfig.apiKey) {
       const result: PreflightResult = {
         ok: true,
@@ -159,11 +200,11 @@ serve(async (req) => {
         error: {
           code: "API_KEY_INVALID",
           message: "No TTN API key configured",
-          hint: "Add a TTN API key in Settings → Developer → TTN Connection",
+          hint: "Gateway provisioning requires a Personal API key with gateway rights",
           fix_steps: [
-            "1. Go to TTN Console → Applications → Your App → API Keys",
-            "2. Create a new API key with gateway permissions",
-            "3. Copy the key and paste it in FrostGuard Settings",
+            "1. Go to TTN Console → your username (top right) → Personal API keys",
+            "2. Create a new API key with 'Grant all current and future rights'",
+            "3. Copy the key and add it in FrostGuard Settings → Developer → Gateway API Key",
           ],
         },
       };
@@ -173,8 +214,8 @@ serve(async (req) => {
       });
     }
 
-    // Check API key scope using auth_info endpoint
-    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info`);
+    // Check if application API key has gateway rights (unlikely but possible)
+    console.log(`[ttn-gateway-preflight] [${requestId}] Checking application API key for gateway rights`);
 
     const authInfoResponse = await fetch(`${ttnConfig.identityBaseUrl}/api/v3/auth_info`, {
       headers: {
@@ -185,7 +226,7 @@ serve(async (req) => {
 
     if (!authInfoResponse.ok) {
       console.error(`[ttn-gateway-preflight] [${requestId}] auth_info failed: ${authInfoResponse.status}`);
-      
+
       const result: PreflightResult = {
         ok: true,
         request_id: requestId,
@@ -198,11 +239,11 @@ serve(async (req) => {
         error: {
           code: "API_KEY_INVALID",
           message: "TTN API key is invalid or expired",
-          hint: "Generate a new API key in TTN Console",
+          hint: "Generate a new Personal API key in TTN Console with gateway rights",
           fix_steps: [
             "1. Go to TTN Console → your username (top right) → Personal API keys",
             "2. Create a new API key with gateway rights",
-            "3. Copy the key and update it in FrostGuard Settings",
+            "3. Copy the key and add it in FrostGuard Settings → Developer → Gateway API Key",
           ],
         },
       };
@@ -212,7 +253,7 @@ serve(async (req) => {
       });
     }
 
-    const authInfo: AuthInfo = await authInfoResponse.json();
+    const authInfo = await authInfoResponse.json() as AuthInfoResponse;
     console.log(`[ttn-gateway-preflight] [${requestId}] Auth info received:`, JSON.stringify({
       is_admin: authInfo.is_admin,
       user_ids: authInfo.user_ids?.map((u) => u.user_id),
@@ -221,41 +262,31 @@ serve(async (req) => {
       universal_rights_count: authInfo.universal_rights?.length || 0,
     }));
 
-    // Determine key type and scope
-    let keyType: "personal" | "organization" | "application" | "unknown" = "unknown";
-    let ownerScope: "user" | "organization" | null = null;
-    let scopeId: string | null = null;
+    // Use the shared gateway rights checker
+    const gatewayRightsReport = checkGatewayRights(authInfo);
 
-    if (authInfo.user_ids && authInfo.user_ids.length > 0) {
-      keyType = "personal";
+    // Determine key type and scope
+    let keyType = gatewayRightsReport.key_type;
+    let ownerScope: "user" | "organization" | null = null;
+    let scopeId = gatewayRightsReport.scope_id;
+
+    if (keyType === "personal") {
       ownerScope = "user";
-      scopeId = authInfo.user_ids[0].user_id;
-    } else if (authInfo.organization_ids && authInfo.organization_ids.length > 0) {
-      keyType = "organization";
+    } else if (keyType === "organization") {
       ownerScope = "organization";
-      scopeId = authInfo.organization_ids[0].organization_id;
-    } else if (authInfo.application_ids && authInfo.application_ids.length > 0) {
-      keyType = "application";
+    } else if (keyType === "application") {
       ownerScope = null; // Application keys can't provision gateways
       scopeId = authInfo.application_ids[0].application_id;
     }
 
     console.log(`[ttn-gateway-preflight] [${requestId}] Key type: ${keyType}, scope: ${ownerScope}, id: ${scopeId}`);
+    console.log(`[ttn-gateway-preflight] [${requestId}] Gateway rights - read: ${gatewayRightsReport.has_gateway_read}, write: ${gatewayRightsReport.has_gateway_write}`);
 
-    // Check for gateway rights in universal_rights
-    const universalRights = authInfo.universal_rights || [];
-    const hasGatewayRead = universalRights.some(
-      (r) => r === "RIGHT_GATEWAY_ALL" || r === "RIGHT_GATEWAY_INFO" || r.includes("GATEWAY")
-    );
-    const hasGatewayWrite = universalRights.some(
-      (r) => r === "RIGHT_GATEWAY_ALL" || r === "RIGHT_GATEWAY_SETTINGS_BASIC" || r === "RIGHT_GATEWAY_SETTINGS_API_KEYS"
-    );
-
+    // Convert missing rights to user-friendly format
     const missingRights: string[] = [];
-    if (!hasGatewayRead) missingRights.push("gateways:read");
-    if (!hasGatewayWrite) missingRights.push("gateways:write");
-
-    console.log(`[ttn-gateway-preflight] [${requestId}] Gateway rights - read: ${hasGatewayRead}, write: ${hasGatewayWrite}`);
+    if (!gatewayRightsReport.has_gateway_read) missingRights.push("gateways:read");
+    if (!gatewayRightsReport.has_gateway_write) missingRights.push("gateways:write");
+    if (!gatewayRightsReport.has_gateway_link) missingRights.push("gateways:link");
 
     // Update ttn_connections with detected type
     await supabase
@@ -263,14 +294,14 @@ serve(async (req) => {
       .update({
         ttn_credential_type: keyType === "unknown" ? null : `${keyType}_api_key`,
         ttn_owner_scope: ownerScope,
-        ttn_gateway_rights_verified: hasGatewayWrite && hasGatewayRead,
+        ttn_gateway_rights_verified: gatewayRightsReport.can_provision_gateways,
         ttn_gateway_rights_checked_at: new Date().toISOString(),
       })
       .eq("organization_id", organization_id);
 
     // Determine if provisioning is allowed
     if (keyType === "application") {
-      // Application API keys cannot provision gateways
+      // Application API keys cannot provision gateways - this is a TTN v3 API constraint
       const result: PreflightResult = {
         ok: true,
         request_id: requestId,
@@ -279,17 +310,21 @@ serve(async (req) => {
         owner_scope: ownerScope,
         scope_id: scopeId,
         has_gateway_rights: false,
-        missing_rights: ["gateways:read", "gateways:write"],
+        missing_rights: ["gateways:read", "gateways:write", "gateways:link"],
         error: {
           code: "WRONG_KEY_TYPE",
           message: "Application API keys cannot provision gateways",
-          hint: "You need a Personal API key (created under your TTN user) to register gateways",
+          hint: "Gateway provisioning requires a Personal or Organization API key. Your current key is application-scoped and can only manage devices within that application.",
           fix_steps: [
             "1. Go to TTN Console → your username (top right) → Personal API keys",
             "2. Click 'Add API key'",
             "3. Name it 'FrostGuard Gateway Provisioning'",
-            "4. Grant rights: 'Grant all current and future rights' OR select gateway rights",
-            "5. Copy the key and paste in FrostGuard Settings → Developer → TTN Connection",
+            "4. Grant rights: 'Grant all current and future rights' OR select all gateway rights",
+            "5. Copy the key and add it in FrostGuard Settings → Developer → Gateway API Key",
+            "",
+            "Note: This is a separate key from your application API key. You need both:",
+            "• Application API Key: for managing devices and webhooks",
+            "• Gateway API Key: for provisioning gateways",
           ],
         },
       };
@@ -299,7 +334,7 @@ serve(async (req) => {
       });
     }
 
-    if (!hasGatewayWrite) {
+    if (!gatewayRightsReport.can_provision_gateways) {
       // Key type is correct but missing gateway rights
       const result: PreflightResult = {
         ok: true,

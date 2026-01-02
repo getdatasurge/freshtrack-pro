@@ -441,6 +441,93 @@ export async function testTtnConnection(
 }
 
 // ============================================================================
+// Gateway API Key Support
+// ============================================================================
+
+export interface GatewayApiKeyConfig {
+  apiKey: string;
+  keyType: "personal" | "organization";
+  scopeId: string | null;
+  updatedAt: string | null;
+}
+
+/**
+ * Get the gateway-specific API key for an organization
+ * This is a separate key from the application API key, required for gateway provisioning
+ *
+ * IMPORTANT: Gateway provisioning requires a Personal or Organization API key.
+ * Application API keys CANNOT provision gateways (TTN v3 API constraint).
+ */
+export async function getGatewayApiKeyForOrg(
+  supabaseAdmin: SupabaseClient,
+  organizationId: string
+): Promise<GatewayApiKeyConfig | null> {
+  const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") ||
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.slice(0, 32) || "";
+
+  const { data: settings, error } = await supabaseAdmin
+    .from("ttn_connections")
+    .select("ttn_gateway_api_key_encrypted, ttn_gateway_api_key_type, ttn_gateway_api_key_scope_id, ttn_gateway_api_key_updated_at")
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+
+  if (error || !settings || !settings.ttn_gateway_api_key_encrypted) {
+    console.log("[getGatewayApiKeyForOrg] No gateway API key for org:", organizationId);
+    return null;
+  }
+
+  const apiKey = deobfuscateKey(settings.ttn_gateway_api_key_encrypted, encryptionSalt);
+  if (!apiKey) {
+    console.warn("[getGatewayApiKeyForOrg] Failed to decrypt gateway API key");
+    return null;
+  }
+
+  return {
+    apiKey,
+    keyType: settings.ttn_gateway_api_key_type || "personal",
+    scopeId: settings.ttn_gateway_api_key_scope_id,
+    updatedAt: settings.ttn_gateway_api_key_updated_at,
+  };
+}
+
+/**
+ * Save a gateway API key for an organization
+ * Validates the key type before saving
+ */
+export async function saveGatewayApiKeyForOrg(
+  supabaseAdmin: SupabaseClient,
+  organizationId: string,
+  apiKey: string,
+  keyType: "personal" | "organization",
+  scopeId: string | null
+): Promise<{ success: boolean; error?: string }> {
+  const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") ||
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.slice(0, 32) || "";
+
+  const encryptedKey = obfuscateKey(apiKey, encryptionSalt);
+
+  const { error } = await supabaseAdmin
+    .from("ttn_connections")
+    .update({
+      ttn_gateway_api_key_encrypted: encryptedKey,
+      ttn_gateway_api_key_last4: getLast4(apiKey),
+      ttn_gateway_api_key_type: keyType,
+      ttn_gateway_api_key_scope_id: scopeId,
+      ttn_gateway_api_key_updated_at: new Date().toISOString(),
+      ttn_gateway_rights_verified: true,
+      ttn_gateway_rights_checked_at: new Date().toISOString(),
+    })
+    .eq("organization_id", organizationId);
+
+  if (error) {
+    console.error("[saveGatewayApiKeyForOrg] Failed to save:", error);
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
+}
+
+// ============================================================================
 // DEPRECATED: Global Application ID (for backwards compatibility during migration)
 // ============================================================================
 

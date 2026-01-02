@@ -20,24 +20,57 @@ export const REGIONAL_URLS: Record<string, string> = {
 // Required rights for FrostGuard TTN integration
 // These MUST match the exact strings returned by TTN's /rights endpoint
 export const REQUIRED_RIGHTS = {
-  // Minimum required permissions for basic functionality
+  // Minimum required permissions for basic functionality (APPLICATION-scoped)
   core: [
     "RIGHT_APPLICATION_INFO",           // Read application info
     "RIGHT_APPLICATION_TRAFFIC_READ",   // Read uplink messages (critical!)
   ],
-  // Required for webhook management
+  // Required for webhook management (APPLICATION-scoped)
   webhook: [
     "RIGHT_APPLICATION_SETTINGS_BASIC", // Manage webhooks
   ],
-  // Required for device management (optional but recommended)
+  // Required for device management (APPLICATION-scoped)
   devices: [
     "RIGHT_APPLICATION_DEVICES_READ",
     "RIGHT_APPLICATION_DEVICES_WRITE",
   ],
-  // Required for downlinks (optional)
+  // Required for downlinks (APPLICATION-scoped)
   downlink: [
     "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE",
   ],
+};
+
+/**
+ * Required rights for GATEWAY provisioning
+ * IMPORTANT: These must be on a PERSONAL or ORGANIZATION API key
+ * Application API keys CANNOT provision gateways (TTN v3 API constraint)
+ */
+export const REQUIRED_GATEWAY_RIGHTS = {
+  // Minimum required for gateway provisioning
+  core: [
+    "RIGHT_GATEWAY_INFO",              // Read gateway information
+    "RIGHT_GATEWAY_SETTINGS_BASIC",    // Edit gateway settings
+    "RIGHT_GATEWAY_LINK",              // Connect gateway to network
+    "RIGHT_GATEWAY_STATUS_READ",       // Read gateway status
+  ],
+  // Full gateway management
+  full: [
+    "RIGHT_GATEWAY_ALL",               // All gateway rights (recommended)
+  ],
+};
+
+// Human-readable permission names for gateway rights
+export const GATEWAY_PERMISSION_LABELS: Record<string, string> = {
+  "RIGHT_GATEWAY_ALL": "All gateway rights",
+  "RIGHT_GATEWAY_INFO": "View gateway information",
+  "RIGHT_GATEWAY_SETTINGS_BASIC": "Edit basic gateway settings",
+  "RIGHT_GATEWAY_SETTINGS_API_KEYS": "Manage gateway API keys",
+  "RIGHT_GATEWAY_DELETE": "Delete gateways",
+  "RIGHT_GATEWAY_TRAFFIC_READ": "Read gateway traffic",
+  "RIGHT_GATEWAY_TRAFFIC_DOWN_WRITE": "Send downlinks via gateway",
+  "RIGHT_GATEWAY_LINK": "Connect gateway to network",
+  "RIGHT_GATEWAY_STATUS_READ": "Read gateway status",
+  "RIGHT_GATEWAY_LOCATION_READ": "Read gateway location",
 };
 
 // Human-readable permission names for UI
@@ -205,16 +238,16 @@ export async function validateAndAnalyzePermissions(
   applicationId: string,
   apiKey: string,
   requestId: string
-): Promise<{ 
-  success: boolean; 
-  report?: PermissionReport; 
-  error?: string; 
+): Promise<{
+  success: boolean;
+  report?: PermissionReport;
+  error?: string;
   hint?: string;
   statusCode?: number;
 }> {
   // Fetch actual rights from TTN
   const rightsResult = await fetchTtnRights(cluster, applicationId, apiKey, requestId);
-  
+
   if (!rightsResult.success) {
     return {
       success: false,
@@ -223,10 +256,184 @@ export async function validateAndAnalyzePermissions(
       statusCode: rightsResult.statusCode,
     };
   }
-  
+
   // Compute permission report
   const report = computePermissionReport(rightsResult.rights || []);
-  
+
+  return {
+    success: true,
+    report,
+  };
+}
+
+// ========================================
+// GATEWAY PERMISSION CHECKING
+// ========================================
+
+export interface GatewayPermissionReport {
+  valid: boolean;
+  key_type: "personal" | "organization" | "application" | "unknown";
+  scope_id: string | null;
+  rights: string[];
+  has_gateway_read: boolean;
+  has_gateway_write: boolean;
+  has_gateway_link: boolean;
+  missing_rights: string[];
+  can_provision_gateways: boolean;
+}
+
+export interface AuthInfoResponse {
+  is_admin?: boolean;
+  universal_rights?: string[];
+  user_ids?: Array<{ user_id: string }>;
+  organization_ids?: Array<{ organization_id: string }>;
+  application_ids?: Array<{ application_id: string }>;
+}
+
+/**
+ * Fetch auth_info to determine API key type and scope
+ * This is required because gateway rights are checked differently than application rights
+ */
+export async function fetchAuthInfo(
+  cluster: string,
+  apiKey: string,
+  requestId: string
+): Promise<{ success: boolean; authInfo?: AuthInfoResponse; error?: string; hint?: string }> {
+  const baseUrl = REGIONAL_URLS[cluster] || REGIONAL_URLS.eu1;
+  const authInfoUrl = `${baseUrl}/api/v3/auth_info`;
+
+  console.log(`[ttnPermissions] [${requestId}] Fetching auth_info from: ${authInfoUrl}`);
+
+  try {
+    const response = await fetch(authInfoUrl, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Accept": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[ttnPermissions] [${requestId}] auth_info failed: ${response.status}`);
+
+      if (response.status === 401) {
+        return {
+          success: false,
+          error: "Invalid or expired API key",
+          hint: "Generate a new API key in TTN Console",
+        };
+      }
+
+      return {
+        success: false,
+        error: `TTN API error (${response.status})`,
+        hint: errorText.slice(0, 200),
+      };
+    }
+
+    const authInfo: AuthInfoResponse = await response.json();
+    console.log(`[ttnPermissions] [${requestId}] auth_info received:`, {
+      is_admin: authInfo.is_admin,
+      user_ids: authInfo.user_ids?.length || 0,
+      organization_ids: authInfo.organization_ids?.length || 0,
+      application_ids: authInfo.application_ids?.length || 0,
+      universal_rights_count: authInfo.universal_rights?.length || 0,
+    });
+
+    return { success: true, authInfo };
+  } catch (fetchError) {
+    console.error(`[ttnPermissions] [${requestId}] Network error:`, fetchError);
+    return {
+      success: false,
+      error: "Network error connecting to TTN",
+      hint: fetchError instanceof Error ? fetchError.message : "Check internet connectivity",
+    };
+  }
+}
+
+/**
+ * Check if API key has gateway provisioning rights
+ * Gateway rights are found in universal_rights for Personal/Org keys
+ */
+export function checkGatewayRights(authInfo: AuthInfoResponse): GatewayPermissionReport {
+  const universalRights = authInfo.universal_rights || [];
+
+  // Determine key type
+  let keyType: "personal" | "organization" | "application" | "unknown" = "unknown";
+  let scopeId: string | null = null;
+
+  if (authInfo.user_ids && authInfo.user_ids.length > 0) {
+    keyType = "personal";
+    scopeId = authInfo.user_ids[0].user_id;
+  } else if (authInfo.organization_ids && authInfo.organization_ids.length > 0) {
+    keyType = "organization";
+    scopeId = authInfo.organization_ids[0].organization_id;
+  } else if (authInfo.application_ids && authInfo.application_ids.length > 0) {
+    keyType = "application";
+    scopeId = authInfo.application_ids[0].application_id;
+  }
+
+  // Check gateway rights - look for exact matches or RIGHT_GATEWAY_ALL
+  const hasGatewayAll = universalRights.includes("RIGHT_GATEWAY_ALL");
+  const hasGatewayRead = hasGatewayAll || universalRights.includes("RIGHT_GATEWAY_INFO");
+  const hasGatewayWrite = hasGatewayAll || universalRights.includes("RIGHT_GATEWAY_SETTINGS_BASIC");
+  const hasGatewayLink = hasGatewayAll || universalRights.includes("RIGHT_GATEWAY_LINK");
+  const hasGatewayStatus = hasGatewayAll || universalRights.includes("RIGHT_GATEWAY_STATUS_READ");
+
+  // Determine missing rights
+  const missingRights: string[] = [];
+  if (!hasGatewayRead) missingRights.push("RIGHT_GATEWAY_INFO");
+  if (!hasGatewayWrite) missingRights.push("RIGHT_GATEWAY_SETTINGS_BASIC");
+  if (!hasGatewayLink) missingRights.push("RIGHT_GATEWAY_LINK");
+  if (!hasGatewayStatus) missingRights.push("RIGHT_GATEWAY_STATUS_READ");
+
+  // Can provision gateways if:
+  // 1. Key type is personal or organization (NOT application)
+  // 2. Has required gateway rights
+  const canProvision =
+    (keyType === "personal" || keyType === "organization") &&
+    hasGatewayRead && hasGatewayWrite && hasGatewayLink;
+
+  return {
+    valid: canProvision,
+    key_type: keyType,
+    scope_id: scopeId,
+    rights: universalRights,
+    has_gateway_read: hasGatewayRead,
+    has_gateway_write: hasGatewayWrite,
+    has_gateway_link: hasGatewayLink,
+    missing_rights: missingRights,
+    can_provision_gateways: canProvision,
+  };
+}
+
+/**
+ * Full gateway permission validation
+ * Fetches auth_info and checks gateway rights in one call
+ */
+export async function validateGatewayPermissions(
+  cluster: string,
+  apiKey: string,
+  requestId: string
+): Promise<{
+  success: boolean;
+  report?: GatewayPermissionReport;
+  error?: string;
+  hint?: string;
+}> {
+  const authResult = await fetchAuthInfo(cluster, apiKey, requestId);
+
+  if (!authResult.success || !authResult.authInfo) {
+    return {
+      success: false,
+      error: authResult.error,
+      hint: authResult.hint,
+    };
+  }
+
+  const report = checkGatewayRights(authResult.authInfo);
+
   return {
     success: true,
     report,
