@@ -233,7 +233,7 @@ serve(async (req) => {
     const { data: ttnConn, error: upsertError } = await supabase
       .from("ttn_connections")
       .upsert(updateData, { onConflict: "organization_id" })
-      .select("is_enabled, ttn_region, ttn_application_id, ttn_api_key_last4, ttn_api_key_updated_at, ttn_webhook_secret_last4, ttn_webhook_url, ttn_last_updated_source, updated_at")
+      .select("is_enabled, ttn_region, ttn_application_id, ttn_api_key_last4, ttn_api_key_updated_at, ttn_webhook_secret_last4, ttn_webhook_url, ttn_webhook_id, ttn_webhook_events, ttn_last_updated_source, updated_at")
       .single();
 
     if (upsertError) {
@@ -266,7 +266,7 @@ serve(async (req) => {
       duration_ms: duration,
     });
 
-    // Return success response with source tracking
+    // Return success response with source tracking and webhook metadata
     return new Response(
       JSON.stringify({
         ok: true,
@@ -276,15 +276,19 @@ serve(async (req) => {
           cluster: ttnConn?.ttn_region,
           application_id: ttnConn?.ttn_application_id,
           webhook_url: ttnConn?.ttn_webhook_url,
+          webhook_id: ttnConn?.ttn_webhook_id || "freshtracker",
+          webhook_events: ttnConn?.ttn_webhook_events || ["uplink_message", "join_accept"],
           api_key_last4: ttnConn?.ttn_api_key_last4,
           api_key_updated_at: ttnConn?.ttn_api_key_updated_at,
           webhook_secret_last4: ttnConn?.ttn_webhook_secret_last4,
           last_updated_source: ttnConn?.ttn_last_updated_source,
           updated_at: ttnConn?.updated_at,
+          // Sync status flag for emulator UI
+          synced_from_frostguard: ttnConn?.ttn_last_updated_source === "frostguard",
         },
         _meta: {
           duration_ms: duration,
-          version: "2.0.0",
+          version: "2.1.0",
         },
       }),
       {

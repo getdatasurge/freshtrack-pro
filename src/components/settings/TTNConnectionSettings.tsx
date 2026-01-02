@@ -37,6 +37,42 @@ interface TTNTestResult {
   message?: string;
 }
 
+interface BootstrapResult {
+  ok: boolean;
+  request_id: string;
+  action: string;
+  permissions?: {
+    valid: boolean;
+    rights: string[];
+    missing_core: string[];
+    missing_webhook: string[];
+    can_configure_webhook: boolean;
+    can_manage_devices: boolean;
+  };
+  webhook?: {
+    webhook_id: string;
+    base_url: string;
+    format: string;
+    events_enabled: string[];
+    secret_configured: boolean;
+  };
+  webhook_action?: "created" | "updated" | "unchanged";
+  error?: {
+    code: string;
+    message: string;
+    hint: string;
+    missing_permissions?: string[];
+  };
+  config?: {
+    api_key_last4: string;
+    webhook_secret_last4: string;
+    webhook_url: string;
+    application_id: string;
+    cluster: string;
+    updated_at: string;
+  };
+}
+
 interface TTNSettings {
   exists: boolean;
   is_enabled: boolean;
@@ -49,7 +85,10 @@ interface TTNSettings {
   api_key_last4: string | null;
   api_key_updated_at: string | null;
   has_webhook_secret: boolean;
+  webhook_secret_last4: string | null;
   webhook_url: string | null;
+  webhook_id: string | null;
+  webhook_events: string[] | null;
   last_connection_test_at: string | null;
   last_connection_test_result: TTNTestResult | null;
   last_updated_source: string | null;
@@ -92,7 +131,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const [region, setRegion] = useState("nam1");
   const [isEnabled, setIsEnabled] = useState(false);
   const [newApiKey, setNewApiKey] = useState("");
+  const [newApplicationId, setNewApplicationId] = useState("");
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+  const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
 
   const loadSettings = useCallback(async () => {
     if (!organizationId) return;
@@ -128,7 +169,10 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           api_key_last4: data.api_key_last4 ?? null,
           api_key_updated_at: data.api_key_updated_at ?? null,
           has_webhook_secret: data.has_webhook_secret ?? false,
-          webhook_url: WEBHOOK_URL,
+          webhook_secret_last4: data.webhook_secret_last4 ?? null,
+          webhook_url: data.webhook_url ?? WEBHOOK_URL,
+          webhook_id: data.webhook_id ?? null,
+          webhook_events: data.webhook_events ?? null,
           last_connection_test_at: data.last_connection_test_at ?? null,
           last_connection_test_result: data.last_connection_test_result ?? null,
           last_updated_source: data.last_updated_source ?? null,
@@ -136,6 +180,10 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         });
         setRegion(data.ttn_region || "nam1");
         setIsEnabled(data.is_enabled ?? false);
+        // Set application ID for the form
+        if (data.ttn_application_id) {
+          setNewApplicationId(data.ttn_application_id);
+        }
       }
     } catch (err) {
       console.error("Error loading TTN settings:", err);
@@ -298,16 +346,28 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
   const handleSaveApiKey = async () => {
     if (!organizationId || !newApiKey.trim()) return;
-    
+
+    // Require application ID for the bootstrap flow
+    const effectiveAppId = newApplicationId.trim() || settings?.ttn_application_id;
+    if (!effectiveAppId) {
+      toast.error("Please enter the TTN Application ID");
+      return;
+    }
+
     setIsSavingApiKey(true);
+    setBootstrapResult(null);
+
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
 
-      const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        body: { 
-          action: "update", 
-          organization_id: organizationId, 
+      // Use the new ttn-bootstrap endpoint for automated webhook setup
+      const { data, error } = await supabase.functions.invoke("ttn-bootstrap", {
+        body: {
+          action: "save_and_configure",
+          organization_id: organizationId,
+          cluster: region,
+          application_id: effectiveAppId,
           api_key: newApiKey.trim(),
         },
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -315,12 +375,37 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       if (error) throw error;
 
-      setNewApiKey("");
-      toast.success("API key saved successfully");
-      await loadSettings();
+      const result = data as BootstrapResult;
+      setBootstrapResult(result);
+
+      if (result.ok) {
+        setNewApiKey("");
+        const actionMsg = result.webhook_action === "created"
+          ? "Webhook created in TTN"
+          : result.webhook_action === "updated"
+          ? "Webhook updated in TTN"
+          : "Configuration saved";
+        toast.success(`API key validated. ${actionMsg}!`);
+        await loadSettings();
+      } else {
+        // Handle permission errors with detailed feedback
+        if (result.error?.code === "TTN_PERMISSION_MISSING") {
+          toast.error(result.error.message, {
+            description: result.error.hint,
+            duration: 8000,
+          });
+        } else if (result.error?.code === "WEBHOOK_SETUP_FAILED") {
+          toast.error("Webhook setup failed", {
+            description: result.error.hint,
+            duration: 6000,
+          });
+        } else {
+          toast.error(result.error?.message || "Configuration failed");
+        }
+      }
     } catch (err: any) {
       console.error("Save API key error:", err);
-      toast.error(err.message || "Failed to save API key");
+      toast.error(err.message || "Failed to save and configure TTN");
     } finally {
       setIsSavingApiKey(false);
     }
@@ -509,29 +594,32 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
               />
             </div>
 
-            {/* API Key Management */}
-            <div className="space-y-3 p-4 rounded-lg border">
+            {/* API Key & Webhook Configuration */}
+            <div className="space-y-4 p-4 rounded-lg border">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Label>API Key</Label>
-                  <InfoTooltip>Enter your TTN API key with Application rights</InfoTooltip>
+                  <Label className="text-base font-medium">TTN API Configuration</Label>
+                  <InfoTooltip>Enter your TTN Application ID and API key. Webhook will be configured automatically.</InfoTooltip>
                 </div>
                 <Button variant="ghost" size="sm" onClick={loadSettings} disabled={isLoading}>
                   <RefreshCw className={`h-3 w-3 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
                   Refresh
                 </Button>
               </div>
-              
+
+              {/* Current Configuration Status */}
               {settings?.has_api_key && (
-                <div className="text-sm space-y-1">
-                  <div className="flex items-center gap-2">
+                <div className="text-sm space-y-2 p-3 bg-muted/50 rounded-md">
+                  <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Current key:</span>
-                    <code className="bg-muted px-2 py-0.5 rounded text-xs">****{settings.api_key_last4}</code>
-                    {settings.last_updated_source && (
-                      <Badge variant="outline" className="text-xs">
-                        Updated by {formatSourceLabel(settings.last_updated_source)}
-                      </Badge>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <code className="bg-muted px-2 py-0.5 rounded text-xs">****{settings.api_key_last4}</code>
+                      {settings.last_updated_source && (
+                        <Badge variant="outline" className="text-xs">
+                          {formatSourceLabel(settings.last_updated_source)}
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   {settings.api_key_updated_at && (
                     <p className="text-xs text-muted-foreground">
@@ -540,32 +628,169 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   )}
                 </div>
               )}
-              
-              <div className="flex gap-2">
-                <Input
-                  type="password"
-                  placeholder="NNSXS.XXXXXXXXXX..."
-                  value={newApiKey}
-                  onChange={(e) => setNewApiKey(e.target.value)}
-                  className="font-mono text-xs"
-                />
-                <Button 
-                  onClick={handleSaveApiKey} 
-                  disabled={isSavingApiKey || !newApiKey.trim()}
-                  size="sm"
+
+              {/* Bootstrap Success Banner */}
+              {bootstrapResult?.ok && bootstrapResult.webhook_action && (
+                <div className="p-3 rounded-lg bg-safe/10 border border-safe/30">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-safe" />
+                    <span className="text-sm font-medium text-safe">
+                      {bootstrapResult.webhook_action === "created"
+                        ? "Webhook created in TTN!"
+                        : "Webhook updated in TTN!"}
+                    </span>
+                  </div>
+                  {bootstrapResult.permissions && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Permissions validated: {bootstrapResult.permissions.rights?.length || 0} rights granted
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Bootstrap Error Banner */}
+              {bootstrapResult && !bootstrapResult.ok && bootstrapResult.error && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
+                  <div className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 text-destructive mt-0.5" />
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-destructive">
+                        {bootstrapResult.error.message}
+                      </span>
+                      {bootstrapResult.error.hint && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {bootstrapResult.error.hint}
+                        </p>
+                      )}
+                      {bootstrapResult.error.missing_permissions && bootstrapResult.error.missing_permissions.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium">Missing permissions:</p>
+                          <ul className="text-xs text-muted-foreground list-disc list-inside mt-1">
+                            {bootstrapResult.error.missing_permissions.map(p => (
+                              <li key={p}>{p.replace("RIGHT_APPLICATION_", "").toLowerCase().replace(/_/g, " ")}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Configuration Form */}
+              <div className="space-y-3">
+                {/* Cluster Selection */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">TTN Cluster</Label>
+                  <Select value={region} onValueChange={setRegion}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select cluster" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TTN_REGIONS.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Application ID */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Application ID</Label>
+                  <Input
+                    placeholder="my-ttn-application-id"
+                    value={newApplicationId}
+                    onChange={(e) => setNewApplicationId(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Find this in TTN Console → Applications
+                  </p>
+                </div>
+
+                {/* API Key */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">API Key</Label>
+                  <Input
+                    type="password"
+                    placeholder="NNSXS.XXXXXXXXXX..."
+                    value={newApiKey}
+                    onChange={(e) => setNewApiKey(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Create a key with: Read/Write application settings, Read/Write devices, Read uplinks
+                  </p>
+                </div>
+
+                {/* Save Button */}
+                <Button
+                  onClick={handleSaveApiKey}
+                  disabled={isSavingApiKey || !newApiKey.trim() || !newApplicationId.trim()}
+                  className="w-full"
                 >
-                  {isSavingApiKey ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                  {isSavingApiKey ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Validating & Configuring Webhook...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Save & Configure Webhook
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
 
             {/* Webhook Configuration */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Globe className="h-4 w-4 text-muted-foreground" />
-                <Label>Webhook Configuration</Label>
+            <div className="space-y-4 p-4 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-base font-medium">Webhook Configuration</Label>
+                </div>
+                {settings.has_webhook_secret && (
+                  <Badge variant="outline" className="bg-safe/10 text-safe border-safe/30">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Configured
+                  </Badge>
+                )}
               </div>
-              
+
+              {/* Webhook Status Summary */}
+              {settings.has_webhook_secret && (
+                <div className="grid gap-2 text-sm p-3 bg-muted/50 rounded-md">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Webhook ID:</span>
+                    <code className="bg-muted px-2 py-0.5 rounded text-xs">
+                      {settings.webhook_id || "freshtracker"}
+                    </code>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Secret:</span>
+                    <code className="bg-muted px-2 py-0.5 rounded text-xs">
+                      ****{settings.webhook_secret_last4 || "****"}
+                    </code>
+                  </div>
+                  {settings.webhook_events && settings.webhook_events.length > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Events:</span>
+                      <div className="flex gap-1">
+                        {settings.webhook_events.map(event => (
+                          <Badge key={event} variant="secondary" className="text-xs">
+                            {event.replace(/_/g, " ")}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Webhook URL */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -575,46 +800,38 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   </InfoTooltip>
                 </div>
                 <div className="flex gap-2">
-                  <Input 
-                    value={WEBHOOK_URL}
-                    readOnly 
-                    className="font-mono text-xs"
+                  <Input
+                    value={settings.webhook_url || WEBHOOK_URL}
+                    readOnly
+                    className="font-mono text-xs bg-muted"
                   />
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="icon"
-                    onClick={() => copyToClipboard(WEBHOOK_URL, "Webhook URL")}
+                    onClick={() => copyToClipboard(settings.webhook_url || WEBHOOK_URL, "Webhook URL")}
                   >
                     <Copy className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
-              
-              {/* Webhook Secret */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Label className="text-sm">Webhook Secret</Label>
-                    <InfoTooltip>
-                      Used to authenticate incoming webhooks from TTN
-                    </InfoTooltip>
-                  </div>
-                  {settings.has_webhook_secret && (
-                    <Badge variant="outline" className="font-mono">Configured</Badge>
-                  )}
+
+              {/* Regenerate Webhook Secret */}
+              <div className="flex items-center justify-between pt-2 border-t">
+                <div>
+                  <p className="text-sm font-medium">Regenerate Webhook Secret</p>
+                  <p className="text-xs text-muted-foreground">
+                    Updates the secret in both FrostGuard and TTN
+                  </p>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={handleRegenerateWebhookSecret}
-                  disabled={isRegenerating}
+                  disabled={isRegenerating || !settings.has_webhook_secret}
                 >
                   <RefreshCw className={`h-4 w-4 mr-2 ${isRegenerating ? "animate-spin" : ""}`} />
-                  Regenerate Secret
+                  Regenerate
                 </Button>
-                <p className="text-xs text-muted-foreground">
-                  Regenerating will update the webhook in TTN automatically
-                </p>
               </div>
             </div>
 
