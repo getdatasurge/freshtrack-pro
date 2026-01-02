@@ -617,7 +617,8 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           code: errorCode, 
           message: errorMessage,
           hint: errorHint,
-          request_id: requestId 
+          request_id: requestId,
+          permissions: result?.permissions,
         });
 
         // Show appropriate error based on code
@@ -627,9 +628,21 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
             duration: 8000,
           });
         } else if (errorCode === "WEBHOOK_SETUP_FAILED") {
+          // Parse TTN error for more specific messaging
+          const ttnErrorMatch = errorHint?.match(/invalid `([^`]+)`: (.+)/);
+          const specificError = ttnErrorMatch 
+            ? `TTN rejected ${ttnErrorMatch[1]}: ${ttnErrorMatch[2]}`
+            : errorHint;
+          
           toast.error("Webhook setup failed", {
-            description: errorHint,
-            duration: 6000,
+            description: specificError || `Request ID: ${requestId}`,
+            duration: 8000,
+          });
+        } else if (errorCode === "INVALID_WEBHOOK_URL") {
+          // Server configuration error
+          toast.error("Server Configuration Error", {
+            description: `${errorMessage}. Request ID: ${requestId}`,
+            duration: 10000,
           });
         } else {
           // Show error with hint for all other cases
