@@ -106,3 +106,7 @@ verify_jwt = false
 # Health check - public endpoint for system monitoring
 [functions.health-check]
 verify_jwt = false
+
+# Update TTN webhook - handles CORS preflight and custom JWT verification
+[functions.update-ttn-webhook]
+verify_jwt = false

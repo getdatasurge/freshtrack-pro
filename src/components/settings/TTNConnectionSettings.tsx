@@ -17,10 +17,15 @@ import {
   Globe,
   Plus,
   AlertTriangle,
-  Info
+  Info,
+  Pencil,
+  X,
+  Save
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 
 interface TTNTestResult {
   success: boolean;
@@ -134,6 +139,27 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const [newApplicationId, setNewApplicationId] = useState("");
   const [isSavingApiKey, setIsSavingApiKey] = useState(false);
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
+
+  // Webhook edit mode state
+  const [isEditingWebhook, setIsEditingWebhook] = useState(false);
+  const [webhookDraft, setWebhookDraft] = useState({
+    url: "",
+    events: [] as string[],
+  });
+  const [webhookValidation, setWebhookValidation] = useState({
+    isValid: true,
+    errors: [] as string[],
+    warnings: [] as string[],
+  });
+  const [isSavingWebhook, setIsSavingWebhook] = useState(false);
+
+  const AVAILABLE_WEBHOOK_EVENTS = [
+    { id: "uplink_message", label: "Uplink Message" },
+    { id: "join_accept", label: "Join Accept" },
+    { id: "downlink_ack", label: "Downlink Ack" },
+    { id: "downlink_nack", label: "Downlink Nack" },
+    { id: "location_solved", label: "Location Solved" },
+  ];
 
   const loadSettings = useCallback(async () => {
     if (!organizationId) return;
@@ -434,6 +460,105 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast.success(`${label} copied to clipboard`);
+  };
+
+  // Webhook edit mode functions
+  const startEditingWebhook = () => {
+    setWebhookDraft({
+      url: settings?.webhook_url || WEBHOOK_URL,
+      events: settings?.webhook_events || ["uplink_message", "join_accept"],
+    });
+    setWebhookValidation({ isValid: true, errors: [], warnings: [] });
+    setIsEditingWebhook(true);
+  };
+
+  const cancelEditingWebhook = () => {
+    setIsEditingWebhook(false);
+    setWebhookDraft({ url: "", events: [] });
+    setWebhookValidation({ isValid: true, errors: [], warnings: [] });
+  };
+
+  const validateWebhookDraft = (draft: typeof webhookDraft) => {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    // URL validation
+    try {
+      const url = new URL(draft.url || "");
+      if (url.protocol !== "https:") {
+        errors.push("Webhook URL must use HTTPS");
+      }
+      // Warn if not FrostGuard endpoint
+      if (!draft.url?.includes("ttn-webhook")) {
+        warnings.push("URL does not match expected FrostGuard endpoint pattern");
+      }
+    } catch {
+      errors.push("Invalid URL format");
+    }
+
+    // Events validation
+    if (!draft.events || draft.events.length === 0) {
+      errors.push("At least one event type must be selected");
+    }
+
+    setWebhookValidation({
+      isValid: errors.length === 0,
+      errors,
+      warnings,
+    });
+  };
+
+  const handleEventToggle = (eventId: string, checked: boolean) => {
+    const newEvents = checked
+      ? [...webhookDraft.events, eventId]
+      : webhookDraft.events.filter((e) => e !== eventId);
+    const newDraft = { ...webhookDraft, events: newEvents };
+    setWebhookDraft(newDraft);
+    validateWebhookDraft(newDraft);
+  };
+
+  const handleWebhookUrlChange = (url: string) => {
+    const newDraft = { ...webhookDraft, url };
+    setWebhookDraft(newDraft);
+    validateWebhookDraft(newDraft);
+  };
+
+  const handleSaveWebhook = async () => {
+    if (!organizationId || !webhookValidation.isValid) return;
+
+    setIsSavingWebhook(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const { data, error } = await supabase.functions.invoke("update-ttn-webhook", {
+        body: {
+          organization_id: organizationId,
+          webhook_url: webhookDraft.url,
+          enabled_events: webhookDraft.events,
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (error) throw error;
+
+      if (data?.ok) {
+        toast.success("Webhook configuration updated", {
+          description: `${data.changes?.length || 0} field(s) changed`,
+        });
+        setIsEditingWebhook(false);
+        await loadSettings();
+      } else {
+        toast.error(data?.error?.message || "Failed to update webhook", {
+          description: data?.error?.hint,
+        });
+      }
+    } catch (err: any) {
+      console.error("Webhook update error:", err);
+      toast.error(err.message || "Failed to update webhook configuration");
+    } finally {
+      setIsSavingWebhook(false);
+    }
   };
 
   const formatSourceLabel = (source: string | null) => {
@@ -773,16 +898,69 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   <Globe className="h-4 w-4 text-muted-foreground" />
                   <Label className="text-base font-medium">Webhook Configuration</Label>
                 </div>
-                {settings.has_webhook_secret && (
-                  <Badge variant="outline" className="bg-safe/10 text-safe border-safe/30">
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    Configured
-                  </Badge>
-                )}
+                <div className="flex items-center gap-2">
+                  {settings.has_webhook_secret && !isEditingWebhook && (
+                    <>
+                      <Badge variant="outline" className="bg-safe/10 text-safe border-safe/30">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Configured
+                      </Badge>
+                      <Button variant="ghost" size="sm" onClick={startEditingWebhook}>
+                        <Pencil className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                    </>
+                  )}
+                  {isEditingWebhook && (
+                    <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">
+                      Editing
+                    </Badge>
+                  )}
+                </div>
               </div>
 
-              {/* Webhook Status Summary */}
-              {settings.has_webhook_secret && (
+              {/* Edit Mode Warning Banner */}
+              {isEditingWebhook && (
+                <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-warning mt-0.5" />
+                    <p className="text-sm text-warning">
+                      Changes will update the webhook in TTN immediately upon save.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Validation Errors */}
+              {isEditingWebhook && webhookValidation.errors.length > 0 && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
+                  <ul className="text-sm text-destructive space-y-1">
+                    {webhookValidation.errors.map((error, i) => (
+                      <li key={i} className="flex items-center gap-2">
+                        <XCircle className="h-3 w-3" />
+                        {error}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Validation Warnings */}
+              {isEditingWebhook && webhookValidation.warnings.length > 0 && webhookValidation.errors.length === 0 && (
+                <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
+                  <ul className="text-sm text-warning space-y-1">
+                    {webhookValidation.warnings.map((warning, i) => (
+                      <li key={i} className="flex items-center gap-2">
+                        <AlertTriangle className="h-3 w-3" />
+                        {warning}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Webhook Status Summary - Read Only Mode */}
+              {settings.has_webhook_secret && !isEditingWebhook && (
                 <div className="grid gap-2 text-sm p-3 bg-muted/50 rounded-md">
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Webhook ID:</span>
@@ -799,7 +977,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   {settings.webhook_events && settings.webhook_events.length > 0 && (
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Events:</span>
-                      <div className="flex gap-1">
+                      <div className="flex gap-1 flex-wrap justify-end">
                         {settings.webhook_events.map(event => (
                           <Badge key={event} variant="secondary" className="text-xs">
                             {event.replace(/_/g, " ")}
@@ -811,48 +989,105 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                 </div>
               )}
 
-              {/* Webhook URL */}
+              {/* Webhook URL - Editable in Edit Mode */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Label className="text-sm">Webhook URL</Label>
                   <InfoTooltip>
-                    This URL is automatically configured in your TTN application webhook
+                    {isEditingWebhook 
+                      ? "Enter the URL where TTN will send sensor data"
+                      : "This URL is automatically configured in your TTN application webhook"
+                    }
                   </InfoTooltip>
                 </div>
                 <div className="flex gap-2">
                   <Input
-                    value={settings.webhook_url || WEBHOOK_URL}
-                    readOnly
-                    className="font-mono text-xs bg-muted"
+                    value={isEditingWebhook ? webhookDraft.url : (settings.webhook_url || WEBHOOK_URL)}
+                    readOnly={!isEditingWebhook}
+                    onChange={(e) => handleWebhookUrlChange(e.target.value)}
+                    className={cn(
+                      "font-mono text-xs",
+                      !isEditingWebhook && "bg-muted"
+                    )}
                   />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => copyToClipboard(settings.webhook_url || WEBHOOK_URL, "Webhook URL")}
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
+                  {!isEditingWebhook && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => copyToClipboard(settings.webhook_url || WEBHOOK_URL, "Webhook URL")}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               </div>
 
-              {/* Regenerate Webhook Secret */}
-              <div className="flex items-center justify-between pt-2 border-t">
-                <div>
-                  <p className="text-sm font-medium">Regenerate Webhook Secret</p>
-                  <p className="text-xs text-muted-foreground">
-                    Updates the secret in both FrostGuard and TTN
-                  </p>
+              {/* Event Selection - Only in Edit Mode */}
+              {isEditingWebhook && (
+                <div className="space-y-3">
+                  <Label className="text-sm">Enabled Events</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {AVAILABLE_WEBHOOK_EVENTS.map((event) => (
+                      <div key={event.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={event.id}
+                          checked={webhookDraft.events.includes(event.id)}
+                          onCheckedChange={(checked) => handleEventToggle(event.id, !!checked)}
+                        />
+                        <Label htmlFor={event.id} className="text-sm cursor-pointer">
+                          {event.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRegenerateWebhookSecret}
-                  disabled={isRegenerating || !settings.has_webhook_secret}
-                >
-                  <RefreshCw className={`h-4 w-4 mr-2 ${isRegenerating ? "animate-spin" : ""}`} />
-                  Regenerate
-                </Button>
-              </div>
+              )}
+
+              {/* Edit Mode Actions */}
+              {isEditingWebhook && (
+                <div className="flex items-center gap-2 pt-3 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={cancelEditingWebhook}
+                    disabled={isSavingWebhook}
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSaveWebhook}
+                    disabled={!webhookValidation.isValid || isSavingWebhook}
+                  >
+                    {isSavingWebhook ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4 mr-1" />
+                    )}
+                    Save Changes
+                  </Button>
+                </div>
+              )}
+
+              {/* Regenerate Webhook Secret - Only in Read Mode */}
+              {!isEditingWebhook && (
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <div>
+                    <p className="text-sm font-medium">Regenerate Webhook Secret</p>
+                    <p className="text-xs text-muted-foreground">
+                      Updates the secret in both FrostGuard and TTN
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRegenerateWebhookSecret}
+                    disabled={isRegenerating || !settings.has_webhook_secret}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isRegenerating ? "animate-spin" : ""}`} />
+                    Regenerate
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Connection Test */}
