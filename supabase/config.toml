@@ -12,6 +12,10 @@ verify_jwt = false
 [functions.manage-ttn-settings]
 verify_jwt = false
 
+# TTN settings sync from Emulator - uses API key auth only
+[functions.sync-ttn-settings]
+verify_jwt = false
+
 [functions.check-password-breach]
 verify_jwt = false
 
