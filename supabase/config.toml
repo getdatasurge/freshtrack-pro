@@ -87,6 +87,10 @@ verify_jwt = false
 [functions.ttn-provision-gateway]
 verify_jwt = false
 
+# TTN bootstrap - handles CORS preflight and custom JWT verification
+[functions.ttn-bootstrap]
+verify_jwt = false
+
 # Org state API - pull-based sync for Emulator, uses API key auth
 [functions.org-state-api]
 verify_jwt = false

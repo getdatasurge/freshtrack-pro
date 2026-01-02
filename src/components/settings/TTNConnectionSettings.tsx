@@ -289,11 +289,13 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     if (!region) {
       errors.push("TTN Region is required");
     }
-    if (!userId?.trim()) {
-      errors.push("TTN User ID is required");
+    // Application ID required
+    const effectiveAppId = newApplicationId.trim() || settings?.ttn_application_id;
+    if (!effectiveAppId) {
+      errors.push("TTN Application ID is required");
     }
-    // API key required if no existing key and not using global defaults
-    if (!settings?.has_api_key && !apiKey && !settings?.using_global_defaults) {
+    // API key required if no existing key
+    if (!settings?.has_api_key && !newApiKey.trim()) {
       errors.push("TTN API Key is required");
     }
 
