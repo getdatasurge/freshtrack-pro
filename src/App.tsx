@@ -3,6 +3,8 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { DebugProvider } from "@/contexts/DebugContext";
+import { DebugTerminal, RouteLogger } from "@/components/debug";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -29,33 +31,37 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/organization" element={<OrganizationDashboard />} />
-          <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/sites" element={<Sites />} />
-          <Route path="/sites/:siteId" element={<SiteDetail />} />
-          <Route path="/sites/:siteId/areas/:areaId" element={<AreaDetail />} />
-          <Route path="/units/:unitId" element={<UnitDetail />} />
-          <Route path="/manual-log" element={<ManualLog />} />
-          <Route path="/alerts" element={<Alerts />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/inspector" element={<Inspector />} />
-          <Route path="/pilot-setup" element={<PilotSetup />} />
-          <Route path="/events" element={<EventHistory />} />
-          <Route path="/admin/recently-deleted" element={<RecentlyDeleted />} />
-          <Route path="/admin/ttn-cleanup" element={<TTNCleanup />} />
-          <Route path="/admin/data-maintenance" element={<DataMaintenance />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <DebugProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <RouteLogger />
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/organization" element={<OrganizationDashboard />} />
+            <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/sites" element={<Sites />} />
+            <Route path="/sites/:siteId" element={<SiteDetail />} />
+            <Route path="/sites/:siteId/areas/:areaId" element={<AreaDetail />} />
+            <Route path="/units/:unitId" element={<UnitDetail />} />
+            <Route path="/manual-log" element={<ManualLog />} />
+            <Route path="/alerts" element={<Alerts />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/inspector" element={<Inspector />} />
+            <Route path="/pilot-setup" element={<PilotSetup />} />
+            <Route path="/events" element={<EventHistory />} />
+            <Route path="/admin/recently-deleted" element={<RecentlyDeleted />} />
+            <Route path="/admin/ttn-cleanup" element={<TTNCleanup />} />
+            <Route path="/admin/data-maintenance" element={<DataMaintenance />} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+        <DebugTerminal />
+      </DebugProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );
