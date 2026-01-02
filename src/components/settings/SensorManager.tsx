@@ -40,6 +40,8 @@ import { SENSOR_STATUS_CONFIG, SENSOR_COLUMN_TOOLTIPS } from "@/lib/entityStatus
 import { cn } from "@/lib/utils";
 import { debugLog } from "@/lib/debugLogger";
 import { canProvisionSensor } from "@/lib/actions";
+import { useTTNConfig } from "@/contexts/TTNConfigContext";
+import { checkTTNOperationAllowed } from "@/lib/ttn/guards";
 
 interface Site {
   id: string;
@@ -385,6 +387,10 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   const deleteSensor = useDeleteLoraSensor();
   const provisionSensor = useProvisionLoraSensor();
   const updateSensor = useUpdateLoraSensor();
+
+  // TTN Config Context for state awareness
+  const { context: ttnContext } = useTTNConfig();
+  const guardResult = checkTTNOperationAllowed('provision_sensor', ttnContext);
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [viewRawSensor, setViewRawSensor] = useState<LoraSensor | null>(null);

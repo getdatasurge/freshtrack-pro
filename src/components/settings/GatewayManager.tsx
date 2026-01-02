@@ -39,6 +39,9 @@ import { GATEWAY_STATUS_CONFIG, GATEWAY_COLUMN_TOOLTIPS } from "@/lib/entityStat
 import { cn } from "@/lib/utils";
 import { debugLog } from "@/lib/debugLogger";
 import { canProvisionGateway } from "@/lib/actions";
+import { useTTNConfig } from "@/contexts/TTNConfigContext";
+import { TTNConfigSourceBadge } from "@/components/ttn/TTNConfigSourceBadge";
+import { checkTTNOperationAllowed } from "@/lib/ttn/guards";
 
 interface Site {
   id: string;
@@ -345,6 +348,10 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
   const deleteGateway = useDeleteGateway();
   const updateGateway = useUpdateGateway();
   const provisionGateway = useProvisionGateway();
+  
+  // TTN Config Context for state awareness
+  const { context: ttnContext } = useTTNConfig();
+  const guardResult = checkTTNOperationAllowed('provision_gateway', ttnContext);
   
   // Gateway provisioning preflight check
   const preflight = useGatewayProvisioningPreflight(

@@ -33,6 +33,10 @@ import {
   Route,
 } from "lucide-react";
 import { EmulatorTTNRoutingCard } from "./EmulatorTTNRoutingCard";
+import { useTTNConfig } from "@/contexts/TTNConfigContext";
+import { TTNConfigSourceBadge } from "@/components/ttn/TTNConfigSourceBadge";
+import { TTNGuardDisplay } from "@/components/ttn/TTNGuardDisplay";
+import { checkTTNOperationAllowed } from "@/lib/ttn/guards";
 
 interface Unit {
   id: string;
@@ -92,6 +96,10 @@ export function SensorSimulatorPanel({ organizationId }: SensorSimulatorPanelPro
   const [recentEvents, setRecentEvents] = useState<SimulatorEvent[]>([]);
   const [activeTab, setActiveTab] = useState<string>("readings");
   const [routeViaTTN, setRouteViaTTN] = useState(false);
+  
+  // TTN Config Context for state awareness
+  const { context: ttnContext } = useTTNConfig();
+  const guardResult = checkTTNOperationAllowed('simulate', ttnContext);
   
   // Simulated device config
   const [config, setConfig] = useState<SimulatedDeviceConfig | null>(null);
@@ -299,10 +307,15 @@ export function SensorSimulatorPanel({ organizationId }: SensorSimulatorPanelPro
 
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="w-5 h-5 text-accent" />
-            Sensor Simulator
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-accent" />
+              Sensor Simulator
+            </CardTitle>
+            {routeViaTTN && (
+              <TTNConfigSourceBadge context={ttnContext} size="sm" />
+            )}
+          </div>
           <CardDescription>
             Fully simulate hardware installations. All data flows through production ingestion paths.
           </CardDescription>
