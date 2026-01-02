@@ -2273,6 +2273,8 @@ export type Database = {
           ttn_application_name: string | null
           ttn_application_provisioned_at: string | null
           ttn_identity_server_url: string | null
+          ttn_last_test_source: string | null
+          ttn_last_updated_source: string | null
           ttn_region: string | null
           ttn_stack_base_url: string | null
           ttn_user_id: string | null
@@ -2301,6 +2303,8 @@ export type Database = {
           ttn_application_name?: string | null
           ttn_application_provisioned_at?: string | null
           ttn_identity_server_url?: string | null
+          ttn_last_test_source?: string | null
+          ttn_last_updated_source?: string | null
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
           ttn_user_id?: string | null
@@ -2329,6 +2333,8 @@ export type Database = {
           ttn_application_name?: string | null
           ttn_application_provisioned_at?: string | null
           ttn_identity_server_url?: string | null
+          ttn_last_test_source?: string | null
+          ttn_last_updated_source?: string | null
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
           ttn_user_id?: string | null

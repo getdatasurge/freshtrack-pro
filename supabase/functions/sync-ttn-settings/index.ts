@@ -1,5 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { obfuscateKey, getLast4 } from "../_shared/ttnConfig.ts";
+
+/**
+ * sync-ttn-settings: Accept TTN settings updates from Emulator (or FrostGuard)
+ * using API key authentication only (PROJECT2_SYNC_API_KEY).
+ * 
+ * This enables bi-directional TTN config sync without JWT or service role keys.
+ * Uses shared encryption from _shared/ttnConfig.ts for compatibility.
+ */
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,14 +29,6 @@ function log(level: "info" | "warn" | "error", message: string, data?: Record<st
     ...data,
   };
   console[level === "error" ? "error" : level === "warn" ? "warn" : "info"](JSON.stringify(entry));
-}
-
-// Simple XOR obfuscation for API keys (matching existing pattern)
-function obfuscateKey(key: string, salt: string): string {
-  const combined = key + salt;
-  const bytes = new TextEncoder().encode(combined);
-  const obfuscated = bytes.map((byte, i) => byte ^ ((i * 31 + 17) % 256));
-  return btoa(String.fromCharCode(...obfuscated));
 }
 
 // Validate PROJECT2_SYNC_API_KEY
@@ -109,6 +110,8 @@ serve(async (req) => {
     application_id?: string;
     api_key?: string;
     webhook_secret?: string;
+    webhook_url?: string;
+    source?: "frostguard" | "emulator";
   };
 
   try {
@@ -128,6 +131,8 @@ serve(async (req) => {
     return errorResponse(400, "INVALID_ORG_ID", "org_id must be a valid UUID", "Provide valid UUID format", requestId);
   }
 
+  const source = body.source || "emulator";
+
   log("info", "TTN_SETTINGS_SYNC_PROCESSING", {
     request_id: requestId,
     org_id: body.org_id,
@@ -136,6 +141,7 @@ serve(async (req) => {
     enabled: body.enabled,
     cluster: body.cluster,
     application_id: body.application_id,
+    source,
   });
 
   // Initialize Supabase client with service role
@@ -148,6 +154,9 @@ serve(async (req) => {
   }
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  // Get encryption salt - MUST match _shared/ttnConfig.ts pattern
+  const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || supabaseServiceKey.slice(0, 32);
 
   try {
     // Verify organization exists
@@ -167,10 +176,10 @@ serve(async (req) => {
     }
 
     // Build update object
-    const salt = org.slug || org.id;
     const updateData: Record<string, unknown> = {
       organization_id: body.org_id,
       updated_at: new Date().toISOString(),
+      ttn_last_updated_source: source,
     };
 
     // Handle enabled flag
@@ -180,7 +189,7 @@ serve(async (req) => {
 
     // Handle cluster/region
     if (body.cluster !== undefined) {
-      updateData.ttn_region = body.cluster;
+      updateData.ttn_region = body.cluster.toLowerCase();
     }
 
     // Handle application_id
@@ -188,22 +197,35 @@ serve(async (req) => {
       updateData.ttn_application_id = body.application_id;
     }
 
-    // Handle API key encryption
+    // Handle webhook_url
+    if (body.webhook_url !== undefined) {
+      updateData.ttn_webhook_url = body.webhook_url;
+    }
+
+    // Handle API key encryption - use shared obfuscateKey from ttnConfig.ts
     let apiKeyLast4: string | null = null;
     if (body.api_key) {
-      updateData.ttn_api_key_encrypted = obfuscateKey(body.api_key, salt);
-      apiKeyLast4 = body.api_key.slice(-4);
+      updateData.ttn_api_key_encrypted = obfuscateKey(body.api_key, encryptionSalt);
+      apiKeyLast4 = getLast4(body.api_key);
       updateData.ttn_api_key_last4 = apiKeyLast4;
+      updateData.ttn_api_key_updated_at = new Date().toISOString();
       // Clear old test results since key changed
       updateData.last_connection_test_result = null;
       updateData.last_connection_test_at = null;
+      
+      log("info", "TTN_SETTINGS_API_KEY_UPDATE", {
+        request_id: requestId,
+        org_id: body.org_id,
+        api_key_last4: apiKeyLast4,
+        source,
+      });
     }
 
     // Handle webhook secret encryption
     let webhookSecretLast4: string | null = null;
     if (body.webhook_secret) {
-      updateData.ttn_webhook_secret_encrypted = obfuscateKey(body.webhook_secret, salt);
-      webhookSecretLast4 = body.webhook_secret.slice(-4);
+      updateData.ttn_webhook_secret_encrypted = obfuscateKey(body.webhook_secret, encryptionSalt);
+      webhookSecretLast4 = getLast4(body.webhook_secret);
       updateData.ttn_webhook_secret_last4 = webhookSecretLast4;
     }
 
@@ -211,7 +233,7 @@ serve(async (req) => {
     const { data: ttnConn, error: upsertError } = await supabase
       .from("ttn_connections")
       .upsert(updateData, { onConflict: "organization_id" })
-      .select("is_enabled, ttn_region, ttn_application_id, ttn_api_key_last4, ttn_webhook_secret_last4, updated_at")
+      .select("is_enabled, ttn_region, ttn_application_id, ttn_api_key_last4, ttn_api_key_updated_at, ttn_webhook_secret_last4, ttn_webhook_url, ttn_last_updated_source, updated_at")
       .single();
 
     if (upsertError) {
@@ -224,16 +246,27 @@ serve(async (req) => {
       return errorResponse(500, "UPSERT_ERROR", "Failed to update TTN settings", upsertError.message, requestId);
     }
 
+    // Explicitly mark org dirty (trigger should also do this, but be explicit)
+    await supabase
+      .from("org_sync_state")
+      .upsert({
+        organization_id: body.org_id,
+        is_dirty: true,
+        last_change_at: new Date().toISOString(),
+        sync_version: 1,
+      }, { onConflict: "organization_id" });
+
     const duration = Date.now() - startTime;
     log("info", "TTN_SETTINGS_UPSERT_OK", {
       request_id: requestId,
       org_id: body.org_id,
       api_key_last4: ttnConn?.ttn_api_key_last4 || apiKeyLast4,
       enabled: ttnConn?.is_enabled,
+      source: ttnConn?.ttn_last_updated_source,
       duration_ms: duration,
     });
 
-    // Return success response
+    // Return success response with source tracking
     return new Response(
       JSON.stringify({
         ok: true,
@@ -242,13 +275,16 @@ serve(async (req) => {
           enabled: ttnConn?.is_enabled ?? false,
           cluster: ttnConn?.ttn_region,
           application_id: ttnConn?.ttn_application_id,
+          webhook_url: ttnConn?.ttn_webhook_url,
           api_key_last4: ttnConn?.ttn_api_key_last4,
+          api_key_updated_at: ttnConn?.ttn_api_key_updated_at,
           webhook_secret_last4: ttnConn?.ttn_webhook_secret_last4,
+          last_updated_source: ttnConn?.ttn_last_updated_source,
           updated_at: ttnConn?.updated_at,
         },
         _meta: {
           duration_ms: duration,
-          version: "1.0.0",
+          version: "2.0.0",
         },
       }),
       {

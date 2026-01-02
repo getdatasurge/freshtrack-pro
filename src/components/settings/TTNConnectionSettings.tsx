@@ -32,6 +32,7 @@ interface TTNSettings {
   provisioned_at: string | null;
   has_api_key: boolean;
   api_key_last4: string | null;
+  api_key_updated_at: string | null;
   has_webhook_secret: boolean;
   webhook_url: string | null;
   last_connection_test_at: string | null;
@@ -40,7 +41,11 @@ interface TTNSettings {
     message: string;
     error?: string;
     tested_at?: string;
+    api_key_last4?: string;
+    last_updated_source?: string;
   } | null;
+  last_updated_source: string | null;
+  last_test_source: string | null;
 }
 
 interface TTNConnectionSettingsProps {
@@ -78,6 +83,8 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   
   const [region, setRegion] = useState("nam1");
   const [isEnabled, setIsEnabled] = useState(false);
+  const [newApiKey, setNewApiKey] = useState("");
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
 
   const loadSettings = useCallback(async () => {
     if (!organizationId) return;
@@ -111,10 +118,13 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           provisioned_at: data.ttn_application_provisioned_at ?? null,
           has_api_key: data.has_api_key ?? false,
           api_key_last4: data.api_key_last4 ?? null,
+          api_key_updated_at: data.api_key_updated_at ?? null,
           has_webhook_secret: data.has_webhook_secret ?? false,
           webhook_url: WEBHOOK_URL,
           last_connection_test_at: data.last_connection_test_at ?? null,
           last_connection_test_result: data.last_connection_test_result ?? null,
+          last_updated_source: data.last_updated_source ?? null,
+          last_test_source: data.last_test_source ?? null,
         });
         setRegion(data.ttn_region || "nam1");
         setIsEnabled(data.is_enabled ?? false);
@@ -278,9 +288,44 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     }
   };
 
+  const handleSaveApiKey = async () => {
+    if (!organizationId || !newApiKey.trim()) return;
+    
+    setIsSavingApiKey(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
+        body: { 
+          action: "update", 
+          organization_id: organizationId, 
+          api_key: newApiKey.trim(),
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (error) throw error;
+
+      setNewApiKey("");
+      toast.success("API key saved successfully");
+      await loadSettings();
+    } catch (err: any) {
+      console.error("Save API key error:", err);
+      toast.error(err.message || "Failed to save API key");
+    } finally {
+      setIsSavingApiKey(false);
+    }
+  };
+
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast.success(`${label} copied to clipboard`);
+  };
+
+  const formatSourceLabel = (source: string | null) => {
+    if (!source) return "Unknown";
+    return source === "emulator" ? "Emulator" : "FrostGuard";
   };
 
   if (!organizationId) {
@@ -454,6 +499,56 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                 onCheckedChange={handleToggleEnabled}
                 disabled={isSaving}
               />
+            </div>
+
+            {/* API Key Management */}
+            <div className="space-y-3 p-4 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Label>API Key</Label>
+                  <InfoTooltip>Enter your TTN API key with Application rights</InfoTooltip>
+                </div>
+                <Button variant="ghost" size="sm" onClick={loadSettings} disabled={isLoading}>
+                  <RefreshCw className={`h-3 w-3 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </Button>
+              </div>
+              
+              {settings?.has_api_key && (
+                <div className="text-sm space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Current key:</span>
+                    <code className="bg-muted px-2 py-0.5 rounded text-xs">****{settings.api_key_last4}</code>
+                    {settings.last_updated_source && (
+                      <Badge variant="outline" className="text-xs">
+                        Updated by {formatSourceLabel(settings.last_updated_source)}
+                      </Badge>
+                    )}
+                  </div>
+                  {settings.api_key_updated_at && (
+                    <p className="text-xs text-muted-foreground">
+                      Updated: {new Date(settings.api_key_updated_at).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              )}
+              
+              <div className="flex gap-2">
+                <Input
+                  type="password"
+                  placeholder="NNSXS.XXXXXXXXXX..."
+                  value={newApiKey}
+                  onChange={(e) => setNewApiKey(e.target.value)}
+                  className="font-mono text-xs"
+                />
+                <Button 
+                  onClick={handleSaveApiKey} 
+                  disabled={isSavingApiKey || !newApiKey.trim()}
+                  size="sm"
+                >
+                  {isSavingApiKey ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                </Button>
+              </div>
             </div>
 
             {/* Webhook Configuration */}
