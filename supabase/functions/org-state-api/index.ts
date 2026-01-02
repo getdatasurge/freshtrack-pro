@@ -51,6 +51,26 @@ interface OrgSyncPayload {
     timezone: string;
     is_active: boolean;
   }>;
+  areas: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    site_id: string;
+    sort_order: number;
+    is_active: boolean;
+  }>;
+  units: Array<{
+    id: string;
+    name: string;
+    unit_type: string;
+    area_id: string;
+    site_id: string;
+    temp_limit_high: number;
+    temp_limit_low: number | null;
+    status: string;
+    is_active: boolean;
+    created_at: string;
+  }>;
   sensors: Array<{
     id: string;
     name: string;
@@ -331,9 +351,11 @@ serve(async (req) => {
     
     log(requestId, 'info', 'State fetch complete', { 
       org_id: orgId,
+      sites_count: payload.sites?.length || 0,
+      areas_count: payload.areas?.length || 0,
+      units_count: payload.units?.length || 0,
       sensors_count: payload.sensors?.length || 0,
       gateways_count: payload.gateways?.length || 0,
-      sites_count: payload.sites?.length || 0,
       duration_ms: durationMs
     });
 
@@ -350,6 +372,8 @@ serve(async (req) => {
         sync_version: payload.sync_version,
         counts: {
           sites: payload.sites?.length || 0,
+          areas: payload.areas?.length || 0,
+          units: payload.units?.length || 0,
           sensors: payload.sensors?.length || 0,
           gateways: payload.gateways?.length || 0
         },

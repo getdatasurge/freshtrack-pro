@@ -82,3 +82,7 @@ verify_jwt = false
 # Org state API - pull-based sync for Emulator, uses API key auth
 [functions.org-state-api]
 verify_jwt = false
+
+# Sensor assignment endpoint for Emulator - uses API key auth
+[functions.update-sensor-assignment]
+verify_jwt = false
