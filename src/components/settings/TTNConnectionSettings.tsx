@@ -282,6 +282,24 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     }
   };
 
+  // Validate required fields for test connection
+  const validateForTest = (): { valid: boolean; errors: string[] } => {
+    const errors: string[] = [];
+
+    if (!region) {
+      errors.push("TTN Region is required");
+    }
+    if (!userId?.trim()) {
+      errors.push("TTN User ID is required");
+    }
+    // API key required if no existing key and not using global defaults
+    if (!settings?.has_api_key && !apiKey && !settings?.using_global_defaults) {
+      errors.push("TTN API Key is required");
+    }
+
+    return { valid: errors.length === 0, errors };
+  };
+
   const handleTest = async () => {
     if (!organizationId) return;
     
