@@ -274,6 +274,99 @@ export function validateDeviceApiKey(req: Request): { valid: boolean; error?: st
   return { valid: false, error: "Invalid or missing device API key" };
 }
 
+// ============= Project 2 Sync API Key Validation =============
+
+/**
+ * Validate Project 2 sync API key for org-state-api pull endpoint
+ * Checks for PROJECT2_SYNC_API_KEY environment variable
+ * Accepts: Authorization: Bearer <key> OR X-Sync-API-Key: <key>
+ */
+export function validateProject2SyncApiKey(req: Request): { 
+  valid: boolean; 
+  error?: string;
+  errorCode?: 'NOT_CONFIGURED' | 'UNAUTHORIZED';
+  keyLast4?: string;
+} {
+  const expectedKey = Deno.env.get("PROJECT2_SYNC_API_KEY");
+  
+  if (!expectedKey) {
+    console.warn("[validateProject2SyncApiKey] PROJECT2_SYNC_API_KEY not configured");
+    return { valid: false, error: "Sync API not configured", errorCode: 'NOT_CONFIGURED' };
+  }
+  
+  const authHeader = req.headers.get("Authorization");
+  const syncHeader = req.headers.get("X-Sync-API-Key");
+  
+  // Check X-Sync-API-Key header first
+  if (syncHeader === expectedKey) {
+    return { valid: true, keyLast4: expectedKey.slice(-4) };
+  }
+  
+  // Check Authorization: Bearer <key> format
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    if (token === expectedKey) {
+      return { valid: true, keyLast4: expectedKey.slice(-4) };
+    }
+  }
+  
+  return { valid: false, error: "Invalid or missing sync API key", errorCode: 'UNAUTHORIZED' };
+}
+
+// ============= Structured Error Response Builder =============
+
+export interface StructuredErrorResponse {
+  success: false;
+  error_code: string;
+  message: string;
+  request_id: string;
+  details?: Record<string, unknown>;
+  hint?: string;
+  timestamp: string;
+}
+
+export function buildStructuredError(
+  errorCode: string,
+  message: string,
+  requestId: string,
+  options?: {
+    details?: Record<string, unknown>;
+    hint?: string;
+  }
+): StructuredErrorResponse {
+  return {
+    success: false,
+    error_code: errorCode,
+    message,
+    request_id: requestId,
+    details: options?.details,
+    hint: options?.hint,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export function structuredErrorResponse(
+  status: number,
+  errorCode: string,
+  message: string,
+  requestId: string,
+  corsHeaders: Record<string, string>,
+  options?: {
+    details?: Record<string, unknown>;
+    hint?: string;
+  }
+): Response {
+  const body = buildStructuredError(errorCode, message, requestId, options);
+  
+  return new Response(
+    JSON.stringify(body),
+    { 
+      status, 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    }
+  );
+}
+
 // ============= Error Response Helpers =============
 
 export function validationErrorResponse(error: z.ZodError, corsHeaders: Record<string, string>) {
