@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { DebugProvider } from "@/contexts/DebugContext";
+import { TTNConfigProvider } from "@/contexts/TTNConfigContext";
 import { DebugTerminal, RouteLogger } from "@/components/debug";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -34,11 +35,12 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <DebugProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <RouteLogger />
-          <Routes>
+        <TTNConfigProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <RouteLogger />
+            <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/dashboard" element={<Dashboard />} />
@@ -60,11 +62,12 @@ const App = () => (
             <Route path="/admin/data-maintenance" element={<DataMaintenance />} />
             <Route path="/admin/health" element={<HealthDashboard />} />
             <Route path="/account-deleted" element={<AccountDeleted />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-        <DebugTerminal />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+          <DebugTerminal />
+        </TTNConfigProvider>
       </DebugProvider>
     </TooltipProvider>
   </QueryClientProvider>

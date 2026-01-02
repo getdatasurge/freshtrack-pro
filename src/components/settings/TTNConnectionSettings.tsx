@@ -26,6 +26,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { useTTNConfig } from "@/contexts/TTNConfigContext";
+import { TTNConfigSourceBadge } from "@/components/ttn/TTNConfigSourceBadge";
+import { TTNDiagnosticsDownload } from "@/components/ttn/TTNDiagnosticsDownload";
+import { hashConfigValues } from "@/types/ttnState";
 
 interface TTNTestResult {
   success: boolean;
@@ -148,6 +152,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     warnings: string[];
     permissions?: BootstrapResult["permissions"];
   } | null>(null);
+
+  // TTN Config Context for state management
+  const { context: ttnContext, setValidated, setCanonical, setInvalid, checkForDrift } = useTTNConfig();
 
   // Webhook edit mode state
   const [isEditingWebhook, setIsEditingWebhook] = useState(false);
@@ -754,10 +761,28 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Radio className="h-5 w-5" />
-          TTN Connection
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Radio className="h-5 w-5" />
+            TTN Connection
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <TTNConfigSourceBadge context={ttnContext} size="sm" />
+            <TTNDiagnosticsDownload 
+              context={ttnContext} 
+              organizationId={organizationId}
+              settings={settings ? {
+                cluster: settings.ttn_region || undefined,
+                application_id: settings.ttn_application_id || undefined,
+                api_key_last4: settings.api_key_last4 || undefined,
+                webhook_url: settings.webhook_url || undefined,
+                is_enabled: settings.is_enabled,
+              } : undefined}
+              variant="ghost"
+              size="sm"
+            />
+          </div>
+        </div>
         <CardDescription>
           Connect your LoRaWAN sensors via The Things Network
         </CardDescription>
