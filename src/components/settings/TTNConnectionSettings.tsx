@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { useTTNConfig } from "@/contexts/TTNConfigContext";
 import { TTNConfigSourceBadge } from "@/components/ttn/TTNConfigSourceBadge";
 import { TTNDiagnosticsDownload } from "@/components/ttn/TTNDiagnosticsDownload";
+import { TTNValidationResultPanel, TTNValidationResult } from "@/components/ttn/TTNValidationResultPanel";
 import { hashConfigValues } from "@/types/ttnState";
 
 interface TTNTestResult {
@@ -147,11 +148,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   // Health check state
   const [bootstrapHealthError, setBootstrapHealthError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState<{
-    valid: boolean;
-    warnings: string[];
-    permissions?: BootstrapResult["permissions"];
-  } | null>(null);
+  const [validationResult, setValidationResult] = useState<TTNValidationResult | null>(null);
 
   // TTN Config Context for state management
   const { context: ttnContext, setValidated, setCanonical, setInvalid, checkForDrift } = useTTNConfig();
@@ -293,31 +290,99 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
+      // Case A: Transport error (network, CORS, non-2xx)
       if (error) {
-        console.error("Preflight validation error:", error);
-        setValidationResult({ valid: false, warnings: [error.message] });
+        console.error("[TTN Validation] Transport error:", error);
+        toast.error("Connection error", { description: error.message });
+        setValidationResult({
+          valid: false,
+          warnings: ["Unable to reach validation service"],
+          error: { code: "TRANSPORT_ERROR", message: error.message },
+        });
+        setInvalid(error.message);
         return;
       }
 
-      if (data?.valid) {
+      // Case B: Application-level validation (HTTP 200, structured response)
+      if (data?.valid || data?.ok) {
+        // Validation passed - log as INFO, not ERROR
+        console.info("[TTN Validation] Configuration valid", { 
+          request_id: data.request_id,
+          permissions: data.permissions?.rights?.length || 0
+        });
+        
         setValidationResult({
           valid: true,
           warnings: data.warnings || [],
           permissions: data.permissions,
+          request_id: data.request_id,
+          applicationId: effectiveAppId,
         });
+        
+        // Update TTN config context
+        if (data.permissions) {
+          setValidated({
+            valid: true,
+            api_key_type: 'application',
+            permissions: {
+              applications_read: data.permissions.rights?.includes('RIGHT_APPLICATION_INFO') ?? false,
+              applications_write: data.permissions.rights?.includes('RIGHT_APPLICATION_SETTINGS_BASIC') ?? false,
+              devices_read: data.permissions.rights?.includes('RIGHT_APPLICATION_DEVICES_READ') ?? false,
+              devices_write: data.permissions.rights?.includes('RIGHT_APPLICATION_DEVICES_WRITE') ?? false,
+              gateways_read: false,
+              gateways_write: false,
+              webhooks_write: data.permissions.can_configure_webhook ?? false,
+              can_configure_webhook: data.permissions.can_configure_webhook ?? false,
+              can_manage_devices: data.permissions.can_manage_devices ?? false,
+              can_provision_gateways: false,
+              rights: data.permissions.rights || [],
+            },
+            missing_permissions: data.permissions.missing_core || [],
+            invalid_fields: [],
+            warnings: data.warnings || [],
+            validated_at: new Date().toISOString(),
+            request_id: data.request_id || '',
+            resolved: { 
+              cluster: region, 
+              application_id: effectiveAppId,
+              organization_id: organizationId,
+            },
+          });
+        }
       } else {
+        // Validation failed - NOT a transport error, log as INFO
+        console.info("[TTN Validation] Configuration invalid:", {
+          code: data?.error?.code,
+          message: data?.error?.message,
+          request_id: data?.request_id,
+        });
+        
         setValidationResult({
           valid: false,
-          warnings: [data?.error?.message || "Validation failed"],
+          warnings: [],
+          error: data?.error,
+          request_id: data?.request_id,
+          applicationId: effectiveAppId,
+          permissions: data?.permissions,
         });
+        
+        // Update context to invalid state
+        setInvalid(data?.error?.message || "Validation failed");
       }
-    } catch (err) {
-      console.error("Preflight validation error:", err);
-      setValidationResult({ valid: false, warnings: ["Validation check failed"] });
+    } catch (err: unknown) {
+      // Unexpected error (should be rare)
+      const errMessage = err instanceof Error ? err.message : "Unknown error";
+      console.error("[TTN Validation] Unexpected error:", err);
+      setValidationResult({
+        valid: false,
+        warnings: ["Unexpected validation error"],
+        error: { code: "UNEXPECTED_ERROR", message: errMessage },
+      });
+      setInvalid(errMessage);
     } finally {
       setIsValidating(false);
     }
-  }, [organizationId, region, newApplicationId, newApiKey, settings?.ttn_application_id]);
+  }, [organizationId, region, newApplicationId, newApiKey, settings?.ttn_application_id, setValidated, setInvalid]);
 
   useEffect(() => {
     loadSettings();
@@ -1066,34 +1131,12 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   )}
                 </div>
 
-                {/* Preflight Validation Status */}
+                {/* Preflight Validation Result Panel */}
                 {validationResult && (
-                  <div className={cn(
-                    "p-2 rounded border text-xs",
-                    validationResult.valid 
-                      ? "bg-green-500/10 border-green-500/30" 
-                      : "bg-destructive/10 border-destructive/30"
-                  )}>
-                    <div className="flex items-start gap-2">
-                      {validationResult.valid ? (
-                        <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-destructive shrink-0" />
-                      )}
-                      <div>
-                        <span className={validationResult.valid ? "text-green-700 dark:text-green-400" : "text-destructive"}>
-                          {validationResult.valid ? "Configuration valid" : "Configuration issues detected"}
-                        </span>
-                        {validationResult.warnings.length > 0 && (
-                          <ul className="mt-1 text-muted-foreground list-disc list-inside">
-                            {validationResult.warnings.map((w, i) => (
-                              <li key={i}>{w}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  <TTNValidationResultPanel 
+                    result={validationResult}
+                    applicationId={newApplicationId.trim() || settings?.ttn_application_id || ""}
+                  />
                 )}
 
                 {/* Validate & Save Buttons */}
@@ -1116,23 +1159,41 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                       </>
                     )}
                   </Button>
-                  <Button
-                    onClick={handleSaveApiKey}
-                    disabled={isSavingApiKey || !newApiKey.trim() || !newApplicationId.trim()}
-                    className="flex-1"
-                  >
-                    {isSavingApiKey ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Configuring...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-2" />
-                        Save & Configure
-                      </>
-                    )}
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="flex-1">
+                          <Button
+                            onClick={handleSaveApiKey}
+                            disabled={
+                              isSavingApiKey || 
+                              !newApiKey.trim() || 
+                              !newApplicationId.trim() ||
+                              (validationResult !== null && !validationResult.valid)
+                            }
+                            className="w-full"
+                          >
+                            {isSavingApiKey ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Configuring...
+                              </>
+                            ) : (
+                              <>
+                                <Save className="h-4 w-4 mr-2" />
+                                Save & Configure
+                              </>
+                            )}
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      {validationResult && !validationResult.valid && (
+                        <TooltipContent>
+                          <p>Validate configuration first to enable saving</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </div>
             </div>
