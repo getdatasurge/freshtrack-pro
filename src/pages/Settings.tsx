@@ -146,6 +146,14 @@ const Settings = () => {
   const [sensorCount, setSensorCount] = useState(0);
   const [gatewayCount, setGatewayCount] = useState(0);
   const [hasOtherUsers, setHasOtherUsers] = useState(false);
+  
+  // TTN config state for SensorManager
+  const [ttnConfig, setTtnConfig] = useState<{
+    isEnabled: boolean;
+    hasApiKey: boolean;
+    applicationId: string | null;
+    apiKeyLast4: string | null;
+  } | null>(null);
 
   // Form states
   const [orgName, setOrgName] = useState("");
@@ -334,6 +342,25 @@ const Settings = () => {
 
       // Check if there are other users in the org
       setHasOtherUsers((usersData?.length || 0) > 1);
+
+      // Load TTN config for SensorManager provisioning buttons
+      try {
+        const { data: ttnData } = await supabase.functions.invoke("manage-ttn-settings", {
+          body: { action: "get", organization_id: profileData.organization_id }
+        });
+        
+        if (ttnData) {
+          setTtnConfig({
+            isEnabled: ttnData.is_enabled ?? false,
+            hasApiKey: !!(ttnData.ttn_api_key_last4 || ttnData.has_api_key),
+            applicationId: ttnData.ttn_application_id ?? null,
+            apiKeyLast4: ttnData.ttn_api_key_last4 ?? null,
+          });
+        }
+      } catch (ttnError) {
+        console.error("[Settings] Failed to load TTN config:", ttnError);
+        // Don't block settings load if TTN config fails
+      }
 
     } catch (error) {
       console.error("Error loading settings:", error);
@@ -1101,6 +1128,7 @@ const Settings = () => {
               units={units}
               canEdit={canManageUsers}
               autoOpenAdd={action === "add" && defaultTab === "sensors"}
+              ttnConfig={ttnConfig}
             />
           </TabsContent>
         )}
