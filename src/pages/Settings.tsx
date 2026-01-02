@@ -1115,6 +1115,7 @@ const Settings = () => {
               organizationId={organization.id}
               sites={sites}
               canEdit={canManageUsers}
+              ttnConfig={ttnConfig}
             />
           </TabsContent>
         )}

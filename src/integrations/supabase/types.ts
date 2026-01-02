@@ -904,6 +904,9 @@ export type Database = {
           site_id: string | null
           status: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id: string | null
+          ttn_gateway_id: string | null
+          ttn_last_error: string | null
+          ttn_registered_at: string | null
           updated_at: string
         }
         Insert: {
@@ -918,6 +921,9 @@ export type Database = {
           site_id?: string | null
           status?: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id?: string | null
+          ttn_gateway_id?: string | null
+          ttn_last_error?: string | null
+          ttn_registered_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -932,6 +938,9 @@ export type Database = {
           site_id?: string | null
           status?: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id?: string | null
+          ttn_gateway_id?: string | null
+          ttn_last_error?: string | null
+          ttn_registered_at?: string | null
           updated_at?: string
         }
         Relationships: [

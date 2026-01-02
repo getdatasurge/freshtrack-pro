@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useGateways, useDeleteGateway, useUpdateGateway } from "@/hooks/useGateways";
+import { useState, useEffect } from "react";
+import { useGateways, useDeleteGateway, useUpdateGateway, useProvisionGateway } from "@/hooks/useGateways";
 import { Gateway, GatewayStatus } from "@/types/ttn";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Radio, Plus, Pencil, Trash2, Loader2, Info, MapPin } from "lucide-react";
+import { Radio, Plus, Pencil, Trash2, Loader2, Info, MapPin, CloudUpload, CheckCircle2 } from "lucide-react";
 import { AddGatewayDialog } from "./AddGatewayDialog";
 import { EditGatewayDialog } from "./EditGatewayDialog";
 import { GATEWAY_STATUS_CONFIG, GATEWAY_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
@@ -42,10 +42,18 @@ interface Site {
   name: string;
 }
 
+interface TTNConfig {
+  isEnabled: boolean;
+  hasApiKey: boolean;
+  applicationId: string | null;
+  apiKeyLast4?: string | null;
+}
+
 interface GatewayManagerProps {
   organizationId: string;
   sites: Site[];
   canEdit: boolean;
+  ttnConfig?: TTNConfig | null;
 }
 
 // Reusable column header tooltip component
@@ -112,6 +120,101 @@ const GatewayStatusBadgeWithTooltip = ({
           )}
         </div>
       </TooltipContent>
+    </Tooltip>
+  );
+};
+
+// Gateway TTN Provision Button
+interface GatewayProvisionButtonProps {
+  gateway: Gateway & { ttn_gateway_id?: string | null; ttn_last_error?: string | null };
+  ttnConfig?: TTNConfig | null;
+  isProvisioning: boolean;
+  onProvision: () => void;
+}
+
+const GatewayProvisionButton = ({
+  gateway,
+  ttnConfig,
+  isProvisioning,
+  onProvision,
+}: GatewayProvisionButtonProps) => {
+  // Already provisioned - show success badge
+  if (gateway.ttn_gateway_id) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="outline" className="text-safe border-safe/30 gap-1">
+            <CheckCircle2 className="h-3 w-3" />
+            Registered
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Registered in TTN as {gateway.ttn_gateway_id}</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Has error from previous attempt
+  if (gateway.ttn_last_error) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onProvision}
+            disabled={isProvisioning}
+            className="text-destructive"
+          >
+            {isProvisioning ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CloudUpload className="h-4 w-4" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          <p className="font-medium text-destructive">Previous attempt failed</p>
+          <p className="text-sm">{gateway.ttn_last_error}</p>
+          <p className="text-sm text-muted-foreground mt-1">Click to retry</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // TTN not configured
+  if (!ttnConfig?.isEnabled || !ttnConfig?.hasApiKey) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" disabled>
+            <CloudUpload className="h-4 w-4 text-muted-foreground" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Configure TTN connection in Developer settings first</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Ready to provision
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onProvision}
+          disabled={isProvisioning}
+        >
+          {isProvisioning ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <CloudUpload className="h-4 w-4 text-blue-600" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Register in TTN</TooltipContent>
     </Tooltip>
   );
 };
@@ -197,10 +300,11 @@ const GatewaySiteSelector = ({
   );
 };
 
-export function GatewayManager({ organizationId, sites, canEdit }: GatewayManagerProps) {
+export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: GatewayManagerProps) {
   const { data: gateways, isLoading } = useGateways(organizationId);
   const deleteGateway = useDeleteGateway();
   const updateGateway = useUpdateGateway();
+  const provisionGateway = useProvisionGateway();
   
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editGateway, setEditGateway] = useState<Gateway | null>(null);
@@ -214,6 +318,16 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
     newSiteName: string | null;
   } | null>(null);
   const [updatingGatewayId, setUpdatingGatewayId] = useState<string | null>(null);
+
+  // Debug log TTN config state
+  useEffect(() => {
+    debugLog.info('ttn', 'TTN_CONFIG_STATE_GATEWAY_MANAGER', {
+      isEnabled: ttnConfig?.isEnabled,
+      hasApiKey: ttnConfig?.hasApiKey,
+      applicationId: ttnConfig?.applicationId,
+      apiKeyLast4: ttnConfig?.apiKeyLast4,
+    });
+  }, [ttnConfig]);
 
   const getSiteName = (siteId: string | null): string | null => {
     if (!siteId) return null;
@@ -347,6 +461,12 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
                       <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.status} />
                     </span>
                   </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      TTN
+                      <ColumnHeaderTooltip content="The Things Network registration status. Provision gateways to TTN to receive sensor data." />
+                    </span>
+                  </TableHead>
                   {canEdit && <TableHead className="w-[100px]">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -375,6 +495,17 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
                         <GatewayStatusBadgeWithTooltip 
                           status={gateway.status} 
                           siteName={siteName} 
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <GatewayProvisionButton
+                          gateway={gateway as Gateway & { ttn_gateway_id?: string | null; ttn_last_error?: string | null }}
+                          ttnConfig={ttnConfig}
+                          isProvisioning={provisionGateway.isProvisioning(gateway.id)}
+                          onProvision={() => provisionGateway.mutate({ 
+                            gatewayId: gateway.id, 
+                            organizationId 
+                          })}
                         />
                       </TableCell>
                       {canEdit && (
