@@ -71,12 +71,12 @@ const DeviceReadinessCard = ({
   // Compute installation status - pass loraSensor for proper status derivation
   const baseInstallationStatus = computeSensorInstallationStatus(device || null, lastReadingAt, loraSensor);
   
-  // Override status for pending/joining LoRa sensors
+  // Override status for pending/joining LoRa sensors with more specific blockers
   const installationStatus = isLoraPending
     ? {
         status: "pending_registration" as const,
         label: "Pending Registration",
-        description: "Sensor registered - awaiting network join. No alerts will trigger until active.",
+        description: "Sensor created but not yet provisioned to TTN. Configure TTN connection in Settings → Developer.",
         color: "text-muted-foreground",
         bgColor: "bg-muted",
       }
@@ -84,7 +84,9 @@ const DeviceReadinessCard = ({
     ? {
         status: "joining_network" as const,
         label: "Joining Network",
-        description: "Sensor is attempting to join the LoRaWAN network. This may take a few minutes.",
+        description: loraSensor?.ttn_device_id 
+          ? "Sensor is provisioned and attempting to join the LoRaWAN network. Ensure a gateway is online nearby."
+          : "Sensor is awaiting TTN device registration. Check TTN configuration.",
         color: "text-warning",
         bgColor: "bg-warning/10",
       }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useGateways, useDeleteGateway, useUpdateGateway, useProvisionGateway } from "@/hooks/useGateways";
+import { useGatewayProvisioningPreflight } from "@/hooks/useGatewayProvisioningPreflight";
 import { Gateway, GatewayStatus } from "@/types/ttn";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Radio, Plus, Pencil, Trash2, Loader2, Info, MapPin, CloudUpload, CheckCircle2 } from "lucide-react";
 import { AddGatewayDialog } from "./AddGatewayDialog";
 import { EditGatewayDialog } from "./EditGatewayDialog";
+import { TTNGatewayPreflightBanner } from "./TTNGatewayPreflightBanner";
 import { GATEWAY_STATUS_CONFIG, GATEWAY_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
 import { cn } from "@/lib/utils";
 import { debugLog } from "@/lib/debugLogger";
@@ -48,6 +50,7 @@ interface TTNConfig {
   hasApiKey: boolean;
   applicationId: string | null;
   apiKeyLast4?: string | null;
+  region?: string | null;
 }
 
 interface GatewayManagerProps {
@@ -343,6 +346,12 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
   const updateGateway = useUpdateGateway();
   const provisionGateway = useProvisionGateway();
   
+  // Gateway provisioning preflight check
+  const preflight = useGatewayProvisioningPreflight(
+    ttnConfig?.isEnabled && ttnConfig?.hasApiKey ? organizationId : null,
+    { autoRun: true }
+  );
+  
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editGateway, setEditGateway] = useState<Gateway | null>(null);
   const [deleteGateway_, setDeleteGateway] = useState<Gateway | null>(null);
@@ -469,7 +478,22 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
             )}
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Gateway Provisioning Preflight Banner */}
+          {ttnConfig?.isEnabled && ttnConfig?.hasApiKey && preflight.status !== "idle" && (
+            <TTNGatewayPreflightBanner
+              status={preflight.status}
+              keyType={preflight.keyType}
+              ownerScope={preflight.ownerScope}
+              hasGatewayRights={preflight.hasGatewayRights}
+              missingRights={preflight.missingRights}
+              error={preflight.error}
+              onRunPreflight={preflight.runPreflight}
+              isLoading={preflight.isLoading}
+              requestId={preflight.result?.request_id}
+              ttnRegion={ttnConfig.region || "nam1"}
+            />
+          )}
           {gateways && gateways.length > 0 ? (
             <Table>
               <TableHeader>
