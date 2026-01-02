@@ -28,7 +28,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info, MapPin, Box } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info, MapPin, Box, RefreshCw, Code, AlertTriangle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useQueryClient } from "@tanstack/react-query";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { AddSensorDialog } from "./AddSensorDialog";
@@ -353,12 +355,15 @@ const ProvisionButton = ({
 };
 
 export function SensorManager({ organizationId, sites, units, canEdit, autoOpenAdd, ttnConfig }: SensorManagerProps) {
-  const { data: sensors, isLoading } = useLoraSensors(organizationId);
+  const queryClient = useQueryClient();
+  const { data: sensors, isLoading, dataUpdatedAt } = useLoraSensors(organizationId);
   const deleteSensor = useDeleteLoraSensor();
   const provisionSensor = useProvisionLoraSensor();
   const updateSensor = useUpdateLoraSensor();
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [viewRawSensor, setViewRawSensor] = useState<LoraSensor | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (autoOpenAdd) {
@@ -367,6 +372,14 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   }, [autoOpenAdd]);
   const [editSensor, setEditSensor] = useState<LoraSensor | null>(null);
   const [deleteSensor_, setDeleteSensor] = useState<LoraSensor | null>(null);
+  
+  // Force refresh handler
+  const handleForceRefresh = async () => {
+    setIsRefreshing(true);
+    debugLog.info('crud', 'SENSORS_FORCE_REFRESH', { org_id: organizationId });
+    await queryClient.invalidateQueries({ queryKey: ["lora-sensors", organizationId] });
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
   
   // Site change confirmation state
   const [confirmSiteChange, setConfirmSiteChange] = useState<{
@@ -630,12 +643,34 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
               Register and manage your LoRaWAN temperature sensors
             </p>
           </div>
-          {canEdit && (
-            <Button onClick={() => setAddDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Sensor
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleForceRefresh}
+                  disabled={isRefreshing}
+                >
+                  <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Force Refresh</p>
+                {dataUpdatedAt && (
+                  <p className="text-xs text-muted-foreground">
+                    Last: {formatDistanceToNow(dataUpdatedAt, { addSuffix: true })}
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
+            {canEdit && (
+              <Button onClick={() => setAddDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Sensor
+              </Button>
+            )}
+          </div>
         </div>
 
         {sensors && sensors.length > 0 ? (
@@ -693,7 +728,39 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                   const ttnDeviceId = sensor.ttn_device_id || generateTtnDeviceId(sensor.dev_eui);
                   return (
                   <TableRow key={sensor.id}>
-                    <TableCell className="font-medium">{sensor.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <span>{sensor.name}</span>
+                        {!sensor.app_key && !sensor.ttn_device_id && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant="outline" className="text-warning border-warning/30 bg-warning/10 text-xs">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                No Keys
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p className="font-medium">Missing OTAA Credentials</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                This sensor needs AppKey for TTN provisioning. Edit the sensor to add credentials.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                        {!sensor.site_id && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30 text-xs">
+                                Unassigned
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Sensor not assigned to a site. Assign it to start monitoring.
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className="space-y-1">
                         <div className="flex items-center gap-1">
@@ -780,6 +847,18 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                             isProvisioning={provisionSensor.isProvisioning(sensor.id)}
                             onProvision={() => handleProvision(sensor)}
                           />
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setViewRawSensor(sensor)}
+                              >
+                                <Code className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>View Raw JSON</TooltipContent>
+                          </Tooltip>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -929,6 +1008,38 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* View Raw Sensor JSON Dialog */}
+        <Dialog open={!!viewRawSensor} onOpenChange={(open) => !open && setViewRawSensor(null)}>
+          <DialogContent className="max-w-2xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle>Raw Sensor Data: {viewRawSensor?.name}</DialogTitle>
+              <DialogDescription>
+                Full sensor record from database. Useful for debugging sync issues.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="overflow-auto max-h-[60vh] rounded-md bg-muted p-4">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+                {viewRawSensor && JSON.stringify(viewRawSensor, null, 2)}
+              </pre>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (viewRawSensor) {
+                    navigator.clipboard.writeText(JSON.stringify(viewRawSensor, null, 2));
+                    toast.success("Sensor JSON copied to clipboard");
+                  }
+                }}
+              >
+                <Copy className="h-4 w-4 mr-2" />
+                Copy JSON
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   );

@@ -20,6 +20,19 @@ export function useLoraSensors(orgId: string | null) {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
+      
+      // Debug logging for sensor sync diagnostics
+      debugLog.info('query', 'LORA_SENSORS_FETCH', {
+        org_id: orgId,
+        count: data?.length ?? 0,
+        statuses: data?.reduce((acc, s) => {
+          acc[s.status] = (acc[s.status] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        unassigned_count: data?.filter(s => !s.site_id || !s.unit_id).length ?? 0,
+        missing_appkey_count: data?.filter(s => !s.app_key).length ?? 0,
+      });
+      
       return data as LoraSensor[];
     },
     enabled: !!orgId,
