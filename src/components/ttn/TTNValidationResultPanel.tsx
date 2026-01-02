@@ -1,6 +1,12 @@
 /**
  * TTN Validation Result Panel
  * Displays rich validation results with actionable guidance for fixing issues
+ * 
+ * Features:
+ * - Clear success/failure state display
+ * - Explicit permission probe with critical/optional distinction
+ * - Step-by-step TTN Console fix instructions
+ * - Mismatch detection warnings
  */
 
 import React, { useState } from "react";
@@ -40,17 +46,85 @@ interface TTNValidationResultPanelProps {
   applicationId: string;
 }
 
-// Required scopes for full TTN integration
-const REQUIRED_SCOPES = [
-  { id: "info", label: "Application: Read", right: "RIGHT_APPLICATION_INFO" },
-  { id: "devices_read", label: "Devices: Read", right: "RIGHT_APPLICATION_DEVICES_READ" },
-  { id: "devices_write", label: "Devices: Write", right: "RIGHT_APPLICATION_DEVICES_WRITE" },
-  { id: "traffic_read", label: "Traffic: Read (uplinks)", right: "RIGHT_APPLICATION_TRAFFIC_READ" },
-  { id: "traffic_down", label: "Traffic: Write (downlinks)", right: "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE" },
-  { id: "settings", label: "Settings: Write (webhooks)", right: "RIGHT_APPLICATION_SETTINGS_BASIC" },
+// Required scopes for full TTN integration with critical/optional distinction
+export const REQUIRED_SCOPES = [
+  { 
+    id: "info", 
+    label: "Application: Read", 
+    right: "RIGHT_APPLICATION_INFO",
+    critical: true,
+    description: "Required to access application information"
+  },
+  { 
+    id: "devices_read", 
+    label: "Devices: Read", 
+    right: "RIGHT_APPLICATION_DEVICES_READ",
+    critical: true,
+    description: "Required to list and view sensors"
+  },
+  { 
+    id: "devices_write", 
+    label: "Devices: Write", 
+    right: "RIGHT_APPLICATION_DEVICES_WRITE",
+    critical: false,
+    description: "Required to provision new sensors"
+  },
+  { 
+    id: "traffic_read", 
+    label: "Traffic: Read (uplinks)", 
+    right: "RIGHT_APPLICATION_TRAFFIC_READ",
+    critical: true,
+    description: "Required to receive sensor readings"
+  },
+  { 
+    id: "traffic_down", 
+    label: "Traffic: Write (downlinks)", 
+    right: "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE",
+    critical: false,
+    description: "Required to send commands to sensors"
+  },
+  { 
+    id: "settings", 
+    label: "Settings: Write (webhooks)", 
+    right: "RIGHT_APPLICATION_SETTINGS_BASIC",
+    critical: true,
+    description: "Required to configure data webhook"
+  },
 ];
 
 const TTN_CONSOLE_URL = "https://console.cloud.thethings.network";
+
+// Permission row helper component
+const PermissionRow = ({ 
+  scope, 
+  granted 
+}: { 
+  scope: typeof REQUIRED_SCOPES[0]; 
+  granted?: boolean;
+}) => (
+  <div className={cn(
+    "flex items-center gap-2 p-1.5 rounded text-xs",
+    granted ? "bg-safe/5" : scope.critical ? "bg-destructive/5" : "bg-muted/50"
+  )}>
+    {granted ? (
+      <CheckCircle className="h-3 w-3 text-safe shrink-0" />
+    ) : scope.critical ? (
+      <XCircle className="h-3 w-3 text-destructive shrink-0" />
+    ) : (
+      <AlertTriangle className="h-3 w-3 text-muted-foreground shrink-0" />
+    )}
+    <div className="flex-1">
+      <span className={cn(
+        granted ? "text-safe" : scope.critical ? "text-destructive" : "text-muted-foreground"
+      )}>
+        {scope.label}
+      </span>
+    </div>
+    {!granted && scope.critical && (
+      <Badge variant="destructive" className="text-[10px] h-4 px-1">Required</Badge>
+    )}
+  </div>
+);
 
 export function TTNValidationResultPanel({ result, applicationId }: TTNValidationResultPanelProps) {
   const [isHowToFixOpen, setIsHowToFixOpen] = useState(!result.valid);
@@ -202,31 +276,46 @@ export function TTNValidationResultPanel({ result, applicationId }: TTNValidatio
               <li>Paste the key here and click <strong>Validate</strong></li>
             </ol>
 
-            {/* Required Scopes Checklist */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Required permissions:</p>
-              <div className="grid grid-cols-2 gap-1">
-                {REQUIRED_SCOPES.map(scope => {
-                  const hasPermission = result.permissions?.rights.includes(scope.right);
-                  return (
-                    <div 
+            {/* Required Scopes Checklist with Critical/Optional Distinction */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-muted-foreground">Permission Status</p>
+                {result.permissions && (
+                  <Badge 
+                    variant={result.permissions.rights.length >= 4 ? "outline" : "destructive"}
+                    className="text-xs"
+                  >
+                    {result.permissions.rights.length}/{REQUIRED_SCOPES.length} granted
+                  </Badge>
+                )}
+              </div>
+              
+              {/* Critical Permissions */}
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground font-medium">Critical (required):</p>
+                <div className="grid gap-1">
+                  {REQUIRED_SCOPES.filter(s => s.critical).map(scope => (
+                    <PermissionRow 
                       key={scope.id}
-                      className={cn(
-                        "flex items-center gap-1.5 p-1.5 rounded text-xs",
-                        hasPermission 
-                          ? "bg-safe/5 text-safe" 
-                          : "bg-destructive/5 text-destructive"
-                      )}
-                    >
-                      {hasPermission ? (
-                        <CheckCircle className="h-3 w-3 shrink-0" />
-                      ) : (
-                        <XCircle className="h-3 w-3 shrink-0" />
-                      )}
-                      <span>{scope.label}</span>
-                    </div>
-                  );
-                })}
+                      scope={scope}
+                      granted={result.permissions?.rights.includes(scope.right)}
+                    />
+                  ))}
+                </div>
+              </div>
+              
+              {/* Optional Permissions */}
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground font-medium">Optional (recommended):</p>
+                <div className="grid gap-1">
+                  {REQUIRED_SCOPES.filter(s => !s.critical).map(scope => (
+                    <PermissionRow 
+                      key={scope.id}
+                      scope={scope}
+                      granted={result.permissions?.rights.includes(scope.right)}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
 
