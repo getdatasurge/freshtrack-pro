@@ -20,7 +20,7 @@ export interface Gateway {
   updated_at: string;
 }
 
-export type LoraSensorType = 'temperature' | 'temperature_humidity' | 'door' | 'combo';
+export type LoraSensorType = 'temperature' | 'temperature_humidity' | 'door' | 'combo' | 'contact';
 export type LoraSensorStatus = 'pending' | 'joining' | 'active' | 'offline' | 'fault';
 
 export interface LoraSensor {
@@ -76,4 +76,95 @@ export interface LoraSensorInsert {
   manufacturer?: string | null;
   model?: string | null;
   created_by?: string | null;
+}
+
+// ============================================================================
+// TTN Bootstrap Types
+// Types for the automated webhook setup flow
+// ============================================================================
+
+export interface TTNPermissionCheckResult {
+  valid: boolean;
+  rights: string[];
+  missing_core: string[];
+  missing_webhook: string[];
+  missing_devices: string[];
+  missing_downlink: string[];
+  can_configure_webhook: boolean;
+  can_manage_devices: boolean;
+  can_send_downlinks: boolean;
+}
+
+export interface TTNWebhookConfig {
+  webhook_id: string;
+  base_url: string;
+  format: string;
+  events_enabled: string[];
+  secret_configured: boolean;
+}
+
+export interface TTNBootstrapError {
+  code: string;
+  message: string;
+  hint: string;
+  missing_permissions?: string[];
+}
+
+export interface TTNBootstrapConfig {
+  api_key_last4: string;
+  webhook_secret_last4: string;
+  webhook_url: string;
+  application_id: string;
+  cluster: string;
+  updated_at: string;
+}
+
+export interface TTNBootstrapResult {
+  ok: boolean;
+  request_id: string;
+  action: 'validate' | 'configure' | 'save_and_configure';
+
+  // Permission validation results
+  permissions?: TTNPermissionCheckResult;
+
+  // Webhook configuration results
+  webhook?: TTNWebhookConfig;
+  webhook_action?: 'created' | 'updated' | 'unchanged';
+
+  // Error information
+  error?: TTNBootstrapError;
+
+  // Stored configuration metadata
+  config?: TTNBootstrapConfig;
+}
+
+export interface TTNOrgState {
+  enabled: boolean;
+  cluster: string | null;
+  application_id: string | null;
+  api_key_last4: string | null;
+  api_key_updated_at: string | null;
+  webhook_secret_last4: string | null;
+  webhook_url: string | null;
+  webhook_id: string | null;
+  webhook_events: string[] | null;
+  provisioning_status: string;
+  updated_at: string | null;
+  last_updated_source: string | null;
+  synced_from_frostguard: boolean;
+}
+
+export interface FetchOrgStateResponse {
+  ok: boolean;
+  request_id: string;
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  ttn: TTNOrgState;
+  _meta: {
+    version: string;
+    timestamp: string;
+  };
 }

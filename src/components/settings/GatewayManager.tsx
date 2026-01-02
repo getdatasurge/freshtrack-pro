@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { useGateways, useDeleteGateway } from "@/hooks/useGateways";
-import { Gateway } from "@/types/ttn";
+import { useState, useEffect } from "react";
+import { useGateways, useDeleteGateway, useUpdateGateway, useProvisionGateway } from "@/hooks/useGateways";
+import { Gateway, GatewayStatus } from "@/types/ttn";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,52 +22,317 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Radio, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Radio, Plus, Pencil, Trash2, Loader2, Info, MapPin, CloudUpload, CheckCircle2 } from "lucide-react";
 import { AddGatewayDialog } from "./AddGatewayDialog";
 import { EditGatewayDialog } from "./EditGatewayDialog";
+import { GATEWAY_STATUS_CONFIG, GATEWAY_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
+import { cn } from "@/lib/utils";
+import { debugLog } from "@/lib/debugLogger";
 
 interface Site {
   id: string;
   name: string;
 }
 
+interface TTNConfig {
+  isEnabled: boolean;
+  hasApiKey: boolean;
+  applicationId: string | null;
+  apiKeyLast4?: string | null;
+}
+
 interface GatewayManagerProps {
   organizationId: string;
   sites: Site[];
   canEdit: boolean;
+  ttnConfig?: TTNConfig | null;
 }
 
-export function GatewayManager({ organizationId, sites, canEdit }: GatewayManagerProps) {
+// Reusable column header tooltip component
+const ColumnHeaderTooltip = ({ content }: { content: string }) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <button
+        type="button"
+        className="inline-flex ml-1 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 rounded"
+        aria-label="Column information"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+    </TooltipTrigger>
+    <TooltipContent side="top" className="max-w-xs">
+      {content}
+    </TooltipContent>
+  </Tooltip>
+);
+
+// Status badge with tooltip showing meaning, system state, and user action
+const GatewayStatusBadgeWithTooltip = ({ 
+  status, 
+  siteName 
+}: { 
+  status: GatewayStatus; 
+  siteName: string | null;
+}) => {
+  const statusConfig = GATEWAY_STATUS_CONFIG[status] || GATEWAY_STATUS_CONFIG.pending;
+  
+  // Special case for pending with linked site
+  if (status === "pending" && siteName) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge className="bg-primary/15 text-primary border-primary/30 cursor-help">
+            Linked to {siteName}
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs p-3">
+          <div className="space-y-1.5 text-sm">
+            <p><span className="font-medium">Status:</span> Gateway is registered and linked to a site</p>
+            <p><span className="font-medium">System:</span> Awaiting first connection to TTN network</p>
+            <p className="text-primary"><span className="font-medium">Action:</span> Power on gateway and connect to network</p>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge className={cn("cursor-help", statusConfig.className)}>
+          {statusConfig.label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs p-3">
+        <div className="space-y-1.5 text-sm">
+          <p><span className="font-medium">Status:</span> {statusConfig.tooltip.meaning}</p>
+          <p><span className="font-medium">System:</span> {statusConfig.tooltip.systemState}</p>
+          {statusConfig.tooltip.userAction && (
+            <p className="text-primary"><span className="font-medium">Action:</span> {statusConfig.tooltip.userAction}</p>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+};
+
+// Gateway TTN Provision Button
+interface GatewayProvisionButtonProps {
+  gateway: Gateway & { ttn_gateway_id?: string | null; ttn_last_error?: string | null };
+  ttnConfig?: TTNConfig | null;
+  isProvisioning: boolean;
+  onProvision: () => void;
+}
+
+const GatewayProvisionButton = ({
+  gateway,
+  ttnConfig,
+  isProvisioning,
+  onProvision,
+}: GatewayProvisionButtonProps) => {
+  // Already provisioned - show success badge
+  if (gateway.ttn_gateway_id) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="outline" className="text-safe border-safe/30 gap-1">
+            <CheckCircle2 className="h-3 w-3" />
+            Registered
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>Registered in TTN as {gateway.ttn_gateway_id}</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Has error from previous attempt
+  if (gateway.ttn_last_error) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onProvision}
+            disabled={isProvisioning}
+            className="text-destructive"
+          >
+            {isProvisioning ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CloudUpload className="h-4 w-4" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          <p className="font-medium text-destructive">Previous attempt failed</p>
+          <p className="text-sm">{gateway.ttn_last_error}</p>
+          <p className="text-sm text-muted-foreground mt-1">Click to retry</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // TTN not configured
+  if (!ttnConfig?.isEnabled || !ttnConfig?.hasApiKey) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" disabled>
+            <CloudUpload className="h-4 w-4 text-muted-foreground" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Configure TTN connection in Developer settings first</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Ready to provision
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onProvision}
+          disabled={isProvisioning}
+        >
+          {isProvisioning ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <CloudUpload className="h-4 w-4 text-blue-600" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Register in TTN</TooltipContent>
+    </Tooltip>
+  );
+};
+
+// Inline site selector for quick assignment
+const GatewaySiteSelector = ({ 
+  gateway, 
+  sites,
+  onSiteChange,
+  isUpdating 
+}: { 
+  gateway: Gateway; 
+  sites: Site[];
+  onSiteChange: (gateway: Gateway, newSiteId: string | null, currentSiteName: string | null) => void;
+  isUpdating: boolean;
+}) => {
+  const currentSite = sites.find(s => s.id === gateway.site_id);
+  
+  if (isUpdating) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-sm">Updating...</span>
+      </div>
+    );
+  }
+  
+  // No sites available
+  if (sites.length === 0) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-muted-foreground text-sm cursor-help">
+            No sites available
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          Create a site first to assign gateways
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  
+  return (
+    <Select
+      value={gateway.site_id || "unassigned"}
+      onValueChange={(value) => {
+        const newSiteId = value === "unassigned" ? null : value;
+        onSiteChange(gateway, newSiteId, currentSite?.name || null);
+      }}
+    >
+      <SelectTrigger className={cn(
+        "w-[180px] h-8",
+        !gateway.site_id && "text-muted-foreground border-dashed"
+      )}>
+        <SelectValue>
+          {currentSite ? (
+            <span className="flex items-center gap-1.5">
+              <MapPin className="h-3 w-3" />
+              {currentSite.name}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <MapPin className="h-3 w-3" />
+              Assign Site
+            </span>
+          )}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {gateway.site_id && (
+          <SelectItem value="unassigned" className="text-muted-foreground">
+            — Unassign —
+          </SelectItem>
+        )}
+        {sites.map((site) => (
+          <SelectItem key={site.id} value={site.id}>
+            {site.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+};
+
+export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: GatewayManagerProps) {
   const { data: gateways, isLoading } = useGateways(organizationId);
   const deleteGateway = useDeleteGateway();
+  const updateGateway = useUpdateGateway();
+  const provisionGateway = useProvisionGateway();
   
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editGateway, setEditGateway] = useState<Gateway | null>(null);
   const [deleteGateway_, setDeleteGateway] = useState<Gateway | null>(null);
+  
+  // Site change confirmation state
+  const [confirmSiteChange, setConfirmSiteChange] = useState<{
+    gateway: Gateway;
+    newSiteId: string | null;
+    currentSiteName: string | null;
+    newSiteName: string | null;
+  } | null>(null);
+  const [updatingGatewayId, setUpdatingGatewayId] = useState<string | null>(null);
+
+  // Debug log TTN config state
+  useEffect(() => {
+    debugLog.info('ttn', 'TTN_CONFIG_STATE_GATEWAY_MANAGER', {
+      isEnabled: ttnConfig?.isEnabled,
+      hasApiKey: ttnConfig?.hasApiKey,
+      applicationId: ttnConfig?.applicationId,
+      apiKeyLast4: ttnConfig?.apiKeyLast4,
+    });
+  }, [ttnConfig]);
 
   const getSiteName = (siteId: string | null): string | null => {
     if (!siteId) return null;
     const site = sites.find(s => s.id === siteId);
     return site?.name || null;
-  };
-
-  const getStatusBadge = (gateway: Gateway) => {
-    const siteName = getSiteName(gateway.site_id);
-    
-    if (gateway.status === "online") {
-      return <Badge className="bg-safe/15 text-safe border-safe/30">Online</Badge>;
-    }
-    if (gateway.status === "offline") {
-      return <Badge className="bg-warning/15 text-warning border-warning/30">Offline</Badge>;
-    }
-    if (gateway.status === "maintenance") {
-      return <Badge className="bg-muted text-muted-foreground border-border">Maintenance</Badge>;
-    }
-    // pending status
-    if (siteName) {
-      return <Badge className="bg-primary/15 text-primary border-primary/30">Linked to {siteName}</Badge>;
-    }
-    return <Badge variant="secondary">Registered</Badge>;
   };
 
   const handleDelete = async () => {
@@ -77,6 +342,57 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
       orgId: organizationId 
     });
     setDeleteGateway(null);
+  };
+
+  const handleSiteChange = async (
+    gateway: Gateway, 
+    newSiteId: string | null, 
+    currentSiteName: string | null
+  ) => {
+    const newSiteName = newSiteId ? getSiteName(newSiteId) : null;
+    
+    // If gateway already has a site and we're changing it, require confirmation
+    if (gateway.site_id && newSiteId !== gateway.site_id) {
+      setConfirmSiteChange({
+        gateway,
+        newSiteId,
+        currentSiteName,
+        newSiteName
+      });
+      return;
+    }
+    
+    // Direct assignment for unassigned gateways or same site
+    await executeSiteUpdate(gateway, newSiteId);
+  };
+
+  const executeSiteUpdate = async (gateway: Gateway, newSiteId: string | null) => {
+    setUpdatingGatewayId(gateway.id);
+    
+    try {
+      debugLog.crud('update', 'gateway', gateway.id, { 
+        action: 'site_assignment',
+        previousSite: gateway.site_id,
+        newSite: newSiteId 
+      });
+      
+      await updateGateway.mutateAsync({
+        id: gateway.id,
+        updates: { 
+          site_id: newSiteId,
+          // Reset to pending if site is being assigned/changed
+          ...(newSiteId !== gateway.site_id && { status: 'pending' as const })
+        }
+      });
+    } finally {
+      setUpdatingGatewayId(null);
+      setConfirmSiteChange(null);
+    }
+  };
+
+  const handleConfirmSiteChange = async () => {
+    if (!confirmSiteChange) return;
+    await executeSiteUpdate(confirmSiteChange.gateway, confirmSiteChange.newSiteId);
   };
 
   const formatEUI = (eui: string): string => {
@@ -95,7 +411,7 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
   }
 
   return (
-    <>
+    <TooltipProvider>
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -121,48 +437,100 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Gateway EUI</TableHead>
-                  <TableHead>Site</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Name
+                      <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.name} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Gateway EUI
+                      <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.gatewayEui} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Site
+                      <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.site} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Status
+                      <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.status} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      TTN
+                      <ColumnHeaderTooltip content="The Things Network registration status. Provision gateways to TTN to receive sensor data." />
+                    </span>
+                  </TableHead>
                   {canEdit && <TableHead className="w-[100px]">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {gateways.map((gateway) => (
-                  <TableRow key={gateway.id}>
-                    <TableCell className="font-medium">{gateway.name}</TableCell>
-                    <TableCell className="font-mono text-sm">
-                      {formatEUI(gateway.gateway_eui)}
-                    </TableCell>
-                    <TableCell>
-                      {getSiteName(gateway.site_id) || (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(gateway)}</TableCell>
-                    {canEdit && (
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setEditGateway(gateway)}
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setDeleteGateway(gateway)}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
-                        </div>
+                {gateways.map((gateway) => {
+                  const siteName = getSiteName(gateway.site_id);
+                  return (
+                    <TableRow key={gateway.id}>
+                      <TableCell className="font-medium">{gateway.name}</TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {formatEUI(gateway.gateway_eui)}
                       </TableCell>
-                    )}
-                  </TableRow>
-                ))}
+                      <TableCell>
+                        {canEdit ? (
+                          <GatewaySiteSelector
+                            gateway={gateway}
+                            sites={sites}
+                            onSiteChange={handleSiteChange}
+                            isUpdating={updatingGatewayId === gateway.id}
+                          />
+                        ) : (
+                          siteName || <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <GatewayStatusBadgeWithTooltip 
+                          status={gateway.status} 
+                          siteName={siteName} 
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <GatewayProvisionButton
+                          gateway={gateway as Gateway & { ttn_gateway_id?: string | null; ttn_last_error?: string | null }}
+                          ttnConfig={ttnConfig}
+                          isProvisioning={provisionGateway.isProvisioning(gateway.id)}
+                          onProvision={() => provisionGateway.mutate({ 
+                            gatewayId: gateway.id, 
+                            organizationId 
+                          })}
+                        />
+                      </TableCell>
+                      {canEdit && (
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setEditGateway(gateway)}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteGateway(gateway)}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           ) : (
@@ -225,6 +593,41 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+
+      {/* Site Change Confirmation Dialog */}
+      <AlertDialog 
+        open={!!confirmSiteChange} 
+        onOpenChange={(open) => !open && setConfirmSiteChange(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change Gateway Site?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                This gateway is currently assigned to <strong>{confirmSiteChange?.currentSiteName}</strong>.
+              </p>
+              <p>
+                {confirmSiteChange?.newSiteId 
+                  ? <>Moving it to <strong>{confirmSiteChange?.newSiteName}</strong> may affect sensor connectivity at the current location.</>
+                  : <>Unassigning it will remove it from the current site.</>
+                }
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updatingGatewayId !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmSiteChange}
+              disabled={updatingGatewayId !== null}
+            >
+              {updatingGatewayId ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {confirmSiteChange?.newSiteId ? "Move Gateway" : "Unassign Gateway"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </TooltipProvider>
   );
 }

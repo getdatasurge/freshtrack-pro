@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
@@ -41,13 +42,15 @@ import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
 import { AlertRulesScopedEditor } from "@/components/settings/AlertRulesScopedEditor";
 import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
-import { EdgeFunctionDiagnostics } from "@/components/debug/EdgeFunctionDiagnostics";
+import { EdgeFunctionDiagnostics, DebugModeToggle } from "@/components/debug";
 import { NotificationSettingsCard } from "@/components/settings/NotificationSettingsCard";
 import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
 import { GatewayManager } from "@/components/settings/GatewayManager";
 import { SensorManager } from "@/components/settings/SensorManager";
 import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
 import { EmulatorSyncHistory } from "@/components/settings/EmulatorSyncHistory";
+import { EmulatorResyncCard } from "@/components/settings/EmulatorResyncCard";
+import { AccountDeletionModal } from "@/components/settings/AccountDeletionModal";
 
 // E.164 phone number validation regex
 const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -137,6 +140,20 @@ const Settings = () => {
   const [userRole, setUserRole] = useState<AppRole | null>(null);
   const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
   const [units, setUnits] = useState<{ id: string; name: string; site_id: string }[]>([]);
+  
+  // Account deletion state
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [sensorCount, setSensorCount] = useState(0);
+  const [gatewayCount, setGatewayCount] = useState(0);
+  const [hasOtherUsers, setHasOtherUsers] = useState(false);
+  
+  // TTN config state for SensorManager
+  const [ttnConfig, setTtnConfig] = useState<{
+    isEnabled: boolean;
+    hasApiKey: boolean;
+    applicationId: string | null;
+    apiKeyLast4: string | null;
+  } | null>(null);
 
   // Form states
   const [orgName, setOrgName] = useState("");
@@ -235,12 +252,17 @@ const Settings = () => {
       }
 
       // Get current user's role
-      const { data: roleData } = await supabase
+      const { data: roleData, error: roleError } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", session!.user.id)
         .eq("organization_id", profileData.organization_id)
         .maybeSingle();
+
+      if (roleError) {
+        console.error("[Settings] Failed to load user role:", roleError);
+        toast.error("Failed to load user permissions. Some features may be hidden.");
+      }
 
       if (roleData) {
         setUserRole(roleData.role);
@@ -303,6 +325,43 @@ const Settings = () => {
         }));
         setUnits(formattedUnits);
       }
+
+      // Load sensor count for deletion modal
+      const { count: sensorCountResult } = await supabase
+        .from("lora_sensors")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", profileData.organization_id);
+      setSensorCount(sensorCountResult || 0);
+
+      // Load gateway count for deletion modal
+      const { count: gatewayCountResult } = await supabase
+        .from("gateways")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", profileData.organization_id);
+      setGatewayCount(gatewayCountResult || 0);
+
+      // Check if there are other users in the org
+      setHasOtherUsers((usersData?.length || 0) > 1);
+
+      // Load TTN config for SensorManager provisioning buttons
+      try {
+        const { data: ttnData } = await supabase.functions.invoke("manage-ttn-settings", {
+          body: { action: "get", organization_id: profileData.organization_id }
+        });
+        
+        if (ttnData) {
+          setTtnConfig({
+            isEnabled: ttnData.is_enabled ?? false,
+            hasApiKey: !!(ttnData.ttn_api_key_last4 || ttnData.has_api_key),
+            applicationId: ttnData.ttn_application_id ?? null,
+            apiKeyLast4: ttnData.ttn_api_key_last4 ?? null,
+          });
+        }
+      } catch (ttnError) {
+        console.error("[Settings] Failed to load TTN config:", ttnError);
+        // Don't block settings load if TTN config fails
+      }
+
     } catch (error) {
       console.error("Error loading settings:", error);
       toast.error("Failed to load settings");
@@ -410,8 +469,6 @@ const Settings = () => {
           organizationId: organization.id,
         },
       });
-
-      console.log("SMS Response:", data, error);
 
       if (error) throw error;
       
@@ -527,7 +584,7 @@ const Settings = () => {
   return (
     <DashboardLayout title="Settings">
       <Tabs defaultValue={defaultTab} className="space-y-6">
-        <TabsList className={`grid w-full max-w-4xl ${canManageUsers ? 'grid-cols-8' : 'grid-cols-6'}`}>
+        <TabsList className={`grid w-full max-w-4xl ${canManageUsers ? 'grid-cols-8' : 'grid-cols-7'}`}>
           <TabsTrigger value="organization" className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <span className="hidden sm:inline">Organization</span>
@@ -560,12 +617,10 @@ const Settings = () => {
               <span className="hidden sm:inline">Sensors</span>
             </TabsTrigger>
           )}
-          {canManageUsers && (
-            <TabsTrigger value="developer" className="flex items-center gap-2">
-              <Code2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Developer</span>
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="developer" className="flex items-center gap-2">
+            <Code2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Developer</span>
+          </TabsTrigger>
         </TabsList>
 
         {/* Organization Tab */}
@@ -650,6 +705,60 @@ const Settings = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Separator before Danger Zone */}
+          <Separator className="my-8" />
+
+          {/* Danger Zone - Account Deletion */}
+          <Card id="danger-zone" className="border-destructive/50 bg-destructive/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+                Danger Zone
+              </CardTitle>
+              <CardDescription>
+                Irreversible actions that affect your account
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="font-medium">Delete Account</p>
+                  <p className="text-sm text-muted-foreground">
+                    Permanently delete your account and all associated data
+                  </p>
+                </div>
+                {isLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Loading...</span>
+                  </div>
+                ) : (
+                  <Button 
+                    variant="destructive" 
+                    onClick={() => setDeleteAccountOpen(true)}
+                    disabled={!session?.user || !profile}
+                    className="w-full sm:w-auto"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Account
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Account Deletion Modal - Always render, controls internally */}
+          <AccountDeletionModal
+            open={deleteAccountOpen}
+            onOpenChange={setDeleteAccountOpen}
+            userId={session?.user?.id || ''}
+            userEmail={profile?.email || ''}
+            isOwner={userRole === "owner"}
+            hasOtherUsers={hasOtherUsers}
+            sensorCount={sensorCount}
+            gatewayCount={gatewayCount}
+          />
         </TabsContent>
 
         {/* Alert Rules Tab */}
@@ -1006,6 +1115,7 @@ const Settings = () => {
               organizationId={organization.id}
               sites={sites}
               canEdit={canManageUsers}
+              ttnConfig={ttnConfig}
             />
           </TabsContent>
         )}
@@ -1019,19 +1129,37 @@ const Settings = () => {
               units={units}
               canEdit={canManageUsers}
               autoOpenAdd={action === "add" && defaultTab === "sensors"}
+              ttnConfig={ttnConfig}
             />
           </TabsContent>
         )}
 
-        {/* Developer Tab (Admin Only) */}
-        {canManageUsers && (
-          <TabsContent value="developer" className="space-y-6">
-            <TTNConnectionSettings organizationId={organization?.id || null} />
-            <EmulatorSyncHistory organizationId={organization?.id || null} />
-            <EdgeFunctionDiagnostics />
-            <SensorSimulatorPanel />
-          </TabsContent>
-        )}
+        {/* Developer Tab - always render content, show permission message if no access */}
+        <TabsContent value="developer" className="space-y-6">
+          {canManageUsers ? (
+            <>
+              <DebugModeToggle />
+              <TTNConnectionSettings organizationId={organization?.id || null} />
+              <EmulatorResyncCard organizationId={organization?.id || null} />
+              <EmulatorSyncHistory organizationId={organization?.id || null} />
+              <EdgeFunctionDiagnostics />
+              <SensorSimulatorPanel organizationId={organization?.id || null} />
+            </>
+          ) : (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <AlertTriangle className="h-8 w-8 mx-auto text-warning mb-4" />
+                <h3 className="font-medium">Developer Tools Unavailable</h3>
+                <p className="text-sm text-muted-foreground mt-2">
+                  This section requires Owner or Admin role. Current role: {userRole || "Not loaded"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-4">
+                  Debug: Org ID {organization?.id?.slice(0, 8) || "none"}...
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
     </DashboardLayout>
   );

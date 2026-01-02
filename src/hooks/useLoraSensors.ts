@@ -20,6 +20,19 @@ export function useLoraSensors(orgId: string | null) {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
+      
+      // Debug logging for sensor sync diagnostics
+      debugLog.info('query', 'LORA_SENSORS_FETCH', {
+        org_id: orgId,
+        count: data?.length ?? 0,
+        statuses: data?.reduce((acc, s) => {
+          acc[s.status] = (acc[s.status] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+        unassigned_count: data?.filter(s => !s.site_id || !s.unit_id).length ?? 0,
+        missing_appkey_count: data?.filter(s => !s.app_key).length ?? 0,
+      });
+      
       return data as LoraSensor[];
     },
     enabled: !!orgId,
@@ -125,9 +138,7 @@ export function useCreateLoraSensor() {
       }
       toast.success("LoRa sensor created successfully");
 
-      // Trigger TTN provisioning (fire-and-forget) - currently disabled until Phase 4
-      // Sensor will remain in 'pending' status until TTN integration is implemented
-      console.log("[useLoraSensors] Sensor registered with status 'pending'. TTN provisioning not yet implemented.");
+      // Sensor registered with 'pending' status - TTN provisioning handled separately
     },
     onError: (error: Error) => {
       toast.error(`Failed to create LoRa sensor: ${error.message}`);
@@ -191,8 +202,6 @@ export function useDeleteLoraSensor() {
         .eq("id", id);
 
       if (error) throw error;
-      
-      console.log(`[useDeleteLoraSensor] Sensor ${id} deleted. TTN cleanup job enqueued by database trigger.`);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["lora-sensors", variables.orgId] });
@@ -243,6 +252,28 @@ export function useLinkSensorToUnit() {
   });
 }
 
+import { debugLog } from "@/lib/debugLogger";
+
+// Helper to get user-friendly error message for TTN provisioning errors
+const getProvisionErrorMessage = (error: string): string => {
+  if (error.includes('PERMISSION_MISSING') || error.includes('403')) {
+    return "TTN API key missing required permissions. Regenerate key with devices:write permission.";
+  }
+  if (error.includes('CONFIG_MISSING') || error.includes('TTN not configured')) {
+    return "TTN not configured. Go to Developer settings to set up TTN connection.";
+  }
+  if (error.includes('connectivity failed') || error.includes('network')) {
+    return "Could not reach TTN. Check your network or TTN application settings.";
+  }
+  if (error.includes('SENSOR_KEYS_MISSING')) {
+    return "Sensor missing OTAA credentials (AppKey). Edit sensor to add credentials.";
+  }
+  if (error.includes('already exists') || error.includes('409')) {
+    return "Device already registered in TTN.";
+  }
+  return error;
+};
+
 /**
  * Hook to provision a LoRa sensor to TTN
  */
@@ -257,81 +288,131 @@ export function useProvisionLoraSensor() {
     }: {
       sensorId: string;
       organizationId: string;
-    }): Promise<{ success: boolean; message?: string }> => {
+    }): Promise<{ success: boolean; message?: string; already_exists?: boolean; device_id?: string }> => {
       setProvisioningId(sensorId);
-      
-      const { data, error } = await supabase.functions.invoke("ttn-provision-device", {
-        body: { 
-          action: "create", 
-          sensor_id: sensorId, 
-          organization_id: organizationId 
-        },
-      });
+      const requestId = crypto.randomUUID().slice(0, 8);
+      const startTime = Date.now();
 
-      // Extract detailed error from edge function response
-      if (error) {
-        // FunctionsHttpError includes context with the response body
-        const errorContext = (error as any)?.context;
-        let detailedMessage = error.message;
-        
-        // Try to get the actual response body for more details
-        if (errorContext) {
-          try {
-            // Clone the response to avoid "body already read" issues
-            const clonedContext = errorContext.clone ? errorContext.clone() : errorContext;
-            if (typeof clonedContext.json === 'function') {
-              const responseBody = await clonedContext.json();
-              console.log("[useProvisionLoraSensor] Backend response:", responseBody);
-              if (responseBody?.details) {
-                detailedMessage = responseBody.details;
-              } else if (responseBody?.error) {
-                detailedMessage = responseBody.error;
-              }
-            }
-          } catch (parseError) {
-            // Try reading as text if JSON fails
+      debugLog.info('ttn', 'TTN_PROVISION_SENSOR_REQUEST', {
+        request_id: requestId,
+        sensor_id: sensorId,
+        org_id: organizationId,
+      });
+      
+      try {
+        const { data, error } = await supabase.functions.invoke("ttn-provision-device", {
+          body: { 
+            action: "create", 
+            sensor_id: sensorId, 
+            organization_id: organizationId 
+          },
+        });
+
+        const durationMs = Date.now() - startTime;
+
+        // Extract detailed error from edge function response
+        if (error) {
+          const errorContext = (error as any)?.context;
+          let detailedMessage = error.message;
+          
+          if (errorContext) {
             try {
               const clonedContext = errorContext.clone ? errorContext.clone() : errorContext;
-              if (typeof clonedContext.text === 'function') {
-                const textBody = await clonedContext.text();
-                if (textBody) {
-                  console.log("[useProvisionLoraSensor] Backend text response:", textBody);
-                  detailedMessage = textBody;
+              if (typeof clonedContext.json === 'function') {
+                const responseBody = await clonedContext.json();
+                if (responseBody?.details) {
+                  detailedMessage = responseBody.details;
+                } else if (responseBody?.error) {
+                  detailedMessage = responseBody.error;
                 }
               }
             } catch {
-              // Keep original message
+              try {
+                const clonedContext = errorContext.clone ? errorContext.clone() : errorContext;
+                if (typeof clonedContext.text === 'function') {
+                  const textBody = await clonedContext.text();
+                  if (textBody) detailedMessage = textBody;
+                }
+              } catch {
+                // Keep original message
+              }
             }
           }
+          
+          debugLog.error('ttn', 'TTN_PROVISION_SENSOR_ERROR', {
+            request_id: requestId,
+            sensor_id: sensorId,
+            error_code: 'FUNCTION_ERROR',
+            message: detailedMessage,
+            duration_ms: durationMs,
+          });
+          
+          throw new Error(detailedMessage);
         }
         
-        throw new Error(detailedMessage);
-      }
-      
-      // Check if data indicates failure (with detailed error info)
-      if (data && !data.success && data.error) {
-        // Build error message with hint if available
-        let errorMessage = data.error;
-        if (data.hint) {
-          errorMessage = `${data.error}\n\n${data.hint}`;
-        } else if (data.details) {
-          errorMessage = `${data.error}: ${data.details}`;
+        // Check if data indicates failure
+        if (data && !data.success && data.error) {
+          let errorMessage = data.error;
+          if (data.hint) {
+            errorMessage = `${data.error}\n\n${data.hint}`;
+          } else if (data.details) {
+            errorMessage = `${data.error}: ${data.details}`;
+          }
+          
+          debugLog.error('ttn', 'TTN_PROVISION_SENSOR_ERROR', {
+            request_id: requestId,
+            sensor_id: sensorId,
+            error_code: data.error_code || 'UNKNOWN',
+            message: errorMessage,
+            hint: data.hint,
+            duration_ms: durationMs,
+          });
+          
+          throw new Error(errorMessage);
         }
-        throw new Error(errorMessage);
+        
+        // Success
+        debugLog.info('ttn', 'TTN_PROVISION_SENSOR_SUCCESS', {
+          request_id: requestId,
+          sensor_id: sensorId,
+          ttn_device_id: data?.device_id,
+          ttn_application_id: data?.application_id,
+          outcome: data?.already_exists ? 'already_exists' : 'created',
+          duration_ms: durationMs,
+        });
+        
+        return data;
+      } catch (err) {
+        const durationMs = Date.now() - startTime;
+        
+        // Only log if not already logged above
+        if (!(err instanceof Error && err.message)) {
+          debugLog.error('ttn', 'TTN_PROVISION_SENSOR_ERROR', {
+            request_id: requestId,
+            sensor_id: sensorId,
+            error: String(err),
+            duration_ms: durationMs,
+          });
+        }
+        
+        throw err;
       }
-      
-      return data;
     },
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["lora-sensors"] });
       queryClient.invalidateQueries({ queryKey: ["lora-sensor", variables.sensorId] });
       queryClient.invalidateQueries({ queryKey: ["lora-sensors-by-unit"] });
-      toast.success("Sensor provisioned to TTN - awaiting network join");
+      
+      if (data?.already_exists) {
+        toast.success("Sensor already registered in TTN - ready to use");
+      } else {
+        toast.success("Sensor provisioned to TTN - awaiting network join");
+      }
       setProvisioningId(null);
     },
     onError: (error: Error) => {
-      console.error("[useProvisionLoraSensor] Provisioning error:", error);
-      toast.error(`TTN provisioning failed: ${error.message}`);
+      const friendlyMessage = getProvisionErrorMessage(error.message);
+      toast.error(`TTN provisioning failed: ${friendlyMessage}`);
       setProvisioningId(null);
     },
   });

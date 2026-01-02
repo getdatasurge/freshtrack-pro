@@ -1,5 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { 
+  getTtnConfigForOrg, 
+  testTtnConnection, 
+  obfuscateKey, 
+  getLast4,
+  generateTtnDeviceId,
+} from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,56 +16,14 @@ const corsHeaders = {
 interface TTNSettingsUpdate {
   is_enabled?: boolean;
   ttn_region?: string;
-  ttn_stack_base_url?: string;
-  ttn_identity_server_url?: string;
-  ttn_application_id?: string;
-  ttn_application_name?: string;
-  ttn_user_id?: string;
-  ttn_webhook_id?: string;
-  ttn_api_key?: string; // Plain text - will be encrypted before storage
-  ttn_webhook_api_key?: string; // Plain text - will be encrypted before storage
+  api_key?: string; // Allow direct API key updates from FrostGuard UI
 }
-
-// Simple XOR-based obfuscation (not true encryption, but protects from casual viewing)
-// For production, use Supabase Vault or a proper encryption service
-function obfuscateKey(key: string, salt: string): string {
-  const result: number[] = [];
-  for (let i = 0; i < key.length; i++) {
-    result.push(key.charCodeAt(i) ^ salt.charCodeAt(i % salt.length));
-  }
-  return btoa(String.fromCharCode(...result));
-}
-
-function deobfuscateKey(encoded: string, salt: string): string {
-  try {
-    const decoded = atob(encoded);
-    const result: number[] = [];
-    for (let i = 0; i < decoded.length; i++) {
-      result.push(decoded.charCodeAt(i) ^ salt.charCodeAt(i % salt.length));
-    }
-    return String.fromCharCode(...result);
-  } catch {
-    return "";
-  }
-}
-
-// Get last 4 characters for display
-function getLast4(key: string): string {
-  return key.length >= 4 ? key.slice(-4) : key;
-}
-
-// Default TTN region URLs
-const regionUrls: Record<string, { base: string; is: string }> = {
-  NAM1: { base: "https://nam1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-  EU1: { base: "https://eu1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-  AU1: { base: "https://au1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-  AS1: { base: "https://as1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-};
 
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v3-20251231";
-  console.log(`[manage-ttn-settings] Build: ${BUILD_VERSION}`);
-  console.log(`[manage-ttn-settings] Method: ${req.method}, URL: ${req.url}`);
+  const BUILD_VERSION = "manage-ttn-settings-v6-identity-server-20260102";
+  const requestId = crypto.randomUUID().slice(0, 8);
+  console.log(`[manage-ttn-settings] [${requestId}] Build: ${BUILD_VERSION}`);
+  console.log(`[manage-ttn-settings] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -68,7 +33,6 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || supabaseServiceKey.slice(0, 32);
 
     // Get authorization header for user context
     const authHeader = req.headers.get("Authorization");
@@ -79,72 +43,64 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Parse body to get action (default to "get")
-    let body: { action?: string; [key: string]: unknown } = {};
+    // Parse body to get action
+    let body: { action?: string; organization_id?: string; [key: string]: unknown } = {};
     try {
       body = await req.json();
     } catch {
       // Empty body is fine for "get" action
     }
     const action = body.action || "get";
-    console.log(`[manage-ttn-settings] Action: ${action}`);
+    console.log(`[manage-ttn-settings] [${requestId}] Action: ${action}`);
 
     // Create service client for admin operations
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Extract the token from the header (handle with/without "Bearer " prefix)
+    // Extract the token from the header
     const token = authHeader.startsWith("Bearer ") 
       ? authHeader.slice(7).trim() 
       : authHeader.trim();
 
-    // Use admin client to verify the user via the token
+    // Verify user via token
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token);
 
     if (userError || !user) {
-      console.error("[manage-ttn-settings] User verification failed:", userError?.message || "No user returned");
+      console.error("[manage-ttn-settings] User verification failed:", userError?.message || "No user");
       return new Response(
         JSON.stringify({ error: "Invalid user session", details: userError?.message }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`[manage-ttn-settings] User verified: ${user.id}`);
+    console.log(`[manage-ttn-settings] [${requestId}] User verified: ${user.id}`);
 
-    // Get user's profile to find organization (using admin client)
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("organization_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    // Determine organization ID
+    let organizationId = body.organization_id as string | undefined;
+    
+    if (!organizationId) {
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-    if (profileError) {
-      console.error("[manage-ttn-settings] Profile lookup error:", profileError.message);
+      organizationId = profile?.organization_id;
+    }
+
+    if (!organizationId) {
       return new Response(
-        JSON.stringify({ error: "Failed to retrieve user profile" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "organization_id is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (!profile?.organization_id) {
-      return new Response(
-        JSON.stringify({ error: "User not associated with an organization" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const organizationId = profile.organization_id;
-
-    // Check if user has admin or owner role (using admin client)
-    const { data: roleCheck, error: roleError } = await supabaseAdmin
+    // Verify user is admin/owner of this org
+    const { data: roleCheck } = await supabaseAdmin
       .from("user_roles")
       .select("role")
       .eq("user_id", user.id)
       .eq("organization_id", organizationId)
       .maybeSingle();
-
-    if (roleError) {
-      console.error("[manage-ttn-settings] Role lookup error:", roleError.message);
-    }
 
     if (!roleCheck || !["owner", "admin"].includes(roleCheck.role)) {
       return new Response(
@@ -153,319 +109,249 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // GET action - Fetch current settings (masked)
+    // GET action - Fetch current settings (per-org model)
     if (action === "get") {
-      console.log(`[manage-ttn-settings] GET settings for org: ${organizationId}`);
+      console.log(`[manage-ttn-settings] [${requestId}] GET settings for org: ${organizationId}`);
 
-      // Try to get existing settings (using admin client)
       const { data: settings } = await supabaseAdmin
         .from("ttn_connections")
         .select("*")
         .eq("organization_id", organizationId)
         .maybeSingle();
 
-      // If no settings exist, return defaults
+      // If no settings exist, return empty state
       if (!settings) {
-        // Also get current global defaults from env
-        const globalBaseUrl = Deno.env.get("TTN_API_BASE_URL") || "";
-        const globalIsUrl = Deno.env.get("TTN_IS_BASE_URL") || "";
-        const globalUserId = Deno.env.get("TTN_USER_ID") || "";
-        const hasGlobalApiKey = !!Deno.env.get("TTN_API_KEY");
-
         return new Response(
           JSON.stringify({
             exists: false,
             is_enabled: false,
-            ttn_region: "NAM1",
-            ttn_stack_base_url: globalBaseUrl.replace(/\/api\/v3$/, ""),
-            ttn_identity_server_url: globalIsUrl.replace(/\/api\/v3$/, ""),
-            ttn_user_id: globalUserId,
+            ttn_region: "nam1",
             ttn_application_id: null,
-            ttn_application_name: null,
-            ttn_webhook_id: "frostguard",
-            has_api_key: hasGlobalApiKey,
+            provisioning_status: "not_started",
+            has_api_key: false,
             api_key_last4: null,
             api_key_updated_at: null,
-            has_webhook_api_key: !!Deno.env.get("TTN_WEBHOOK_API_KEY"),
-            webhook_api_key_last4: null,
+            has_webhook_secret: false,
+            webhook_secret_last4: null,
+            webhook_url: null,
             last_connection_test_at: null,
             last_connection_test_result: null,
-            using_global_defaults: true,
+            last_updated_source: null,
+            last_test_source: null,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Return settings with masked keys
+      // Return settings with masked keys and source tracking
       return new Response(
         JSON.stringify({
           exists: true,
           is_enabled: settings.is_enabled,
-          ttn_region: settings.ttn_region,
-          ttn_stack_base_url: settings.ttn_stack_base_url,
-          ttn_identity_server_url: settings.ttn_identity_server_url,
-          ttn_user_id: settings.ttn_user_id,
+          ttn_region: settings.ttn_region || "nam1",
           ttn_application_id: settings.ttn_application_id,
           ttn_application_name: settings.ttn_application_name,
-          ttn_webhook_id: settings.ttn_webhook_id,
+          provisioning_status: settings.provisioning_status || "not_started",
+          provisioning_error: settings.provisioning_error,
+          provisioned_at: settings.ttn_application_provisioned_at,
           has_api_key: !!settings.ttn_api_key_encrypted,
           api_key_last4: settings.ttn_api_key_last4,
           api_key_updated_at: settings.ttn_api_key_updated_at,
-          has_webhook_api_key: !!settings.ttn_webhook_api_key_encrypted,
-          webhook_api_key_last4: settings.ttn_webhook_api_key_last4,
+          has_webhook_secret: !!settings.ttn_webhook_secret_encrypted,
+          webhook_secret_last4: settings.ttn_webhook_secret_last4,
+          webhook_url: settings.ttn_webhook_url,
+          webhook_id: settings.ttn_webhook_id || "freshtracker",
+          webhook_events: settings.ttn_webhook_events || ["uplink_message", "join_accept"],
           last_connection_test_at: settings.last_connection_test_at,
           last_connection_test_result: settings.last_connection_test_result,
-          using_global_defaults: false,
+          last_updated_source: settings.ttn_last_updated_source,
+          last_test_source: settings.ttn_last_test_source,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // TEST action - Test TTN connection
+    // TEST action - Test TTN connection using org's own application
     if (action === "test") {
-      console.log(`[manage-ttn-settings] Testing TTN connection for org: ${organizationId}`);
+      const sensorId = body.sensor_id as string | undefined;
+      console.log(`[manage-ttn-settings] [${requestId}] Testing TTN connection for org: ${organizationId}`);
 
-      // Get settings (using admin client)
-      const { data: settings } = await supabaseAdmin
+      // Get config for this org
+      const config = await getTtnConfigForOrg(supabaseAdmin, organizationId);
+
+      // Also get the raw ttn_connections row for api_key_last4
+      const { data: ttnConnData } = await supabaseAdmin
         .from("ttn_connections")
-        .select("*")
+        .select("ttn_api_key_last4, ttn_last_updated_source")
         .eq("organization_id", organizationId)
         .maybeSingle();
 
-      // Determine which credentials to use
-      let apiKey: string;
-      let baseUrl: string;
-      let isUrl: string;
-      let userId: string;
-      let appId: string | null = null;
-
-      if (settings?.is_enabled && settings.ttn_api_key_encrypted) {
-        // Use org-specific settings
-        apiKey = deobfuscateKey(settings.ttn_api_key_encrypted, encryptionSalt);
-        baseUrl = settings.ttn_stack_base_url || regionUrls[settings.ttn_region || "NAM1"]?.base || "";
-        isUrl = settings.ttn_identity_server_url || regionUrls[settings.ttn_region || "NAM1"]?.is || "";
-        userId = settings.ttn_user_id || "";
-        appId = settings.ttn_application_id;
-      } else {
-        // Use global defaults
-        apiKey = Deno.env.get("TTN_API_KEY") || "";
-        baseUrl = Deno.env.get("TTN_API_BASE_URL") || "";
-        isUrl = Deno.env.get("TTN_IS_BASE_URL") || "https://eu1.cloud.thethings.network";
-        userId = Deno.env.get("TTN_USER_ID") || "";
-      }
-
-      // Validate required fields
-      const validationErrors: string[] = [];
-      if (!apiKey) {
-        validationErrors.push("No API key configured");
-      }
-      if (!userId?.trim()) {
-        validationErrors.push("TTN User ID is required");
-      }
-      // Check for placeholder Application ID
-      if (appId && (appId.includes("your-org") || appId.includes("your_org") || appId === "fg-")) {
-        validationErrors.push(`Application ID '${appId}' appears to be a placeholder`);
-      }
-
-      if (validationErrors.length > 0) {
+      if (!config || !config.applicationId) {
         const testResult = {
           success: false,
-          error: validationErrors[0],
-          hint: validationErrors.length > 1
-            ? `Additional issues: ${validationErrors.slice(1).join(", ")}`
-            : "Configure the missing fields and try again.",
-          tested_at: new Date().toISOString(),
+          error: "TTN application not provisioned",
+          hint: "Click 'Provision TTN Application' to create your organization's TTN application.",
+          testedAt: new Date().toISOString(),
+          endpointTested: "",
+          effectiveApplicationId: "",
+          clusterTested: "",
+          request_id: requestId,
         };
 
-        if (settings) {
-          await supabaseAdmin
-            .from("ttn_connections")
-            .update({
-              last_connection_test_at: new Date().toISOString(),
-              last_connection_test_result: testResult,
-            })
-            .eq("id", settings.id);
-        }
-
+        console.log(`[manage-ttn-settings] [${requestId}] Test failed: no application provisioned`);
         return new Response(
           JSON.stringify(testResult),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      // Normalize URLs
-      const normalizeUrl = (url: string) => url.trim().replace(/\/+$/, "").replace(/\/api\/v3$/, "");
-      const effectiveIsUrl = normalizeUrl(isUrl);
-
-      // Validate Identity Server URL is eu1 (all TTN regions use eu1 for IS)
-      if (!effectiveIsUrl.includes("eu1.cloud.thethings.network")) {
-        console.warn(`[manage-ttn-settings] Non-standard IS URL: ${effectiveIsUrl}, expected eu1.cloud.thethings.network`);
-      }
-
-      // Test: Try to list user's applications
-      console.log(`[manage-ttn-settings] Testing TTN API at ${effectiveIsUrl}`);
-      
-      try {
-        const testEndpoint = appId 
-          ? `/api/v3/applications/${appId}`
-          : `/api/v3/users/${userId}/applications`;
-        
-        const response = await fetch(`${effectiveIsUrl}${testEndpoint}`, {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-        });
-
-        const testResult: Record<string, unknown> = {
-          tested_at: new Date().toISOString(),
-          endpoint_tested: testEndpoint,
-          status_code: response.status,
+      if (!config.apiKey) {
+        const testResult = {
+          success: false,
+          error: "No API key configured",
+          hint: "TTN application exists but API key is missing. Try re-provisioning or enter a new API key.",
+          testedAt: new Date().toISOString(),
+          endpointTested: "",
+          effectiveApplicationId: config.applicationId,
+          clusterTested: config.region,
+          api_key_last4: ttnConnData?.ttn_api_key_last4,
+          last_updated_source: ttnConnData?.ttn_last_updated_source,
         };
-
-        if (response.ok) {
-          testResult.success = true;
-          testResult.message = "Connection successful";
-
-          const data = await response.json();
-          if (appId) {
-            testResult.application_name = data.name || appId;
-          } else {
-            testResult.applications_count = data.applications?.length || 0;
-          }
-        } else {
-          const errorText = await response.text();
-          testResult.success = false;
-
-          // Try to parse TTN error response for better messages
-          let ttnError: { code?: number; message?: string; details?: unknown[] } | null = null;
-          try {
-            const errorJson = JSON.parse(errorText);
-            ttnError = errorJson;
-            if (errorJson.code) {
-              testResult.ttn_error_code = errorJson.code.toString();
-            }
-            if (errorJson.message) {
-              testResult.ttn_message = errorJson.message;
-            }
-          } catch {
-            // Not JSON, use raw text
-          }
-
-          console.log(`[manage-ttn-settings] TTN API error: ${response.status}`, errorText.slice(0, 500));
-
-          if (response.status === 401) {
-            testResult.error = "Invalid API key";
-            testResult.hint = "The API key is invalid or expired. Generate a new one in TTN Console → API Keys.";
-            testResult.details = ttnError?.message || errorText.slice(0, 500);
-          } else if (response.status === 403) {
-            // Parse which permission is missing from TTN error
-            const missingPermission = ttnError?.message?.match(/`([^`]+)`/)?.[1] || "applications";
-            testResult.error = "Insufficient permissions";
-            testResult.hint = `The API key lacks the required '${missingPermission}' permission. In TTN Console → API Keys, create a new key with: applications, gateways, organization, and devices rights.`;
-            testResult.details = ttnError?.message || errorText.slice(0, 500);
-          } else if (response.status === 404) {
-            testResult.error = "Not found";
-            testResult.hint = appId
-              ? `Application '${appId}' not found. Verify the Application ID exists in your TTN Console.`
-              : `User '${userId}' not found. Verify the TTN User ID matches your TTN account username.`;
-            testResult.details = ttnError?.message || errorText.slice(0, 500);
-          } else {
-            testResult.error = `TTN API error (HTTP ${response.status})`;
-            testResult.hint = ttnError?.message || "Check your TTN configuration and try again.";
-            testResult.details = errorText.slice(0, 500);
-          }
-        }
 
         // Save test result
-        if (settings) {
-          await supabaseAdmin
-            .from("ttn_connections")
-            .update({
-              last_connection_test_at: new Date().toISOString(),
-              last_connection_test_result: testResult,
-            })
-            .eq("id", settings.id);
-        }
-
-        // Log to event_logs
-        await supabaseAdmin.from("event_logs").insert({
-          organization_id: organizationId,
-          event_type: testResult.success ? "ttn.settings.tested" : "ttn.settings.test_failed",
-          category: "settings",
-          severity: testResult.success ? "info" : "warning",
-          title: testResult.success ? "TTN Connection Test Passed" : "TTN Connection Test Failed",
-          actor_id: user.id,
-          event_data: { result: testResult },
-        });
-
-        return new Response(
-          JSON.stringify(testResult),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      } catch (fetchError) {
-        const testResult = {
-          success: false,
-          error: "Network error",
-          details: fetchError instanceof Error ? fetchError.message : "Connection failed",
-          hint: "Check if the TTN Stack Base URL is correct and accessible.",
-          tested_at: new Date().toISOString(),
-        };
-
-        if (settings) {
-          await supabaseAdmin
-            .from("ttn_connections")
-            .update({
-              last_connection_test_at: new Date().toISOString(),
-              last_connection_test_result: testResult,
-            })
-            .eq("id", settings.id);
-        }
+        await supabaseAdmin
+          .from("ttn_connections")
+          .update({
+            last_connection_test_at: new Date().toISOString(),
+            last_connection_test_result: testResult,
+            ttn_last_test_source: "frostguard",
+          })
+          .eq("organization_id", organizationId);
 
         return new Response(
           JSON.stringify(testResult),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      // If sensor_id provided, look up the ttn_device_id for device-specific testing
+      let testDeviceId: string | undefined = undefined;
+      
+      if (sensorId) {
+        const { data: sensor } = await supabaseAdmin
+          .from("lora_sensors")
+          .select("dev_eui, ttn_device_id")
+          .eq("id", sensorId)
+          .eq("organization_id", organizationId)
+          .single();
+        
+        if (sensor) {
+          testDeviceId = sensor.ttn_device_id || generateTtnDeviceId(sensor.dev_eui) || undefined;
+          console.log(`[manage-ttn-settings] Testing device: ${testDeviceId}`);
+        }
+      }
+
+      // Run the test
+      const testResult = await testTtnConnection(config, { testDeviceId });
+
+      // Enhance test result with source and key info from ttn_connections
+      const enhancedTestResult = {
+        ...testResult,
+        api_key_last4: ttnConnData?.ttn_api_key_last4,
+        last_updated_source: ttnConnData?.ttn_last_updated_source,
+        source: "frostguard",
+        request_id: requestId,
+      };
+
+      console.log(`[manage-ttn-settings] [${requestId}] Test result: success=${testResult.success}, error=${testResult.error || 'none'}`);
+
+      // Save test result with source tracking
+      await supabaseAdmin
+        .from("ttn_connections")
+        .update({
+          last_connection_test_at: testResult.testedAt,
+          last_connection_test_result: enhancedTestResult,
+          ttn_last_test_source: "frostguard",
+        })
+        .eq("organization_id", organizationId);
+
+      // Log to event_logs
+      await supabaseAdmin.from("event_logs").insert({
+        organization_id: organizationId,
+        event_type: testResult.success ? "ttn.settings.tested" : "ttn.settings.test_failed",
+        category: "settings",
+        severity: testResult.success ? "info" : "warning",
+        title: testResult.success ? "TTN Connection Test Passed" : "TTN Connection Test Failed",
+        actor_id: user.id,
+        event_data: { 
+          result: testResult,
+          application_id: config.applicationId,
+          region: config.region,
+          tested_device_id: testDeviceId,
+        },
+      });
+
+      return new Response(
+        JSON.stringify(enhancedTestResult),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // UPDATE action - Update settings
+    // UPDATE action - Update settings (enabled, region, and API key)
     if (action === "update") {
-      console.log(`[manage-ttn-settings] Updating settings for org: ${organizationId}`);
+      console.log(`[manage-ttn-settings] [${requestId}] Updating settings for org: ${organizationId}`);
 
       const updates: TTNSettingsUpdate = body as TTNSettingsUpdate;
-      console.log(`[manage-ttn-settings] Updates:`, { ...updates, ttn_api_key: updates.ttn_api_key ? "[REDACTED]" : undefined });
+      console.log(`[manage-ttn-settings] Updates:`, { 
+        is_enabled: updates.is_enabled,
+        ttn_region: updates.ttn_region,
+        has_api_key: !!updates.api_key,
+      });
+
+      // Validate: if enabling, require provisioned application
+      if (updates.is_enabled === true) {
+        const { data: existingCheck } = await supabaseAdmin
+          .from("ttn_connections")
+          .select("ttn_application_id, provisioning_status")
+          .eq("organization_id", organizationId)
+          .maybeSingle();
+
+        if (!existingCheck?.ttn_application_id || existingCheck.provisioning_status !== "completed") {
+          return new Response(
+            JSON.stringify({ 
+              error: "TTN application required", 
+              details: "You must provision a TTN application before enabling TTN integration." 
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+
+      // Get encryption salt - MUST match _shared/ttnConfig.ts pattern
+      const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || supabaseServiceKey.slice(0, 32);
 
       // Build update object
       const dbUpdates: Record<string, unknown> = {
         updated_by: user.id,
+        ttn_last_updated_source: "frostguard",
       };
 
-      // Copy simple fields
       if (updates.is_enabled !== undefined) dbUpdates.is_enabled = updates.is_enabled;
-      if (updates.ttn_region !== undefined) dbUpdates.ttn_region = updates.ttn_region;
-      if (updates.ttn_stack_base_url !== undefined) dbUpdates.ttn_stack_base_url = updates.ttn_stack_base_url;
-      if (updates.ttn_identity_server_url !== undefined) dbUpdates.ttn_identity_server_url = updates.ttn_identity_server_url;
-      if (updates.ttn_application_id !== undefined) dbUpdates.ttn_application_id = updates.ttn_application_id;
-      if (updates.ttn_application_name !== undefined) dbUpdates.ttn_application_name = updates.ttn_application_name;
-      if (updates.ttn_user_id !== undefined) dbUpdates.ttn_user_id = updates.ttn_user_id;
-      if (updates.ttn_webhook_id !== undefined) dbUpdates.ttn_webhook_id = updates.ttn_webhook_id;
+      if (updates.ttn_region !== undefined) dbUpdates.ttn_region = updates.ttn_region.toLowerCase();
 
-      // Handle API key encryption
-      if (updates.ttn_api_key) {
-        dbUpdates.ttn_api_key_encrypted = obfuscateKey(updates.ttn_api_key, encryptionSalt);
-        dbUpdates.ttn_api_key_last4 = getLast4(updates.ttn_api_key);
+      // Handle API key update
+      if (updates.api_key) {
+        dbUpdates.ttn_api_key_encrypted = obfuscateKey(updates.api_key, encryptionSalt);
+        dbUpdates.ttn_api_key_last4 = getLast4(updates.api_key);
         dbUpdates.ttn_api_key_updated_at = new Date().toISOString();
+        // Clear stale test result when key changes
+        dbUpdates.last_connection_test_result = null;
+        dbUpdates.last_connection_test_at = null;
+        
+        console.log(`[manage-ttn-settings] API key updated, last4: ${dbUpdates.ttn_api_key_last4}`);
       }
 
-      // Handle webhook API key encryption
-      if (updates.ttn_webhook_api_key) {
-        dbUpdates.ttn_webhook_api_key_encrypted = obfuscateKey(updates.ttn_webhook_api_key, encryptionSalt);
-        dbUpdates.ttn_webhook_api_key_last4 = getLast4(updates.ttn_webhook_api_key);
-      }
-
-      // Check if record exists (using admin client)
+      // Check if record exists
       const { data: existing } = await supabaseAdmin
         .from("ttn_connections")
         .select("id")
@@ -474,7 +360,6 @@ Deno.serve(async (req: Request) => {
 
       let result;
       if (existing) {
-        // Update existing
         result = await supabaseAdmin
           .from("ttn_connections")
           .update(dbUpdates)
@@ -482,12 +367,12 @@ Deno.serve(async (req: Request) => {
           .select()
           .single();
       } else {
-        // Insert new
         result = await supabaseAdmin
           .from("ttn_connections")
           .insert({
             organization_id: organizationId,
             created_by: user.id,
+            ttn_region: "nam1",
             ...dbUpdates,
           })
           .select()
@@ -503,24 +388,34 @@ Deno.serve(async (req: Request) => {
       }
 
       // Log to event_logs
-      const changedFields = Object.keys(updates).filter(k => k !== "ttn_api_key" && k !== "ttn_webhook_api_key");
-      if (updates.ttn_api_key) changedFields.push("api_key");
-      if (updates.ttn_webhook_api_key) changedFields.push("webhook_api_key");
+      const changedFields: string[] = [];
+      if (updates.is_enabled !== undefined) changedFields.push("is_enabled");
+      if (updates.ttn_region !== undefined) changedFields.push("ttn_region");
+      if (updates.api_key) changedFields.push("api_key");
+
+      const eventType = updates.api_key 
+        ? "ttn.settings.api_key_updated"
+        : updates.is_enabled !== undefined 
+          ? (updates.is_enabled ? "ttn.settings.enabled" : "ttn.settings.disabled")
+          : "ttn.settings.updated";
 
       await supabaseAdmin.from("event_logs").insert({
         organization_id: organizationId,
-        event_type: updates.is_enabled !== undefined 
-          ? (updates.is_enabled ? "ttn.settings.enabled" : "ttn.settings.disabled")
-          : "ttn.settings.updated",
+        event_type: eventType,
         category: "settings",
         severity: "info",
-        title: updates.is_enabled !== undefined
-          ? (updates.is_enabled ? "TTN Integration Enabled" : "TTN Integration Disabled")
-          : "TTN Settings Updated",
+        title: updates.api_key 
+          ? "TTN API Key Updated"
+          : updates.is_enabled !== undefined
+            ? (updates.is_enabled ? "TTN Integration Enabled" : "TTN Integration Disabled")
+            : "TTN Settings Updated",
         actor_id: user.id,
         event_data: {
           changed_fields: changedFields,
           is_enabled: result.data.is_enabled,
+          application_id: result.data.ttn_application_id,
+          api_key_last4: result.data.ttn_api_key_last4,
+          source: "frostguard",
         },
       });
 
@@ -528,16 +423,19 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           success: true,
           is_enabled: result.data.is_enabled,
-          has_api_key: !!result.data.ttn_api_key_encrypted,
+          ttn_application_id: result.data.ttn_application_id,
+          provisioning_status: result.data.provisioning_status,
           api_key_last4: result.data.ttn_api_key_last4,
+          api_key_updated_at: result.data.ttn_api_key_updated_at,
+          last_updated_source: result.data.ttn_last_updated_source,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     return new Response(
-      JSON.stringify({ error: "Method not allowed" }),
-      { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ error: "Unknown action" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("[manage-ttn-settings] Error:", error);

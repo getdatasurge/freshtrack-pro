@@ -68,8 +68,8 @@ const DeviceReadinessCard = ({
   const effectiveSignalStrength = hasLoraData ? loraSensor.signal_strength : signalStrength;
   const effectiveLastSeen = hasLoraData ? loraSensor.last_seen_at : (lastHeartbeat || device?.last_seen_at);
 
-  // Compute installation status - override for pending LoRa sensors
-  const baseInstallationStatus = computeSensorInstallationStatus(device || null, lastReadingAt);
+  // Compute installation status - pass loraSensor for proper status derivation
+  const baseInstallationStatus = computeSensorInstallationStatus(device || null, lastReadingAt, loraSensor);
   
   // Override status for pending/joining LoRa sensors
   const installationStatus = isLoraPending

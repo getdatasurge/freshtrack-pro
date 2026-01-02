@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getTtnConfigForOrg, getGlobalApplicationId } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,7 +20,7 @@ interface TTNDevice {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-list-devices-v1-20251230";
+  const BUILD_VERSION = "ttn-list-devices-v2-global-app-20251231";
   console.log(`[ttn-list-devices] Build: ${BUILD_VERSION}`);
   
   if (req.method === "OPTIONS") {
@@ -29,12 +30,19 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const ttnApiKey = Deno.env.get("TTN_API_KEY");
-    const ttnIsBaseUrl = Deno.env.get("TTN_IS_BASE_URL") || "https://eu1.cloud.thethings.network";
 
-    if (!ttnApiKey) {
+    // Get global TTN Application ID
+    let ttnAppId: string;
+    try {
+      ttnAppId = getGlobalApplicationId();
+    } catch {
       return new Response(
-        JSON.stringify({ error: "TTN credentials not configured" }),
+        JSON.stringify({ 
+          error: "TTN not configured", 
+          hint: "TTN_APPLICATION_ID environment variable is not set",
+          devices: [],
+          orphans: []
+        }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -87,17 +95,14 @@ serve(async (req) => {
       );
     }
 
-    // Get org's TTN application ID
-    const { data: org, error: orgError } = await supabase
-      .from("organizations")
-      .select("ttn_application_id")
-      .eq("id", organization_id)
-      .single();
+    // Get TTN config for this org
+    const ttnConfig = await getTtnConfigForOrg(supabase, organization_id);
 
-    if (orgError || !org?.ttn_application_id) {
+    if (!ttnConfig || !ttnConfig.apiKey) {
       return new Response(
         JSON.stringify({ 
-          error: "TTN application not configured",
+          error: "TTN not configured for this organization",
+          hint: "Add a TTN API key in Settings → Developer → TTN Connection",
           devices: [],
           orphans: []
         }),
@@ -105,28 +110,16 @@ serve(async (req) => {
       );
     }
 
-    const ttnAppId = org.ttn_application_id;
     console.log(`[ttn-list-devices] Listing devices for TTN app: ${ttnAppId}`);
 
-    // Normalize URL
-    const normalizeUrl = (url: string) => {
-      let normalized = url.trim().replace(/\/+$/, "");
-      if (normalized.endsWith("/api/v3")) {
-        normalized = normalized.slice(0, -7);
-      }
-      return normalized;
-    };
-
-    const effectiveIsBaseUrl = normalizeUrl(ttnIsBaseUrl);
-
     // List devices from TTN
-    const listUrl = `${effectiveIsBaseUrl}/api/v3/applications/${ttnAppId}/devices?field_mask=name,created_at,updated_at,ids.dev_eui`;
+    const listUrl = `${ttnConfig.identityBaseUrl}/api/v3/applications/${ttnAppId}/devices?field_mask=name,created_at,updated_at,ids.dev_eui`;
     console.log(`[ttn-list-devices] GET ${listUrl}`);
     
     const response = await fetch(listUrl, {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${ttnApiKey}`,
+        "Authorization": `Bearer ${ttnConfig.apiKey}`,
         "Content-Type": "application/json",
       },
     });

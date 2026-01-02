@@ -23,7 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Radio, MoreHorizontal, Pencil, Unlink, Trash2, Loader2 } from "lucide-react";
+import { Plus, Radio, MoreHorizontal, Pencil, Unlink, Trash2, Loader2, Info } from "lucide-react";
 import { Gateway } from "@/types/ttn";
 
 interface SiteGatewaysCardProps {
@@ -129,56 +129,81 @@ export function SiteGatewaysCard({ siteId, siteName, organizationId }: SiteGatew
           </div>
         </CardHeader>
         <CardContent className="pt-0">
-          {siteGateways.length > 0 ? (
-            <div className="space-y-2">
-              {siteGateways.map((gateway) => (
-                <div
-                  key={gateway.id}
-                  className="flex items-center justify-between p-3 rounded-lg border bg-card"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0">
-                      <Radio className="w-5 h-5 text-muted-foreground" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-foreground truncate">{gateway.name}</h3>
-                        {getStatusBadge(gateway.status)}
-                      </div>
-                      <p className="text-sm text-muted-foreground font-mono truncate">
-                        {formatEUI(gateway.gateway_eui)}
-                      </p>
-                    </div>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="shrink-0">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setEditGateway(gateway)}>
-                        <Pencil className="w-4 h-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setUnassignGateway(gateway)}>
-                        <Unlink className="w-4 h-4 mr-2" />
-                        Unassign from site
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={() => setDeleteGatewayData(gateway)}
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              ))}
+          {/* Unassigned gateways banner */}
+          {unassignedGateways.length > 0 && siteGateways.length === 0 && (
+            <div className="flex items-center gap-3 p-3 mb-4 rounded-lg border border-primary/20 bg-primary/5">
+              <Info className="w-4 h-4 text-primary flex-shrink-0" />
+              <p className="text-sm text-foreground flex-1">
+                <span className="font-medium">{unassignedGateways.length}</span> unassigned gateway{unassignedGateways.length > 1 ? 's' : ''} available from sync
+              </p>
+              <Button size="sm" variant="outline" onClick={() => setAssignDialogOpen(true)}>
+                Assign Now
+              </Button>
             </div>
-          ) : (
+          )}
+          
+          {siteGateways.length > 0 ? (
+            <>
+              {/* Show banner above gateways if there are more unassigned ones */}
+              {unassignedGateways.length > 0 && (
+                <div className="flex items-center gap-2 p-2 mb-3 rounded-md bg-muted/50 text-sm text-muted-foreground">
+                  <Info className="w-3.5 h-3.5" />
+                  <span>{unassignedGateways.length} more unassigned gateway{unassignedGateways.length > 1 ? 's' : ''} available</span>
+                  <Button size="sm" variant="ghost" className="h-6 px-2 ml-auto" onClick={() => setAssignDialogOpen(true)}>
+                    Assign
+                  </Button>
+                </div>
+              )}
+              <div className="space-y-2">
+                {siteGateways.map((gateway) => (
+                  <div
+                    key={gateway.id}
+                    className="flex items-center justify-between p-3 rounded-lg border bg-card"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0">
+                        <Radio className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-foreground truncate">{gateway.name}</h3>
+                          {getStatusBadge(gateway.status)}
+                        </div>
+                        <p className="text-sm text-muted-foreground font-mono truncate">
+                          {formatEUI(gateway.gateway_eui)}
+                        </p>
+                      </div>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="shrink-0">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => setEditGateway(gateway)}>
+                          <Pencil className="w-4 h-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setUnassignGateway(gateway)}>
+                          <Unlink className="w-4 h-4 mr-2" />
+                          Unassign from site
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeleteGatewayData(gateway)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : !unassignedGateways.length && (
             <div className="flex flex-col items-center justify-center py-8 border border-dashed rounded-lg">
               <div className="w-12 h-12 rounded-xl bg-secondary/50 flex items-center justify-center mb-3">
                 <Radio className="w-6 h-6 text-muted-foreground" />

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getTtnConfigForOrg, getGlobalApplicationId } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -131,7 +132,7 @@ async function logEvent(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "deprovision-worker-v1-20251230";
+  const BUILD_VERSION = "deprovision-worker-v2-global-app-20251231";
   console.log(`[ttn-deprovision-worker] Build: ${BUILD_VERSION}`);
   
   if (req.method === "OPTIONS") {
@@ -141,11 +142,13 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const ttnApiKey = Deno.env.get("TTN_API_KEY");
-    const ttnIsBaseUrl = Deno.env.get("TTN_IS_BASE_URL") || "https://eu1.cloud.thethings.network";
 
-    if (!ttnApiKey) {
-      console.error("[ttn-deprovision-worker] TTN_API_KEY not configured");
+    // Get global TTN Application ID
+    let globalAppId: string;
+    try {
+      globalAppId = getGlobalApplicationId();
+    } catch {
+      console.error("[ttn-deprovision-worker] TTN_APPLICATION_ID not configured");
       return new Response(
         JSON.stringify({ error: "TTN credentials not configured", processed: 0 }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -182,17 +185,6 @@ serve(async (req) => {
     console.log(`[ttn-deprovision-worker] Processing ${jobs.length} jobs`);
 
     const results: Array<{ job_id: string; status: string; error?: string }> = [];
-    
-    // Normalize URL
-    const normalizeUrl = (url: string) => {
-      let normalized = url.trim().replace(/\/+$/, "");
-      if (normalized.endsWith("/api/v3")) {
-        normalized = normalized.slice(0, -7);
-      }
-      return normalized;
-    };
-    
-    const effectiveIsBaseUrl = normalizeUrl(ttnIsBaseUrl);
 
     for (const job of jobs as DeprovisionJob[]) {
       console.log(`[ttn-deprovision-worker] Processing job ${job.id}: ${job.dev_eui}`);
@@ -207,18 +199,39 @@ serve(async (req) => {
         })
         .eq("id", job.id);
 
+      // Get TTN config for this org (for the API key)
+      const ttnConfig = await getTtnConfigForOrg(supabase, job.organization_id);
+
+      if (!ttnConfig || !ttnConfig.apiKey) {
+        // No API key - block the job
+        await supabase
+          .from("ttn_deprovision_jobs")
+          .update({
+            status: "BLOCKED",
+            updated_at: new Date().toISOString(),
+            last_error_code: "NO_API_KEY",
+            last_error_message: "No TTN API key configured for this organization",
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", job.id);
+
+        await logEvent(supabase, "blocked", job, false, "NO_API_KEY", "No TTN API key configured");
+        results.push({ job_id: job.id, status: "BLOCKED", error: "No API key" });
+        continue;
+      }
+
       // Build device ID if not stored
       const deviceId = job.ttn_device_id || `sensor-${job.dev_eui.toLowerCase()}`;
       
       try {
-        // Delete from TTN Identity Server
-        const deleteUrl = `${effectiveIsBaseUrl}/api/v3/applications/${job.ttn_application_id}/devices/${deviceId}`;
+        // Delete from TTN Identity Server using global app ID
+        const deleteUrl = `${ttnConfig.identityBaseUrl}/api/v3/applications/${globalAppId}/devices/${deviceId}`;
         console.log(`[ttn-deprovision-worker] DELETE ${deleteUrl}`);
         
         const response = await fetch(deleteUrl, {
           method: "DELETE",
           headers: {
-            "Authorization": `Bearer ${ttnApiKey}`,
+            "Authorization": `Bearer ${ttnConfig.apiKey}`,
             "Content-Type": "application/json",
           },
         });

@@ -114,6 +114,9 @@ export function AssignGatewayDialog({
               <p className="text-sm text-muted-foreground">
                 No unassigned gateways available
               </p>
+              <p className="text-xs text-muted-foreground mt-2 max-w-xs">
+                Sync from emulator or register a new gateway in Settings → Gateways
+              </p>
             </div>
           )}
         </div>

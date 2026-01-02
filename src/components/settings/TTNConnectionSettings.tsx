@@ -1,226 +1,284 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import {
-  Radio,
-  Save,
-  Loader2,
-  RefreshCw,
-  CheckCircle,
-  XCircle,
-  Key,
+import { 
+  Radio, 
+  Loader2, 
+  CheckCircle, 
+  XCircle, 
+  RefreshCw, 
+  Copy, 
   Globe,
+  Plus,
   AlertTriangle,
-  Eye,
-  EyeOff,
+  Info
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Input } from "@/components/ui/input";
+
+interface TTNTestResult {
+  success: boolean;
+  error?: string;
+  hint?: string;
+  applicationName?: string;
+  statusCode?: number;
+  testedAt?: string;
+  clusterTested?: string;
+  effectiveApplicationId?: string;
+  apiKeyLast4?: string;
+  request_id?: string;
+  // Legacy field for backwards compatibility
+  message?: string;
+}
+
+interface BootstrapResult {
+  ok: boolean;
+  request_id: string;
+  action: string;
+  permissions?: {
+    valid: boolean;
+    rights: string[];
+    missing_core: string[];
+    missing_webhook: string[];
+    can_configure_webhook: boolean;
+    can_manage_devices: boolean;
+  };
+  webhook?: {
+    webhook_id: string;
+    base_url: string;
+    format: string;
+    events_enabled: string[];
+    secret_configured: boolean;
+  };
+  webhook_action?: "created" | "updated" | "unchanged";
+  error?: {
+    code: string;
+    message: string;
+    hint: string;
+    missing_permissions?: string[];
+  };
+  config?: {
+    api_key_last4: string;
+    webhook_secret_last4: string;
+    webhook_url: string;
+    application_id: string;
+    cluster: string;
+    updated_at: string;
+  };
+}
 
 interface TTNSettings {
   exists: boolean;
   is_enabled: boolean;
   ttn_region: string | null;
-  ttn_stack_base_url: string | null;
-  ttn_identity_server_url: string | null;
-  ttn_user_id: string | null;
   ttn_application_id: string | null;
-  ttn_application_name: string | null;
-  ttn_webhook_id: string | null;
+  provisioning_status: 'not_started' | 'provisioning' | 'completed' | 'failed';
+  provisioning_error: string | null;
+  provisioned_at: string | null;
   has_api_key: boolean;
   api_key_last4: string | null;
   api_key_updated_at: string | null;
-  has_webhook_api_key: boolean;
-  webhook_api_key_last4: string | null;
+  has_webhook_secret: boolean;
+  webhook_secret_last4: string | null;
+  webhook_url: string | null;
+  webhook_id: string | null;
+  webhook_events: string[] | null;
   last_connection_test_at: string | null;
-  last_connection_test_result: {
-    success: boolean;
-    error?: string;
-    hint?: string;
-    message?: string;
-    applications_count?: number;
-    application_name?: string;
-    status_code?: number;
-    endpoint_tested?: string;
-    details?: string;
-    ttn_error_code?: string;
-  } | null;
-  using_global_defaults: boolean;
+  last_connection_test_result: TTNTestResult | null;
+  last_updated_source: string | null;
+  last_test_source: string | null;
 }
-
-const TTN_REGIONS = [
-  { value: "NAM1", label: "North America (nam1)" },
-  { value: "EU1", label: "Europe (eu1)" },
-  { value: "AU1", label: "Australia (au1)" },
-  { value: "AS1", label: "Asia (as1)" },
-];
-
-const REGION_URLS: Record<string, { base: string; is: string }> = {
-  NAM1: { base: "https://nam1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-  EU1: { base: "https://eu1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-  AU1: { base: "https://au1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-  AS1: { base: "https://as1.cloud.thethings.network", is: "https://eu1.cloud.thethings.network" },
-};
 
 interface TTNConnectionSettingsProps {
   organizationId: string | null;
 }
 
+const TTN_REGIONS = [
+  { value: "nam1", label: "North America (nam1)" },
+  { value: "eu1", label: "Europe (eu1)" },
+  { value: "au1", label: "Australia (au1)" },
+];
+
+const WEBHOOK_URL = `https://mfwyiifehsvwnjwqoxht.supabase.co/functions/v1/ttn-webhook`;
+
+const InfoTooltip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        <p className="text-sm">{children}</p>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
+
 export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsProps) {
-  const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
   const [settings, setSettings] = useState<TTNSettings | null>(null);
-  const [hasSession, setHasSession] = useState<boolean | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isProvisioning, setIsProvisioning] = useState(false);
+  const [isTesting, setIsTesting] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   
-  // Form state
+  const [region, setRegion] = useState("nam1");
   const [isEnabled, setIsEnabled] = useState(false);
-  const [region, setRegion] = useState("NAM1");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [isUrl, setIsUrl] = useState("");
-  const [userId, setUserId] = useState("");
-  const [appId, setAppId] = useState("");
-  const [appName, setAppName] = useState("");
-  const [webhookId, setWebhookId] = useState("frostguard");
-  const [apiKey, setApiKey] = useState("");
-  const [webhookApiKey, setWebhookApiKey] = useState("");
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [newApiKey, setNewApiKey] = useState("");
+  const [newApplicationId, setNewApplicationId] = useState("");
+  const [isSavingApiKey, setIsSavingApiKey] = useState(false);
+  const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
 
-  useEffect(() => {
-    if (organizationId) {
-      loadSettings();
-    } else {
-      setIsLoading(false);
-    }
-  }, [organizationId]);
-
-  const loadSettings = async () => {
+  const loadSettings = useCallback(async () => {
+    if (!organizationId) return;
+    
     setIsLoading(true);
     try {
-      // Use getUser() to force network-verified token refresh
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        console.warn("[TTNConnectionSettings] No valid session, redirecting to auth");
-        setHasSession(false);
-        setIsLoading(false);
-        toast.error("Session expired. Please sign in again.");
-        navigate("/auth");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Session expired. Please log in again.");
         return;
       }
-      setHasSession(true);
 
-      // Let Supabase client handle Authorization header automatically
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        body: { action: "get" },
+        body: { action: "get", organization_id: organizationId },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
-      if (error) {
-        // Handle 401 specifically - session expired
-        if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
-          console.warn("[TTNConnectionSettings] Session expired, redirecting to auth");
-          setHasSession(false);
-          toast.error("Session expired. Please sign in again.");
-          navigate("/auth");
-          return;
-        }
-        throw error;
-      }
+      if (error) throw error;
 
-      setSettings(data);
-      setIsEnabled(data.is_enabled || false);
-      setRegion(data.ttn_region || "NAM1");
-      setBaseUrl(data.ttn_stack_base_url || REGION_URLS[data.ttn_region || "NAM1"]?.base || "");
-      setIsUrl(data.ttn_identity_server_url || REGION_URLS[data.ttn_region || "NAM1"]?.is || "");
-      setUserId(data.ttn_user_id || "");
-      setAppId(data.ttn_application_id || "");
-      setAppName(data.ttn_application_name || "");
-      setWebhookId(data.ttn_webhook_id || "frostguard");
-    } catch (error) {
-      console.error("Failed to load TTN settings:", error);
+      if (data) {
+        setSettings({
+          exists: data.exists ?? false,
+          is_enabled: data.is_enabled ?? false,
+          ttn_region: data.ttn_region ?? null,
+          ttn_application_id: data.ttn_application_id ?? null,
+          provisioning_status: data.provisioning_status ?? 'not_started',
+          provisioning_error: data.provisioning_error ?? null,
+          provisioned_at: data.ttn_application_provisioned_at ?? null,
+          has_api_key: data.has_api_key ?? false,
+          api_key_last4: data.api_key_last4 ?? null,
+          api_key_updated_at: data.api_key_updated_at ?? null,
+          has_webhook_secret: data.has_webhook_secret ?? false,
+          webhook_secret_last4: data.webhook_secret_last4 ?? null,
+          webhook_url: data.webhook_url ?? WEBHOOK_URL,
+          webhook_id: data.webhook_id ?? null,
+          webhook_events: data.webhook_events ?? null,
+          last_connection_test_at: data.last_connection_test_at ?? null,
+          last_connection_test_result: data.last_connection_test_result ?? null,
+          last_updated_source: data.last_updated_source ?? null,
+          last_test_source: data.last_test_source ?? null,
+        });
+        setRegion(data.ttn_region || "nam1");
+        setIsEnabled(data.is_enabled ?? false);
+        // Set application ID for the form
+        if (data.ttn_application_id) {
+          setNewApplicationId(data.ttn_application_id);
+        }
+      }
+    } catch (err) {
+      console.error("Error loading TTN settings:", err);
       toast.error("Failed to load TTN settings");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [organizationId]);
 
-  const handleRegionChange = (newRegion: string) => {
-    setRegion(newRegion);
-    // Auto-populate URLs based on region
-    const urls = REGION_URLS[newRegion];
-    if (urls) {
-      setBaseUrl(urls.base);
-      setIsUrl(urls.is);
-    }
-  };
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
 
-  const handleSave = async () => {
-    setIsSaving(true);
+  const handleProvision = async () => {
+    if (!organizationId) return;
+
+    setIsProvisioning(true);
     try {
-      // Use getUser() to force network-verified token refresh
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        setHasSession(false);
-        toast.error("Session expired. Please sign in again.");
-        navigate("/auth");
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Session expired. Please log in again.");
         return;
       }
 
-      const updates: Record<string, unknown> = {
-        is_enabled: isEnabled,
-        ttn_region: region,
-        ttn_stack_base_url: baseUrl,
-        ttn_identity_server_url: isUrl,
-        ttn_user_id: userId,
-        ttn_application_id: appId || null,
-        ttn_application_name: appName || null,
-        ttn_webhook_id: webhookId,
-      };
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
-      // Only include API key if it was changed
-      if (apiKey) {
-        updates.ttn_api_key = apiKey;
-      }
-      if (webhookApiKey) {
-        updates.ttn_webhook_api_key = webhookApiKey;
-      }
-
-      // Let Supabase client handle Authorization header automatically
-      const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        body: { action: "update", ...updates },
+      const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
+        body: {
+          action: "provision",
+          organization_id: organizationId,
+          ttn_region: region,
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
-      if (error) {
-        // Handle specific error codes
-        if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
-          setHasSession(false);
-          toast.error("Session expired. Please sign in again.");
-          navigate("/auth");
-          return;
-        }
-        if (error.message?.includes("403")) {
-          toast.error("You need admin access to manage TTN settings.");
-          return;
-        }
-        throw error;
-      }
+      if (error) throw error;
 
-      toast.success("TTN settings saved");
-      setApiKey(""); // Clear after save
-      setWebhookApiKey("");
-      await loadSettings(); // Reload to get updated state
-    } catch (error) {
-      console.error("Failed to save TTN settings:", error);
-      toast.error("Failed to save settings");
+      if (data?.success) {
+        toast.success("TTN Application provisioned successfully!");
+        await loadSettings();
+      } else {
+        // Show more helpful error messages
+        const errorMsg = data?.error || "Provisioning failed";
+        const hint = data?.hint || "";
+
+        if (errorMsg.includes("TTN admin credentials not configured")) {
+          toast.error("TTN credentials not configured. Please contact your administrator to set up TTN_ADMIN_API_KEY and TTN_USER_ID in Supabase secrets.");
+        } else {
+          toast.error(hint ? `${errorMsg}: ${hint}` : errorMsg);
+        }
+      }
+    } catch (err: any) {
+      console.error("Provisioning error:", err);
+
+      // Check for specific error messages
+      if (err.message?.includes("TTN admin credentials")) {
+        toast.error("TTN credentials not configured. Please contact your administrator.");
+      } else {
+        toast.error(err.message || "Failed to provision TTN application");
+      }
     } finally {
-      setIsSaving(false);
+      setIsProvisioning(false);
+    }
+  };
+
+  const handleRegenerateWebhookSecret = async () => {
+    if (!organizationId) return;
+    
+    setIsRegenerating(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
+        body: { 
+          action: "regenerate_webhook_secret", 
+          organization_id: organizationId,
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (error) throw error;
+
+      if (data?.success) {
+        toast.success("Webhook secret regenerated and updated in TTN");
+        await loadSettings();
+      } else {
+        toast.error(data?.error || "Failed to regenerate webhook secret");
+      }
+    } catch (err: any) {
+      console.error("Regenerate error:", err);
+      toast.error(err.message || "Failed to regenerate webhook secret");
+    } finally {
+      setIsRegenerating(false);
     }
   };
 
@@ -243,73 +301,155 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   };
 
   const handleTest = async () => {
-    // Validate before making API call
-    const validation = validateForTest();
-    if (!validation.valid) {
-      toast.error("Cannot test connection", {
-        description: validation.errors.join(". "),
-        duration: 6000,
-      });
-      return;
-    }
-
+    if (!organizationId) return;
+    
     setIsTesting(true);
     try {
-      // Use getUser() to force network-verified token refresh
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        setHasSession(false);
-        toast.error("Session expired. Please sign in again.");
-        navigate("/auth");
-        return;
-      }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
-      // Let Supabase client handle Authorization header automatically
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        body: { action: "test" },
+        body: { 
+          action: "test", 
+          organization_id: organizationId,
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
-      if (error) {
-        if (error.message?.includes("401") || error.message?.includes("Invalid JWT")) {
-          setHasSession(false);
-          toast.error("Session expired. Please sign in again.");
-          navigate("/auth");
-          return;
-        }
-        if (error.message?.includes("403")) {
-          toast.error("You need admin access to test TTN connection.");
-          return;
-        }
-        throw error;
-      }
+      if (error) throw error;
 
-      if (data.success) {
-        toast.success(data.message || "Connection successful!");
+      // The test action returns success directly, not nested under test_result
+      if (data?.success) {
+        toast.success("Connection successful!");
       } else {
-        toast.error(data.error || "Connection test failed", {
-          description: data.hint,
-          duration: 8000,
-        });
+        toast.error(data?.error || data?.message || "Connection test failed");
       }
-
-      await loadSettings(); // Reload to show test result
-    } catch (error) {
-      console.error("Connection test failed:", error);
-      toast.error("Connection test failed");
+      await loadSettings();
+    } catch (err: any) {
+      console.error("Test error:", err);
+      toast.error(err.message || "Connection test failed");
     } finally {
       setIsTesting(false);
     }
   };
 
-  // Show sign-in message if no organization or no session
-  if (!organizationId || hasSession === false) {
+  const handleToggleEnabled = async (enabled: boolean) => {
+    if (!organizationId) return;
+    
+    setIsSaving(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
+        body: { 
+          action: "update", 
+          organization_id: organizationId, 
+          is_enabled: enabled 
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (error) throw error;
+
+      setIsEnabled(enabled);
+      toast.success(enabled ? "TTN integration enabled" : "TTN integration disabled");
+    } catch (err: any) {
+      console.error("Toggle error:", err);
+      toast.error(err.message || "Failed to update settings");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveApiKey = async () => {
+    if (!organizationId || !newApiKey.trim()) return;
+
+    // Require application ID for the bootstrap flow
+    const effectiveAppId = newApplicationId.trim() || settings?.ttn_application_id;
+    if (!effectiveAppId) {
+      toast.error("Please enter the TTN Application ID");
+      return;
+    }
+
+    setIsSavingApiKey(true);
+    setBootstrapResult(null);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      // Use the new ttn-bootstrap endpoint for automated webhook setup
+      const { data, error } = await supabase.functions.invoke("ttn-bootstrap", {
+        body: {
+          action: "save_and_configure",
+          organization_id: organizationId,
+          cluster: region,
+          application_id: effectiveAppId,
+          api_key: newApiKey.trim(),
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      if (error) throw error;
+
+      const result = data as BootstrapResult;
+      setBootstrapResult(result);
+
+      if (result.ok) {
+        setNewApiKey("");
+        const actionMsg = result.webhook_action === "created"
+          ? "Webhook created in TTN"
+          : result.webhook_action === "updated"
+          ? "Webhook updated in TTN"
+          : "Configuration saved";
+        toast.success(`API key validated. ${actionMsg}!`);
+        await loadSettings();
+      } else {
+        // Handle permission errors with detailed feedback
+        if (result.error?.code === "TTN_PERMISSION_MISSING") {
+          toast.error(result.error.message, {
+            description: result.error.hint,
+            duration: 8000,
+          });
+        } else if (result.error?.code === "WEBHOOK_SETUP_FAILED") {
+          toast.error("Webhook setup failed", {
+            description: result.error.hint,
+            duration: 6000,
+          });
+        } else {
+          toast.error(result.error?.message || "Configuration failed");
+        }
+      }
+    } catch (err: any) {
+      console.error("Save API key error:", err);
+      toast.error(err.message || "Failed to save and configure TTN");
+    } finally {
+      setIsSavingApiKey(false);
+    }
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied to clipboard`);
+  };
+
+  const formatSourceLabel = (source: string | null) => {
+    if (!source) return "Unknown";
+    return source === "emulator" ? "Emulator" : "FrostGuard";
+  };
+
+  if (!organizationId) {
     return (
       <Card>
-        <CardContent className="py-8">
-          <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-            <Radio className="h-8 w-8 text-muted-foreground/50" />
-            <span>Please sign in to configure TTN settings</span>
-          </div>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Radio className="h-5 w-5" />
+            TTN Connection
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">No organization selected.</p>
         </CardContent>
       </Card>
     );
@@ -318,329 +458,509 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
   if (isLoading) {
     return (
       <Card>
-        <CardContent className="py-8">
-          <div className="flex items-center justify-center gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            <span>Loading TTN settings...</span>
-          </div>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Radio className="h-5 w-5" />
+            TTN Connection
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </CardContent>
       </Card>
     );
   }
 
-  const testResult = settings?.last_connection_test_result;
+  const isProvisioned = settings?.provisioning_status === 'completed';
+  const isFailed = settings?.provisioning_status === 'failed';
+  const isProvisioningStatus = settings?.provisioning_status === 'provisioning';
 
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Radio className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <CardTitle>TTN Connection</CardTitle>
-              <CardDescription>
-                Configure The Things Network integration for LoRaWAN device management
-              </CardDescription>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {settings?.using_global_defaults && (
-              <Badge variant="outline" className="text-muted-foreground">
-                Using Global Defaults
-              </Badge>
-            )}
-            <Switch
-              checked={isEnabled}
-              onCheckedChange={setIsEnabled}
-              aria-label="Enable TTN integration"
-            />
-          </div>
-        </div>
+        <CardTitle className="flex items-center gap-2">
+          <Radio className="h-5 w-5" />
+          TTN Connection
+        </CardTitle>
+        <CardDescription>
+          Connect your LoRaWAN sensors via The Things Network
+        </CardDescription>
       </CardHeader>
-
       <CardContent className="space-y-6">
-        {/* Connection Status */}
-        {testResult && (
-          <div className={`p-4 rounded-lg border ${
-            testResult.success
-              ? "bg-safe/10 border-safe/30"
-              : "bg-destructive/10 border-destructive/30"
-          }`}>
+        {/* Provisioning In Progress State */}
+        {isProvisioningStatus && (
+          <div className="p-6 rounded-lg border-2 border-primary/30 bg-primary/5">
+            <div className="text-center space-y-4">
+              <Loader2 className="h-12 w-12 mx-auto text-primary animate-spin" />
+              <div>
+                <h3 className="font-medium">Provisioning TTN Application...</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Creating your dedicated TTN application. This may take a moment.
+                </p>
+              </div>
+              <Button onClick={loadSettings} variant="outline" size="sm">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Check Status
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Not Provisioned State */}
+        {!isProvisioned && !isFailed && !isProvisioningStatus && (
+          <div className="p-6 rounded-lg border-2 border-dashed border-muted-foreground/30">
+            <div className="text-center space-y-4">
+              <Radio className="h-12 w-12 mx-auto text-muted-foreground/50" />
+              <div>
+                <h3 className="font-medium">TTN Application Not Provisioned</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Create a dedicated TTN application for your organization to receive sensor data
+                </p>
+              </div>
+              
+              {/* Region Selection */}
+              <div className="max-w-xs mx-auto space-y-2">
+                <Label className="text-sm">Select TTN Region</Label>
+                <Select value={region} onValueChange={setRegion}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select region" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TTN_REGIONS.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        {r.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <Button onClick={handleProvision} disabled={isProvisioning} size="lg">
+                {isProvisioning ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-2" />
+                )}
+                Provision TTN Application
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Failed State */}
+        {isFailed && (
+          <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/30">
             <div className="flex items-start gap-3">
-              {testResult.success ? (
-                <CheckCircle className="h-5 w-5 text-safe mt-0.5" />
-              ) : (
-                <XCircle className="h-5 w-5 text-destructive mt-0.5" />
-              )}
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <p className={`font-medium ${testResult.success ? "text-safe" : "text-destructive"}`}>
-                    {testResult.success ? "Connection Successful" : testResult.error || "Connection Failed"}
-                  </p>
-                  {testResult.status_code && !testResult.success && (
-                    <Badge variant="outline" className="text-xs">
-                      HTTP {testResult.status_code}
-                    </Badge>
+              <XCircle className="h-5 w-5 text-destructive mt-0.5" />
+              <div className="flex-1 space-y-2">
+                <p className="font-medium text-destructive">Provisioning Failed</p>
+                <p className="text-sm text-muted-foreground">{settings?.provisioning_error}</p>
+                <Button onClick={handleProvision} variant="outline" size="sm" disabled={isProvisioning}>
+                  {isProvisioning ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
                   )}
-                </div>
-                {testResult.hint && (
-                  <p className="text-sm text-muted-foreground mt-1">{testResult.hint}</p>
-                )}
-                {testResult.ttn_error_code && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    TTN Error: <code className="bg-muted px-1 rounded">{testResult.ttn_error_code}</code>
-                  </p>
-                )}
-                {testResult.details && (
-                  <details className="mt-2">
-                    <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
-                      View raw error details
-                    </summary>
-                    <pre className="mt-1 p-2 bg-muted rounded text-xs overflow-x-auto max-h-32">
-                      {testResult.details}
-                    </pre>
-                  </details>
-                )}
-                {testResult.applications_count !== undefined && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Found {testResult.applications_count} application(s)
-                  </p>
-                )}
-                {testResult.application_name && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Application: {testResult.application_name}
-                  </p>
-                )}
-                {settings?.last_connection_test_at && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Last tested: {new Date(settings.last_connection_test_at).toLocaleString()}
-                  </p>
-                )}
+                  Retry Provisioning
+                </Button>
               </div>
             </div>
           </div>
         )}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {/* Region Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="ttn-region">TTN Region</Label>
-            <Select value={region} onValueChange={handleRegionChange}>
-              <SelectTrigger id="ttn-region">
-                <SelectValue placeholder="Select region" />
-              </SelectTrigger>
-              <SelectContent>
-                {TTN_REGIONS.map((r) => (
-                  <SelectItem key={r.value} value={r.value}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* User ID */}
-          <div className="space-y-2">
-            <Label htmlFor="ttn-user-id">TTN User ID</Label>
-            <Input
-              id="ttn-user-id"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              placeholder="your-ttn-username"
-            />
-          </div>
-        </div>
-
-        {/* URLs */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Globe className="h-4 w-4 text-muted-foreground" />
-            <Label>Server URLs</Label>
-          </div>
-          
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="ttn-base-url" className="text-sm text-muted-foreground">
-                Regional Server (NS/AS/JS)
-              </Label>
-              <Input
-                id="ttn-base-url"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://nam1.cloud.thethings.network"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="ttn-is-url" className="text-sm text-muted-foreground">
-                Identity Server (always eu1)
-              </Label>
-              <Input
-                id="ttn-is-url"
-                value={isUrl}
-                onChange={(e) => setIsUrl(e.target.value)}
-                placeholder="https://eu1.cloud.thethings.network"
-              />
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Application Settings */}
-        <div className="space-y-4">
-          <Label>Application Settings (Optional)</Label>
-          <p className="text-sm text-muted-foreground">
-            Leave blank to auto-generate from organization slug
-          </p>
-          
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="ttn-app-id" className="text-sm text-muted-foreground">
-                Application ID
-              </Label>
-              <Input
-                id="ttn-app-id"
-                value={appId}
-                onChange={(e) => setAppId(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
-                placeholder="fg-your-org-slug"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="ttn-app-name" className="text-sm text-muted-foreground">
-                Application Name
-              </Label>
-              <Input
-                id="ttn-app-name"
-                value={appName}
-                onChange={(e) => setAppName(e.target.value)}
-                placeholder="FrostGuard - Your Org"
-              />
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* API Key */}
-        <div className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Key className="h-4 w-4 text-muted-foreground" />
-            <Label>API Authentication</Label>
-          </div>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="ttn-api-key" className="text-sm">TTN API Key</Label>
-                {settings?.has_api_key && (
-                  <Badge variant="outline" className="text-xs">
-                    Set (****{settings.api_key_last4})
-                  </Badge>
-                )}
+        {/* Provisioned State */}
+        {isProvisioned && (
+          <>
+            {/* Status Banner */}
+            <div className="p-4 rounded-lg bg-safe/10 border border-safe/30">
+              <div className="flex items-start gap-3">
+                <CheckCircle className="h-5 w-5 text-safe mt-0.5" />
+                <div className="flex-1 space-y-2">
+                  <p className="font-medium text-safe">TTN Application Ready</p>
+                  <div className="grid gap-1.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Application ID:</span>
+                      <code className="bg-muted px-2 py-0.5 rounded text-xs">{settings.ttn_application_id}</code>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Region:</span>
+                      <span>{TTN_REGIONS.find(r => r.value === settings.ttn_region)?.label || settings.ttn_region}</span>
+                    </div>
+                    {settings.provisioned_at && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Provisioned:</span>
+                        <span>{new Date(settings.provisioned_at).toLocaleDateString()}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div className="relative">
-                <Input
-                  id="ttn-api-key"
-                  type={showApiKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={settings?.has_api_key ? "Enter new key to replace" : "NNSXS.xxxxx..."}
-                  className="pr-10"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-0 h-full px-3"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                >
-                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </div>
+
+            {/* Enable/Disable Toggle */}
+            <div className="flex items-center justify-between p-4 rounded-lg border">
+              <div className="space-y-0.5">
+                <Label>Integration Active</Label>
+                <p className="text-sm text-muted-foreground">
+                  {isEnabled ? "Receiving sensor data from TTN" : "Integration is disabled"}
+                </p>
+              </div>
+              <Switch
+                checked={isEnabled}
+                onCheckedChange={handleToggleEnabled}
+                disabled={isSaving}
+              />
+            </div>
+
+            {/* API Key & Webhook Configuration */}
+            <div className="space-y-4 p-4 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Label className="text-base font-medium">TTN API Configuration</Label>
+                  <InfoTooltip>Enter your TTN Application ID and API key. Webhook will be configured automatically.</InfoTooltip>
+                </div>
+                <Button variant="ghost" size="sm" onClick={loadSettings} disabled={isLoading}>
+                  <RefreshCw className={`h-3 w-3 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                  Refresh
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Generate an API key in TTN Console → API Keys with these rights:
-              </p>
-              <ul className="text-xs text-muted-foreground list-disc list-inside mt-1 space-y-0.5">
-                <li><code className="bg-muted px-1 rounded">applications</code> — Read/write applications</li>
-                <li><code className="bg-muted px-1 rounded">gateways</code> — Read gateways</li>
-                <li><code className="bg-muted px-1 rounded">organization</code> — Read organization info</li>
-                <li><code className="bg-muted px-1 rounded">devices</code> — Read/write end devices</li>
-              </ul>
+
+              {/* Current Configuration Status */}
+              {settings?.has_api_key && (
+                <div className="text-sm space-y-2 p-3 bg-muted/50 rounded-md">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Current key:</span>
+                    <div className="flex items-center gap-2">
+                      <code className="bg-muted px-2 py-0.5 rounded text-xs">****{settings.api_key_last4}</code>
+                      {settings.last_updated_source && (
+                        <Badge variant="outline" className="text-xs">
+                          {formatSourceLabel(settings.last_updated_source)}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  {settings.api_key_updated_at && (
+                    <p className="text-xs text-muted-foreground">
+                      Updated: {new Date(settings.api_key_updated_at).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Bootstrap Success Banner */}
+              {bootstrapResult?.ok && bootstrapResult.webhook_action && (
+                <div className="p-3 rounded-lg bg-safe/10 border border-safe/30">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-safe" />
+                    <span className="text-sm font-medium text-safe">
+                      {bootstrapResult.webhook_action === "created"
+                        ? "Webhook created in TTN!"
+                        : "Webhook updated in TTN!"}
+                    </span>
+                  </div>
+                  {bootstrapResult.permissions && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Permissions validated: {bootstrapResult.permissions.rights?.length || 0} rights granted
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Bootstrap Error Banner */}
+              {bootstrapResult && !bootstrapResult.ok && bootstrapResult.error && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30">
+                  <div className="flex items-start gap-2">
+                    <XCircle className="h-4 w-4 text-destructive mt-0.5" />
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-destructive">
+                        {bootstrapResult.error.message}
+                      </span>
+                      {bootstrapResult.error.hint && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {bootstrapResult.error.hint}
+                        </p>
+                      )}
+                      {bootstrapResult.error.missing_permissions && bootstrapResult.error.missing_permissions.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium">Missing permissions:</p>
+                          <ul className="text-xs text-muted-foreground list-disc list-inside mt-1">
+                            {bootstrapResult.error.missing_permissions.map(p => (
+                              <li key={p}>{p.replace("RIGHT_APPLICATION_", "").toLowerCase().replace(/_/g, " ")}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Configuration Form */}
+              <div className="space-y-3">
+                {/* Cluster Selection */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">TTN Cluster</Label>
+                  <Select value={region} onValueChange={setRegion}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select cluster" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TTN_REGIONS.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Application ID */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">Application ID</Label>
+                  <Input
+                    placeholder="my-ttn-application-id"
+                    value={newApplicationId}
+                    onChange={(e) => setNewApplicationId(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Find this in TTN Console → Applications
+                  </p>
+                </div>
+
+                {/* API Key */}
+                <div className="space-y-1.5">
+                  <Label className="text-sm">API Key</Label>
+                  <Input
+                    type="password"
+                    placeholder="NNSXS.XXXXXXXXXX..."
+                    value={newApiKey}
+                    onChange={(e) => setNewApiKey(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Create a key with: Read/Write application settings, Read/Write devices, Read uplinks
+                  </p>
+                </div>
+
+                {/* Save Button */}
+                <Button
+                  onClick={handleSaveApiKey}
+                  disabled={isSavingApiKey || !newApiKey.trim() || !newApplicationId.trim()}
+                  className="w-full"
+                >
+                  {isSavingApiKey ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Validating & Configuring Webhook...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Save & Configure Webhook
+                    </>
+                  )}
+                </Button>
+              </div>
             </div>
 
-            <div className="space-y-2">
+            {/* Webhook Configuration */}
+            <div className="space-y-4 p-4 rounded-lg border">
               <div className="flex items-center justify-between">
-                <Label htmlFor="ttn-webhook-key" className="text-sm">Webhook Secret (Optional)</Label>
-                {settings?.has_webhook_api_key && (
-                  <Badge variant="outline" className="text-xs">
-                    Set (****{settings.webhook_api_key_last4})
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-base font-medium">Webhook Configuration</Label>
+                </div>
+                {settings.has_webhook_secret && (
+                  <Badge variant="outline" className="bg-safe/10 text-safe border-safe/30">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Configured
                   </Badge>
                 )}
               </div>
-              <Input
-                id="ttn-webhook-key"
-                type="password"
-                value={webhookApiKey}
-                onChange={(e) => setWebhookApiKey(e.target.value)}
-                placeholder={settings?.has_webhook_api_key ? "Enter new secret to replace" : "webhook-secret"}
-              />
-            </div>
-          </div>
-        </div>
 
-        {/* Warning for disabled state */}
-        {!isEnabled && settings?.exists && (
+              {/* Webhook Status Summary */}
+              {settings.has_webhook_secret && (
+                <div className="grid gap-2 text-sm p-3 bg-muted/50 rounded-md">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Webhook ID:</span>
+                    <code className="bg-muted px-2 py-0.5 rounded text-xs">
+                      {settings.webhook_id || "freshtracker"}
+                    </code>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Secret:</span>
+                    <code className="bg-muted px-2 py-0.5 rounded text-xs">
+                      ****{settings.webhook_secret_last4 || "****"}
+                    </code>
+                  </div>
+                  {settings.webhook_events && settings.webhook_events.length > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Events:</span>
+                      <div className="flex gap-1">
+                        {settings.webhook_events.map(event => (
+                          <Badge key={event} variant="secondary" className="text-xs">
+                            {event.replace(/_/g, " ")}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Webhook URL */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm">Webhook URL</Label>
+                  <InfoTooltip>
+                    This URL is automatically configured in your TTN application webhook
+                  </InfoTooltip>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    value={settings.webhook_url || WEBHOOK_URL}
+                    readOnly
+                    className="font-mono text-xs bg-muted"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => copyToClipboard(settings.webhook_url || WEBHOOK_URL, "Webhook URL")}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              {/* Regenerate Webhook Secret */}
+              <div className="flex items-center justify-between pt-2 border-t">
+                <div>
+                  <p className="text-sm font-medium">Regenerate Webhook Secret</p>
+                  <p className="text-xs text-muted-foreground">
+                    Updates the secret in both FrostGuard and TTN
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRegenerateWebhookSecret}
+                  disabled={isRegenerating || !settings.has_webhook_secret}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${isRegenerating ? "animate-spin" : ""}`} />
+                  Regenerate
+                </Button>
+              </div>
+            </div>
+
+            {/* Connection Test */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                <Label>Connection Test</Label>
+              </div>
+              
+              {settings.last_connection_test_result && (
+                <div className={`p-3 rounded-lg text-sm ${
+                  settings.last_connection_test_result.success 
+                    ? "bg-safe/10 border border-safe/30" 
+                    : "bg-destructive/10 border border-destructive/30"
+                }`}>
+                  <div className="flex items-start gap-2">
+                    {settings.last_connection_test_result.success ? (
+                      <CheckCircle className="h-4 w-4 text-safe mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 space-y-1">
+                      {/* Show success message or error */}
+                      <span className="font-medium">
+                        {settings.last_connection_test_result.success 
+                          ? (settings.last_connection_test_result.applicationName 
+                              ? `Connected to ${settings.last_connection_test_result.applicationName}`
+                              : "Connection successful")
+                          : (settings.last_connection_test_result.error || settings.last_connection_test_result.message || "Connection failed")}
+                      </span>
+                      
+                      {/* Show hint for failures */}
+                      {!settings.last_connection_test_result.success && settings.last_connection_test_result.hint && (
+                        <p className="text-xs text-muted-foreground">
+                          {settings.last_connection_test_result.hint}
+                        </p>
+                      )}
+                      
+                      {/* Show cluster tested */}
+                      {settings.last_connection_test_result.clusterTested && (
+                        <p className="text-xs text-muted-foreground">
+                          Cluster: {settings.last_connection_test_result.clusterTested}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-current/10">
+                    {settings.last_connection_test_at && (
+                      <p className="text-xs text-muted-foreground">
+                        Tested: {new Date(settings.last_connection_test_at).toLocaleString()}
+                      </p>
+                    )}
+                    {/* Copy diagnostics button for failures */}
+                    {!settings.last_connection_test_result.success && settings.last_connection_test_result.request_id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => {
+                          const diagnostics = JSON.stringify({
+                            request_id: settings.last_connection_test_result?.request_id,
+                            error: settings.last_connection_test_result?.error,
+                            hint: settings.last_connection_test_result?.hint,
+                            statusCode: settings.last_connection_test_result?.statusCode,
+                            cluster: settings.last_connection_test_result?.clusterTested,
+                            testedAt: settings.last_connection_test_result?.testedAt,
+                          }, null, 2);
+                          navigator.clipboard.writeText(diagnostics);
+                          toast.success("Diagnostics copied to clipboard");
+                        }}
+                      >
+                        <Copy className="h-3 w-3 mr-1" />
+                        Copy Diagnostics
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              <Button 
+                variant="outline" 
+                onClick={handleTest} 
+                disabled={isTesting}
+              >
+                {isTesting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Test Connection
+              </Button>
+            </div>
+          </>
+        )}
+
+        {/* Info about next steps */}
+        {isProvisioned && !isEnabled && (
           <div className="p-4 rounded-lg bg-warning/10 border border-warning/30">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 text-warning mt-0.5" />
               <div>
-                <p className="font-medium text-warning">Custom Settings Disabled</p>
+                <p className="font-medium text-warning">Integration Disabled</p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  TTN operations will use global default credentials. Enable to use your custom configuration.
+                  Enable the integration above to start receiving sensor data from your TTN devices.
                 </p>
               </div>
             </div>
           </div>
         )}
-
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-4">
-          <Button
-            variant="outline"
-            onClick={handleTest}
-            disabled={isTesting || isSaving}
-          >
-            {isTesting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Testing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Test Connection
-              </>
-            )}
-          </Button>
-
-          <Button onClick={handleSave} disabled={isSaving || isTesting}>
-            {isSaving ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Save className="h-4 w-4 mr-2" />
-                Save Settings
-              </>
-            )}
-          </Button>
-        </div>
       </CardContent>
     </Card>
   );

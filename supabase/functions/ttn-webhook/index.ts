@@ -3,19 +3,26 @@
  * 
  * Receives uplink messages from The Things Network and inserts sensor data.
  * 
- * Phase 5: Ownership Resolution
- * - Primary lookup via lora_sensors table (DevEUI → sensor → org)
- * - Validates TTN application_id matches sensor's ttn_application_id
- * - Rejects unknown EUIs (404) and cross-org attempts (403)
- * - Updates sensor status: pending/joining → active on first uplink
- * - Falls back to devices table for legacy BLE sensors
+ * SECURITY (Per-Organization Model):
+ * - Validates X-Webhook-Secret header against per-org secrets in ttn_connections
+ * - Each org has its own unique webhook secret
+ * - Org lookup via webhook secret provides tenant isolation
+ * - Device lookup also verifies org ownership
+ * - Returns 401 for invalid/missing secret
+ * 
+ * Device Matching Order:
+ * 1. lora_sensors.ttn_device_id === end_device_ids.device_id
+ * 2. lora_sensors.dev_eui IN (normalized variants: lower, upper, colon-upper, colon-lower)
+ * 3. Legacy devices table fallback
+ * 4. Return 202 for unknown devices (never 404 to prevent TTN retries)
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeDevEui, formatDevEuiForDisplay, lookupOrgByWebhookSecret } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-downlink-apikey',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-downlink-apikey, x-webhook-secret',
 };
 
 interface TTNUplinkMessage {
@@ -34,8 +41,10 @@ interface TTNUplinkMessage {
     frm_payload?: string;
     decoded_payload?: {
       temperature?: number;
+      temperature_scale?: number;
       humidity?: number;
       battery?: number;
+      battery_level?: number;
       door_open?: boolean;
       [key: string]: unknown;
     };
@@ -70,159 +79,248 @@ interface LegacyDevice {
   id: string;
   unit_id: string | null;
   status: string;
+  organization_id: string | null;
+}
+
+/**
+ * Constant-time string comparison to prevent timing attacks
+ */
+function secureCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
 }
 
 Deno.serve(async (req) => {
+  // Generate unique request ID for tracing
+  const requestId = crypto.randomUUID().slice(0, 8);
+  
+  console.log(`[TTN-WEBHOOK] ========== REQUEST ${requestId} ==========`);
+  console.log(`[TTN-WEBHOOK] ${requestId} | method: ${req.method}`);
+  console.log(`[TTN-WEBHOOK] ${requestId} | X-Webhook-Secret present: ${req.headers.has('x-webhook-secret')}`);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Only accept POST requests
-  if (req.method !== 'POST') {
+  // Handle GET/HEAD probes (load balancers, TTN health checks)
+  if (req.method === 'GET' || req.method === 'HEAD') {
     return new Response(
-      JSON.stringify({ error: 'Method not allowed' }),
-      { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ ok: true, service: 'ttn-webhook', timestamp: new Date().toISOString() }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 
-  // Validate webhook secret if configured
-  const webhookSecret = Deno.env.get('TTN_WEBHOOK_API_KEY');
-  if (webhookSecret) {
-    const providedSecret = req.headers.get('X-Downlink-Apikey') || req.headers.get('X-Webhook-Secret');
-    if (providedSecret !== webhookSecret) {
-      console.warn('[SECURITY] Invalid or missing webhook secret');
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized', message: 'Invalid webhook secret' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+  // Only process POST requests
+  if (req.method !== 'POST') {
+    return new Response(
+      JSON.stringify({ ok: true, message: 'Method accepted but not processed' }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 
-  try {
-    const payload: TTNUplinkMessage = await req.json();
-    
-    console.log('Received TTN uplink:', JSON.stringify(payload, null, 2));
+  // Initialize Supabase client
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error(`[TTN-WEBHOOK] ${requestId} | Missing Supabase environment variables`);
+    return new Response(
+      JSON.stringify({ accepted: true, processed: false, error: 'Server configuration error' }),
+      { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
 
-    // Validate required fields
-    if (!payload.end_device_ids?.dev_eui) {
-      console.error('Missing dev_eui in payload');
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+  // ========================================
+  // SECURITY: Authenticate via per-org webhook secret
+  // ========================================
+  const providedSecretFromHeader = req.headers.get('x-webhook-secret');
+  const providedSecretFromApikey = req.headers.get('x-downlink-apikey');
+  const providedSecret = providedSecretFromHeader || providedSecretFromApikey || '';
+  
+  console.log(`[TTN-WEBHOOK] ${requestId} | Secret source: ${providedSecretFromHeader ? 'X-Webhook-Secret' : providedSecretFromApikey ? 'X-Downlink-Apikey' : 'NONE'}`);
+  
+  if (!providedSecret) {
+    console.warn(`[TTN-WEBHOOK] ${requestId} | No webhook secret provided`);
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized', message: 'Missing webhook secret' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  // Look up organization by webhook secret
+  const orgLookup = await lookupOrgByWebhookSecret(supabase, providedSecret);
+  
+  if (!orgLookup) {
+    console.warn(`[TTN-WEBHOOK] ${requestId} | Invalid webhook secret - no matching org found`);
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized', message: 'Invalid webhook secret' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
+  const authenticatedOrgId = orgLookup.organizationId;
+  const authenticatedAppId = orgLookup.applicationId;
+  console.log(`[TTN-WEBHOOK] ${requestId} | AUTH SUCCESS - Org: ${authenticatedOrgId}, App: ${authenticatedAppId}`);
+
+  try {
+    const payload = await req.json();
+    
+    // Handle non-uplink events
+    if (!payload.uplink_message) {
+      const eventType = payload.join_accept ? 'join_accept' : 
+                        payload.downlink_ack ? 'downlink_ack' :
+                        payload.downlink_nack ? 'downlink_nack' :
+                        'unknown';
+      
+      console.log(`[TTN-WEBHOOK] ${requestId} | Non-uplink event: ${eventType}, org: ${authenticatedOrgId}`);
       return new Response(
-        JSON.stringify({ error: 'Missing dev_eui in payload' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ accepted: true, processed: false, event_type: eventType }),
+        { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const devEui = payload.end_device_ids.dev_eui.toLowerCase();
-    const devEuiUpper = payload.end_device_ids.dev_eui.toUpperCase();
-    const deviceId = payload.end_device_ids.device_id;
-    const applicationId = payload.end_device_ids.application_ids?.application_id;
+    const ttnPayload = payload as TTNUplinkMessage;
     
-    // Extract decoded payload data
-    const decoded = payload.uplink_message?.decoded_payload || {};
-    const rxMeta = payload.uplink_message?.rx_metadata?.[0];
+    // Extract uplink data
+    const deviceId = ttnPayload.end_device_ids?.device_id || '';
+    const rawDevEui = ttnPayload.end_device_ids?.dev_eui || '';
+    const applicationId = ttnPayload.end_device_ids?.application_ids?.application_id || '';
+    const decoded = ttnPayload.uplink_message?.decoded_payload || {};
+    const rxMeta = ttnPayload.uplink_message?.rx_metadata?.[0];
     const rssi = rxMeta?.rssi ?? rxMeta?.channel_rssi;
-    const receivedAt = payload.uplink_message?.received_at || payload.received_at || new Date().toISOString();
+    const receivedAt = ttnPayload.uplink_message?.received_at || ttnPayload.received_at || new Date().toISOString();
 
-    // Initialize Supabase client with service role for bypassing RLS
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    console.log(`[TTN-WEBHOOK] ${requestId} | Uplink: device=${deviceId}, dev_eui=${rawDevEui}, app=${applicationId}`);
+
+    // Validate that the uplink comes from the expected TTN application
+    if (authenticatedAppId && applicationId !== authenticatedAppId) {
+      console.warn(`[TTN-WEBHOOK] ${requestId} | Application ID mismatch! Expected: ${authenticatedAppId}, Got: ${applicationId}`);
+      // Log but still process - the webhook secret was valid
+    }
+
+    // Validate DevEUI
+    if (!rawDevEui) {
+      console.warn(`[TTN-WEBHOOK] ${requestId} | Missing dev_eui`);
+      return new Response(
+        JSON.stringify({ accepted: true, processed: false, reason: 'Missing dev_eui' }),
+        { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const normalizedDevEui = normalizeDevEui(rawDevEui);
+    if (!normalizedDevEui) {
+      return new Response(
+        JSON.stringify({ accepted: true, processed: false, reason: 'Invalid dev_eui format' }),
+        { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Missing Supabase environment variables');
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Generate match variants
+    const devEuiLower = normalizedDevEui;
+    const devEuiUpper = normalizedDevEui.toUpperCase();
+    const devEuiColonUpper = formatDevEuiForDisplay(normalizedDevEui);
+    const devEuiColonLower = devEuiColonUpper.toLowerCase();
 
     // ========================================
-    // PRIMARY: Look up in lora_sensors table
+    // LOOKUP: Find sensor in authenticated org only
     // ========================================
-    const { data: loraSensor, error: sensorError } = await supabase
-      .from('lora_sensors')
-      .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
-      .or(`dev_eui.eq.${devEui},dev_eui.eq.${devEuiUpper}`)
-      .maybeSingle();
+    let loraSensor: LoraSensor | null = null;
 
-    if (sensorError) {
-      console.error('Database error looking up lora_sensor:', sensorError);
-      throw sensorError;
+    // Try by ttn_device_id first
+    if (deviceId) {
+      const { data: sensorByDeviceId } = await supabase
+        .from('lora_sensors')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
+        .eq('ttn_device_id', deviceId)
+        .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
+        .maybeSingle();
+
+      if (sensorByDeviceId) {
+        console.log(`[TTN-WEBHOOK] ${requestId} | Found sensor by ttn_device_id: ${sensorByDeviceId.name}`);
+        loraSensor = sensorByDeviceId;
+      }
     }
 
-    // If found in lora_sensors, use new ownership model
+    // Fallback to dev_eui
+    if (!loraSensor) {
+      const { data: sensorByDevEui } = await supabase
+        .from('lora_sensors')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
+        .or(`dev_eui.eq.${devEuiLower},dev_eui.eq.${devEuiUpper},dev_eui.eq.${devEuiColonUpper},dev_eui.eq.${devEuiColonLower}`)
+        .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
+        .maybeSingle();
+
+      if (sensorByDevEui) {
+        console.log(`[TTN-WEBHOOK] ${requestId} | Found sensor by dev_eui: ${sensorByDevEui.name}`);
+        loraSensor = sensorByDevEui;
+      }
+    }
+
+    // Process lora sensor
     if (loraSensor) {
       return await handleLoraSensor(supabase, loraSensor, {
-        devEui,
+        devEui: devEuiLower,
         deviceId,
         applicationId,
         decoded,
         rssi,
         receivedAt,
+        requestId,
       });
     }
 
-    // ========================================
-    // FALLBACK: Look up in devices table (legacy BLE)
-    // ========================================
-    const { data: device, error: deviceError } = await supabase
+    // Legacy fallback - also scope to org if possible
+    const { data: device } = await supabase
       .from('devices')
-      .select('id, unit_id, status')
-      .or(`serial_number.eq.${devEui},serial_number.eq.${devEuiUpper}`)
+      .select('id, unit_id, status, organization_id')
+      .or(`serial_number.eq.${devEuiLower},serial_number.eq.${devEuiUpper},serial_number.eq.${devEuiColonUpper},serial_number.eq.${devEuiColonLower}`)
+      .eq('organization_id', authenticatedOrgId)
       .maybeSingle();
-
-    if (deviceError) {
-      console.error('Database error looking up device:', deviceError);
-      throw deviceError;
-    }
 
     if (device) {
       return await handleLegacyDevice(supabase, device, {
-        devEui,
+        devEui: devEuiLower,
         deviceId,
-        applicationId,
         decoded,
         rssi,
         receivedAt,
+        requestId,
       });
     }
 
-    // ========================================
-    // UNKNOWN: DevEUI not found in either table
-    // ========================================
-    console.warn(`[SECURITY] Unknown device with DevEUI: ${devEui}, application: ${applicationId}`);
-    
-    // Log unknown device attempt (to console only - event_logs requires org_id)
-    console.log(JSON.stringify({
-      event: 'ttn_unknown_device',
-      severity: 'warn',
-      dev_eui: devEui,
-      application_id: applicationId,
-      gateway_id: rxMeta?.gateway_ids?.gateway_id,
-      rssi,
-      received_at: receivedAt,
-    }));
-
+    // Unknown device
+    console.warn(`[TTN-WEBHOOK] ${requestId} | Unknown device for org ${authenticatedOrgId}: ${devEuiLower}`);
     return new Response(
       JSON.stringify({ 
-        error: 'Unknown device', 
-        dev_eui: devEui,
-        quarantined: true,
-        hint: 'Register this sensor in FrostGuard with the correct DevEUI'
+        accepted: true,
+        processed: false,
+        reason: 'Unknown device - not registered for this organization',
+        dev_eui: devEuiLower,
+        organization_id: authenticatedOrgId,
       }),
-      { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error: unknown) {
-    console.error('TTN webhook error:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+    console.error(`[TTN-WEBHOOK] ${requestId} | Error:`, error);
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ accepted: true, processed: false, error: 'Processing error' }),
+      { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
 
 /**
- * Handle uplink from a LoRa sensor (new ownership model)
+ * Handle uplink from a LoRa sensor
  */
 async function handleLoraSensor(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -235,214 +333,142 @@ async function handleLoraSensor(
     decoded: Record<string, unknown>;
     rssi: number | undefined;
     receivedAt: string;
+    requestId: string;
   }
 ): Promise<Response> {
-  const { devEui, deviceId, applicationId, decoded, rssi, receivedAt } = data;
+  const { devEui, decoded, rssi, receivedAt, requestId } = data;
+  
+  // Battery handling
+  const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
 
-  console.log(`Processing LoRa sensor: ${sensor.name} (${sensor.dev_eui}), org: ${sensor.organization_id}`);
-
-  // ========================================
-  // SECURITY: Validate ownership via TTN Application ID
-  // ========================================
-  if (sensor.ttn_application_id && sensor.ttn_application_id !== applicationId) {
-    console.error(`[SECURITY VIOLATION] DevEUI ${devEui} received from wrong TTN application!`);
-    console.error(`  Expected: ${sensor.ttn_application_id}`);
-    console.error(`  Received: ${applicationId}`);
-    console.error(`  Org ID: ${sensor.organization_id}`);
-    
-    return new Response(
-      JSON.stringify({ 
-        error: 'Application ID mismatch',
-        quarantined: true,
-        security_event: true,
-      }),
-      { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+  // Temperature scaling
+  let temperature = decoded.temperature as number | undefined;
+  if (temperature !== undefined) {
+    const tempScale = (decoded.temperature_scale ?? 1) as number;
+    if (tempScale !== 1) {
+      temperature = temperature * tempScale;
+    } else if (temperature > 0 && temperature < 10) {
+      const scaledTemp = temperature * 10;
+      if (scaledTemp >= 10 && scaledTemp <= 100) {
+        temperature = scaledTemp;
+      }
+    }
   }
 
-  // ========================================
-  // Update sensor status (pending/joining → active)
-  // ========================================
+  console.log(`[TTN-WEBHOOK] ${requestId} | Processing sensor: ${sensor.name}, temp: ${temperature ?? 'N/A'}`);
+
+  // Update sensor status
   const sensorUpdate: Record<string, unknown> = {
     last_seen_at: receivedAt,
     updated_at: new Date().toISOString(),
   };
 
-  // First uplink activates the sensor
   if (sensor.status === 'pending' || sensor.status === 'joining') {
     sensorUpdate.status = 'active';
     if (sensor.status === 'joining') {
       sensorUpdate.last_join_at = receivedAt;
     }
-    console.log(`Sensor ${sensor.name} activated (${sensor.status} → active)`);
   }
 
-  // Update telemetry fields
-  if (decoded.battery !== undefined) {
-    sensorUpdate.battery_level = decoded.battery;
-  }
-  if (rssi !== undefined) {
-    sensorUpdate.signal_strength = rssi;
-  }
+  if (battery !== undefined) sensorUpdate.battery_level = battery;
+  if (rssi !== undefined) sensorUpdate.signal_strength = rssi;
 
-  await supabase
-    .from('lora_sensors')
-    .update(sensorUpdate)
-    .eq('id', sensor.id);
+  await supabase.from('lora_sensors').update(sensorUpdate).eq('id', sensor.id);
 
-  // ========================================
-  // Handle unit-assigned sensors (insert readings)
-  // ========================================
+  // Handle unit-assigned sensors
   if (sensor.unit_id) {
-    const hasTemperatureData = decoded.temperature !== undefined;
+    const hasTemperatureData = temperature !== undefined;
     const hasDoorData = decoded.door_open !== undefined;
 
-    // Allow door-only sensors to process without temperature
     if (!hasTemperatureData && !hasDoorData) {
-      console.log(`No temperature or door data in payload for sensor ${sensor.name}, skipping reading insert`);
       return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'Sensor updated, no temperature or door data to record',
-          sensor_id: sensor.id,
-          status: sensorUpdate.status || sensor.status,
-        }),
+        JSON.stringify({ success: true, message: 'Sensor updated, no data to record', sensor_id: sensor.id }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get previous door state for change detection
-    const { data: unit } = await supabase
-      .from('units')
-      .select('door_state')
-      .eq('id', sensor.unit_id)
-      .single();
-
+    const { data: unit } = await supabase.from('units').select('door_state').eq('id', sensor.unit_id).single();
     const previousDoorState = unit?.door_state;
     const currentDoorOpen = decoded.door_open as boolean | undefined;
 
-    // Insert sensor reading (temperature can be null for door-only sensors)
-    const { error: insertError } = await supabase
+    // Insert reading
+    const { data: insertedReading, error: insertError } = await supabase
       .from('sensor_readings')
       .insert({
         unit_id: sensor.unit_id,
-        lora_sensor_id: sensor.id, // Track which sensor created this reading
-        device_id: null, // lora_sensors don't use devices table
-        temperature: decoded.temperature ?? null,
+        lora_sensor_id: sensor.id,
+        device_id: null,
+        temperature: temperature ?? null,
         humidity: decoded.humidity,
-        battery_level: decoded.battery,
+        battery_level: battery,
         signal_strength: rssi,
         door_open: currentDoorOpen,
         source: 'ttn',
         recorded_at: receivedAt,
-      });
+      })
+      .select('id')
+      .single();
 
-    if (insertError) {
-      console.error('Error inserting sensor reading:', insertError);
-      throw insertError;
-    }
+    if (insertError) throw insertError;
 
-    console.log(`Inserted sensor reading for unit ${sensor.unit_id} from sensor ${sensor.id}`);
+    // Update unit
+    const unitUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
-    // Build unit update - only update temperature fields from PRIMARY sensors
-    const unitUpdate: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
-
-    // Only primary sensors update compliance temperature fields
     if (sensor.is_primary && hasTemperatureData) {
-      unitUpdate.last_temp_reading = decoded.temperature;
+      unitUpdate.last_temp_reading = temperature;
       unitUpdate.last_reading_at = receivedAt;
       unitUpdate.last_checkin_at = receivedAt;
       unitUpdate.sensor_reliable = true;
-      console.log(`Primary sensor ${sensor.name} updating unit temperature: ${decoded.temperature}`);
     } else if (hasTemperatureData) {
-      // Non-primary sensors still contribute to checkin tracking
       unitUpdate.last_checkin_at = receivedAt;
-      console.log(`Secondary sensor ${sensor.name} recorded temperature: ${decoded.temperature} (not updating unit compliance fields)`);
     }
 
-    // Always update door state if we have door data (regardless of primary status)
     if (currentDoorOpen !== undefined) {
+      unitUpdate.door_state = currentDoorOpen ? 'open' : 'closed';
+      unitUpdate.door_state_changed_at = receivedAt;
+
+      if (currentDoorOpen && previousDoorState !== 'open') {
+        unitUpdate.door_open_since = receivedAt;
+      } else if (!currentDoorOpen && previousDoorState === 'open') {
+        unitUpdate.door_open_since = null;
+      }
+
+      // Insert door event
       const newDoorState = currentDoorOpen ? 'open' : 'closed';
-      unitUpdate.door_state = newDoorState;
-      
       if (previousDoorState !== newDoorState) {
-        unitUpdate.door_last_changed_at = receivedAt;
+        await supabase.from('door_events').insert({
+          unit_id: sensor.unit_id,
+          state: newDoorState,
+          occurred_at: receivedAt,
+          source: 'ttn',
+          metadata: { sensor_id: sensor.id, sensor_name: sensor.name },
+        });
       }
     }
 
-    await supabase
-      .from('units')
-      .update(unitUpdate)
-      .eq('id', sensor.unit_id);
-
-    // Insert door event if state changed
-    if (currentDoorOpen !== undefined) {
-      const currentState = currentDoorOpen ? 'open' : 'closed';
-      
-      if (previousDoorState !== currentState) {
-        const { error: doorEventError } = await supabase
-          .from('door_events')
-          .insert({
-            unit_id: sensor.unit_id,
-            state: currentState,
-            occurred_at: receivedAt,
-            source: 'ttn',
-            metadata: { 
-              dev_eui: devEui,
-              device_id: deviceId,
-              sensor_id: sensor.id,
-              sensor_name: sensor.name,
-              organization_id: sensor.organization_id,
-            }
-          });
-
-        if (doorEventError) {
-          console.error('Error inserting door event:', doorEventError);
-        } else {
-          console.log(`Inserted door event: ${currentState} for unit ${sensor.unit_id}`);
-        }
-      }
-    }
-
-    console.log(`Successfully processed TTN uplink from ${devEui} for unit ${sensor.unit_id}`);
+    await supabase.from('units').update(unitUpdate).eq('id', sensor.unit_id);
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
+      JSON.stringify({
+        success: true,
         sensor_id: sensor.id,
+        reading_id: insertedReading?.id,
+        temperature,
         unit_id: sensor.unit_id,
-        organization_id: sensor.organization_id,
-        temperature: decoded.temperature,
-        is_primary: sensor.is_primary,
-        status: sensorUpdate.status || sensor.status,
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
-  } else {
-    // ========================================
-    // Handle unassigned sensors (update status only)
-    // ========================================
-    console.log(`Sensor ${sensor.name} (${devEui}) has no unit assigned - telemetry recorded on sensor only`);
-
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        sensor_id: sensor.id,
-        organization_id: sensor.organization_id,
-        status: sensorUpdate.status || sensor.status,
-        message: 'Sensor updated, no unit assigned for readings',
-        hint: 'Assign this sensor to a unit to start recording readings',
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
+
+  // Sensor not assigned to unit
+  return new Response(
+    JSON.stringify({ success: true, message: 'Sensor updated (not assigned to unit)', sensor_id: sensor.id }),
+    { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+  );
 }
 
 /**
- * Handle uplink from a legacy BLE device (backward compatibility)
+ * Handle uplink from a legacy device
  */
 async function handleLegacyDevice(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -451,150 +477,60 @@ async function handleLegacyDevice(
   data: {
     devEui: string;
     deviceId: string;
-    applicationId: string;
     decoded: Record<string, unknown>;
     rssi: number | undefined;
     receivedAt: string;
+    requestId: string;
   }
 ): Promise<Response> {
-  const { devEui, deviceId, applicationId, decoded, rssi, receivedAt } = data;
-
-  console.log(`Processing legacy device: ${devEui} (fallback to devices table)`);
-
-  // Validate we have temperature data
-  if (decoded.temperature === undefined) {
-    console.log('No temperature in decoded payload, skipping insert');
-    return new Response(
-      JSON.stringify({ success: true, message: 'No temperature data, skipping' }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+  const { decoded, rssi, receivedAt, requestId } = data;
+  
+  const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+  let temperature = decoded.temperature as number | undefined;
+  
+  if (temperature !== undefined && temperature > 0 && temperature < 10) {
+    const scaledTemp = temperature * 10;
+    if (scaledTemp >= 10 && scaledTemp <= 100) {
+      temperature = scaledTemp;
+    }
   }
 
-  if (!device.unit_id) {
-    console.warn(`Device ${devEui} not linked to a unit`);
-    return new Response(
-      JSON.stringify({ 
-        error: 'Device not linked to unit', 
-        dev_eui: devEui,
-        device_id: device.id,
-        hint: 'Link this device to a unit in FrostGuard'
-      }),
-      { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
+  console.log(`[TTN-WEBHOOK] ${requestId} | Processing legacy device: ${device.id}`);
 
-  // Get previous door state for detecting changes
-  const { data: unit } = await supabase
-    .from('units')
-    .select('door_state')
-    .eq('id', device.unit_id)
-    .single();
+  // Update device
+  const deviceUpdate: Record<string, unknown> = {
+    last_seen_at: receivedAt,
+    updated_at: new Date().toISOString(),
+    status: 'active',
+  };
+  if (battery !== undefined) deviceUpdate.battery_level = battery;
+  if (rssi !== undefined) deviceUpdate.signal_strength = rssi;
 
-  const previousDoorState = unit?.door_state;
-  const currentDoorOpen = decoded.door_open as boolean | undefined;
+  await supabase.from('devices').update(deviceUpdate).eq('id', device.id);
 
-  // Insert sensor reading
-  const { error: insertError } = await supabase
-    .from('sensor_readings')
-    .insert({
+  if (device.unit_id && temperature !== undefined) {
+    await supabase.from('sensor_readings').insert({
       unit_id: device.unit_id,
       device_id: device.id,
-      temperature: decoded.temperature,
+      temperature,
       humidity: decoded.humidity,
-      battery_level: decoded.battery,
+      battery_level: battery,
       signal_strength: rssi,
-      door_open: currentDoorOpen,
+      door_open: decoded.door_open,
       source: 'ttn',
       recorded_at: receivedAt,
     });
 
-  if (insertError) {
-    console.error('Error inserting sensor reading:', insertError);
-    throw insertError;
+    await supabase.from('units').update({
+      last_temp_reading: temperature,
+      last_reading_at: receivedAt,
+      last_checkin_at: receivedAt,
+      updated_at: new Date().toISOString(),
+    }).eq('id', device.unit_id);
   }
-
-  console.log(`Inserted sensor reading for unit ${device.unit_id}`);
-
-  // Update device status
-  const deviceUpdate: Record<string, unknown> = {
-    last_seen_at: receivedAt,
-    status: 'active',
-    updated_at: new Date().toISOString(),
-  };
-  
-  if (decoded.battery !== undefined) {
-    deviceUpdate.battery_level = decoded.battery;
-    deviceUpdate.battery_last_reported_at = receivedAt;
-  }
-  if (rssi !== undefined) {
-    deviceUpdate.signal_strength = rssi;
-  }
-
-  await supabase
-    .from('devices')
-    .update(deviceUpdate)
-    .eq('id', device.id);
-
-  // Update unit with latest reading info
-  const unitUpdate: Record<string, unknown> = {
-    last_temp_reading: decoded.temperature,
-    last_reading_at: receivedAt,
-    last_checkin_at: receivedAt,
-    sensor_reliable: true,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (currentDoorOpen !== undefined) {
-    const newDoorState = currentDoorOpen ? 'open' : 'closed';
-    unitUpdate.door_state = newDoorState;
-    
-    if (previousDoorState !== newDoorState) {
-      unitUpdate.door_last_changed_at = receivedAt;
-    }
-  }
-
-  await supabase
-    .from('units')
-    .update(unitUpdate)
-    .eq('id', device.unit_id);
-
-  // Insert door event if state changed
-  if (currentDoorOpen !== undefined) {
-    const currentState = currentDoorOpen ? 'open' : 'closed';
-    
-    if (previousDoorState !== currentState) {
-      const { error: doorEventError } = await supabase
-        .from('door_events')
-        .insert({
-          unit_id: device.unit_id,
-          state: currentState,
-          occurred_at: receivedAt,
-          source: 'ttn',
-          metadata: { 
-            dev_eui: devEui,
-            device_id: deviceId,
-            application_id: applicationId,
-          }
-        });
-
-      if (doorEventError) {
-        console.error('Error inserting door event:', doorEventError);
-      } else {
-        console.log(`Inserted door event: ${currentState} for unit ${device.unit_id}`);
-      }
-    }
-  }
-
-  console.log(`Successfully processed TTN uplink from ${devEui} for unit ${device.unit_id}`);
 
   return new Response(
-    JSON.stringify({ 
-      success: true, 
-      unit_id: device.unit_id,
-      device_id: device.id,
-      temperature: decoded.temperature,
-      legacy: true,
-    }),
+    JSON.stringify({ success: true, device_id: device.id }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
 }

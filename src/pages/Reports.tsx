@@ -142,9 +142,11 @@ const Reports = () => {
 
     setIsExporting(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast({ title: "Please sign in", variant: "destructive" });
+      // Ensure fresh session token before invoking edge function
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast({ title: "Session expired. Please sign in again.", variant: "destructive" });
+        window.location.href = "/auth";
         return;
       }
 

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { 
   Play, 
@@ -28,8 +29,10 @@ import {
   Link2Off,
   RotateCcw,
   AlertTriangle,
-  Radio
+  Radio,
+  Route,
 } from "lucide-react";
+import { EmulatorTTNRoutingCard } from "./EmulatorTTNRoutingCard";
 
 interface Unit {
   id: string;
@@ -77,12 +80,18 @@ interface SimulatorEvent {
   event_data: Record<string, unknown>;
 }
 
-export function SensorSimulatorPanel() {
+interface SensorSimulatorPanelProps {
+  organizationId: string | null;
+}
+
+export function SensorSimulatorPanel({ organizationId }: SensorSimulatorPanelProps) {
   const [units, setUnits] = useState<Unit[]>([]);
   const [selectedUnit, setSelectedUnit] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [recentEvents, setRecentEvents] = useState<SimulatorEvent[]>([]);
+  const [activeTab, setActiveTab] = useState<string>("readings");
+  const [routeViaTTN, setRouteViaTTN] = useState(false);
   
   // Simulated device config
   const [config, setConfig] = useState<SimulatedDeviceConfig | null>(null);
@@ -95,16 +104,24 @@ export function SensorSimulatorPanel() {
   const [streamingInterval, setStreamingInterval] = useState<string>("60");
 
   const loadUnits = useCallback(async () => {
+    if (!organizationId) {
+      setUnits([]);
+      return;
+    }
+    
     setIsLoading(true);
     try {
+      // Query units with explicit organization filter via join
       const { data, error } = await supabase
         .from("units")
         .select(`
           id, name, unit_type, temp_limit_high, temp_limit_low, 
           last_reading_at, last_temp_reading, door_state,
-          area:areas(name, site:sites(name))
+          area:areas!inner(name, site:sites!inner(name, organization_id))
         `)
+        .eq("area.site.organization_id", organizationId)
         .eq("is_active", true)
+        .is("deleted_at", null)
         .order("name");
 
       if (error) throw error;
@@ -129,7 +146,7 @@ export function SensorSimulatorPanel() {
       toast.error("Failed to load units");
     }
     setIsLoading(false);
-  }, []);
+  }, [organizationId]);
 
   const loadSimConfig = useCallback(async (unitId: string) => {
     try {
@@ -171,8 +188,10 @@ export function SensorSimulatorPanel() {
   }, []);
 
   useEffect(() => {
-    loadUnits();
-  }, [loadUnits]);
+    if (organizationId) {
+      loadUnits();
+    }
+  }, [organizationId, loadUnits]);
 
   useEffect(() => {
     if (selectedUnit) {
@@ -292,18 +311,31 @@ export function SensorSimulatorPanel() {
           {/* Unit Selector */}
           <div className="space-y-2">
             <Label>Select Unit</Label>
-            <Select value={selectedUnit} onValueChange={setSelectedUnit}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a unit to simulate..." />
-              </SelectTrigger>
-              <SelectContent>
-                {units.map((unit) => (
-                  <SelectItem key={unit.id} value={unit.id}>
-                    {unit.name} ({unit.area.site.name} / {unit.area.name})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {!organizationId ? (
+              <div className="text-center py-6 text-muted-foreground border rounded-lg bg-muted/30">
+                <Loader2 className="w-5 h-5 mx-auto mb-2 animate-spin" />
+                <p className="text-sm">Loading organization...</p>
+              </div>
+            ) : units.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground border rounded-lg bg-muted/30">
+                <AlertTriangle className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                <p className="text-sm font-medium">No units found</p>
+                <p className="text-xs mt-1">Create units in Sites → [Site] → [Area] first.</p>
+              </div>
+            ) : (
+              <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a unit to simulate..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {units.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>
+                      {unit.name} ({unit.area.site.name} / {unit.area.name})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           {selectedUnitData && (
@@ -335,6 +367,21 @@ export function SensorSimulatorPanel() {
               </div>
 
               <Separator />
+
+              {/* Tabs for Readings vs TTN Routing */}
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="readings" className="flex items-center gap-2">
+                    <Thermometer className="w-4 h-4" />
+                    Readings
+                  </TabsTrigger>
+                  <TabsTrigger value="ttn" className="flex items-center gap-2">
+                    <Route className="w-4 h-4" />
+                    TTN Routing
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="readings" className="mt-4 space-y-6">
 
               {/* Device State Section */}
               <div className="space-y-4">
@@ -647,6 +694,17 @@ export function SensorSimulatorPanel() {
                   </Button>
                 </div>
               </div>
+                </TabsContent>
+
+                <TabsContent value="ttn" className="mt-4">
+                  <EmulatorTTNRoutingCard
+                    organizationId={organizationId}
+                    selectedUnitId={selectedUnit}
+                    emulatorDevEui={config?.device_id || undefined}
+                    onRoutingModeChange={setRouteViaTTN}
+                  />
+                </TabsContent>
+              </Tabs>
             </>
           )}
         </CardContent>

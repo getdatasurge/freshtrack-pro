@@ -151,6 +151,31 @@ const UnitDetail = () => {
     if (unitId) loadUnitData();
   }, [unitId, timeRange]);
 
+  // Realtime subscription for sensor_readings - auto-refresh when new readings arrive
+  useEffect(() => {
+    if (!unitId) return;
+    
+    const channel = supabase
+      .channel(`unit-readings-${unitId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'sensor_readings',
+          filter: `unit_id=eq.${unitId}`,
+        },
+        () => {
+          loadUnitData(); // Refresh all data when new reading arrives
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [unitId]);
+
   const getTimeRangeDate = () => {
     const now = new Date();
     switch (timeRange) {
@@ -357,6 +382,14 @@ const UnitDetail = () => {
     setIsExporting(true);
 
     try {
+      // Ensure fresh session token before invoking edge function
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast({ title: "Session expired. Please sign in again.", variant: "destructive" });
+        navigate("/auth");
+        return;
+      }
+
       const startDate = getTimeRangeDate().toISOString().split("T")[0];
       const endDate = new Date().toISOString().split("T")[0];
 

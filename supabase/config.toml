@@ -12,6 +12,10 @@ verify_jwt = false
 [functions.manage-ttn-settings]
 verify_jwt = false
 
+# TTN settings sync from Emulator - uses API key auth only
+[functions.sync-ttn-settings]
+verify_jwt = false
+
 [functions.check-password-breach]
 verify_jwt = false
 
@@ -48,7 +52,7 @@ verify_jwt = false
 [functions.run-simulator-heartbeats]
 verify_jwt = false
 
-# TTN webhook - no JWT, uses device lookup for auth
+# TTN webhook - no JWT, uses per-org webhook secret for auth
 [functions.ttn-webhook]
 verify_jwt = false
 
@@ -63,6 +67,10 @@ verify_jwt = false
 [functions.ttn-provision-device]
 verify_jwt = false
 
+# TTN org provisioning - handles CORS preflight and custom JWT verification
+[functions.ttn-provision-org]
+verify_jwt = false
+
 # User cleanup - called by app (JWT) or database trigger (service role)
 [functions.cleanup-user-sensors]
 verify_jwt = false
@@ -73,4 +81,16 @@ verify_jwt = false
 
 # TTN list devices - handles CORS preflight and custom JWT verification
 [functions.ttn-list-devices]
+verify_jwt = false
+
+# TTN gateway provisioning - handles CORS preflight
+[functions.ttn-provision-gateway]
+verify_jwt = false
+
+# Org state API - pull-based sync for Emulator, uses API key auth
+[functions.org-state-api]
+verify_jwt = false
+
+# Sensor assignment endpoint for Emulator - uses API key auth
+[functions.update-sensor-assignment]
 verify_jwt = false

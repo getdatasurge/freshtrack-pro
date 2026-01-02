@@ -144,17 +144,27 @@ export const emulatorDeviceSchema = z.object({
   status: z.enum(["active", "inactive", "fault"]).optional(),
   mac_address: z.string().max(50, "MAC address too long").optional().nullable(),
   firmware_version: z.string().max(50, "Firmware version too long").optional().nullable(),
+  // Optional dev_eui - if present, also creates a corresponding lora_sensor
+  dev_eui: z.string().max(32, "Device EUI too long").optional().nullable(),
+  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo", "contact"]).optional(),
+  name: z.string().max(100, "Name too long").optional().nullable(),
 });
 
 export const emulatorSensorSchema = z.object({
   dev_eui: z.string().min(1, "Device EUI required").max(32, "Device EUI too long"),
   name: z.string().min(1, "Sensor name required").max(100, "Sensor name too long"),
-  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo"]).optional(),
+  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo", "contact"]).optional(),
   status: z.enum(["pending", "joining", "active", "offline", "fault"]).optional(),
   unit_id: uuidSchema.optional().nullable(),
   site_id: uuidSchema.optional().nullable(),
   manufacturer: z.string().max(100, "Manufacturer too long").optional().nullable(),
   model: z.string().max(100, "Model too long").optional().nullable(),
+  // OTAA credentials for TTN provisioning
+  app_eui: z.string().max(32, "App EUI too long").optional().nullable(),
+  app_key: z.string().max(64, "App Key too long").optional().nullable(), // 32 bytes hex = 64 chars
+  // TTN registration info
+  ttn_device_id: z.string().max(100, "TTN Device ID too long").optional().nullable(),
+  ttn_application_id: z.string().max(100, "TTN Application ID too long").optional().nullable(),
 });
 
 export const emulatorSyncPayloadSchema = z.object({
@@ -268,6 +278,99 @@ export function validateDeviceApiKey(req: Request): { valid: boolean; error?: st
   }
   
   return { valid: false, error: "Invalid or missing device API key" };
+}
+
+// ============= Project 2 Sync API Key Validation =============
+
+/**
+ * Validate Project 2 sync API key for org-state-api pull endpoint
+ * Checks for PROJECT2_SYNC_API_KEY environment variable
+ * Accepts: Authorization: Bearer <key> OR X-Sync-API-Key: <key>
+ */
+export function validateProject2SyncApiKey(req: Request): { 
+  valid: boolean; 
+  error?: string;
+  errorCode?: 'NOT_CONFIGURED' | 'UNAUTHORIZED';
+  keyLast4?: string;
+} {
+  const expectedKey = Deno.env.get("PROJECT2_SYNC_API_KEY");
+  
+  if (!expectedKey) {
+    console.warn("[validateProject2SyncApiKey] PROJECT2_SYNC_API_KEY not configured");
+    return { valid: false, error: "Sync API not configured", errorCode: 'NOT_CONFIGURED' };
+  }
+  
+  const authHeader = req.headers.get("Authorization");
+  const syncHeader = req.headers.get("X-Sync-API-Key");
+  
+  // Check X-Sync-API-Key header first
+  if (syncHeader === expectedKey) {
+    return { valid: true, keyLast4: expectedKey.slice(-4) };
+  }
+  
+  // Check Authorization: Bearer <key> format
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.substring(7);
+    if (token === expectedKey) {
+      return { valid: true, keyLast4: expectedKey.slice(-4) };
+    }
+  }
+  
+  return { valid: false, error: "Invalid or missing sync API key", errorCode: 'UNAUTHORIZED' };
+}
+
+// ============= Structured Error Response Builder =============
+
+export interface StructuredErrorResponse {
+  success: false;
+  error_code: string;
+  message: string;
+  request_id: string;
+  details?: Record<string, unknown>;
+  hint?: string;
+  timestamp: string;
+}
+
+export function buildStructuredError(
+  errorCode: string,
+  message: string,
+  requestId: string,
+  options?: {
+    details?: Record<string, unknown>;
+    hint?: string;
+  }
+): StructuredErrorResponse {
+  return {
+    success: false,
+    error_code: errorCode,
+    message,
+    request_id: requestId,
+    details: options?.details,
+    hint: options?.hint,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export function structuredErrorResponse(
+  status: number,
+  errorCode: string,
+  message: string,
+  requestId: string,
+  corsHeaders: Record<string, string>,
+  options?: {
+    details?: Record<string, unknown>;
+    hint?: string;
+  }
+): Response {
+  const body = buildStructuredError(errorCode, message, requestId, options);
+  
+  return new Response(
+    JSON.stringify(body),
+    { 
+      status, 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    }
+  );
 }
 
 // ============= Error Response Helpers =============
