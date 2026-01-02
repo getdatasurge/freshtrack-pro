@@ -1,1 +1,4 @@
 export { EdgeFunctionDiagnostics } from "./EdgeFunctionDiagnostics";
+export { DebugTerminal } from "./DebugTerminal";
+export { DebugModeToggle } from "./DebugModeToggle";
+export { RouteLogger } from "./RouteLogger";
