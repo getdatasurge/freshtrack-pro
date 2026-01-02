@@ -49,12 +49,20 @@ interface Unit {
   site_id: string;
 }
 
+interface TTNConfig {
+  isEnabled: boolean;
+  hasApiKey: boolean;
+  applicationId: string | null;
+  apiKeyLast4: string | null;
+}
+
 interface SensorManagerProps {
   organizationId: string;
   sites: Site[];
   units: Unit[];
   canEdit: boolean;
   autoOpenAdd?: boolean;
+  ttnConfig?: TTNConfig | null;
 }
 
 // Reusable column header tooltip component
@@ -255,7 +263,96 @@ const SensorUnitSelector = ({
   );
 };
 
-export function SensorManager({ organizationId, sites, units, canEdit, autoOpenAdd }: SensorManagerProps) {
+// Provision button component with TTN config validation
+const ProvisionButton = ({
+  sensor,
+  ttnConfig,
+  isProvisioning,
+  onProvision,
+}: {
+  sensor: LoraSensor;
+  ttnConfig?: TTNConfig | null;
+  isProvisioning: boolean;
+  onProvision: () => void;
+}) => {
+  // Already provisioned - show success badge
+  if (sensor.ttn_device_id) {
+    return (
+      <Badge variant="outline" className="text-safe border-safe/30 bg-safe/10">
+        Provisioned
+      </Badge>
+    );
+  }
+
+  // Determine if provisioning is possible
+  const hasTtnConfig = ttnConfig?.isEnabled && ttnConfig?.hasApiKey && ttnConfig?.applicationId;
+  const hasOtaaKeys = sensor.dev_eui && sensor.app_key;
+
+  // TTN not configured
+  if (!hasTtnConfig) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>
+            <Button variant="ghost" size="icon" disabled className="cursor-not-allowed">
+              <CloudUpload className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          <p className="font-medium">TTN not configured</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Configure TTN connection in Developer settings first
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Sensor missing OTAA keys
+  if (!hasOtaaKeys) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>
+            <Button variant="ghost" size="icon" disabled className="cursor-not-allowed">
+              <CloudUpload className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          <p className="font-medium">Missing OTAA credentials</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Sensor requires AppKey for OTAA provisioning. Edit sensor to add credentials.
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Ready to provision
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onProvision}
+          disabled={isProvisioning}
+        >
+          {isProvisioning ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <CloudUpload className="h-4 w-4 text-blue-600" />
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>Provision to TTN</TooltipContent>
+    </Tooltip>
+  );
+};
+
+export function SensorManager({ organizationId, sites, units, canEdit, autoOpenAdd, ttnConfig }: SensorManagerProps) {
   const { data: sensors, isLoading } = useLoraSensors(organizationId);
   const deleteSensor = useDeleteLoraSensor();
   const provisionSensor = useProvisionLoraSensor();
@@ -677,25 +774,12 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                     {canEdit && (
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          {sensor.status === "pending" && (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleProvision(sensor)}
-                                  disabled={provisionSensor.isProvisioning(sensor.id)}
-                                >
-                                  {provisionSensor.isProvisioning(sensor.id) ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <CloudUpload className="h-4 w-4 text-blue-600" />
-                                  )}
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Provision to TTN</TooltipContent>
-                            </Tooltip>
-                          )}
+                          <ProvisionButton
+                            sensor={sensor}
+                            ttnConfig={ttnConfig}
+                            isProvisioning={provisionSensor.isProvisioning(sensor.id)}
+                            onProvision={() => handleProvision(sensor)}
+                          />
                           <Button
                             variant="ghost"
                             size="icon"
