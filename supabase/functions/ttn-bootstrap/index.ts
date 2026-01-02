@@ -23,6 +23,13 @@ import {
   obfuscateKey,
   getLast4,
 } from "../_shared/ttnConfig.ts";
+import {
+  fetchTtnRights,
+  computePermissionReport,
+  REQUIRED_RIGHTS as SHARED_REQUIRED_RIGHTS,
+  PERMISSION_LABELS as SHARED_PERMISSION_LABELS,
+  type PermissionReport,
+} from "../_shared/ttnPermissions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,37 +46,9 @@ const REGIONAL_URLS: Record<string, string> = {
   as1: "https://as1.cloud.thethings.network",
 };
 
-// Required rights for FrostGuard TTN integration
-const REQUIRED_RIGHTS = {
-  // Minimum required permissions
-  core: [
-    "RIGHT_APPLICATION_INFO",           // Read application info
-    "RIGHT_APPLICATION_TRAFFIC_READ",   // Read uplink messages
-  ],
-  // Required for webhook management
-  webhook: [
-    "RIGHT_APPLICATION_SETTINGS_BASIC", // Manage webhooks
-  ],
-  // Required for device management (optional but recommended)
-  devices: [
-    "RIGHT_APPLICATION_DEVICES_READ",
-    "RIGHT_APPLICATION_DEVICES_WRITE",
-  ],
-  // Required for downlinks (optional)
-  downlink: [
-    "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE",
-  ],
-};
-
-// Human-readable permission names for UI
-const PERMISSION_LABELS: Record<string, string> = {
-  "RIGHT_APPLICATION_INFO": "Read application info",
-  "RIGHT_APPLICATION_TRAFFIC_READ": "Read uplink messages",
-  "RIGHT_APPLICATION_SETTINGS_BASIC": "Manage application settings (webhooks)",
-  "RIGHT_APPLICATION_DEVICES_READ": "Read devices",
-  "RIGHT_APPLICATION_DEVICES_WRITE": "Write devices",
-  "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE": "Send downlink messages",
-};
+// Re-export from shared module for backward compatibility
+const REQUIRED_RIGHTS = SHARED_REQUIRED_RIGHTS;
+const PERMISSION_LABELS = SHARED_PERMISSION_LABELS;
 
 interface BootstrapRequest {
   action: "validate" | "validate_only" | "configure" | "save_and_configure";
@@ -77,18 +56,6 @@ interface BootstrapRequest {
   cluster: string;
   application_id: string;
   api_key?: string; // Only required for new/changed key
-}
-
-interface PermissionCheckResult {
-  valid: boolean;
-  rights: string[];
-  missing_core: string[];
-  missing_webhook: string[];
-  missing_devices: string[];
-  missing_downlink: string[];
-  can_configure_webhook: boolean;
-  can_manage_devices: boolean;
-  can_send_downlinks: boolean;
 }
 
 interface WebhookConfig {
@@ -105,7 +72,7 @@ interface BootstrapResult {
   action: string;
 
   // Permission validation results
-  permissions?: PermissionCheckResult;
+  permissions?: PermissionReport;
 
   // Webhook configuration results
   webhook?: WebhookConfig;
@@ -131,171 +98,48 @@ interface BootstrapResult {
 }
 
 /**
- * Validate API key by fetching the application and checking rights
+ * Validate API key by fetching the actual rights from TTN's /rights endpoint
+ * This is the CORRECT way - not probe-based guessing
  */
 async function validateApiKeyPermissions(
   apiKey: string,
   applicationId: string,
+  cluster: string,
   requestId: string
 ): Promise<{ success: boolean; rights?: string[]; error?: string; hint?: string; statusCode?: number }> {
-  console.log(`[ttn-bootstrap] [${requestId}] Validating API key for app: ${applicationId}`);
+  console.log(`[ttn-bootstrap] [${requestId}] Validating API key for app: ${applicationId} on cluster: ${cluster}`);
+  console.log(`[ttn-bootstrap] [${requestId}] API key last4: ...${apiKey.slice(-4)}`);
 
-  try {
-    // Fetch application info - this tells us if the key has basic access
-    const appResponse = await fetch(
-      `${IDENTITY_SERVER_URL}/api/v3/applications/${applicationId}?field_mask=ids,name,attributes`,
-      {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Accept": "application/json",
-        },
-      }
-    );
-
-    if (!appResponse.ok) {
-      const errorText = await appResponse.text();
-      console.error(`[ttn-bootstrap] [${requestId}] App fetch failed: ${appResponse.status} ${errorText}`);
-
-      // Parse TTN error response for better error messages
-      let ttnError: { code?: number; message?: string; name?: string } = {};
-      try {
-        ttnError = JSON.parse(errorText);
-      } catch {
-        // Not JSON, use raw text
-      }
-
-      // Handle 400 - often returned for invalid/malformed tokens
-      if (appResponse.status === 400) {
-        // TTN error code 3 = invalid token
-        if (ttnError.code === 3 || ttnError.message?.includes("invalid token")) {
-          return {
-            success: false,
-            error: "Invalid API key format",
-            hint: "Your API key appears to be malformed or expired. TTN API keys start with 'NNSXS.' and are typically 80+ characters. Copy the full key from TTN Console → Applications → API keys.",
-            statusCode: 400,
-          };
-        }
-        return {
-          success: false,
-          error: "Invalid request to TTN",
-          hint: ttnError.message || errorText.slice(0, 200),
-          statusCode: 400,
-        };
-      }
-
-      if (appResponse.status === 401) {
-        return {
-          success: false,
-          error: "Invalid or expired API key",
-          hint: "Generate a new API key in TTN Console → Applications → API keys",
-          statusCode: 401,
-        };
-      }
-
-      if (appResponse.status === 403) {
-        return {
-          success: false,
-          error: "API key lacks permission to access this application",
-          hint: `Make sure the API key was created for application '${applicationId}' with appropriate scopes`,
-          statusCode: 403,
-        };
-      }
-
-      if (appResponse.status === 404) {
-        return {
-          success: false,
-          error: "Application not found",
-          hint: `Application '${applicationId}' doesn't exist in TTN. Check the Application ID.`,
-          statusCode: 404,
-        };
-      }
-
-      return {
-        success: false,
-        error: `TTN API error (${appResponse.status})`,
-        hint: ttnError.message || errorText.slice(0, 200),
-        statusCode: appResponse.status,
-      };
-    }
-
-    // Try to get API key info with rights
-    // TTN provides rights information in the API key info endpoint
-    const keyInfoResponse = await fetch(
-      `${IDENTITY_SERVER_URL}/api/v3/applications/${applicationId}/api-keys`,
-      {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Accept": "application/json",
-        },
-      }
-    );
-
-    let detectedRights: string[] = [];
-
-    if (keyInfoResponse.ok) {
-      // We can read API keys, which implies we have some admin rights
-      detectedRights.push("RIGHT_APPLICATION_SETTINGS_BASIC");
-      detectedRights.push("RIGHT_APPLICATION_INFO");
-    }
-
-    // Test device read access
-    const devicesResponse = await fetch(
-      `${IDENTITY_SERVER_URL}/api/v3/applications/${applicationId}/devices?limit=1`,
-      {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Accept": "application/json",
-        },
-      }
-    );
-
-    if (devicesResponse.ok) {
-      detectedRights.push("RIGHT_APPLICATION_DEVICES_READ");
-    }
-
-    // Since we successfully read the application, we have at least basic info rights
-    if (!detectedRights.includes("RIGHT_APPLICATION_INFO")) {
-      detectedRights.push("RIGHT_APPLICATION_INFO");
-    }
-
-    // The key works - we'll assume it has the rights it was created with
-    // In practice, we'll detect missing rights when we try to create/update webhook
-    console.log(`[ttn-bootstrap] [${requestId}] Detected rights: ${detectedRights.join(", ")}`);
-
-    return { success: true, rights: detectedRights };
-  } catch (fetchError) {
-    console.error(`[ttn-bootstrap] [${requestId}] Network error:`, fetchError);
+  // Use the shared fetchTtnRights which calls the /rights endpoint directly
+  const result = await fetchTtnRights(cluster, applicationId, apiKey, requestId);
+  
+  if (!result.success) {
+    // Map errors to be consistent with existing error handling
+    console.error(`[ttn-bootstrap] [${requestId}] Rights fetch failed:`, result.error);
     return {
       success: false,
-      error: "Network error connecting to TTN",
-      hint: fetchError instanceof Error ? fetchError.message : "Check internet connectivity",
+      error: result.error,
+      hint: result.hint,
+      statusCode: result.statusCode,
     };
   }
+
+  // Log the actual rights for debugging
+  console.log(`[ttn-bootstrap] [${requestId}] Fetched rights from TTN /rights endpoint:`, result.rights);
+  console.log(`[ttn-bootstrap] [${requestId}] Rights count: ${result.rights?.length || 0}`);
+
+  return { 
+    success: true, 
+    rights: result.rights || [] 
+  };
 }
 
 /**
  * Check permissions and return detailed results
+ * Uses the shared computePermissionReport for consistency
  */
-function analyzePermissions(rights: string[]): PermissionCheckResult {
-  const missing_core = REQUIRED_RIGHTS.core.filter(r => !rights.includes(r));
-  const missing_webhook = REQUIRED_RIGHTS.webhook.filter(r => !rights.includes(r));
-  const missing_devices = REQUIRED_RIGHTS.devices.filter(r => !rights.includes(r));
-  const missing_downlink = REQUIRED_RIGHTS.downlink.filter(r => !rights.includes(r));
-
-  return {
-    valid: missing_core.length === 0,
-    rights,
-    missing_core,
-    missing_webhook,
-    missing_devices,
-    missing_downlink,
-    can_configure_webhook: missing_webhook.length === 0,
-    can_manage_devices: missing_devices.length === 0,
-    can_send_downlinks: missing_downlink.length === 0,
-  };
+function analyzePermissions(rights: string[]): PermissionReport {
+  return computePermissionReport(rights);
 }
 
 /**
@@ -602,7 +446,7 @@ serve(async (req) => {
     // ACTION: VALIDATE - Check API key permissions only
     // ========================================
     if (action === "validate") {
-      const validation = await validateApiKeyPermissions(effectiveApiKey, application_id, requestId);
+      const validation = await validateApiKeyPermissions(effectiveApiKey, application_id, cluster, requestId);
 
       if (!validation.success) {
         return new Response(
@@ -669,7 +513,7 @@ serve(async (req) => {
       const warnings: string[] = [];
       
       if (effectiveApiKey) {
-        const keyValidation = await validateApiKeyPermissions(effectiveApiKey, application_id, requestId);
+        const keyValidation = await validateApiKeyPermissions(effectiveApiKey, application_id, cluster, requestId);
         
         if (!keyValidation.success) {
           return new Response(
@@ -731,7 +575,7 @@ serve(async (req) => {
     // ========================================
     if (action === "configure") {
       // Validate first
-      const validation = await validateApiKeyPermissions(effectiveApiKey, application_id, requestId);
+      const validation = await validateApiKeyPermissions(effectiveApiKey, application_id, cluster, requestId);
 
       if (!validation.success) {
         return new Response(
@@ -814,7 +658,7 @@ serve(async (req) => {
     if (action === "save_and_configure") {
       // Step 1: Validate API key permissions
       console.log(`[ttn-bootstrap] [${requestId}] Step 1: Validating API key permissions`);
-      const validation = await validateApiKeyPermissions(effectiveApiKey, application_id, requestId);
+      const validation = await validateApiKeyPermissions(effectiveApiKey, application_id, cluster, requestId);
 
       if (!validation.success) {
         return new Response(
@@ -836,7 +680,7 @@ serve(async (req) => {
 
       // Check if we have minimum required permissions
       if (!permissions.valid) {
-        const missingLabels = permissions.missing_core.map(r => PERMISSION_LABELS[r] || r);
+        const missingLabels = permissions.missing_core.map((r: string) => PERMISSION_LABELS[r] || r);
         return new Response(
           JSON.stringify({
             ok: false,
