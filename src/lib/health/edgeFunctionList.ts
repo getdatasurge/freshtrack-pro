@@ -202,6 +202,15 @@ export const EDGE_FUNCTIONS: EdgeFunctionInfo[] = [
     checkMethod: 'GET',
     critical: true,
   },
+
+  // TTN Webhook Management
+  {
+    name: 'update-ttn-webhook',
+    description: 'Updates TTN webhook configuration',
+    checkMethod: 'skip',
+    critical: false,
+    skipReason: 'Requires authentication and POST',
+  },
 ];
 
 /**
