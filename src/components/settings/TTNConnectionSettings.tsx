@@ -419,12 +419,19 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
 
-      if (error) throw error;
+      // Check for network/invoke errors first
+      if (error) {
+        console.error("Save API key invoke error:", error);
+        toast.error("Connection error", {
+          description: error.message || "Failed to reach the server",
+        });
+        return;
+      }
 
       const result = data as BootstrapResult;
       setBootstrapResult(result);
 
-      if (result.ok) {
+      if (result?.ok) {
         setNewApiKey("");
         const actionMsg = result.webhook_action === "created"
           ? "Webhook created in TTN"
@@ -434,28 +441,76 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         toast.success(`API key validated. ${actionMsg}!`);
         await loadSettings();
       } else {
-        // Handle permission errors with detailed feedback
-        if (result.error?.code === "TTN_PERMISSION_MISSING") {
-          toast.error(result.error.message, {
-            description: result.error.hint,
+        // Handle structured error from edge function
+        const errorCode = result?.error?.code || "UNKNOWN";
+        const errorMessage = result?.error?.message || "Configuration failed";
+        const errorHint = result?.error?.hint;
+        const requestId = result?.request_id;
+
+        console.error("[TTN Bootstrap Error]", { 
+          code: errorCode, 
+          message: errorMessage,
+          hint: errorHint,
+          request_id: requestId 
+        });
+
+        // Show appropriate error based on code
+        if (errorCode === "TTN_PERMISSION_MISSING") {
+          toast.error(errorMessage, {
+            description: errorHint,
             duration: 8000,
           });
-        } else if (result.error?.code === "WEBHOOK_SETUP_FAILED") {
+        } else if (errorCode === "WEBHOOK_SETUP_FAILED") {
           toast.error("Webhook setup failed", {
-            description: result.error.hint,
+            description: errorHint,
             duration: 6000,
           });
         } else {
-          toast.error(result.error?.message || "Configuration failed");
+          // Show error with hint for all other cases
+          toast.error(errorMessage, {
+            description: errorHint || `Request ID: ${requestId}`,
+            duration: 8000,
+          });
         }
       }
     } catch (err: any) {
       console.error("Save API key error:", err);
-      toast.error(err.message || "Failed to save and configure TTN");
+      toast.error("Unexpected error", {
+        description: err.message || "Failed to save and configure TTN",
+      });
     } finally {
       setIsSavingApiKey(false);
     }
   };
+
+  // Add client-side API key format validation
+  const validateApiKeyFormat = (key: string): { valid: boolean; warning?: string } => {
+    const trimmed = key.trim();
+    
+    if (trimmed.length === 0) {
+      return { valid: false };
+    }
+    
+    // TTN keys typically start with NNSXS.
+    if (!trimmed.startsWith("NNSXS.")) {
+      return { 
+        valid: true, // Let them try, but warn
+        warning: "TTN API keys typically start with 'NNSXS.' — make sure you copied the full key" 
+      };
+    }
+    
+    // TTN keys are typically 80+ characters
+    if (trimmed.length < 80) {
+      return {
+        valid: true,
+        warning: "This key seems shorter than expected — make sure you copied the full key"
+      };
+    }
+    
+    return { valid: true };
+  };
+
+  const apiKeyValidation = validateApiKeyFormat(newApiKey);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -868,6 +923,13 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                   <p className="text-xs text-muted-foreground">
                     Create a key with: Read/Write application settings, Read/Write devices, Read uplinks
                   </p>
+                  {/* API Key Format Warning */}
+                  {newApiKey.trim() && apiKeyValidation.warning && (
+                    <div className="flex items-start gap-2 p-2 rounded bg-warning/10 border border-warning/30">
+                      <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                      <p className="text-xs text-warning">{apiKeyValidation.warning}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Save Button */}

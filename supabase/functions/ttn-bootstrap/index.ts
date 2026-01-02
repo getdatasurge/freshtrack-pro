@@ -157,6 +157,33 @@ async function validateApiKeyPermissions(
       const errorText = await appResponse.text();
       console.error(`[ttn-bootstrap] [${requestId}] App fetch failed: ${appResponse.status} ${errorText}`);
 
+      // Parse TTN error response for better error messages
+      let ttnError: { code?: number; message?: string; name?: string } = {};
+      try {
+        ttnError = JSON.parse(errorText);
+      } catch {
+        // Not JSON, use raw text
+      }
+
+      // Handle 400 - often returned for invalid/malformed tokens
+      if (appResponse.status === 400) {
+        // TTN error code 3 = invalid token
+        if (ttnError.code === 3 || ttnError.message?.includes("invalid token")) {
+          return {
+            success: false,
+            error: "Invalid API key format",
+            hint: "Your API key appears to be malformed or expired. TTN API keys start with 'NNSXS.' and are typically 80+ characters. Copy the full key from TTN Console → Applications → API keys.",
+            statusCode: 400,
+          };
+        }
+        return {
+          success: false,
+          error: "Invalid request to TTN",
+          hint: ttnError.message || errorText.slice(0, 200),
+          statusCode: 400,
+        };
+      }
+
       if (appResponse.status === 401) {
         return {
           success: false,
@@ -187,7 +214,7 @@ async function validateApiKeyPermissions(
       return {
         success: false,
         error: `TTN API error (${appResponse.status})`,
-        hint: errorText.slice(0, 200),
+        hint: ttnError.message || errorText.slice(0, 200),
         statusCode: appResponse.status,
       };
     }
