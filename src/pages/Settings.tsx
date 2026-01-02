@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
@@ -678,8 +679,11 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Separator before Danger Zone */}
+          <Separator className="my-8" />
+
           {/* Danger Zone - Account Deletion */}
-          <Card className="border-destructive/50 mt-6">
+          <Card id="danger-zone" className="border-destructive/50 bg-destructive/5">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-destructive">
                 <AlertTriangle className="h-5 w-5" />
@@ -690,37 +694,44 @@ const Settings = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-1">
                   <p className="font-medium">Delete Account</p>
                   <p className="text-sm text-muted-foreground">
                     Permanently delete your account and all associated data
                   </p>
                 </div>
-                <Button 
-                  variant="destructive" 
-                  onClick={() => setDeleteAccountOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Account
-                </Button>
+                {isLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Loading...</span>
+                  </div>
+                ) : (
+                  <Button 
+                    variant="destructive" 
+                    onClick={() => setDeleteAccountOpen(true)}
+                    disabled={!session?.user || !profile}
+                    className="w-full sm:w-auto"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Account
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
 
-          {/* Account Deletion Modal */}
-          {session?.user && profile && (
-            <AccountDeletionModal
-              open={deleteAccountOpen}
-              onOpenChange={setDeleteAccountOpen}
-              userId={session.user.id}
-              userEmail={profile.email}
-              isOwner={userRole === "owner"}
-              hasOtherUsers={hasOtherUsers}
-              sensorCount={sensorCount}
-              gatewayCount={gatewayCount}
-            />
-          )}
+          {/* Account Deletion Modal - Always render, controls internally */}
+          <AccountDeletionModal
+            open={deleteAccountOpen}
+            onOpenChange={setDeleteAccountOpen}
+            userId={session?.user?.id || ''}
+            userEmail={profile?.email || ''}
+            isOwner={userRole === "owner"}
+            hasOtherUsers={hasOtherUsers}
+            sensorCount={sensorCount}
+            gatewayCount={gatewayCount}
+          />
         </TabsContent>
 
         {/* Alert Rules Tab */}
