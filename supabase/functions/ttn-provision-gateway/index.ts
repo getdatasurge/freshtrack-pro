@@ -201,7 +201,7 @@ serve(async (req) => {
             message: "Gateway already registered in TTN",
             request_id: requestId,
           }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -319,7 +319,7 @@ serve(async (req) => {
           message: "Gateway registered in TTN successfully",
           request_id: requestId,
         }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -356,12 +356,12 @@ serve(async (req) => {
         .eq("id", gateway_id);
 
       return new Response(
-        JSON.stringify({ 
-          success: true, 
+        JSON.stringify({
+          success: true,
           message: "Gateway deleted from TTN",
           request_id: requestId,
         }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
