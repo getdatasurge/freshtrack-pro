@@ -22,6 +22,21 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 
+interface TTNTestResult {
+  success: boolean;
+  error?: string;
+  hint?: string;
+  applicationName?: string;
+  statusCode?: number;
+  testedAt?: string;
+  clusterTested?: string;
+  effectiveApplicationId?: string;
+  apiKeyLast4?: string;
+  request_id?: string;
+  // Legacy field for backwards compatibility
+  message?: string;
+}
+
 interface TTNSettings {
   exists: boolean;
   is_enabled: boolean;
@@ -36,14 +51,7 @@ interface TTNSettings {
   has_webhook_secret: boolean;
   webhook_url: string | null;
   last_connection_test_at: string | null;
-  last_connection_test_result: {
-    success: boolean;
-    message: string;
-    error?: string;
-    tested_at?: string;
-    api_key_last4?: string;
-    last_updated_source?: string;
-  } | null;
+  last_connection_test_result: TTNTestResult | null;
   last_updated_source: string | null;
   last_test_source: string | null;
 }
@@ -623,19 +631,68 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
                     ? "bg-safe/10 border border-safe/30" 
                     : "bg-destructive/10 border border-destructive/30"
                 }`}>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-start gap-2">
                     {settings.last_connection_test_result.success ? (
-                      <CheckCircle className="h-4 w-4 text-safe" />
+                      <CheckCircle className="h-4 w-4 text-safe mt-0.5 flex-shrink-0" />
                     ) : (
-                      <XCircle className="h-4 w-4 text-destructive" />
+                      <XCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
                     )}
-                    <span>{settings.last_connection_test_result.message}</span>
+                    <div className="flex-1 space-y-1">
+                      {/* Show success message or error */}
+                      <span className="font-medium">
+                        {settings.last_connection_test_result.success 
+                          ? (settings.last_connection_test_result.applicationName 
+                              ? `Connected to ${settings.last_connection_test_result.applicationName}`
+                              : "Connection successful")
+                          : (settings.last_connection_test_result.error || settings.last_connection_test_result.message || "Connection failed")}
+                      </span>
+                      
+                      {/* Show hint for failures */}
+                      {!settings.last_connection_test_result.success && settings.last_connection_test_result.hint && (
+                        <p className="text-xs text-muted-foreground">
+                          {settings.last_connection_test_result.hint}
+                        </p>
+                      )}
+                      
+                      {/* Show cluster tested */}
+                      {settings.last_connection_test_result.clusterTested && (
+                        <p className="text-xs text-muted-foreground">
+                          Cluster: {settings.last_connection_test_result.clusterTested}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  {settings.last_connection_test_at && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Last tested: {new Date(settings.last_connection_test_at).toLocaleString()}
-                    </p>
-                  )}
+                  
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-current/10">
+                    {settings.last_connection_test_at && (
+                      <p className="text-xs text-muted-foreground">
+                        Tested: {new Date(settings.last_connection_test_at).toLocaleString()}
+                      </p>
+                    )}
+                    {/* Copy diagnostics button for failures */}
+                    {!settings.last_connection_test_result.success && settings.last_connection_test_result.request_id && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => {
+                          const diagnostics = JSON.stringify({
+                            request_id: settings.last_connection_test_result?.request_id,
+                            error: settings.last_connection_test_result?.error,
+                            hint: settings.last_connection_test_result?.hint,
+                            statusCode: settings.last_connection_test_result?.statusCode,
+                            cluster: settings.last_connection_test_result?.clusterTested,
+                            testedAt: settings.last_connection_test_result?.testedAt,
+                          }, null, 2);
+                          navigator.clipboard.writeText(diagnostics);
+                          toast.success("Diagnostics copied to clipboard");
+                        }}
+                      >
+                        <Copy className="h-3 w-3 mr-1" />
+                        Copy Diagnostics
+                      </Button>
+                    )}
+                  </div>
                 </div>
               )}
               

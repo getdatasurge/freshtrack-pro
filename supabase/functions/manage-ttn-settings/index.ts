@@ -20,9 +20,10 @@ interface TTNSettingsUpdate {
 }
 
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v5-perorg-20251231";
-  console.log(`[manage-ttn-settings] Build: ${BUILD_VERSION}`);
-  console.log(`[manage-ttn-settings] Method: ${req.method}, URL: ${req.url}`);
+  const BUILD_VERSION = "manage-ttn-settings-v6-identity-server-20260102";
+  const requestId = crypto.randomUUID().slice(0, 8);
+  console.log(`[manage-ttn-settings] [${requestId}] Build: ${BUILD_VERSION}`);
+  console.log(`[manage-ttn-settings] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -50,7 +51,7 @@ Deno.serve(async (req: Request) => {
       // Empty body is fine for "get" action
     }
     const action = body.action || "get";
-    console.log(`[manage-ttn-settings] Action: ${action}`);
+    console.log(`[manage-ttn-settings] [${requestId}] Action: ${action}`);
 
     // Create service client for admin operations
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -71,7 +72,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log(`[manage-ttn-settings] User verified: ${user.id}`);
+    console.log(`[manage-ttn-settings] [${requestId}] User verified: ${user.id}`);
 
     // Determine organization ID
     let organizationId = body.organization_id as string | undefined;
@@ -110,7 +111,7 @@ Deno.serve(async (req: Request) => {
 
     // GET action - Fetch current settings (per-org model)
     if (action === "get") {
-      console.log(`[manage-ttn-settings] GET settings for org: ${organizationId}`);
+      console.log(`[manage-ttn-settings] [${requestId}] GET settings for org: ${organizationId}`);
 
       const { data: settings } = await supabaseAdmin
         .from("ttn_connections")
@@ -171,7 +172,7 @@ Deno.serve(async (req: Request) => {
     // TEST action - Test TTN connection using org's own application
     if (action === "test") {
       const sensorId = body.sensor_id as string | undefined;
-      console.log(`[manage-ttn-settings] Testing TTN connection for org: ${organizationId}`);
+      console.log(`[manage-ttn-settings] [${requestId}] Testing TTN connection for org: ${organizationId}`);
 
       // Get config for this org
       const config = await getTtnConfigForOrg(supabaseAdmin, organizationId);
@@ -192,8 +193,10 @@ Deno.serve(async (req: Request) => {
           endpointTested: "",
           effectiveApplicationId: "",
           clusterTested: "",
+          request_id: requestId,
         };
 
+        console.log(`[manage-ttn-settings] [${requestId}] Test failed: no application provisioned`);
         return new Response(
           JSON.stringify(testResult),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -255,7 +258,10 @@ Deno.serve(async (req: Request) => {
         api_key_last4: ttnConnData?.ttn_api_key_last4,
         last_updated_source: ttnConnData?.ttn_last_updated_source,
         source: "frostguard",
+        request_id: requestId,
       };
+
+      console.log(`[manage-ttn-settings] [${requestId}] Test result: success=${testResult.success}, error=${testResult.error || 'none'}`);
 
       // Save test result with source tracking
       await supabaseAdmin
@@ -291,7 +297,7 @@ Deno.serve(async (req: Request) => {
 
     // UPDATE action - Update settings (enabled, region, and API key)
     if (action === "update") {
-      console.log(`[manage-ttn-settings] Updating settings for org: ${organizationId}`);
+      console.log(`[manage-ttn-settings] [${requestId}] Updating settings for org: ${organizationId}`);
 
       const updates: TTNSettingsUpdate = body as TTNSettingsUpdate;
       console.log(`[manage-ttn-settings] Updates:`, { 
