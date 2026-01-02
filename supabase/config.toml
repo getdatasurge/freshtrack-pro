@@ -83,6 +83,10 @@ verify_jwt = false
 [functions.ttn-list-devices]
 verify_jwt = false
 
+# TTN gateway provisioning - handles CORS preflight
+[functions.ttn-provision-gateway]
+verify_jwt = false
+
 # Org state API - pull-based sync for Emulator, uses API key auth
 [functions.org-state-api]
 verify_jwt = false
