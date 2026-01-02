@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLoraSensors, useDeleteLoraSensor, useProvisionLoraSensor } from "@/hooks/useLoraSensors";
+import { useLoraSensors, useDeleteLoraSensor, useProvisionLoraSensor, useUpdateLoraSensor } from "@/hooks/useLoraSensors";
 import { LoraSensor, LoraSensorStatus, LoraSensorType } from "@/types/ttn";
 import {
   Table,
@@ -21,7 +21,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info, MapPin } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { AddSensorDialog } from "./AddSensorDialog";
@@ -29,6 +36,7 @@ import { EditSensorDialog } from "./EditSensorDialog";
 import { formatDistanceToNow } from "date-fns";
 import { SENSOR_STATUS_CONFIG, SENSOR_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
 import { cn } from "@/lib/utils";
+import { debugLog } from "@/lib/debugLogger";
 
 interface Site {
   id: string;
@@ -94,10 +102,79 @@ const StatusBadgeWithTooltip = ({ status }: { status: LoraSensorStatus }) => {
   );
 };
 
+// Inline site selector component for assigning/changing sensor sites
+const SensorSiteSelector = ({ 
+  sensor, 
+  sites,
+  getSiteName,
+  onSiteChange,
+  isUpdating 
+}: { 
+  sensor: LoraSensor; 
+  sites: { id: string; name: string }[];
+  getSiteName: (siteId: string | null) => string | null;
+  onSiteChange: (sensor: LoraSensor, newSiteId: string | null) => void;
+  isUpdating: boolean;
+}) => {
+  if (isUpdating) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-sm">Updating...</span>
+      </div>
+    );
+  }
+
+  if (sites.length === 0) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-sm text-muted-foreground cursor-help">No sites available</span>
+        </TooltipTrigger>
+        <TooltipContent>Create a site first to assign sensors</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  const currentSiteName = getSiteName(sensor.site_id);
+
+  return (
+    <Select
+      value={sensor.site_id || "unassigned"}
+      onValueChange={(value) => onSiteChange(sensor, value === "unassigned" ? null : value)}
+    >
+      <SelectTrigger className={cn(
+        "h-8 w-[160px]",
+        !sensor.site_id && "border-dashed text-muted-foreground"
+      )}>
+        <div className="flex items-center gap-1.5">
+          <MapPin className="h-3.5 w-3.5 shrink-0" />
+          <SelectValue>
+            {currentSiteName || "Assign Site"}
+          </SelectValue>
+        </div>
+      </SelectTrigger>
+      <SelectContent>
+        {sensor.site_id && (
+          <SelectItem value="unassigned" className="text-muted-foreground">
+            — Unassign —
+          </SelectItem>
+        )}
+        {sites.map((site) => (
+          <SelectItem key={site.id} value={site.id}>
+            {site.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+};
+
 export function SensorManager({ organizationId, sites, units, canEdit, autoOpenAdd }: SensorManagerProps) {
   const { data: sensors, isLoading } = useLoraSensors(organizationId);
   const deleteSensor = useDeleteLoraSensor();
   const provisionSensor = useProvisionLoraSensor();
+  const updateSensor = useUpdateLoraSensor();
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
@@ -108,6 +185,15 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   }, [autoOpenAdd]);
   const [editSensor, setEditSensor] = useState<LoraSensor | null>(null);
   const [deleteSensor_, setDeleteSensor] = useState<LoraSensor | null>(null);
+  
+  // Site change confirmation state
+  const [confirmSiteChange, setConfirmSiteChange] = useState<{
+    sensor: LoraSensor;
+    newSiteId: string | null;
+    currentSiteName: string | null;
+    newSiteName: string | null;
+  } | null>(null);
+  const [updatingSensorId, setUpdatingSensorId] = useState<string | null>(null);
 
   const getSiteName = (siteId: string | null) => {
     if (!siteId) return null;
@@ -202,6 +288,55 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
           onSuccess: () => setDeleteSensor(null),
         }
       );
+    }
+  };
+
+  // Handle site change - requires confirmation if already assigned
+  const handleSiteChange = (sensor: LoraSensor, newSiteId: string | null) => {
+    const newSiteName = newSiteId ? getSiteName(newSiteId) : null;
+    const currentSiteName = getSiteName(sensor.site_id);
+
+    // If sensor already has a site and we're changing it, require confirmation
+    if (sensor.site_id && newSiteId !== sensor.site_id) {
+      setConfirmSiteChange({ sensor, newSiteId, currentSiteName, newSiteName });
+      return;
+    }
+
+    // Direct assignment for unassigned sensors
+    executeSiteUpdate(sensor, newSiteId);
+  };
+
+  const executeSiteUpdate = async (sensor: LoraSensor, newSiteId: string | null) => {
+    setUpdatingSensorId(sensor.id);
+
+    try {
+      debugLog.crud('update', 'sensor', sensor.id, { 
+        action: 'site_assignment',
+        previousSite: sensor.site_id,
+        newSite: newSiteId 
+      });
+
+      await updateSensor.mutateAsync({
+        id: sensor.id,
+        updates: { site_id: newSiteId }
+      });
+
+      toast.success(newSiteId 
+        ? `Sensor assigned to ${getSiteName(newSiteId)}` 
+        : 'Sensor unassigned from site'
+      );
+    } catch (error) {
+      debugLog.error('crud', `Failed to update sensor site: ${error}`);
+      toast.error('Failed to update sensor site');
+    } finally {
+      setUpdatingSensorId(null);
+      setConfirmSiteChange(null);
+    }
+  };
+
+  const handleConfirmSiteChange = () => {
+    if (confirmSiteChange) {
+      executeSiteUpdate(confirmSiteChange.sensor, confirmSiteChange.newSiteId);
     }
   };
 
@@ -326,7 +461,26 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                       </div>
                     </TableCell>
                     <TableCell>{getSensorTypeLabel(sensor.sensor_type)}</TableCell>
-                    <TableCell>{getLocationDisplay(sensor)}</TableCell>
+                    <TableCell>
+                      {canEdit ? (
+                        <div className="flex items-center gap-2">
+                          <SensorSiteSelector
+                            sensor={sensor}
+                            sites={sites}
+                            getSiteName={getSiteName}
+                            onSiteChange={handleSiteChange}
+                            isUpdating={updatingSensorId === sensor.id}
+                          />
+                          {sensor.unit_id && (
+                            <span className="text-sm text-muted-foreground">
+                              → {getUnitName(sensor.unit_id)}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        getLocationDisplay(sensor)
+                      )}
+                    </TableCell>
                     <TableCell>
                       <StatusBadgeWithTooltip status={sensor.status} />
                     </TableCell>
@@ -430,6 +584,41 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                 ) : (
                   "Delete"
                 )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Site Change Confirmation Dialog */}
+        <AlertDialog 
+          open={!!confirmSiteChange} 
+          onOpenChange={(open) => !open && setConfirmSiteChange(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Change Sensor Site?</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2">
+                <p>
+                  This sensor is currently assigned to <strong>{confirmSiteChange?.currentSiteName}</strong>.
+                </p>
+                <p>
+                  {confirmSiteChange?.newSiteId 
+                    ? <>Moving it to <strong>{confirmSiteChange?.newSiteName}</strong> may affect data collection and monitoring.</>
+                    : <>Unassigning it will remove it from the current site.</>
+                  }
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={updatingSensorId !== null}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmSiteChange}
+                disabled={updatingSensorId !== null}
+              >
+                {updatingSensorId ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                {confirmSiteChange?.newSiteId ? "Move Sensor" : "Unassign Sensor"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
