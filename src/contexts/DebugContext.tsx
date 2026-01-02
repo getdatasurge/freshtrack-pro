@@ -7,6 +7,7 @@ interface DebugContextValue {
   isTerminalVisible: boolean;
   isPaused: boolean;
   logs: DebugLogEntry[];
+  selectedErrorForExplanation: DebugLogEntry | null;
   setDebugEnabled: (enabled: boolean) => void;
   toggleTerminal: () => void;
   showTerminal: () => void;
@@ -14,6 +15,8 @@ interface DebugContextValue {
   clearLogs: () => void;
   pauseLogging: () => void;
   resumeLogging: () => void;
+  showExplanation: (entry: DebugLogEntry) => void;
+  hideExplanation: () => void;
 }
 
 const DebugContext = createContext<DebugContextValue | null>(null);
@@ -33,6 +36,7 @@ export function DebugProvider({ children }: { children: ReactNode }) {
   });
   const [isPaused, setIsPaused] = useState(false);
   const [logs, setLogs] = useState<DebugLogEntry[]>([]);
+  const [selectedErrorForExplanation, setSelectedErrorForExplanation] = useState<DebugLogEntry | null>(null);
 
   // Sync debug mode with logger
   useEffect(() => {
@@ -123,6 +127,14 @@ export function DebugProvider({ children }: { children: ReactNode }) {
     setIsPaused(false);
   }, []);
 
+  const showExplanation = useCallback((entry: DebugLogEntry) => {
+    setSelectedErrorForExplanation(entry);
+  }, []);
+
+  const hideExplanation = useCallback(() => {
+    setSelectedErrorForExplanation(null);
+  }, []);
+
   return (
     <DebugContext.Provider
       value={{
@@ -130,6 +142,7 @@ export function DebugProvider({ children }: { children: ReactNode }) {
         isTerminalVisible,
         isPaused,
         logs,
+        selectedErrorForExplanation,
         setDebugEnabled,
         toggleTerminal,
         showTerminal,
@@ -137,6 +150,8 @@ export function DebugProvider({ children }: { children: ReactNode }) {
         clearLogs,
         pauseLogging,
         resumeLogging,
+        showExplanation,
+        hideExplanation,
       }}
     >
       {children}
