@@ -5,6 +5,7 @@ import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 interface ProvisionRequest {
@@ -20,7 +21,7 @@ serve(async (req) => {
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   // Health check / diagnostics endpoint
@@ -113,6 +114,23 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Validate TTN_USER_ID is set (required for user-scoped gateway creation)
+    const ttnUserId = Deno.env.get("TTN_USER_ID");
+    if (!ttnUserId) {
+      console.error(`[ttn-provision-gateway] [${requestId}] Missing TTN_USER_ID environment variable`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "TTN user ID not configured",
+          error_code: "CONFIG_MISSING",
+          hint: "Set TTN_USER_ID in Supabase secrets",
+          request_id: requestId,
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    console.log(`[ttn-provision-gateway] [${requestId}] TTN User ID: ${ttnUserId}`);
 
     // Fetch gateway details
     const { data: gateway, error: gatewayError } = await supabase
@@ -231,7 +249,9 @@ serve(async (req) => {
         },
       };
 
-      const createResponse = await ttnFetch("/api/v3/gateways", {
+      // Use user-scoped endpoint for gateway creation (POST /api/v3/gateways returns 501)
+      console.log(`[ttn-provision-gateway] [${requestId}] Using user-scoped endpoint: /api/v3/users/${ttnUserId}/gateways`);
+      const createResponse = await ttnFetch(`/api/v3/users/${ttnUserId}/gateways`, {
         method: "POST",
         body: JSON.stringify(gatewayPayload),
       });
