@@ -273,8 +273,8 @@ export interface TtnTestResult {
 
 /**
  * Test TTN API key permissions for the org's application
- * Uses the REGIONAL server (not Identity Server) since that's where uplinks flow
- * Optionally tests if a specific device exists
+ * Tests on Identity Server first (where apps are registered),
+ * then optionally tests regional server connectivity.
  */
 export async function testTtnConnection(
   config: TtnConfig,
@@ -311,11 +311,12 @@ export async function testTtnConnection(
   const apiKeyLast4 = config.apiKey.length >= 4 ? config.apiKey.slice(-4) : undefined;
 
   try {
-    // Step 1: Test application access on the REGIONAL server (where uplinks flow)
-    console.log(`[testTtnConnection] Testing app on regional server: ${config.regionalBaseUrl}${appEndpoint}`);
+    // Step 1: Test application access on IDENTITY SERVER (eu1) where apps are registered
+    // This is the authoritative source for application existence
+    console.log(`[testTtnConnection] Testing app on Identity Server: ${config.identityBaseUrl}${appEndpoint}`);
     
     const appResponse = await fetch(
-      `${config.regionalBaseUrl}${appEndpoint}`,
+      `${config.identityBaseUrl}${appEndpoint}`,
       {
         method: "GET",
         headers: {
@@ -327,7 +328,7 @@ export async function testTtnConnection(
 
     if (!appResponse.ok) {
       const errorText = await appResponse.text();
-      console.error(`[testTtnConnection] Regional app test failed: ${appResponse.status} ${errorText}`);
+      console.error(`[testTtnConnection] Identity Server app test failed: ${appResponse.status} ${errorText}`);
 
       let error: string;
       let hint: string;
@@ -336,11 +337,11 @@ export async function testTtnConnection(
         error = "Invalid or expired API key";
         hint = "Generate a new API key in TTN Console → Applications → API keys";
       } else if (appResponse.status === 403) {
-        error = "Insufficient permissions on this cluster";
-        hint = `Your API key may not have rights for ${config.applicationId} on the ${config.region} cluster. Check that your API key was created for this cluster.`;
+        error = "API key lacks permission for this application";
+        hint = `Your API key doesn't have rights to access '${config.applicationId}'. Check that the key was created for this application with the correct scopes.`;
       } else if (appResponse.status === 404) {
-        error = "Application not found on this cluster";
-        hint = `Application '${config.applicationId}' doesn't exist on ${config.region}. If your gateway is on a different cluster, update the Region setting.`;
+        error = "Application not found";
+        hint = `Application '${config.applicationId}' doesn't exist. It may have been deleted or the ID is incorrect.`;
       } else {
         error = `TTN API error (${appResponse.status})`;
         hint = errorText.slice(0, 200);
@@ -362,12 +363,13 @@ export async function testTtnConnection(
     const appData = await appResponse.json();
     const applicationName = appData.name || config.applicationId;
 
-    // Step 2: Optionally test specific device exists
+    // Step 2: Optionally test regional server accessibility (for devices/uplinks)
+    // Only if a device test is requested
     let deviceTest: TtnTestResult['deviceTest'] = undefined;
     
     if (options?.testDeviceId) {
       const deviceEndpoint = `/api/v3/applications/${config.applicationId}/devices/${options.testDeviceId}`;
-      console.log(`[testTtnConnection] Testing device: ${config.regionalBaseUrl}${deviceEndpoint}`);
+      console.log(`[testTtnConnection] Testing device on regional server: ${config.regionalBaseUrl}${deviceEndpoint}`);
       
       const deviceResponse = await fetch(
         `${config.regionalBaseUrl}${deviceEndpoint}`,
