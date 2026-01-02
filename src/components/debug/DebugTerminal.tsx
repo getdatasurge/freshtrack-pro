@@ -1,11 +1,12 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useDebugContext } from '@/contexts/DebugContext';
-import { DebugLogEntry, DebugLogLevel, DebugLogCategory } from '@/lib/debugLogger';
+import { DebugLogEntry, DebugLogLevel, DebugLogCategory, EntityType } from '@/lib/debugLogger';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
 import { 
   X, 
   Minus, 
@@ -20,7 +21,9 @@ import {
   ChevronDown,
   Bug,
   HelpCircle,
-  FileJson
+  FileJson,
+  Link2,
+  ArrowDown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -53,14 +56,30 @@ const CATEGORY_COLORS: Record<string, string> = {
   edge: 'bg-indigo-500/20 text-indigo-300',
   network: 'bg-teal-500/20 text-teal-300',
   auth: 'bg-red-500/20 text-red-300',
+  crud: 'bg-amber-500/20 text-amber-300',
+  realtime: 'bg-violet-500/20 text-violet-300',
+  mutation: 'bg-emerald-500/20 text-emerald-300',
+  query: 'bg-slate-500/20 text-slate-300',
+};
+
+const ENTITY_COLORS: Record<EntityType, string> = {
+  sensor: 'bg-blue-500/30 text-blue-200',
+  gateway: 'bg-green-500/30 text-green-200',
+  unit: 'bg-purple-500/30 text-purple-200',
+  area: 'bg-cyan-500/30 text-cyan-200',
+  site: 'bg-orange-500/30 text-orange-200',
+  alert: 'bg-red-500/30 text-red-200',
+  device: 'bg-pink-500/30 text-pink-200',
 };
 
 interface LogEntryProps {
   entry: DebugLogEntry;
   onExplain?: (entry: DebugLogEntry) => void;
+  onFilterByCorrelation?: (correlationId: string) => void;
+  onCopyEntry?: (entry: DebugLogEntry) => void;
 }
 
-function LogEntry({ entry, onExplain }: LogEntryProps) {
+function LogEntry({ entry, onExplain, onFilterByCorrelation, onCopyEntry }: LogEntryProps) {
   const [expanded, setExpanded] = useState(false);
   
   const time = entry.timestamp.toLocaleTimeString('en-US', { 
@@ -90,12 +109,48 @@ function LogEntry({ entry, onExplain }: LogEntryProps) {
         >
           {entry.category}
         </Badge>
+        {entry.entityType && (
+          <Badge 
+            variant="outline" 
+            className={cn("text-[10px] px-1.5 py-0 shrink-0", ENTITY_COLORS[entry.entityType])}
+          >
+            {entry.entityType}
+          </Badge>
+        )}
         <span className={cn("font-medium shrink-0", LEVEL_COLORS[entry.level])}>
           [{entry.level.toUpperCase()}]
         </span>
         <span className="text-foreground flex-1 break-all">{entry.message}</span>
         {entry.duration !== undefined && (
           <span className="text-muted-foreground shrink-0">{entry.duration}ms</span>
+        )}
+        {entry.correlationId && onFilterByCorrelation && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-5 px-1 text-xs shrink-0 hover:bg-primary/20"
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              onFilterByCorrelation(entry.correlationId!); 
+            }}
+            title="Filter by correlation ID"
+          >
+            <Link2 className="h-3 w-3" />
+          </Button>
+        )}
+        {onCopyEntry && (
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="h-5 px-1 text-xs shrink-0 hover:bg-primary/20"
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              onCopyEntry(entry); 
+            }}
+            title="Copy event"
+          >
+            <Copy className="h-3 w-3" />
+          </Button>
         )}
         {showExplainButton && (
           <Button 
@@ -118,9 +173,16 @@ function LogEntry({ entry, onExplain }: LogEntryProps) {
         )}
       </div>
       {expanded && entry.payload && (
-        <pre className="px-2 py-2 ml-24 text-[10px] text-muted-foreground bg-background/50 overflow-x-auto">
-          {JSON.stringify(entry.payload, null, 2)}
-        </pre>
+        <div className="px-2 py-2 ml-24 bg-background/50 overflow-x-auto">
+          <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap">
+            {JSON.stringify(entry.payload, null, 2)}
+          </pre>
+          {entry.correlationId && (
+            <div className="mt-1 text-[9px] text-muted-foreground/70">
+              Correlation ID: {entry.correlationId}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -147,12 +209,17 @@ export function DebugTerminal() {
   const [activeTab, setActiveTab] = useState('events');
   const [levelFilter, setLevelFilter] = useState<DebugLogLevel | 'all'>('all');
   const [categoryFilter, setCategoryFilter] = useState<DebugLogCategory | 'all'>('all');
+  const [entityFilter, setEntityFilter] = useState<EntityType | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [correlationFilter, setCorrelationFilter] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Fetch user info
-  React.useEffect(() => {
+  useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserEmail(data.user?.email || null);
     });
@@ -162,14 +229,40 @@ export function DebugTerminal() {
     });
   }, []);
 
+  // Auto-scroll when new logs arrive
+  useEffect(() => {
+    if (autoScroll && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [logs, autoScroll]);
+
+  // Count by category for tab badges
+  const categoryCounts = useMemo(() => {
+    return {
+      all: logs.length,
+      network: logs.filter(l => l.category === 'edge' || l.category === 'network').length,
+      crud: logs.filter(l => l.category === 'crud' || l.category === 'db' || l.category === 'mutation').length,
+      sync: logs.filter(l => l.category === 'sync' || l.category === 'realtime').length,
+      ttn: logs.filter(l => l.category === 'ttn' || l.category === 'provisioning').length,
+      errors: logs.filter(l => l.level === 'error' || l.level === 'warn').length,
+    };
+  }, [logs]);
+
   const filteredLogs = useMemo(() => {
     let filtered = logs;
+
+    // Correlation filter takes precedence
+    if (correlationFilter) {
+      return filtered.filter(l => l.correlationId === correlationFilter);
+    }
 
     // Tab-based filtering
     if (activeTab === 'network') {
       filtered = filtered.filter(l => l.category === 'edge' || l.category === 'network');
+    } else if (activeTab === 'crud') {
+      filtered = filtered.filter(l => l.category === 'crud' || l.category === 'db' || l.category === 'mutation');
     } else if (activeTab === 'sync') {
-      filtered = filtered.filter(l => l.category === 'sync' || l.category === 'db');
+      filtered = filtered.filter(l => l.category === 'sync' || l.category === 'realtime');
     } else if (activeTab === 'ttn') {
       filtered = filtered.filter(l => l.category === 'ttn' || l.category === 'provisioning');
     } else if (activeTab === 'errors') {
@@ -186,18 +279,25 @@ export function DebugTerminal() {
       filtered = filtered.filter(l => l.category === categoryFilter);
     }
 
+    // Entity filter
+    if (entityFilter !== 'all') {
+      filtered = filtered.filter(l => l.entityType === entityFilter);
+    }
+
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(l => 
         l.message.toLowerCase().includes(query) ||
         l.category.toLowerCase().includes(query) ||
+        l.correlationId?.toLowerCase().includes(query) ||
+        l.entityType?.toLowerCase().includes(query) ||
         JSON.stringify(l.payload || {}).toLowerCase().includes(query)
       );
     }
 
     return filtered;
-  }, [logs, activeTab, levelFilter, categoryFilter, searchQuery]);
+  }, [logs, activeTab, levelFilter, categoryFilter, entityFilter, searchQuery, correlationFilter]);
 
   const handleCopy = useCallback(() => {
     const text = filteredLogs
@@ -206,6 +306,15 @@ export function DebugTerminal() {
     navigator.clipboard.writeText(text);
     toast({ title: "Logs copied to clipboard" });
   }, [filteredLogs, toast]);
+
+  const handleCopyEntry = useCallback((entry: DebugLogEntry) => {
+    const json = JSON.stringify({
+      ...entry,
+      timestamp: entry.timestamp.toISOString(),
+    }, null, 2);
+    navigator.clipboard.writeText(json);
+    toast({ title: "Event copied to clipboard" });
+  }, [toast]);
 
   const handleExport = useCallback(() => {
     const json = debugLog.exportLogs();
@@ -241,6 +350,15 @@ export function DebugTerminal() {
     }
   }, [userEmail, orgId, toast]);
 
+  const handleFilterByCorrelation = useCallback((correlationId: string) => {
+    setCorrelationFilter(correlationId);
+    toast({ title: `Filtering by correlation: ${correlationId.slice(-8)}` });
+  }, [toast]);
+
+  const handleClearCorrelationFilter = useCallback(() => {
+    setCorrelationFilter(null);
+  }, []);
+
   if (!isDebugEnabled || !isTerminalVisible) return null;
 
   const environment = window.location.hostname.includes('localhost') ? 'dev' : 
@@ -270,6 +388,9 @@ export function DebugTerminal() {
           <Badge variant="outline" className="text-[10px]">
             {environment}
           </Badge>
+          <Badge variant="outline" className="text-[10px]">
+            {logs.length} / {debugLog.getMaxBufferSize()}
+          </Badge>
           {userEmail && (
             <span className="text-xs text-muted-foreground">{userEmail}</span>
           )}
@@ -280,6 +401,18 @@ export function DebugTerminal() {
           )}
           {isPaused && (
             <Badge variant="destructive" className="text-[10px]">PAUSED</Badge>
+          )}
+          {correlationFilter && (
+            <Badge variant="secondary" className="text-[10px] flex items-center gap-1">
+              <Link2 className="h-3 w-3" />
+              {correlationFilter.slice(-8)}
+              <button 
+                onClick={handleClearCorrelationFilter}
+                className="ml-1 hover:bg-background/50 rounded"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
           )}
         </div>
         
@@ -299,11 +432,42 @@ export function DebugTerminal() {
           <div className="flex items-center justify-between px-2 py-1 border-b border-border bg-muted/30">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-auto">
               <TabsList className="h-7 bg-transparent">
-                <TabsTrigger value="events" className="text-xs h-6 px-2">Events</TabsTrigger>
-                <TabsTrigger value="network" className="text-xs h-6 px-2">Network</TabsTrigger>
-                <TabsTrigger value="sync" className="text-xs h-6 px-2">Sync</TabsTrigger>
-                <TabsTrigger value="ttn" className="text-xs h-6 px-2">TTN</TabsTrigger>
-                <TabsTrigger value="errors" className="text-xs h-6 px-2">Errors</TabsTrigger>
+                <TabsTrigger value="events" className="text-xs h-6 px-2">
+                  Events
+                  {categoryCounts.all > 0 && (
+                    <span className="ml-1 text-[9px] text-muted-foreground">({categoryCounts.all})</span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="crud" className="text-xs h-6 px-2">
+                  CRUD
+                  {categoryCounts.crud > 0 && (
+                    <span className="ml-1 text-[9px] text-muted-foreground">({categoryCounts.crud})</span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="network" className="text-xs h-6 px-2">
+                  Network
+                  {categoryCounts.network > 0 && (
+                    <span className="ml-1 text-[9px] text-muted-foreground">({categoryCounts.network})</span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="sync" className="text-xs h-6 px-2">
+                  Sync
+                  {categoryCounts.sync > 0 && (
+                    <span className="ml-1 text-[9px] text-muted-foreground">({categoryCounts.sync})</span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="ttn" className="text-xs h-6 px-2">
+                  TTN
+                  {categoryCounts.ttn > 0 && (
+                    <span className="ml-1 text-[9px] text-muted-foreground">({categoryCounts.ttn})</span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="errors" className="text-xs h-6 px-2">
+                  Errors
+                  {categoryCounts.errors > 0 && (
+                    <span className="ml-1 text-[9px] text-red-400">({categoryCounts.errors})</span>
+                  )}
+                </TabsTrigger>
               </TabsList>
             </Tabs>
 
@@ -332,22 +496,31 @@ export function DebugTerminal() {
 
               <select 
                 className="h-6 text-xs bg-background border border-border rounded px-1"
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value as DebugLogCategory | 'all')}
+                value={entityFilter}
+                onChange={(e) => setEntityFilter(e.target.value as EntityType | 'all')}
               >
-                <option value="all">All Categories</option>
-                <option value="ui">UI</option>
-                <option value="routing">Routing</option>
-                <option value="db">DB</option>
-                <option value="sync">Sync</option>
-                <option value="ttn">TTN</option>
-                <option value="provisioning">Provisioning</option>
-                <option value="edge">Edge</option>
-                <option value="network">Network</option>
-                <option value="auth">Auth</option>
+                <option value="all">All Entities</option>
+                <option value="sensor">Sensor</option>
+                <option value="gateway">Gateway</option>
+                <option value="unit">Unit</option>
+                <option value="area">Area</option>
+                <option value="site">Site</option>
+                <option value="alert">Alert</option>
+                <option value="device">Device</option>
               </select>
 
-              <div className="flex items-center gap-0.5 border-l border-border pl-2">
+              <div className="flex items-center gap-1 border-l border-border pl-2">
+                <div className="flex items-center space-x-1">
+                  <Checkbox
+                    id="autoscroll"
+                    checked={autoScroll}
+                    onCheckedChange={(checked) => setAutoScroll(!!checked)}
+                    className="h-4 w-4"
+                  />
+                  <label htmlFor="autoscroll" className="text-xs text-muted-foreground flex items-center gap-1">
+                    <ArrowDown className="h-3 w-3" />
+                  </label>
+                </div>
                 <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={clearLogs} title="Clear">
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -360,7 +533,7 @@ export function DebugTerminal() {
                 >
                   {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
                 </Button>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handleCopy} title="Copy">
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handleCopy} title="Copy all">
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
                 <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handleExport} title="Export Logs">
@@ -382,17 +555,38 @@ export function DebugTerminal() {
 
           {/* Log Content */}
           <ScrollArea className="flex-1" style={{ height: height - 80 }}>
-            {filteredLogs.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                No logs to display
-              </div>
-            ) : (
-              <div className="divide-y divide-border/30">
-                {filteredLogs.map(entry => (
-                  <LogEntry key={entry.id} entry={entry} onExplain={showExplanation} />
-                ))}
-              </div>
-            )}
+            <div ref={scrollRef}>
+              {filteredLogs.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm py-8">
+                  {correlationFilter ? (
+                    <div className="text-center">
+                      <p>No events for correlation ID</p>
+                      <Button 
+                        variant="link" 
+                        size="sm" 
+                        onClick={handleClearCorrelationFilter}
+                      >
+                        Clear filter
+                      </Button>
+                    </div>
+                  ) : (
+                    "No logs to display"
+                  )}
+                </div>
+              ) : (
+                <div className="divide-y divide-border/30">
+                  {filteredLogs.map(entry => (
+                    <LogEntry 
+                      key={entry.id} 
+                      entry={entry} 
+                      onExplain={showExplanation} 
+                      onFilterByCorrelation={handleFilterByCorrelation}
+                      onCopyEntry={handleCopyEntry}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </ScrollArea>
         </>
       )}
