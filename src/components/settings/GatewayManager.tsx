@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useGateways, useDeleteGateway } from "@/hooks/useGateways";
+import { useGateways, useDeleteGateway, useUpdateGateway } from "@/hooks/useGateways";
 import { Gateway, GatewayStatus } from "@/types/ttn";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,12 +22,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Radio, Plus, Pencil, Trash2, Loader2, Info } from "lucide-react";
+import { Radio, Plus, Pencil, Trash2, Loader2, Info, MapPin } from "lucide-react";
 import { AddGatewayDialog } from "./AddGatewayDialog";
 import { EditGatewayDialog } from "./EditGatewayDialog";
 import { GATEWAY_STATUS_CONFIG, GATEWAY_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
 import { cn } from "@/lib/utils";
+import { debugLog } from "@/lib/debugLogger";
 
 interface Site {
   id: string;
@@ -108,13 +116,104 @@ const GatewayStatusBadgeWithTooltip = ({
   );
 };
 
+// Inline site selector for quick assignment
+const GatewaySiteSelector = ({ 
+  gateway, 
+  sites,
+  onSiteChange,
+  isUpdating 
+}: { 
+  gateway: Gateway; 
+  sites: Site[];
+  onSiteChange: (gateway: Gateway, newSiteId: string | null, currentSiteName: string | null) => void;
+  isUpdating: boolean;
+}) => {
+  const currentSite = sites.find(s => s.id === gateway.site_id);
+  
+  if (isUpdating) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-sm">Updating...</span>
+      </div>
+    );
+  }
+  
+  // No sites available
+  if (sites.length === 0) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-muted-foreground text-sm cursor-help">
+            No sites available
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>
+          Create a site first to assign gateways
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  
+  return (
+    <Select
+      value={gateway.site_id || "unassigned"}
+      onValueChange={(value) => {
+        const newSiteId = value === "unassigned" ? null : value;
+        onSiteChange(gateway, newSiteId, currentSite?.name || null);
+      }}
+    >
+      <SelectTrigger className={cn(
+        "w-[180px] h-8",
+        !gateway.site_id && "text-muted-foreground border-dashed"
+      )}>
+        <SelectValue>
+          {currentSite ? (
+            <span className="flex items-center gap-1.5">
+              <MapPin className="h-3 w-3" />
+              {currentSite.name}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <MapPin className="h-3 w-3" />
+              Assign Site
+            </span>
+          )}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {gateway.site_id && (
+          <SelectItem value="unassigned" className="text-muted-foreground">
+            — Unassign —
+          </SelectItem>
+        )}
+        {sites.map((site) => (
+          <SelectItem key={site.id} value={site.id}>
+            {site.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+};
+
 export function GatewayManager({ organizationId, sites, canEdit }: GatewayManagerProps) {
   const { data: gateways, isLoading } = useGateways(organizationId);
   const deleteGateway = useDeleteGateway();
+  const updateGateway = useUpdateGateway();
   
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editGateway, setEditGateway] = useState<Gateway | null>(null);
   const [deleteGateway_, setDeleteGateway] = useState<Gateway | null>(null);
+  
+  // Site change confirmation state
+  const [confirmSiteChange, setConfirmSiteChange] = useState<{
+    gateway: Gateway;
+    newSiteId: string | null;
+    currentSiteName: string | null;
+    newSiteName: string | null;
+  } | null>(null);
+  const [updatingGatewayId, setUpdatingGatewayId] = useState<string | null>(null);
 
   const getSiteName = (siteId: string | null): string | null => {
     if (!siteId) return null;
@@ -129,6 +228,57 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
       orgId: organizationId 
     });
     setDeleteGateway(null);
+  };
+
+  const handleSiteChange = async (
+    gateway: Gateway, 
+    newSiteId: string | null, 
+    currentSiteName: string | null
+  ) => {
+    const newSiteName = newSiteId ? getSiteName(newSiteId) : null;
+    
+    // If gateway already has a site and we're changing it, require confirmation
+    if (gateway.site_id && newSiteId !== gateway.site_id) {
+      setConfirmSiteChange({
+        gateway,
+        newSiteId,
+        currentSiteName,
+        newSiteName
+      });
+      return;
+    }
+    
+    // Direct assignment for unassigned gateways or same site
+    await executeSiteUpdate(gateway, newSiteId);
+  };
+
+  const executeSiteUpdate = async (gateway: Gateway, newSiteId: string | null) => {
+    setUpdatingGatewayId(gateway.id);
+    
+    try {
+      debugLog.crud('update', 'gateway', gateway.id, { 
+        action: 'site_assignment',
+        previousSite: gateway.site_id,
+        newSite: newSiteId 
+      });
+      
+      await updateGateway.mutateAsync({
+        id: gateway.id,
+        updates: { 
+          site_id: newSiteId,
+          // Reset to pending if site is being assigned/changed
+          ...(newSiteId !== gateway.site_id && { status: 'pending' as const })
+        }
+      });
+    } finally {
+      setUpdatingGatewayId(null);
+      setConfirmSiteChange(null);
+    }
+  };
+
+  const handleConfirmSiteChange = async () => {
+    if (!confirmSiteChange) return;
+    await executeSiteUpdate(confirmSiteChange.gateway, confirmSiteChange.newSiteId);
   };
 
   const formatEUI = (eui: string): string => {
@@ -210,8 +360,15 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
                         {formatEUI(gateway.gateway_eui)}
                       </TableCell>
                       <TableCell>
-                        {siteName || (
-                          <span className="text-muted-foreground">—</span>
+                        {canEdit ? (
+                          <GatewaySiteSelector
+                            gateway={gateway}
+                            sites={sites}
+                            onSiteChange={handleSiteChange}
+                            isUpdating={updatingGatewayId === gateway.id}
+                          />
+                        ) : (
+                          siteName || <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -301,6 +458,41 @@ export function GatewayManager({ organizationId, sites, canEdit }: GatewayManage
               ) : (
                 "Delete"
               )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Site Change Confirmation Dialog */}
+      <AlertDialog 
+        open={!!confirmSiteChange} 
+        onOpenChange={(open) => !open && setConfirmSiteChange(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Change Gateway Site?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                This gateway is currently assigned to <strong>{confirmSiteChange?.currentSiteName}</strong>.
+              </p>
+              <p>
+                {confirmSiteChange?.newSiteId 
+                  ? <>Moving it to <strong>{confirmSiteChange?.newSiteName}</strong> may affect sensor connectivity at the current location.</>
+                  : <>Unassigning it will remove it from the current site.</>
+                }
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updatingGatewayId !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmSiteChange}
+              disabled={updatingGatewayId !== null}
+            >
+              {updatingGatewayId ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : null}
+              {confirmSiteChange?.newSiteId ? "Move Gateway" : "Unassign Gateway"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
