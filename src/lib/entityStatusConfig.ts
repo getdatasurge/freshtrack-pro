@@ -113,7 +113,8 @@ export const SENSOR_COLUMN_TOOLTIPS = {
   name: "Friendly name used to identify this sensor in FrostGuard",
   devEui: "Unique identifier used by The Things Network to recognize this device",
   type: "Sensor category determines how data is interpreted and displayed",
-  location: "Site and sub-location where this sensor is installed",
+  location: "Site where this sensor is installed",
+  unit: "The specific equipment unit (refrigerator, freezer, etc.) this sensor is monitoring. Units must belong to the selected site.",
   status: "Current connectivity and provisioning state of the sensor",
   lastUplink: "The most recent time this sensor successfully sent data"
 };

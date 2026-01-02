@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info, MapPin, Box } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { AddSensorDialog } from "./AddSensorDialog";
@@ -170,6 +170,91 @@ const SensorSiteSelector = ({
   );
 };
 
+// Inline unit selector component for assigning/changing sensor units
+const SensorUnitSelector = ({ 
+  sensor, 
+  units,
+  getUnitName,
+  onUnitChange,
+  isUpdating 
+}: { 
+  sensor: LoraSensor; 
+  units: { id: string; name: string; site_id: string }[];
+  getUnitName: (unitId: string | null) => string | null;
+  onUnitChange: (sensor: LoraSensor, newUnitId: string | null) => void;
+  isUpdating: boolean;
+}) => {
+  if (isUpdating) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-sm">Updating...</span>
+      </div>
+    );
+  }
+
+  // If no site selected, show disabled state with guidance
+  if (!sensor.site_id) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-sm text-muted-foreground cursor-help italic">
+            Select a Site first
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>Assign this sensor to a Site before selecting a Unit</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Filter units to only those belonging to this sensor's site
+  const siteUnits = units.filter(u => u.site_id === sensor.site_id);
+
+  if (siteUnits.length === 0) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="text-sm text-muted-foreground cursor-help">No units in this site</span>
+        </TooltipTrigger>
+        <TooltipContent>Create a unit in this site first</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  const currentUnitName = getUnitName(sensor.unit_id);
+
+  return (
+    <Select
+      value={sensor.unit_id || "unassigned"}
+      onValueChange={(value) => onUnitChange(sensor, value === "unassigned" ? null : value)}
+    >
+      <SelectTrigger className={cn(
+        "h-8 w-[160px]",
+        !sensor.unit_id && "border-dashed text-muted-foreground"
+      )}>
+        <div className="flex items-center gap-1.5">
+          <Box className="h-3.5 w-3.5 shrink-0" />
+          <SelectValue>
+            {currentUnitName || "Assign Unit"}
+          </SelectValue>
+        </div>
+      </SelectTrigger>
+      <SelectContent>
+        {sensor.unit_id && (
+          <SelectItem value="unassigned" className="text-muted-foreground">
+            — Unassign —
+          </SelectItem>
+        )}
+        {siteUnits.map((unit) => (
+          <SelectItem key={unit.id} value={unit.id}>
+            {unit.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+};
+
 export function SensorManager({ organizationId, sites, units, canEdit, autoOpenAdd }: SensorManagerProps) {
   const { data: sensors, isLoading } = useLoraSensors(organizationId);
   const deleteSensor = useDeleteLoraSensor();
@@ -194,6 +279,15 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     newSiteName: string | null;
   } | null>(null);
   const [updatingSensorId, setUpdatingSensorId] = useState<string | null>(null);
+  
+  // Unit change confirmation state
+  const [confirmUnitChange, setConfirmUnitChange] = useState<{
+    sensor: LoraSensor;
+    newUnitId: string | null;
+    currentUnitName: string | null;
+    newUnitName: string | null;
+  } | null>(null);
+  const [updatingUnitSensorId, setUpdatingUnitSensorId] = useState<string | null>(null);
 
   const getSiteName = (siteId: string | null) => {
     if (!siteId) return null;
@@ -309,17 +403,34 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   const executeSiteUpdate = async (sensor: LoraSensor, newSiteId: string | null) => {
     setUpdatingSensorId(sensor.id);
 
+    // Check if current unit belongs to new site - if not, clear it
+    const currentUnit = sensor.unit_id ? units.find(u => u.id === sensor.unit_id) : null;
+    const shouldClearUnit = currentUnit && currentUnit.site_id !== newSiteId;
+
     try {
       debugLog.crud('update', 'sensor', sensor.id, { 
         action: 'site_assignment',
         previousSite: sensor.site_id,
-        newSite: newSiteId 
+        newSite: newSiteId,
+        clearingUnit: shouldClearUnit ? sensor.unit_id : null
       });
+
+      const updates: { site_id: string | null; unit_id?: string | null } = { 
+        site_id: newSiteId 
+      };
+      
+      if (shouldClearUnit) {
+        updates.unit_id = null;
+      }
 
       await updateSensor.mutateAsync({
         id: sensor.id,
-        updates: { site_id: newSiteId }
+        updates
       });
+
+      if (shouldClearUnit) {
+        toast.info('Unit cleared because it belongs to another site');
+      }
 
       toast.success(newSiteId 
         ? `Sensor assigned to ${getSiteName(newSiteId)}` 
@@ -337,6 +448,70 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   const handleConfirmSiteChange = () => {
     if (confirmSiteChange) {
       executeSiteUpdate(confirmSiteChange.sensor, confirmSiteChange.newSiteId);
+    }
+  };
+
+  // Handle unit change - requires confirmation if already assigned
+  const handleUnitChange = (sensor: LoraSensor, newUnitId: string | null) => {
+    const newUnitName = newUnitId ? getUnitName(newUnitId) : null;
+    const currentUnitName = getUnitName(sensor.unit_id);
+
+    debugLog.info('crud', 'UNIT_ASSIGNMENT_SELECT', {
+      sensor_id: sensor.id,
+      current_unit_id: sensor.unit_id,
+      new_unit_id: newUnitId
+    });
+
+    // If sensor already has a unit and we're changing it, require confirmation
+    if (sensor.unit_id && newUnitId !== sensor.unit_id) {
+      setConfirmUnitChange({ sensor, newUnitId, currentUnitName, newUnitName });
+      return;
+    }
+
+    // Direct assignment for unassigned sensors
+    executeUnitUpdate(sensor, newUnitId);
+  };
+
+  const executeUnitUpdate = async (sensor: LoraSensor, newUnitId: string | null) => {
+    setUpdatingUnitSensorId(sensor.id);
+
+    try {
+      debugLog.info('crud', 'UNIT_ASSIGNMENT_SAVE_REQUEST', {
+        sensor_id: sensor.id,
+        old_unit_id: sensor.unit_id,
+        new_unit_id: newUnitId,
+        site_id: sensor.site_id
+      });
+
+      await updateSensor.mutateAsync({
+        id: sensor.id,
+        updates: { unit_id: newUnitId }
+      });
+
+      debugLog.info('crud', 'UNIT_ASSIGNMENT_SAVE_SUCCESS', {
+        sensor_id: sensor.id,
+        new_unit_id: newUnitId
+      });
+
+      toast.success(newUnitId 
+        ? `Sensor assigned to ${getUnitName(newUnitId)}`
+        : 'Sensor unassigned from unit'
+      );
+    } catch (error) {
+      debugLog.error('crud', 'UNIT_ASSIGNMENT_SAVE_ERROR', {
+        sensor_id: sensor.id,
+        error: String(error)
+      });
+      toast.error('Failed to update sensor unit');
+    } finally {
+      setUpdatingUnitSensorId(null);
+      setConfirmUnitChange(null);
+    }
+  };
+
+  const handleConfirmUnitChange = () => {
+    if (confirmUnitChange) {
+      executeUnitUpdate(confirmUnitChange.sensor, confirmUnitChange.newUnitId);
     }
   };
 
@@ -393,6 +568,12 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                     <span className="inline-flex items-center">
                       Location
                       <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.location} />
+                    </span>
+                  </TableHead>
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      Unit
+                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.unit} />
                     </span>
                   </TableHead>
                   <TableHead>
@@ -463,22 +644,28 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                     <TableCell>{getSensorTypeLabel(sensor.sensor_type)}</TableCell>
                     <TableCell>
                       {canEdit ? (
-                        <div className="flex items-center gap-2">
-                          <SensorSiteSelector
-                            sensor={sensor}
-                            sites={sites}
-                            getSiteName={getSiteName}
-                            onSiteChange={handleSiteChange}
-                            isUpdating={updatingSensorId === sensor.id}
-                          />
-                          {sensor.unit_id && (
-                            <span className="text-sm text-muted-foreground">
-                              → {getUnitName(sensor.unit_id)}
-                            </span>
-                          )}
-                        </div>
+                        <SensorSiteSelector
+                          sensor={sensor}
+                          sites={sites}
+                          getSiteName={getSiteName}
+                          onSiteChange={handleSiteChange}
+                          isUpdating={updatingSensorId === sensor.id}
+                        />
                       ) : (
-                        getLocationDisplay(sensor)
+                        getSiteName(sensor.site_id) || "—"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {canEdit ? (
+                        <SensorUnitSelector
+                          sensor={sensor}
+                          units={units}
+                          getUnitName={getUnitName}
+                          onUnitChange={handleUnitChange}
+                          isUpdating={updatingUnitSensorId === sensor.id}
+                        />
+                      ) : (
+                        getUnitName(sensor.unit_id) || "—"
                       )}
                     </TableCell>
                     <TableCell>
@@ -619,6 +806,41 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : null}
                 {confirmSiteChange?.newSiteId ? "Move Sensor" : "Unassign Sensor"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Unit Change Confirmation Dialog */}
+        <AlertDialog 
+          open={!!confirmUnitChange} 
+          onOpenChange={(open) => !open && setConfirmUnitChange(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Change Sensor Unit?</AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2">
+                <p>
+                  This sensor is currently monitoring <strong>{confirmUnitChange?.currentUnitName}</strong>.
+                </p>
+                <p>
+                  {confirmUnitChange?.newUnitId 
+                    ? <>Moving it to <strong>{confirmUnitChange?.newUnitName}</strong> will change what equipment it monitors.</>
+                    : <>Unassigning it will stop temperature tracking for this unit.</>
+                  }
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={updatingUnitSensorId !== null}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleConfirmUnitChange}
+                disabled={updatingUnitSensorId !== null}
+              >
+                {updatingUnitSensorId ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                {confirmUnitChange?.newUnitId ? "Move Sensor" : "Unassign Sensor"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
