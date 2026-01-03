@@ -2808,7 +2808,12 @@ export type Database = {
         Returns: boolean
       }
       check_org_dirty: { Args: { p_org_id: string }; Returns: Json }
-      check_slug_available: { Args: { p_slug: string }; Returns: boolean }
+      check_slug_available:
+        | { Args: { p_slug: string }; Returns: boolean }
+        | {
+            Args: { p_exclude_org_id?: string; p_slug: string }
+            Returns: boolean
+          }
       create_area_for_site: {
         Args: { p_description?: string; p_name: string; p_site_id: string }
         Returns: string
