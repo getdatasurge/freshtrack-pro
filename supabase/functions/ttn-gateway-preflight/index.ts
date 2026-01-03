@@ -173,6 +173,31 @@ serve(async (req) => {
       });
     }
 
+    // Check if we have a dedicated gateway API key (created during provisioning)
+    // This takes priority over the main API key for gateway operations
+    if (ttnConfig.hasGatewayKey && ttnConfig.gatewayApiKey) {
+      console.log(`[ttn-gateway-preflight] [${requestId}] Organization has dedicated gateway API key`);
+
+      // Gateway key is user-scoped and has gateway rights by design
+      const result: PreflightResult = {
+        ok: true,
+        request_id: requestId,
+        allowed: true,
+        key_type: "personal",
+        owner_scope: "user",
+        scope_id: Deno.env.get("TTN_USER_ID") || null,
+        has_gateway_rights: true,
+        missing_rights: [],
+      };
+
+      console.log(`[ttn-gateway-preflight] [${requestId}] Preflight passed - using dedicated gateway key`);
+
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Check API key scope using auth_info endpoint
     console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info`);
 
