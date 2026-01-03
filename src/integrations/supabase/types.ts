@@ -2271,9 +2271,7 @@ export type Database = {
           is_enabled: boolean | null
           last_connection_test_at: string | null
           last_connection_test_result: Json | null
-          last_provisioning_attempt_at: string | null
           organization_id: string
-          provisioning_attempts: number | null
           provisioning_error: string | null
           provisioning_status: string | null
           ttn_api_key_encrypted: string | null
@@ -2300,11 +2298,6 @@ export type Database = {
           ttn_webhook_secret_encrypted: string | null
           ttn_webhook_secret_last4: string | null
           ttn_webhook_url: string | null
-          tts_base_url: string | null
-          tts_org_admin_added: boolean | null
-          tts_org_provisioned_at: string | null
-          tts_org_provisioning_status: string | null
-          tts_organization_id: string | null
           updated_at: string | null
           updated_by: string | null
         }
@@ -2315,9 +2308,7 @@ export type Database = {
           is_enabled?: boolean | null
           last_connection_test_at?: string | null
           last_connection_test_result?: Json | null
-          last_provisioning_attempt_at?: string | null
           organization_id: string
-          provisioning_attempts?: number | null
           provisioning_error?: string | null
           provisioning_status?: string | null
           ttn_api_key_encrypted?: string | null
@@ -2344,11 +2335,6 @@ export type Database = {
           ttn_webhook_secret_encrypted?: string | null
           ttn_webhook_secret_last4?: string | null
           ttn_webhook_url?: string | null
-          tts_base_url?: string | null
-          tts_org_admin_added?: boolean | null
-          tts_org_provisioned_at?: string | null
-          tts_org_provisioning_status?: string | null
-          tts_organization_id?: string | null
           updated_at?: string | null
           updated_by?: string | null
         }
@@ -2359,9 +2345,7 @@ export type Database = {
           is_enabled?: boolean | null
           last_connection_test_at?: string | null
           last_connection_test_result?: Json | null
-          last_provisioning_attempt_at?: string | null
           organization_id?: string
-          provisioning_attempts?: number | null
           provisioning_error?: string | null
           provisioning_status?: string | null
           ttn_api_key_encrypted?: string | null
@@ -2388,11 +2372,6 @@ export type Database = {
           ttn_webhook_secret_encrypted?: string | null
           ttn_webhook_secret_last4?: string | null
           ttn_webhook_url?: string | null
-          tts_base_url?: string | null
-          tts_org_admin_added?: boolean | null
-          tts_org_provisioned_at?: string | null
-          tts_org_provisioning_status?: string | null
-          tts_organization_id?: string | null
           updated_at?: string | null
           updated_by?: string | null
         }
@@ -2479,74 +2458,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ttn_deprovision_jobs_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      ttn_provisioning_queue: {
-        Row: {
-          attempts: number
-          completed_at: string | null
-          completed_steps: string[] | null
-          created_at: string
-          current_step: string | null
-          error_code: string | null
-          id: string
-          last_error: string | null
-          last_error_at: string | null
-          max_attempts: number
-          next_retry_at: string | null
-          organization_id: string
-          priority: number
-          started_at: string | null
-          status: string
-          trigger_reason: string | null
-          triggered_by: string | null
-        }
-        Insert: {
-          attempts?: number
-          completed_at?: string | null
-          completed_steps?: string[] | null
-          created_at?: string
-          current_step?: string | null
-          error_code?: string | null
-          id?: string
-          last_error?: string | null
-          last_error_at?: string | null
-          max_attempts?: number
-          next_retry_at?: string | null
-          organization_id: string
-          priority?: number
-          started_at?: string | null
-          status?: string
-          trigger_reason?: string | null
-          triggered_by?: string | null
-        }
-        Update: {
-          attempts?: number
-          completed_at?: string | null
-          completed_steps?: string[] | null
-          created_at?: string
-          current_step?: string | null
-          error_code?: string | null
-          id?: string
-          last_error?: string | null
-          last_error_at?: string | null
-          max_attempts?: number
-          next_retry_at?: string | null
-          organization_id?: string
-          priority?: number
-          started_at?: string | null
-          status?: string
-          trigger_reason?: string | null
-          triggered_by?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "ttn_provisioning_queue_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -2859,17 +2770,6 @@ export type Database = {
         Args: { p_alert_type: string; p_unit_id: string }
         Returns: Json
       }
-      get_next_tts_provisioning_job: {
-        Args: never
-        Returns: {
-          attempts: number
-          current_step: string
-          id: string
-          org_name: string
-          org_slug: string
-          organization_id: string
-        }[]
-      }
       get_org_sync_payload: { Args: { p_org_id: string }; Returns: Json }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
       hard_delete_organization: { Args: { p_org_id: string }; Returns: Json }
@@ -2885,17 +2785,6 @@ export type Database = {
       soft_delete_organization: {
         Args: { p_org_id: string; p_user_id: string }
         Returns: Json
-      }
-      update_tts_provisioning_job: {
-        Args: {
-          p_completed_steps?: string[]
-          p_current_step?: string
-          p_error?: string
-          p_error_code?: string
-          p_job_id: string
-          p_status: string
-        }
-        Returns: undefined
       }
       user_belongs_to_org: {
         Args: { _org_id: string; _user_id: string }
