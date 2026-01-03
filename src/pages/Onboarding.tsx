@@ -210,40 +210,83 @@ const Onboarding = () => {
 
     setIsLoading(true);
     try {
-      const { data: orgId, error } = await supabase.rpc("create_organization_with_owner", {
+      const { data: result, error } = await supabase.rpc("create_organization_with_owner", {
         p_name: (nameResult as { success: true; data: string }).data,
         p_slug: (slugResult as { success: true; data: string }).data,
         p_timezone: data.organization.timezone,
       });
 
-      if (error) throw error;
-
-      setCreatedIds((prev) => ({ ...prev, orgId }));
-      toast({ title: "Organization created!" });
-      setCurrentStep("site");
-    } catch (error: any) {
-      const errorMessage = error.message || "";
-      
-      // Handle slug conflicts with friendly message and trigger re-check
-      if (errorMessage.includes("organizations_slug_key") || 
-          errorMessage.includes("unique constraint") ||
-          errorMessage.includes("organizations_slug_active_key")) {
+      // Handle RPC transport errors
+      if (error) {
         toast({ 
-          title: "URL Already Taken", 
-          description: "This URL is already in use. Please choose a different one or select from suggestions below.", 
+          title: "Could not create organization", 
+          description: "A server error occurred. Please try again.", 
           variant: "destructive" 
         });
-      } else if (errorMessage.includes("already belongs to an organization")) {
-        toast({ 
-          title: "Already Registered", 
-          description: "Your account is already associated with an organization.", 
-          variant: "destructive" 
-        });
-        // Redirect after delay
-        setTimeout(() => navigate("/dashboard", { replace: true }), 2000);
-      } else {
-        toast({ title: "Error", description: errorMessage, variant: "destructive" });
+        setIsLoading(false);
+        return;
       }
+
+      // Parse structured response from the RPC
+      const response = result as { 
+        ok: boolean; 
+        organization_id?: string; 
+        slug?: string;
+        code?: string; 
+        message?: string; 
+        suggestions?: string[];
+      };
+
+      if (response.ok && response.organization_id) {
+        setCreatedIds((prev) => ({ ...prev, orgId: response.organization_id }));
+        toast({ title: "Organization created!" });
+        setCurrentStep("site");
+      } else {
+        // Handle specific error codes
+        switch (response.code) {
+          case "SLUG_TAKEN":
+            toast({ 
+              title: "URL Already Taken", 
+              description: response.suggestions?.length 
+                ? `Try: ${response.suggestions.slice(0, 3).join(", ")}`
+                : "Please choose a different URL.",
+              variant: "destructive" 
+            });
+            break;
+          case "ALREADY_IN_ORG":
+            toast({ 
+              title: "Already Registered", 
+              description: "Your account is already associated with an organization.", 
+              variant: "destructive" 
+            });
+            setTimeout(() => navigate("/auth/callback", { replace: true }), 2000);
+            break;
+          case "AUTH_REQUIRED":
+            toast({ title: "Please sign in", variant: "destructive" });
+            navigate("/auth", { replace: true });
+            break;
+          case "VALIDATION_ERROR":
+            toast({ 
+              title: "Invalid Input", 
+              description: response.message || "Please check your input.", 
+              variant: "destructive" 
+            });
+            break;
+          default:
+            toast({ 
+              title: "Could not create organization", 
+              description: response.message || "Please try again.", 
+              variant: "destructive" 
+            });
+        }
+      }
+    } catch (err: any) {
+      // Network/unexpected errors - never show "slug taken" for these
+      toast({ 
+        title: "Could not create organization", 
+        description: "A server error occurred. Please try again.", 
+        variant: "destructive" 
+      });
     }
     setIsLoading(false);
   };
