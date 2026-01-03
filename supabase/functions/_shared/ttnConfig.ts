@@ -132,23 +132,32 @@ export function generateWebhookSecret(): string {
 }
 
 /**
- * Generate TTN application ID from organization slug or ID
- * Format: freshtracker-{slug} (max 36 chars, lowercase, alphanumeric + dash)
+ * Generate TTN application ID from organization ID (UUID)
+ * Format: fg-{first 8 chars of UUID} (max 11 chars, lowercase, alphanumeric)
+ * 
+ * Using UUID instead of slug ensures:
+ * - Globally unique application IDs
+ * - No conflicts when orgs have similar names
+ * - Consistent format across all organizations
  */
-export function generateTtnApplicationId(orgSlug: string): string {
-  // Clean and normalize the slug
-  const cleanSlug = orgSlug
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, '-')  // Replace invalid chars with dash
-    .replace(/-+/g, '-')          // Collapse multiple dashes
-    .replace(/^-|-$/g, '');       // Remove leading/trailing dashes
+export function generateTtnApplicationId(orgId: string): string {
+  // Extract first 8 hex characters from UUID (remove dashes, lowercase)
+  const shortId = orgId.replace(/-/g, '').slice(0, 8).toLowerCase();
   
-  // TTN app IDs must be <= 36 chars, start with letter
-  const prefix = 'ft-';
-  const maxSlugLen = 36 - prefix.length;
-  const truncatedSlug = cleanSlug.slice(0, maxSlugLen);
+  // Validate we have 8 hex chars
+  if (!/^[0-9a-f]{8}$/.test(shortId)) {
+    // Fallback: hash the input if it's not a valid UUID
+    console.warn(`[generateTtnApplicationId] Invalid UUID format: ${orgId}, using hash fallback`);
+    const hash = Array.from(orgId)
+      .reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
+      .toString(16)
+      .replace('-', '')
+      .slice(0, 8)
+      .padStart(8, '0');
+    return `fg-${hash}`;
+  }
   
-  return `${prefix}${truncatedSlug}`;
+  return `fg-${shortId}`;
 }
 
 /**

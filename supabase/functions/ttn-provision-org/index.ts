@@ -286,9 +286,9 @@ serve(async (req) => {
         );
       }
 
-      // Generate TTN application ID
-      const ttnAppId = generateTtnApplicationId(org.slug);
-      console.log(`[ttn-provision-org] Provisioning TTN app: ${ttnAppId}`);
+      // Generate TTN application ID from org UUID (fg-{first8chars})
+      const ttnAppId = generateTtnApplicationId(org.id);
+      console.log(`[ttn-provision-org] Provisioning TTN app: ${ttnAppId} for org ${org.slug}`);
 
       // Update status to provisioning
       if (ttnConn) {

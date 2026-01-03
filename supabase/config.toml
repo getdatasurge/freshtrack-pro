@@ -110,3 +110,7 @@ verify_jwt = false
 # Update TTN webhook - handles CORS preflight and custom JWT verification
 [functions.update-ttn-webhook]
 verify_jwt = false
+
+# TTN provisioning worker - scheduled job, uses service role key
+[functions.ttn-provision-worker]
+verify_jwt = false
