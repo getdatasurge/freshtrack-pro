@@ -167,7 +167,115 @@ async function logProvisioningStep(
 }
 
 /**
- * Update provisioning status with step info
+ * Sanitize HTTP response body - truncate and redact secrets
+ */
+function sanitizeHttpBody(body: string | null, maxLength: number = 500): string | null {
+  if (!body) return null;
+  let sanitized = body;
+  // Redact potential secrets
+  sanitized = sanitized.replace(/"(key|api_key|secret|token|password)":\s*"[^"]+"/gi, '"$1":"[REDACTED]"');
+  sanitized = sanitized.replace(/Bearer\s+[^\s"]+/gi, 'Bearer [REDACTED]');
+  // Truncate
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.slice(0, maxLength) + '...[truncated]';
+  }
+  return sanitized;
+}
+
+/**
+ * Update provisioning status with step info and heartbeat (new unified model)
+ */
+async function updateProvisioningState(
+  supabase: SupabaseClient,
+  organizationId: string,
+  patch: {
+    status?: 'idle' | 'provisioning' | 'ready' | 'failed';
+    step?: string;
+    error?: string | null;
+    last_http_status?: number | null;
+    last_http_body?: string | null;
+    increment_attempt?: boolean;
+    clear_error?: boolean;
+  }
+): Promise<void> {
+  const updateData: Record<string, unknown> = {
+    provisioning_last_heartbeat_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  
+  if (patch.status) {
+    updateData.provisioning_status = patch.status;
+  }
+  if (patch.step !== undefined) {
+    updateData.provisioning_step = patch.step;
+    updateData.provisioning_last_step = patch.step; // Keep legacy field in sync
+  }
+  if (patch.error !== undefined) {
+    updateData.provisioning_error = patch.error;
+    if (patch.error) {
+      updateData.provisioning_can_retry = true;
+    }
+  }
+  if (patch.clear_error) {
+    updateData.provisioning_error = null;
+  }
+  if (patch.last_http_status !== undefined) {
+    updateData.last_http_status = patch.last_http_status;
+  }
+  if (patch.last_http_body !== undefined) {
+    updateData.last_http_body = sanitizeHttpBody(patch.last_http_body);
+  }
+  if (patch.increment_attempt) {
+    // Use raw SQL for atomic increment
+    const { data: current } = await supabase
+      .from("ttn_connections")
+      .select("provisioning_attempt_count")
+      .eq("organization_id", organizationId)
+      .single();
+    updateData.provisioning_attempt_count = (current?.provisioning_attempt_count || 0) + 1;
+    updateData.provisioning_started_at = new Date().toISOString();
+  }
+  
+  await supabase
+    .from("ttn_connections")
+    .update(updateData)
+    .eq("organization_id", organizationId);
+}
+
+/**
+ * Check for and auto-fail stale provisioning rows
+ */
+async function checkAndFailStale(
+  supabase: SupabaseClient,
+  organizationId: string
+): Promise<boolean> {
+  const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  
+  const { data, error } = await supabase
+    .from("ttn_connections")
+    .select("provisioning_status, provisioning_last_heartbeat_at, provisioning_step")
+    .eq("organization_id", organizationId)
+    .single();
+  
+  if (error || !data) return false;
+  
+  if (
+    data.provisioning_status === 'provisioning' &&
+    (!data.provisioning_last_heartbeat_at || data.provisioning_last_heartbeat_at < twoMinutesAgo)
+  ) {
+    await updateProvisioningState(supabase, organizationId, {
+      status: 'failed',
+      step: data.provisioning_step || 'unknown',
+      error: 'Provisioning stalled (no heartbeat for 2+ minutes). Safe to retry.',
+    });
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Legacy wrapper for backward compatibility
  */
 async function updateProvisioningStatus(
   supabase: SupabaseClient,
@@ -177,17 +285,30 @@ async function updateProvisioningStatus(
   error?: string,
   stepDetails?: Record<string, unknown>
 ): Promise<void> {
-  await supabase
-    .from("ttn_connections")
-    .update({
-      provisioning_status: status,
-      provisioning_last_step: currentStep,
-      provisioning_error: error || null,
-      provisioning_step_details: stepDetails || null,
-      provisioning_can_retry: status === 'failed',
-      last_provisioning_attempt_at: new Date().toISOString(),
-    })
-    .eq("organization_id", organizationId);
+  // Map legacy status values to new state machine
+  let mappedStatus: 'idle' | 'provisioning' | 'ready' | 'failed' = 'provisioning';
+  if (status === 'completed') mappedStatus = 'ready';
+  else if (status === 'failed') mappedStatus = 'failed';
+  else if (status === 'not_started' || status === 'idle') mappedStatus = 'idle';
+  else if (status === 'provisioning') mappedStatus = 'provisioning';
+  
+  await updateProvisioningState(supabase, organizationId, {
+    status: mappedStatus,
+    step: currentStep,
+    error: error || null,
+  });
+  
+  // Also update legacy step_details field
+  if (stepDetails) {
+    await supabase
+      .from("ttn_connections")
+      .update({
+        provisioning_step_details: stepDetails,
+        provisioning_can_retry: status === 'failed',
+        last_provisioning_attempt_at: new Date().toISOString(),
+      })
+      .eq("organization_id", organizationId);
+  }
 }
 
 serve(async (req) => {
@@ -322,17 +443,40 @@ serve(async (req) => {
       .maybeSingle();
 
     // ========================================
-    // ACTION: STATUS - Get current provisioning status
+    // ACTION: STATUS - Get current provisioning status (with stale detection)
     // ========================================
     if (action === "status") {
+      // Auto-fail stale provisioning
+      const wasStale = await checkAndFailStale(supabase, organization_id);
+      if (wasStale) {
+        console.log(`[ttn-provision-org] [${requestId}] Auto-failed stale provisioning for org ${organization_id}`);
+        // Refresh ttnConn after auto-fail
+        const { data: refreshed } = await supabase
+          .from("ttn_connections")
+          .select("*")
+          .eq("organization_id", organization_id)
+          .maybeSingle();
+        ttnConn = refreshed;
+      }
+      
+      // Map legacy status values for response
+      let statusValue = ttnConn?.provisioning_status || "idle";
+      if (statusValue === "not_started") statusValue = "idle";
+      if (statusValue === "completed") statusValue = "ready";
+      
       return new Response(
         JSON.stringify({
           success: true,
           request_id: requestId,
-          provisioning_status: ttnConn?.provisioning_status || "not_started",
-          provisioning_last_step: ttnConn?.provisioning_last_step || null,
+          provisioning_status: statusValue,
+          provisioning_step: ttnConn?.provisioning_step || ttnConn?.provisioning_last_step || null,
+          provisioning_started_at: ttnConn?.provisioning_started_at || null,
+          provisioning_last_heartbeat_at: ttnConn?.provisioning_last_heartbeat_at || null,
+          provisioning_attempt_count: ttnConn?.provisioning_attempt_count || 0,
           provisioning_can_retry: ttnConn?.provisioning_can_retry ?? true,
           provisioning_error: ttnConn?.provisioning_error || null,
+          last_http_status: ttnConn?.last_http_status || null,
+          last_http_body: ttnConn?.last_http_body || null,
           ttn_application_id: ttnConn?.ttn_application_id || null,
           ttn_region: ttnConn?.ttn_region || "nam1",
           has_api_key: !!ttnConn?.ttn_api_key_encrypted,
@@ -433,14 +577,26 @@ serve(async (req) => {
     // ACTION: PROVISION or RETRY - Create TTN application for org
     // ========================================
     if (action === "provision" || action === "retry") {
+      // Auto-fail stale provisioning before starting
+      await checkAndFailStale(supabase, organization_id);
+      
+      // Refresh ttnConn after potential stale check
+      const { data: refreshedConn } = await supabase
+        .from("ttn_connections")
+        .select("*")
+        .eq("organization_id", organization_id)
+        .maybeSingle();
+      ttnConn = refreshedConn;
+      
       // Check if already provisioned (only for fresh provision)
-      if (action === "provision" && ttnConn?.ttn_application_id && ttnConn.provisioning_status === "completed") {
+      if (action === "provision" && ttnConn?.ttn_application_id && 
+          (ttnConn.provisioning_status === "completed" || ttnConn.provisioning_status === "ready")) {
         return new Response(
           JSON.stringify({
             success: true,
             message: "TTN application already provisioned",
             ttn_application_id: ttnConn.ttn_application_id,
-            provisioning_status: "completed",
+            provisioning_status: "ready",
             request_id: requestId,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -455,17 +611,22 @@ serve(async (req) => {
       const skipToStep = action === "retry" ? from_step : null;
       const completedSteps: Record<string, unknown> = ttnConn?.provisioning_step_details || {};
 
-      // Initialize or update ttn_connections record
+      // Initialize or update ttn_connections record with new state fields
       if (ttnConn) {
+        await updateProvisioningState(supabase, organization_id, {
+          status: 'provisioning',
+          step: 'init',
+          clear_error: true,
+          increment_attempt: true,
+          last_http_status: null,
+          last_http_body: null,
+        });
         await supabase
           .from("ttn_connections")
           .update({
-            provisioning_status: "provisioning",
-            provisioning_error: null,
-            provisioning_can_retry: false,
             ttn_region: region,
             updated_by: user.id,
-            provisioning_attempts: (ttnConn.provisioning_attempts || 0) + 1,
+            provisioning_can_retry: false,
           })
           .eq("id", ttnConn.id);
       } else {
@@ -475,8 +636,11 @@ serve(async (req) => {
             organization_id: organization_id,
             ttn_region: region,
             provisioning_status: "provisioning",
+            provisioning_step: "init",
+            provisioning_started_at: new Date().toISOString(),
+            provisioning_last_heartbeat_at: new Date().toISOString(),
+            provisioning_attempt_count: 1,
             created_by: user.id,
-            provisioning_attempts: 1,
           })
           .select()
           .single();
@@ -504,7 +668,7 @@ serve(async (req) => {
         if (shouldRunStep1 && !completedSteps.application_created) {
           const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/users/${ttnUserId}/applications`;
           await logProvisioningStep(supabase, organization_id, "create_application", "started", "Creating TTN application", { ttn_app_id: ttnAppId, endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
-          await updateProvisioningStatus(supabase, organization_id, "provisioning", "create_application");
+          await updateProvisioningState(supabase, organization_id, { step: "create_ttn_app" });
           
           console.log(`[ttn-provision-org] [${requestId}] Step 1: Creating TTN application ${ttnAppId}`);
           
@@ -569,7 +733,7 @@ serve(async (req) => {
         if (shouldRunStep2 && !completedSteps.api_key_created) {
           const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}/api-keys`;
           await logProvisioningStep(supabase, organization_id, "create_api_key", "started", "Creating application API key", { endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
-          await updateProvisioningStatus(supabase, organization_id, "provisioning", "create_api_key");
+          await updateProvisioningState(supabase, organization_id, { step: "create_api_key" });
           
           console.log(`[ttn-provision-org] [${requestId}] Step 2: Creating application API key for ${ttnAppId}`);
 
@@ -697,7 +861,7 @@ serve(async (req) => {
 
         if (shouldRunStep3) {
           await logProvisioningStep(supabase, organization_id, "create_webhook", "started", "Creating TTN webhook", { webhook_url: webhookUrl }, undefined, requestId);
-          await updateProvisioningStatus(supabase, organization_id, "provisioning", "create_webhook");
+          await updateProvisioningState(supabase, organization_id, { step: "create_webhook" });
           
           console.log(`[ttn-provision-org] [${requestId}] Step 3: Creating webhook for ${ttnAppId}`);
           
@@ -821,13 +985,17 @@ serve(async (req) => {
         // ============ STEP 4: Finalize ============
         console.log(`[ttn-provision-org] [${requestId}] Step 4: Finalizing provisioning`);
 
+        // Use new state machine: 'ready' instead of 'completed'
+        await updateProvisioningState(supabase, organization_id, {
+          status: 'ready',
+          step: 'complete',
+          error: null,
+        });
+        
         await supabase
           .from("ttn_connections")
           .update({
-            provisioning_status: "completed",
-            provisioning_error: null,
             provisioning_can_retry: false,
-            provisioning_last_step: "complete",
             ttn_application_provisioned_at: new Date().toISOString(),
             is_enabled: true,
             updated_by: user.id,

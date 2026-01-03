@@ -2273,13 +2273,19 @@ export type Database = {
           is_enabled: boolean | null
           last_connection_test_at: string | null
           last_connection_test_result: Json | null
+          last_http_body: string | null
+          last_http_status: number | null
           last_provisioning_attempt_at: string | null
           organization_id: string
+          provisioning_attempt_count: number
           provisioning_attempts: number | null
           provisioning_can_retry: boolean | null
           provisioning_error: string | null
+          provisioning_last_heartbeat_at: string | null
           provisioning_last_step: string | null
+          provisioning_started_at: string | null
           provisioning_status: string | null
+          provisioning_step: string | null
           provisioning_step_details: Json | null
           ttn_api_key_encrypted: string | null
           ttn_api_key_id: string | null
@@ -2325,13 +2331,19 @@ export type Database = {
           is_enabled?: boolean | null
           last_connection_test_at?: string | null
           last_connection_test_result?: Json | null
+          last_http_body?: string | null
+          last_http_status?: number | null
           last_provisioning_attempt_at?: string | null
           organization_id: string
+          provisioning_attempt_count?: number
           provisioning_attempts?: number | null
           provisioning_can_retry?: boolean | null
           provisioning_error?: string | null
+          provisioning_last_heartbeat_at?: string | null
           provisioning_last_step?: string | null
+          provisioning_started_at?: string | null
           provisioning_status?: string | null
+          provisioning_step?: string | null
           provisioning_step_details?: Json | null
           ttn_api_key_encrypted?: string | null
           ttn_api_key_id?: string | null
@@ -2377,13 +2389,19 @@ export type Database = {
           is_enabled?: boolean | null
           last_connection_test_at?: string | null
           last_connection_test_result?: Json | null
+          last_http_body?: string | null
+          last_http_status?: number | null
           last_provisioning_attempt_at?: string | null
           organization_id?: string
+          provisioning_attempt_count?: number
           provisioning_attempts?: number | null
           provisioning_can_retry?: boolean | null
           provisioning_error?: string | null
+          provisioning_last_heartbeat_at?: string | null
           provisioning_last_step?: string | null
+          provisioning_started_at?: string | null
           provisioning_status?: string | null
+          provisioning_step?: string | null
           provisioning_step_details?: Json | null
           ttn_api_key_encrypted?: string | null
           ttn_api_key_id?: string | null
@@ -2986,6 +3004,7 @@ export type Database = {
         Args: { _org_id: string; _user_id: string }
         Returns: boolean
       }
+      watchdog_fail_stale_ttn_provisioning: { Args: never; Returns: number }
     }
     Enums: {
       alert_severity: "info" | "warning" | "critical"

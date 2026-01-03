@@ -100,10 +100,12 @@ const Onboarding = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingOrg, setIsCheckingOrg] = useState(true);
   const [ttnStatus, setTtnStatus] = useState<{
-    status: 'idle' | 'provisioning' | 'completed' | 'failed' | 'skipped';
+    status: 'idle' | 'provisioning' | 'ready' | 'failed' | 'skipped';
     error?: string;
     step?: string;
     retryable?: boolean;
+    attemptCount?: number;
+    lastHeartbeat?: string;
   }>({ status: 'idle' });
   const [createdIds, setCreatedIds] = useState<{
     orgId?: string;
@@ -180,17 +182,16 @@ const Onboarding = () => {
     }
   };
 
-  // TTN Provisioning function with timeout
+  // TTN Provisioning function with polling for status updates
   const provisionTTN = async (orgId: string): Promise<boolean> => {
-    const PROVISIONING_TIMEOUT_MS = 60000; // 60 seconds total timeout
+    const POLL_INTERVAL_MS = 3000; // Poll every 3 seconds
+    const MAX_POLL_TIME_MS = 90000; // Give up polling after 90 seconds
     
     setTtnStatus({ status: 'provisioning', step: 'Starting...' });
     
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), PROVISIONING_TIMEOUT_MS);
-      
-      const { data: provisionResult, error: provisionError } = await supabase.functions.invoke(
+      // Kick off provisioning (non-blocking)
+      const { error: provisionError } = await supabase.functions.invoke(
         'ttn-provision-org',
         {
           body: {
@@ -200,8 +201,6 @@ const Onboarding = () => {
           },
         }
       );
-      
-      clearTimeout(timeoutId);
       
       if (provisionError) {
         console.error('[Onboarding] TTN provisioning error:', provisionError);
@@ -213,24 +212,54 @@ const Onboarding = () => {
         return false;
       }
       
-      if (provisionResult?.success) {
-        setTtnStatus({ status: 'completed' });
-        return true;
-      } else {
-        setTtnStatus({ 
-          status: 'failed', 
-          error: provisionResult?.message || provisionResult?.error || 'Unknown error',
-          step: provisionResult?.completed_steps ? Object.keys(provisionResult.completed_steps).pop() : undefined,
-          retryable: provisionResult?.retryable ?? true
-        });
-        return false;
+      // Poll for status updates
+      const startTime = Date.now();
+      while (Date.now() - startTime < MAX_POLL_TIME_MS) {
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+        
+        const { data: statusResult } = await supabase.functions.invoke(
+          'ttn-provision-org',
+          {
+            body: {
+              action: 'status',
+              organization_id: orgId,
+            },
+          }
+        );
+        
+        if (statusResult) {
+          const status = statusResult.provisioning_status;
+          setTtnStatus({
+            status: status === 'completed' ? 'ready' : status,
+            step: statusResult.provisioning_step || statusResult.provisioning_last_step,
+            error: statusResult.provisioning_error,
+            retryable: statusResult.provisioning_can_retry ?? true,
+            attemptCount: statusResult.provisioning_attempt_count,
+            lastHeartbeat: statusResult.provisioning_last_heartbeat_at,
+          });
+          
+          if (status === 'ready' || status === 'completed') {
+            return true;
+          }
+          if (status === 'failed') {
+            return false;
+          }
+        }
       }
+      
+      // Polling timed out - user can continue, retry from Settings
+      setTtnStatus({
+        status: 'failed',
+        error: 'Provisioning is taking longer than expected. You can continue and retry from Settings.',
+        retryable: true,
+      });
+      return false;
+      
     } catch (err) {
-      const isTimeout = err instanceof Error && err.name === 'AbortError';
       console.error('[Onboarding] TTN provisioning exception:', err);
       setTtnStatus({ 
         status: 'failed', 
-        error: isTimeout ? 'Provisioning timed out. You can retry from Settings.' : 'Provisioning failed unexpectedly.',
+        error: 'Provisioning failed unexpectedly. You can retry from Settings.',
         retryable: true 
       });
       return false;
@@ -1030,7 +1059,7 @@ const Onboarding = () => {
                     </div>
                   )}
                   
-                  {ttnStatus.status === 'completed' && (
+                  {ttnStatus.status === 'ready' && (
                     <div className="mb-6 p-3 rounded-lg bg-safe/10 flex items-center justify-center gap-2 text-sm text-safe">
                       <CheckCircle2 className="w-4 h-4" />
                       <span>IoT connection ready</span>

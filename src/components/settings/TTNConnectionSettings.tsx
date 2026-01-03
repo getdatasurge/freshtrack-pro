@@ -88,8 +88,16 @@ interface TTNSettings {
   is_enabled: boolean;
   ttn_region: string | null;
   ttn_application_id: string | null;
-  provisioning_status: 'not_started' | 'provisioning' | 'completed' | 'failed';
+  // New state machine fields
+  provisioning_status: 'idle' | 'provisioning' | 'ready' | 'failed';
+  provisioning_step: string | null;
+  provisioning_started_at: string | null;
+  provisioning_last_heartbeat_at: string | null;
+  provisioning_attempt_count: number;
   provisioning_error: string | null;
+  last_http_status: number | null;
+  last_http_body: string | null;
+  // Legacy fields
   provisioning_last_step: string | null;
   provisioning_can_retry: boolean;
   provisioned_at: string | null;
@@ -198,16 +206,29 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       if (error) throw error;
 
       if (data) {
+        // Map legacy status values
+        let status = data.provisioning_status ?? 'idle';
+        if (status === 'not_started') status = 'idle';
+        if (status === 'completed') status = 'ready';
+        
         setSettings({
           exists: data.exists ?? false,
           is_enabled: data.is_enabled ?? false,
           ttn_region: data.ttn_region ?? null,
           ttn_application_id: data.ttn_application_id ?? null,
-          provisioning_status: data.provisioning_status ?? 'not_started',
+          // New state machine fields
+          provisioning_status: status as TTNSettings['provisioning_status'],
+          provisioning_step: data.provisioning_step ?? data.provisioning_last_step ?? null,
+          provisioning_started_at: data.provisioning_started_at ?? null,
+          provisioning_last_heartbeat_at: data.provisioning_last_heartbeat_at ?? null,
+          provisioning_attempt_count: data.provisioning_attempt_count ?? 0,
           provisioning_error: data.provisioning_error ?? null,
+          last_http_status: data.last_http_status ?? null,
+          last_http_body: data.last_http_body ?? null,
+          // Legacy fields
           provisioning_last_step: data.provisioning_last_step ?? null,
           provisioning_can_retry: data.provisioning_can_retry ?? true,
-          provisioned_at: data.ttn_application_provisioned_at ?? null,
+          provisioned_at: data.provisioned_at ?? null,
           has_api_key: data.has_api_key ?? false,
           api_key_last4: data.api_key_last4 ?? null,
           api_key_updated_at: data.api_key_updated_at ?? null,
@@ -893,7 +914,7 @@ Cluster: ${region}
     );
   }
 
-  const isProvisioned = settings?.provisioning_status === 'completed';
+  const isProvisioned = settings?.provisioning_status === 'ready';
   const isFailed = settings?.provisioning_status === 'failed';
   const isProvisioningStatus = settings?.provisioning_status === 'provisioning';
 

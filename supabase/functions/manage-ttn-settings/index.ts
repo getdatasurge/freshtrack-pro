@@ -158,7 +158,12 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      // Return settings with masked keys and source tracking
+      // Map legacy status values to new state machine
+      let provisioningStatus = settings.provisioning_status || "idle";
+      if (provisioningStatus === "not_started") provisioningStatus = "idle";
+      if (provisioningStatus === "completed") provisioningStatus = "ready";
+      
+      // Return settings with masked keys, source tracking, and new state fields
       return new Response(
         JSON.stringify({
           exists: true,
@@ -166,8 +171,18 @@ Deno.serve(async (req: Request) => {
           ttn_region: settings.ttn_region || "nam1",
           ttn_application_id: settings.ttn_application_id,
           ttn_application_name: settings.ttn_application_name,
-          provisioning_status: settings.provisioning_status || "not_started",
+          // New state machine fields
+          provisioning_status: provisioningStatus,
+          provisioning_step: settings.provisioning_step || settings.provisioning_last_step || null,
+          provisioning_started_at: settings.provisioning_started_at || null,
+          provisioning_last_heartbeat_at: settings.provisioning_last_heartbeat_at || null,
+          provisioning_attempt_count: settings.provisioning_attempt_count || 0,
           provisioning_error: settings.provisioning_error,
+          last_http_status: settings.last_http_status || null,
+          last_http_body: settings.last_http_body || null,
+          // Legacy fields for backward compat
+          provisioning_last_step: settings.provisioning_last_step,
+          provisioning_can_retry: settings.provisioning_can_retry ?? true,
           provisioned_at: settings.ttn_application_provisioned_at,
           has_api_key: !!settings.ttn_api_key_encrypted,
           api_key_last4: settings.ttn_api_key_last4,
