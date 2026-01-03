@@ -2825,7 +2825,7 @@ export type Database = {
           p_slug: string
           p_timezone?: string
         }
-        Returns: string
+        Returns: Json
       }
       create_site_for_org: {
         Args: {
