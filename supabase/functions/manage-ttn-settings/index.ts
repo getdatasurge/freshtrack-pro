@@ -3,9 +3,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { 
   getTtnConfigForOrg, 
   testTtnConnection, 
-  obfuscateKey, 
+  obfuscateKey,
+  deobfuscateKey,
   getLast4,
   generateTtnDeviceId,
+  generateWebhookSecret,
 } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
@@ -17,6 +19,16 @@ interface TTNSettingsUpdate {
   is_enabled?: boolean;
   ttn_region?: string;
   api_key?: string; // Allow direct API key updates from FrostGuard UI
+}
+
+// Helper to safely get decrypted secret
+function safeDecrypt(encrypted: string | null, salt: string): string | null {
+  if (!encrypted) return null;
+  try {
+    return deobfuscateKey(encrypted, salt);
+  } catch {
+    return null;
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -109,6 +121,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Get encryption salt - MUST match _shared/ttnConfig.ts pattern
+    const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || supabaseServiceKey.slice(0, 32);
+
     // GET action - Fetch current settings (per-org model)
     if (action === "get") {
       console.log(`[manage-ttn-settings] [${requestId}] GET settings for org: ${organizationId}`);
@@ -166,6 +181,197 @@ Deno.serve(async (req: Request) => {
           last_connection_test_result: settings.last_connection_test_result,
           last_updated_source: settings.ttn_last_updated_source,
           last_test_source: settings.ttn_last_test_source,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // GET_CREDENTIALS action - Fetch full credentials for developer panel
+    if (action === "get_credentials") {
+      console.log(`[manage-ttn-settings] [${requestId}] GET_CREDENTIALS for org: ${organizationId}`);
+
+      // Get organization name
+      const { data: org } = await supabaseAdmin
+        .from("organizations")
+        .select("name")
+        .eq("id", organizationId)
+        .single();
+
+      // Get TTN settings
+      const { data: settings } = await supabaseAdmin
+        .from("ttn_connections")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+
+      // Log credential access
+      await supabaseAdmin.from("event_logs").insert({
+        organization_id: organizationId,
+        event_type: "ttn.credentials.viewed",
+        category: "security",
+        severity: "info",
+        title: "TTN Credentials Viewed",
+        actor_id: user.id,
+        event_data: { request_id: requestId },
+      });
+
+      if (!settings) {
+        return new Response(
+          JSON.stringify({
+            organization_name: org?.name || "Unknown",
+            organization_id: organizationId,
+            ttn_application_id: null,
+            ttn_region: null,
+            org_api_secret: null,
+            org_api_secret_last4: null,
+            app_api_secret: null,
+            app_api_secret_last4: null,
+            webhook_secret: null,
+            webhook_secret_last4: null,
+            webhook_url: null,
+            provisioning_status: "not_started",
+            credentials_last_rotated_at: null,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Decrypt secrets for display
+      const orgApiSecret = safeDecrypt(settings.ttn_org_api_key_encrypted, encryptionSalt);
+      const appApiSecret = safeDecrypt(settings.ttn_api_key_encrypted, encryptionSalt);
+      const webhookSecret = safeDecrypt(settings.ttn_webhook_secret_encrypted, encryptionSalt);
+
+      return new Response(
+        JSON.stringify({
+          organization_name: org?.name || "Unknown",
+          organization_id: organizationId,
+          ttn_application_id: settings.ttn_application_id,
+          ttn_region: settings.ttn_region,
+          org_api_secret: orgApiSecret,
+          org_api_secret_last4: settings.ttn_org_api_key_last4,
+          app_api_secret: appApiSecret,
+          app_api_secret_last4: settings.ttn_api_key_last4,
+          webhook_secret: webhookSecret,
+          webhook_secret_last4: settings.ttn_webhook_secret_last4,
+          webhook_url: settings.ttn_webhook_url,
+          provisioning_status: settings.provisioning_status,
+          credentials_last_rotated_at: settings.credentials_last_rotated_at,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // REGENERATE_ALL action - Regenerate all TTN credentials
+    if (action === "regenerate_all") {
+      console.log(`[manage-ttn-settings] [${requestId}] REGENERATE_ALL for org: ${organizationId}`);
+
+      // Get organization name and current settings
+      const { data: org } = await supabaseAdmin
+        .from("organizations")
+        .select("name")
+        .eq("id", organizationId)
+        .single();
+
+      const { data: settings } = await supabaseAdmin
+        .from("ttn_connections")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+
+      if (!settings) {
+        return new Response(
+          JSON.stringify({ error: "TTN not configured for this organization" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Check rate limiting (max 3 regenerations per hour)
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const { count: recentCount } = await supabaseAdmin
+        .from("event_logs")
+        .select("*", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
+        .eq("event_type", "ttn.credentials.regenerate_all")
+        .gte("recorded_at", oneHourAgo);
+
+      if ((recentCount || 0) >= 3) {
+        return new Response(
+          JSON.stringify({ 
+            error: "Rate limit exceeded", 
+            details: "Maximum 3 credential regenerations per hour. Please try again later." 
+          }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Generate new secrets
+      const newWebhookSecret = generateWebhookSecret();
+      
+      // For now, we regenerate the webhook secret but keep the existing API keys
+      // (API keys require TTN API calls to regenerate, which is a more complex operation)
+      const updateData: Record<string, unknown> = {
+        ttn_webhook_secret_encrypted: obfuscateKey(newWebhookSecret, encryptionSalt),
+        ttn_webhook_secret_last4: getLast4(newWebhookSecret),
+        credentials_last_rotated_at: new Date().toISOString(),
+        credentials_rotation_count: (settings.credentials_rotation_count || 0) + 1,
+        ttn_last_updated_source: "frostguard",
+        updated_by: user.id,
+      };
+
+      // Update database
+      const { error: updateError } = await supabaseAdmin
+        .from("ttn_connections")
+        .update(updateData)
+        .eq("organization_id", organizationId);
+
+      if (updateError) {
+        console.error(`[manage-ttn-settings] Update error:`, updateError);
+        return new Response(
+          JSON.stringify({ error: "Failed to update credentials", details: updateError.message }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // TODO: Update TTN webhook configuration with new secret via TTN API
+      // This would require calling the TTN API to update the webhook's signing secret
+      // For now, we update our local storage and log a warning
+
+      // Log the regeneration event
+      await supabaseAdmin.from("event_logs").insert({
+        organization_id: organizationId,
+        event_type: "ttn.credentials.regenerate_all",
+        category: "security",
+        severity: "warning",
+        title: "TTN Credentials Regenerated",
+        actor_id: user.id,
+        event_data: {
+          request_id: requestId,
+          regenerated_fields: ["webhook_secret"],
+          rotation_count: (settings.credentials_rotation_count || 0) + 1,
+        },
+      });
+
+      console.log(`[manage-ttn-settings] [${requestId}] Credentials regenerated successfully`);
+
+      // Return updated credentials
+      const appApiSecret = safeDecrypt(settings.ttn_api_key_encrypted, encryptionSalt);
+      const orgApiSecret = safeDecrypt(settings.ttn_org_api_key_encrypted, encryptionSalt);
+
+      return new Response(
+        JSON.stringify({
+          organization_name: org?.name || "Unknown",
+          organization_id: organizationId,
+          ttn_application_id: settings.ttn_application_id,
+          ttn_region: settings.ttn_region,
+          org_api_secret: orgApiSecret,
+          org_api_secret_last4: settings.ttn_org_api_key_last4,
+          app_api_secret: appApiSecret,
+          app_api_secret_last4: settings.ttn_api_key_last4,
+          webhook_secret: newWebhookSecret,
+          webhook_secret_last4: getLast4(newWebhookSecret),
+          webhook_url: settings.ttn_webhook_url,
+          provisioning_status: settings.provisioning_status,
+          credentials_last_rotated_at: new Date().toISOString(),
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
