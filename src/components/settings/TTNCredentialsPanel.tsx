@@ -1,0 +1,341 @@
+import { useState, useEffect, useCallback } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertTriangle, RefreshCw, Key, Building2, ExternalLink } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { SecretField } from "./SecretField";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+
+interface TTNCredentials {
+  organization_name: string;
+  organization_id: string;
+  ttn_application_id: string | null;
+  ttn_region: string | null;
+  org_api_secret: string | null;
+  org_api_secret_last4: string | null;
+  app_api_secret: string | null;
+  app_api_secret_last4: string | null;
+  webhook_secret: string | null;
+  webhook_secret_last4: string | null;
+  webhook_url: string | null;
+  provisioning_status: string | null;
+  credentials_last_rotated_at: string | null;
+}
+
+interface TTNCredentialsPanelProps {
+  organizationId: string | null;
+}
+
+export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps) {
+  const [credentials, setCredentials] = useState<TTNCredentials | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [confirmChecked, setConfirmChecked] = useState(false);
+
+  const fetchCredentials = useCallback(async () => {
+    if (!organizationId) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Not authenticated");
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
+        body: { 
+          action: "get_credentials",
+          organizationId 
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      setCredentials(data);
+    } catch (err) {
+      console.error("Failed to fetch TTN credentials:", err);
+      toast.error("Failed to load TTN credentials");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [organizationId]);
+
+  useEffect(() => {
+    fetchCredentials();
+  }, [fetchCredentials]);
+
+  const handleRegenerateAll = async () => {
+    if (!organizationId) return;
+
+    setIsRegenerating(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Not authenticated");
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
+        body: { 
+          action: "regenerate_all",
+          organizationId 
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success("All TTN credentials regenerated successfully");
+      setCredentials(data);
+      setShowConfirmDialog(false);
+      setConfirmChecked(false);
+    } catch (err: any) {
+      console.error("Failed to regenerate credentials:", err);
+      toast.error(err.message || "Failed to regenerate credentials");
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+
+  const getOverallStatus = () => {
+    if (!credentials) return "missing";
+    
+    const hasApp = Boolean(credentials.app_api_secret || credentials.app_api_secret_last4);
+    const hasWebhook = Boolean(credentials.webhook_secret || credentials.webhook_secret_last4);
+    const hasUrl = Boolean(credentials.webhook_url);
+    
+    if (hasApp && hasWebhook && hasUrl) return "provisioned";
+    if (hasApp || hasWebhook || hasUrl) return "partial";
+    return "missing";
+  };
+
+  const getStatusBadge = () => {
+    const status = getOverallStatus();
+    switch (status) {
+      case "provisioned":
+        return <Badge variant="outline" className="bg-safe/10 text-safe border-safe/30">Fully Provisioned</Badge>;
+      case "partial":
+        return <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">Partially Configured</Badge>;
+      case "missing":
+        return <Badge variant="outline" className="bg-alarm/10 text-alarm border-alarm/30">Not Configured</Badge>;
+    }
+  };
+
+  if (!organizationId) {
+    return null;
+  }
+
+  return (
+    <>
+      <Card className="border-dashed">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Key className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">TTN Credentials</CardTitle>
+                <CardDescription>
+                  Manage your Things Network API keys and webhook secrets
+                </CardDescription>
+              </div>
+            </div>
+            {!isLoading && getStatusBadge()}
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          {isLoading ? (
+            <div className="space-y-4">
+              <Skeleton className="h-4 w-48" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : credentials ? (
+            <>
+              {/* Organization Info */}
+              <div className="flex items-start gap-3 p-4 bg-muted/30 rounded-lg border border-border/50">
+                <Building2 className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">{credentials.organization_name}</div>
+                  <div className="text-sm text-muted-foreground font-mono truncate">
+                    {credentials.organization_id}
+                  </div>
+                  {credentials.ttn_application_id && (
+                    <div className="text-sm text-muted-foreground mt-1">
+                      <span className="text-foreground">Application:</span>{" "}
+                      <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
+                        {credentials.ttn_application_id}
+                      </code>
+                      {credentials.ttn_region && (
+                        <span className="ml-2 text-xs">({credentials.ttn_region})</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Credential Fields */}
+              <div className="space-y-4">
+                <SecretField
+                  label="Organization API Secret"
+                  value={credentials.org_api_secret}
+                  last4={credentials.org_api_secret_last4}
+                  status={credentials.org_api_secret || credentials.org_api_secret_last4 ? "provisioned" : "missing"}
+                  description="Used for gateway registry and organization-level operations"
+                />
+
+                <SecretField
+                  label="Application API Secret"
+                  value={credentials.app_api_secret}
+                  last4={credentials.app_api_secret_last4}
+                  status={credentials.app_api_secret || credentials.app_api_secret_last4 ? "provisioned" : "missing"}
+                  description="Used for device provisioning and application operations"
+                />
+
+                <SecretField
+                  label="Webhook Secret"
+                  value={credentials.webhook_secret}
+                  last4={credentials.webhook_secret_last4}
+                  status={credentials.webhook_secret || credentials.webhook_secret_last4 ? "provisioned" : "missing"}
+                  description="Used to verify incoming webhook payloads from TTN"
+                />
+
+                <SecretField
+                  label="Webhook URL"
+                  value={credentials.webhook_url}
+                  status={credentials.webhook_url ? "provisioned" : "missing"}
+                  isSecret={false}
+                  description="The endpoint TTN sends uplink messages to"
+                />
+              </div>
+
+              {/* Last Rotation Info */}
+              {credentials.credentials_last_rotated_at && (
+                <p className="text-xs text-muted-foreground">
+                  Last rotated: {new Date(credentials.credentials_last_rotated_at).toLocaleString()}
+                </p>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-2 border-t border-border/50">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowConfirmDialog(true)}
+                  disabled={isRegenerating}
+                  className="gap-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isRegenerating ? "animate-spin" : ""}`} />
+                  Regenerate All
+                </Button>
+
+                {credentials.ttn_application_id && credentials.ttn_region && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    asChild
+                    className="gap-2 text-muted-foreground"
+                  >
+                    <a
+                      href={`https://${credentials.ttn_region}.cloud.thethings.network/console/applications/${credentials.ttn_application_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Open in TTN Console
+                    </a>
+                  </Button>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-3 p-4 bg-warning/10 rounded-lg border border-warning/30">
+              <AlertTriangle className="h-5 w-5 text-warning" />
+              <div>
+                <p className="font-medium text-warning">TTN not configured</p>
+                <p className="text-sm text-muted-foreground">
+                  TTN credentials have not been provisioned for this organization.
+                </p>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Regenerate Confirmation Dialog */}
+      <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-warning" />
+              Regenerate All TTN Credentials?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>This will regenerate all TTN API keys and webhook secrets. This action:</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>Invalidates all existing API keys immediately</li>
+                <li>May temporarily interrupt active sensor connections</li>
+                <li>Will break any external integrations using current credentials</li>
+                <li>Updates the webhook configuration on TTN automatically</li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="flex items-start gap-3 py-4">
+            <Checkbox
+              id="confirm-regenerate"
+              checked={confirmChecked}
+              onCheckedChange={(checked) => setConfirmChecked(checked === true)}
+            />
+            <label
+              htmlFor="confirm-regenerate"
+              className="text-sm text-muted-foreground cursor-pointer"
+            >
+              I understand this action cannot be undone and may cause temporary service interruption
+            </label>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmChecked(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRegenerateAll}
+              disabled={!confirmChecked || isRegenerating}
+              className="bg-warning text-warning-foreground hover:bg-warning/90"
+            >
+              {isRegenerating ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Regenerating...
+                </>
+              ) : (
+                "Regenerate All"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}

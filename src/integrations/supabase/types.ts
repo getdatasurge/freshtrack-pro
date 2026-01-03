@@ -2267,6 +2267,8 @@ export type Database = {
         Row: {
           created_at: string | null
           created_by: string | null
+          credentials_last_rotated_at: string | null
+          credentials_rotation_count: number | null
           id: string
           is_enabled: boolean | null
           last_connection_test_at: string | null
@@ -2289,6 +2291,9 @@ export type Database = {
           ttn_identity_server_url: string | null
           ttn_last_test_source: string | null
           ttn_last_updated_source: string | null
+          ttn_org_api_key_encrypted: string | null
+          ttn_org_api_key_last4: string | null
+          ttn_org_api_key_updated_at: string | null
           ttn_owner_scope: string | null
           ttn_region: string | null
           ttn_stack_base_url: string | null
@@ -2311,6 +2316,8 @@ export type Database = {
         Insert: {
           created_at?: string | null
           created_by?: string | null
+          credentials_last_rotated_at?: string | null
+          credentials_rotation_count?: number | null
           id?: string
           is_enabled?: boolean | null
           last_connection_test_at?: string | null
@@ -2333,6 +2340,9 @@ export type Database = {
           ttn_identity_server_url?: string | null
           ttn_last_test_source?: string | null
           ttn_last_updated_source?: string | null
+          ttn_org_api_key_encrypted?: string | null
+          ttn_org_api_key_last4?: string | null
+          ttn_org_api_key_updated_at?: string | null
           ttn_owner_scope?: string | null
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
@@ -2355,6 +2365,8 @@ export type Database = {
         Update: {
           created_at?: string | null
           created_by?: string | null
+          credentials_last_rotated_at?: string | null
+          credentials_rotation_count?: number | null
           id?: string
           is_enabled?: boolean | null
           last_connection_test_at?: string | null
@@ -2377,6 +2389,9 @@ export type Database = {
           ttn_identity_server_url?: string | null
           ttn_last_test_source?: string | null
           ttn_last_updated_source?: string | null
+          ttn_org_api_key_encrypted?: string | null
+          ttn_org_api_key_last4?: string | null
+          ttn_org_api_key_updated_at?: string | null
           ttn_owner_scope?: string | null
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
