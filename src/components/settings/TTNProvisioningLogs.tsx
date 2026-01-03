@@ -17,6 +17,10 @@ interface ProvisioningLog {
   payload: Record<string, unknown> | null;
   duration_ms: number | null;
   request_id: string | null;
+  ttn_http_status: number | null;
+  ttn_response_body: string | null;
+  error_category: string | null;
+  ttn_endpoint: string | null;
 }
 
 interface TTNProvisioningLogsProps {
@@ -147,15 +151,49 @@ export function TTNProvisioningLogs({ organizationId }: TTNProvisioningLogsProps
                         {log.message && (
                           <p className="text-sm text-muted-foreground">{log.message}</p>
                         )}
+                        {log.error_category && (
+                          <p className="text-xs">
+                            <span className="font-medium text-muted-foreground">Error type:</span>{" "}
+                            <span className="text-destructive">{log.error_category}</span>
+                          </p>
+                        )}
+                        {log.ttn_http_status && (
+                          <p className="text-xs">
+                            <span className="font-medium text-muted-foreground">HTTP Status:</span>{" "}
+                            <span className={log.ttn_http_status >= 400 ? "text-destructive" : "text-safe"}>
+                              {log.ttn_http_status}
+                            </span>
+                          </p>
+                        )}
+                        {log.ttn_endpoint && (
+                          <p className="text-xs text-muted-foreground font-mono truncate">
+                            Endpoint: {log.ttn_endpoint}
+                          </p>
+                        )}
                         {log.request_id && (
                           <p className="text-xs text-muted-foreground font-mono">
                             Request ID: {log.request_id}
                           </p>
                         )}
+                        {log.ttn_response_body && (
+                          <details className="text-xs">
+                            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                              TTN Response
+                            </summary>
+                            <pre className="mt-1 bg-muted p-2 rounded overflow-x-auto text-xs">
+                              {log.ttn_response_body}
+                            </pre>
+                          </details>
+                        )}
                         {log.payload && Object.keys(log.payload).length > 0 && (
-                          <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
-                            {JSON.stringify(log.payload, null, 2)}
-                          </pre>
+                          <details className="text-xs">
+                            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                              Payload Details
+                            </summary>
+                            <pre className="mt-1 bg-muted p-2 rounded overflow-x-auto text-xs">
+                              {JSON.stringify(log.payload, null, 2)}
+                            </pre>
+                          </details>
                         )}
                       </div>
                     </CollapsibleContent>
