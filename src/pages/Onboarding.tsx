@@ -99,7 +99,6 @@ const Onboarding = () => {
   const [currentStep, setCurrentStep] = useState<Step>("organization");
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingOrg, setIsCheckingOrg] = useState(true);
-  const [hasCheckedOrg, setHasCheckedOrg] = useState(false);
   const [createdIds, setCreatedIds] = useState<{
     orgId?: string;
     siteId?: string;
@@ -119,10 +118,8 @@ const Onboarding = () => {
   // Use the slug availability hook
   const { status: slugStatus } = useSlugAvailability(data.organization.slug);
 
-  // Check if user already has an organization - only once
+  // Check if user already has an organization
   useEffect(() => {
-    if (hasCheckedOrg) return;
-    
     const checkExistingOrg = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -137,54 +134,19 @@ const Onboarding = () => {
           .eq("user_id", user.id)
           .maybeSingle();
 
-        setHasCheckedOrg(true);
         setIsCheckingOrg(false);
 
-        // Only redirect if profile has an org - don't redirect on error
+        // Redirect to callback if profile has an org
         if (!error && profile?.organization_id) {
-          navigate("/dashboard", { replace: true });
+          navigate("/auth/callback", { replace: true });
         }
       } catch (err) {
         console.error("Error checking org:", err);
         setIsCheckingOrg(false);
-        setHasCheckedOrg(true);
       }
     };
     checkExistingOrg();
-  }, [navigate, hasCheckedOrg]);
-  // Check if user already has an organization - only once
-  useEffect(() => {
-    if (hasCheckedOrg) return;
-    
-    const checkExistingOrg = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          navigate("/auth", { replace: true });
-          return;
-        }
-
-        const { data: profile, error } = await supabase
-          .from("profiles")
-          .select("organization_id")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        setHasCheckedOrg(true);
-        setIsCheckingOrg(false);
-
-        // Only redirect if profile has an org - don't redirect on error
-        if (!error && profile?.organization_id) {
-          navigate("/dashboard", { replace: true });
-        }
-      } catch (err) {
-        console.error("Error checking org:", err);
-        setIsCheckingOrg(false);
-        setHasCheckedOrg(true);
-      }
-    };
-    checkExistingOrg();
-  }, [navigate, hasCheckedOrg]);
+  }, [navigate]);
 
   const generateSlug = (name: string) => {
     return name

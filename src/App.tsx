@@ -8,6 +8,7 @@ import { TTNConfigProvider } from "@/contexts/TTNConfigContext";
 import { DebugTerminal, RouteLogger } from "@/components/debug";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import AuthCallback from "./pages/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import OrganizationDashboard from "./pages/OrganizationDashboard";
 import Onboarding from "./pages/Onboarding";
@@ -43,6 +44,7 @@ const App = () => (
             <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/organization" element={<OrganizationDashboard />} />
             <Route path="/onboarding" element={<Onboarding />} />

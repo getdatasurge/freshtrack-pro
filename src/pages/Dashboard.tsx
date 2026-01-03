@@ -41,7 +41,6 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasCheckedOrg, setHasCheckedOrg] = useState(false);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [stats, setStats] = useState<DashboardStats>({
     totalUnits: 0,
@@ -85,8 +84,8 @@ const Dashboard = () => {
     
     let orgId = organizationId;
     
-    // Only check org once to prevent redirect loops
-    if (!hasCheckedOrg) {
+    // Fetch org if we don't have it yet
+    if (!orgId) {
       try {
         const { data: profile, error: profileError } = await supabase
           .from("profiles")
@@ -94,20 +93,16 @@ const Dashboard = () => {
           .eq("user_id", session.user.id)
           .maybeSingle();
 
-        // Mark that we've checked the org
-        setHasCheckedOrg(true);
-
-        // Handle profile query error - don't redirect
         if (profileError) {
           console.error("Error loading profile:", profileError);
           setIsLoading(false);
           return;
         }
 
-        // Only redirect if we definitively have no org
+        // Redirect to callback to properly handle routing
         if (!profile?.organization_id) {
           setIsLoading(false);
-          navigate("/onboarding", { replace: true });
+          navigate("/auth/callback", { replace: true });
           return;
         }
         
@@ -118,11 +113,6 @@ const Dashboard = () => {
         setIsLoading(false);
         return;
       }
-    }
-    
-    if (!orgId) {
-      setIsLoading(false);
-      return;
     }
     
     try {
@@ -208,7 +198,7 @@ const Dashboard = () => {
       console.error("Error loading dashboard:", error);
     }
     setIsLoading(false);
-  }, [session, navigate]);
+  }, [session, organizationId, navigate]);
 
   // Use unified alert computation - single source of truth
   const alertsSummary = useUnitAlerts(units);
