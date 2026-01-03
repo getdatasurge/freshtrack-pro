@@ -83,8 +83,55 @@ async function fetchWithTimeout(
   }
 }
 
+// Error category classification
+type ErrorCategory = 'credential_missing' | 'credential_invalid' | 'permission_denied' | 'network_error' | 'timeout' | 'ttn_error' | 'internal';
+
+function classifyError(error: unknown, httpStatus?: number): ErrorCategory {
+  const msg = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  
+  if (msg.includes('timed out') || msg.includes('timeout') || msg.includes('aborted')) {
+    return 'timeout';
+  }
+  if (msg.includes('network') || msg.includes('fetch failed') || msg.includes('dns') || msg.includes('enotfound')) {
+    return 'network_error';
+  }
+  if (httpStatus === 401) {
+    return 'credential_invalid';
+  }
+  if (httpStatus === 403) {
+    return 'permission_denied';
+  }
+  if (httpStatus && httpStatus >= 400 && httpStatus < 500) {
+    return 'ttn_error';
+  }
+  if (httpStatus && httpStatus >= 500) {
+    return 'ttn_error';
+  }
+  return 'internal';
+}
+
+function getErrorHint(category: ErrorCategory): string {
+  switch (category) {
+    case 'credential_missing':
+      return 'TTN admin credentials are not configured. Contact your administrator.';
+    case 'credential_invalid':
+      return 'TTN API key is invalid or expired. Verify the TTN_ADMIN_API_KEY secret.';
+    case 'permission_denied':
+      return 'TTN API key lacks required permissions. Ensure it has application creation rights.';
+    case 'network_error':
+      return 'Could not connect to TTN servers. Check network connectivity.';
+    case 'timeout':
+      return 'TTN is responding slowly. Try again in a few minutes.';
+    case 'ttn_error':
+      return 'TTN rejected the request. Check the error details.';
+    case 'internal':
+    default:
+      return 'An unexpected error occurred. Contact support if the problem persists.';
+  }
+}
+
 /**
- * Log a provisioning step to the database
+ * Log a provisioning step to the database with enhanced diagnostics
  */
 async function logProvisioningStep(
   supabase: SupabaseClient,
@@ -94,7 +141,11 @@ async function logProvisioningStep(
   message: string,
   payload?: Record<string, unknown>,
   durationMs?: number,
-  requestId?: string
+  requestId?: string,
+  ttnHttpStatus?: number,
+  ttnResponseBody?: string,
+  errorCategory?: ErrorCategory,
+  ttnEndpoint?: string
 ): Promise<void> {
   try {
     await supabase.from("ttn_provisioning_logs").insert({
@@ -105,6 +156,10 @@ async function logProvisioningStep(
       payload: payload || null,
       duration_ms: durationMs || null,
       request_id: requestId || null,
+      ttn_http_status: ttnHttpStatus || null,
+      ttn_response_body: ttnResponseBody?.slice(0, 2000) || null, // Truncate large responses
+      error_category: errorCategory || null,
+      ttn_endpoint: ttnEndpoint || null,
     });
   } catch (err) {
     console.error(`[ttn-provision-org] Failed to log step ${step}:`, err);
@@ -447,38 +502,49 @@ serve(async (req) => {
         const shouldRunStep1 = !skipToStep || skipToStep === "create_application" || !completedSteps.application_created;
         
         if (shouldRunStep1 && !completedSteps.application_created) {
-          await logProvisioningStep(supabase, organization_id, "create_application", "started", "Creating TTN application", { ttn_app_id: ttnAppId }, undefined, requestId);
+          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/users/${ttnUserId}/applications`;
+          await logProvisioningStep(supabase, organization_id, "create_application", "started", "Creating TTN application", { ttn_app_id: ttnAppId, endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningStatus(supabase, organization_id, "provisioning", "create_application");
           
           console.log(`[ttn-provision-org] [${requestId}] Step 1: Creating TTN application ${ttnAppId}`);
           
-          const createAppResponse = await fetchWithTimeout(
-            `${IDENTITY_SERVER_URL}/api/v3/users/${ttnUserId}/applications`,
-            {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${ttnAdminKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                application: {
-                  ids: { application_id: ttnAppId },
-                  name: `FreshTracker - ${org.name}`,
-                  description: `FreshTracker temperature monitoring for ${org.name}`,
+          let createAppResponse: Response;
+          try {
+            createAppResponse = await fetchWithTimeout(
+              ttnEndpoint,
+              {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${ttnAdminKey}`,
+                  "Content-Type": "application/json",
                 },
-              }),
-            }
-          );
+                body: JSON.stringify({
+                  application: {
+                    ids: { application_id: ttnAppId },
+                    name: `FreshTracker - ${org.name}`,
+                    description: `FreshTracker temperature monitoring for ${org.name}`,
+                  },
+                }),
+              }
+            );
+          } catch (fetchErr) {
+            const duration = Date.now() - step1Start;
+            const category = classifyError(fetchErr);
+            const errMsg = fetchErr instanceof Error ? fetchErr.message : "Fetch failed";
+            await logProvisioningStep(supabase, organization_id, "create_application", "failed", errMsg, { error: errMsg }, duration, requestId, undefined, undefined, category, ttnEndpoint);
+            throw fetchErr;
+          }
 
           if (!createAppResponse.ok && createAppResponse.status !== 409) {
             const errorText = await createAppResponse.text();
             const duration = Date.now() - step1Start;
-            await logProvisioningStep(supabase, organization_id, "create_application", "failed", `HTTP ${createAppResponse.status}: ${errorText}`, { status: createAppResponse.status }, duration, requestId);
+            const category = classifyError(errorText, createAppResponse.status);
+            await logProvisioningStep(supabase, organization_id, "create_application", "failed", `HTTP ${createAppResponse.status}`, { status: createAppResponse.status }, duration, requestId, createAppResponse.status, errorText, category, ttnEndpoint);
             throw new Error(`Failed to create application: ${createAppResponse.status} - ${errorText}`);
           }
 
           const duration = Date.now() - step1Start;
-          await logProvisioningStep(supabase, organization_id, "create_application", "success", "TTN application created", { ttn_app_id: ttnAppId }, duration, requestId);
+          await logProvisioningStep(supabase, organization_id, "create_application", "success", "TTN application created", { ttn_app_id: ttnAppId }, duration, requestId, createAppResponse.status, undefined, undefined, ttnEndpoint);
           completedSteps.application_created = true;
           
           // Save progress immediately
@@ -501,30 +567,41 @@ serve(async (req) => {
                               !completedSteps.api_key_created;
 
         if (shouldRunStep2 && !completedSteps.api_key_created) {
-          await logProvisioningStep(supabase, organization_id, "create_api_key", "started", "Creating application API key", undefined, undefined, requestId);
+          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}/api-keys`;
+          await logProvisioningStep(supabase, organization_id, "create_api_key", "started", "Creating application API key", { endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningStatus(supabase, organization_id, "provisioning", "create_api_key");
           
           console.log(`[ttn-provision-org] [${requestId}] Step 2: Creating application API key for ${ttnAppId}`);
 
-          const createKeyResponse = await fetchWithTimeout(
-            `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}/api-keys`,
-            {
-              method: "POST",
-              headers: {
-                "Authorization": `Bearer ${ttnAdminKey}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                name: "FreshTracker Integration",
-                rights: APPLICATION_KEY_RIGHTS,
-              }),
-            }
-          );
+          let createKeyResponse: Response;
+          try {
+            createKeyResponse = await fetchWithTimeout(
+              ttnEndpoint,
+              {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${ttnAdminKey}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  name: "FreshTracker Integration",
+                  rights: APPLICATION_KEY_RIGHTS,
+                }),
+              }
+            );
+          } catch (fetchErr) {
+            const duration = Date.now() - step2Start;
+            const category = classifyError(fetchErr);
+            const errMsg = fetchErr instanceof Error ? fetchErr.message : "Fetch failed";
+            await logProvisioningStep(supabase, organization_id, "create_api_key", "failed", errMsg, { error: errMsg }, duration, requestId, undefined, undefined, category, ttnEndpoint);
+            throw fetchErr;
+          }
 
           if (!createKeyResponse.ok) {
             const errorText = await createKeyResponse.text();
             const duration = Date.now() - step2Start;
-            await logProvisioningStep(supabase, organization_id, "create_api_key", "failed", `HTTP ${createKeyResponse.status}: ${errorText}`, { status: createKeyResponse.status }, duration, requestId);
+            const category = classifyError(errorText, createKeyResponse.status);
+            await logProvisioningStep(supabase, organization_id, "create_api_key", "failed", `HTTP ${createKeyResponse.status}`, { status: createKeyResponse.status }, duration, requestId, createKeyResponse.status, errorText, category, ttnEndpoint);
             throw new Error(`Failed to create application API key: ${createKeyResponse.status} - ${errorText}`);
           }
 
@@ -533,7 +610,7 @@ serve(async (req) => {
           apiKeyId = keyData.id;
 
           const duration = Date.now() - step2Start;
-          await logProvisioningStep(supabase, organization_id, "create_api_key", "success", "Application API key created", { key_last4: getLast4(newApiKey) }, duration, requestId);
+          await logProvisioningStep(supabase, organization_id, "create_api_key", "success", "Application API key created", { key_last4: getLast4(newApiKey) }, duration, requestId, createKeyResponse.status, undefined, undefined, ttnEndpoint);
           completedSteps.api_key_created = true;
 
           // Save API key immediately

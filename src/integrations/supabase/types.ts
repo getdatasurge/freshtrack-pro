@@ -2514,6 +2514,7 @@ export type Database = {
         Row: {
           created_at: string
           duration_ms: number | null
+          error_category: string | null
           id: string
           message: string | null
           organization_id: string
@@ -2521,10 +2522,14 @@ export type Database = {
           request_id: string | null
           status: string
           step: string
+          ttn_endpoint: string | null
+          ttn_http_status: number | null
+          ttn_response_body: string | null
         }
         Insert: {
           created_at?: string
           duration_ms?: number | null
+          error_category?: string | null
           id?: string
           message?: string | null
           organization_id: string
@@ -2532,10 +2537,14 @@ export type Database = {
           request_id?: string | null
           status: string
           step: string
+          ttn_endpoint?: string | null
+          ttn_http_status?: number | null
+          ttn_response_body?: string | null
         }
         Update: {
           created_at?: string
           duration_ms?: number | null
+          error_category?: string | null
           id?: string
           message?: string | null
           organization_id?: string
@@ -2543,6 +2552,9 @@ export type Database = {
           request_id?: string | null
           status?: string
           step?: string
+          ttn_endpoint?: string | null
+          ttn_http_status?: number | null
+          ttn_response_body?: string | null
         }
         Relationships: [
           {

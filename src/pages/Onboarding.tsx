@@ -99,6 +99,12 @@ const Onboarding = () => {
   const [currentStep, setCurrentStep] = useState<Step>("organization");
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingOrg, setIsCheckingOrg] = useState(true);
+  const [ttnStatus, setTtnStatus] = useState<{
+    status: 'idle' | 'provisioning' | 'completed' | 'failed' | 'skipped';
+    error?: string;
+    step?: string;
+    retryable?: boolean;
+  }>({ status: 'idle' });
   const [createdIds, setCreatedIds] = useState<{
     orgId?: string;
     siteId?: string;
@@ -174,6 +180,63 @@ const Onboarding = () => {
     }
   };
 
+  // TTN Provisioning function with timeout
+  const provisionTTN = async (orgId: string): Promise<boolean> => {
+    const PROVISIONING_TIMEOUT_MS = 60000; // 60 seconds total timeout
+    
+    setTtnStatus({ status: 'provisioning', step: 'Starting...' });
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), PROVISIONING_TIMEOUT_MS);
+      
+      const { data: provisionResult, error: provisionError } = await supabase.functions.invoke(
+        'ttn-provision-org',
+        {
+          body: {
+            action: 'provision',
+            organization_id: orgId,
+            ttn_region: 'nam1',
+          },
+        }
+      );
+      
+      clearTimeout(timeoutId);
+      
+      if (provisionError) {
+        console.error('[Onboarding] TTN provisioning error:', provisionError);
+        setTtnStatus({ 
+          status: 'failed', 
+          error: provisionError.message || 'Provisioning failed',
+          retryable: true 
+        });
+        return false;
+      }
+      
+      if (provisionResult?.success) {
+        setTtnStatus({ status: 'completed' });
+        return true;
+      } else {
+        setTtnStatus({ 
+          status: 'failed', 
+          error: provisionResult?.message || provisionResult?.error || 'Unknown error',
+          step: provisionResult?.completed_steps ? Object.keys(provisionResult.completed_steps).pop() : undefined,
+          retryable: provisionResult?.retryable ?? true
+        });
+        return false;
+      }
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.name === 'AbortError';
+      console.error('[Onboarding] TTN provisioning exception:', err);
+      setTtnStatus({ 
+        status: 'failed', 
+        error: isTimeout ? 'Provisioning timed out. You can retry from Settings.' : 'Provisioning failed unexpectedly.',
+        retryable: true 
+      });
+      return false;
+    }
+  };
+
   const handleCreateOrganization = async () => {
     // If org was already created, just move to next step
     if (createdIds.orgId) {
@@ -240,6 +303,17 @@ const Onboarding = () => {
       if (response.ok && response.organization_id) {
         setCreatedIds((prev) => ({ ...prev, orgId: response.organization_id }));
         toast({ title: "Organization created!" });
+        
+        // Trigger TTN provisioning in background (non-blocking)
+        // Don't await - let it run while user continues onboarding
+        provisionTTN(response.organization_id).then((success) => {
+          if (success) {
+            console.log('[Onboarding] TTN provisioning completed successfully');
+          } else {
+            console.warn('[Onboarding] TTN provisioning failed, user can retry from Settings');
+          }
+        });
+        
         setCurrentStep("site");
       } else {
         // Handle specific error codes
@@ -280,7 +354,7 @@ const Onboarding = () => {
             });
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Network/unexpected errors - never show "slug taken" for these
       toast({ 
         title: "Could not create organization", 
@@ -923,10 +997,46 @@ const Onboarding = () => {
                   <h2 className="text-2xl font-bold text-foreground mb-2">
                     You're All Set!
                   </h2>
-                  <p className="text-muted-foreground mb-8 max-w-md mx-auto">
+                  <p className="text-muted-foreground mb-4 max-w-md mx-auto">
                     Your organization, site, area, {createdIds.gatewayId ? "gateway, " : ""}and first unit have been created. 
                     You can now start monitoring temperatures.
                   </p>
+                  
+                  {/* TTN Status Banner */}
+                  {ttnStatus.status === 'provisioning' && (
+                    <div className="mb-6 p-3 rounded-lg bg-muted/50 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Setting up IoT connection{ttnStatus.step ? `: ${ttnStatus.step}` : '...'}</span>
+                    </div>
+                  )}
+                  
+                  {ttnStatus.status === 'failed' && (
+                    <div className="mb-6 p-3 rounded-lg bg-warning/10 border border-warning/20">
+                      <div className="flex items-center justify-center gap-2 text-sm text-warning mb-2">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>IoT setup needs attention</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-2">{ttnStatus.error}</p>
+                      {ttnStatus.retryable && createdIds.orgId && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => provisionTTN(createdIds.orgId!)}
+                          className="text-xs"
+                        >
+                          Retry Setup
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  
+                  {ttnStatus.status === 'completed' && (
+                    <div className="mb-6 p-3 rounded-lg bg-safe/10 flex items-center justify-center gap-2 text-sm text-safe">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>IoT connection ready</span>
+                    </div>
+                  )}
+                  
                   <div className="flex flex-col items-center gap-3">
                     <Button
                       onClick={() => navigate("/settings?tab=sensors&action=add")}
