@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useSlugAvailability } from "@/hooks/useSlugAvailability";
 import { 
   Thermometer, 
   Building2, 
@@ -115,57 +116,42 @@ const Onboarding = () => {
     gateway: { name: "", eui: "" },
   });
 
-  // Slug availability state
-  const [slugStatus, setSlugStatus] = useState<{
-    isChecking: boolean;
-    available: boolean | null;
-    suggestions: string[];
-  }>({ isChecking: false, available: null, suggestions: [] });
+  // Use the slug availability hook
+  const { status: slugStatus } = useSlugAvailability(data.organization.slug);
 
-  // Debounced slug check
-  const checkSlugAvailability = useCallback(async (slug: string) => {
-    if (!slug || slug.length < 2) {
-      setSlugStatus({ isChecking: false, available: null, suggestions: [] });
-      return;
-    }
-
-    setSlugStatus(prev => ({ ...prev, isChecking: true }));
-
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/check-slug-available?slug=${encodeURIComponent(slug)}`,
-        { method: "GET", headers: { "Content-Type": "application/json" } }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setSlugStatus({
-          isChecking: false,
-          available: result.available,
-          suggestions: result.suggestions || [],
-        });
-      } else {
-        // On error, don't block user
-        setSlugStatus({ isChecking: false, available: null, suggestions: [] });
-      }
-    } catch (error) {
-      console.error("Error checking slug:", error);
-      setSlugStatus({ isChecking: false, available: null, suggestions: [] });
-    }
-  }, []);
-
-  // Debounce slug check
+  // Check if user already has an organization - only once
   useEffect(() => {
-    const slug = data.organization.slug;
-    if (!slug) return;
+    if (hasCheckedOrg) return;
+    
+    const checkExistingOrg = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          navigate("/auth", { replace: true });
+          return;
+        }
 
-    const timer = setTimeout(() => {
-      checkSlugAvailability(slug);
-    }, 500);
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
 
-    return () => clearTimeout(timer);
-  }, [data.organization.slug, checkSlugAvailability]);
+        setHasCheckedOrg(true);
+        setIsCheckingOrg(false);
 
+        // Only redirect if profile has an org - don't redirect on error
+        if (!error && profile?.organization_id) {
+          navigate("/dashboard", { replace: true });
+        }
+      } catch (err) {
+        console.error("Error checking org:", err);
+        setIsCheckingOrg(false);
+        setHasCheckedOrg(true);
+      }
+    };
+    checkExistingOrg();
+  }, [navigate, hasCheckedOrg]);
   // Check if user already has an organization - only once
   useEffect(() => {
     if (hasCheckedOrg) return;
@@ -280,8 +266,6 @@ const Onboarding = () => {
       if (errorMessage.includes("organizations_slug_key") || 
           errorMessage.includes("unique constraint") ||
           errorMessage.includes("organizations_slug_active_key")) {
-        // Re-check slug to get suggestions
-        await checkSlugAvailability(slugToUse);
         toast({ 
           title: "URL Already Taken", 
           description: "This URL is already in use. Please choose a different one or select from suggestions below.", 
