@@ -15,12 +15,16 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { 
-  generateTtnApplicationId, 
+import {
+  generateTtnApplicationId,
   generateWebhookSecret,
   obfuscateKey,
   getLast4,
 } from "../_shared/ttnConfig.ts";
+import {
+  APPLICATION_KEY_RIGHTS,
+  GATEWAY_KEY_RIGHTS,
+} from "../_shared/ttnPermissions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -338,9 +342,9 @@ serve(async (req) => {
           throw new Error(`Failed to create application: ${createAppResponse.status} - ${errorText}`);
         }
 
-        // Step 2: Create API Key for this application
-        console.log(`[ttn-provision-org] Step 2: Creating API key for ${ttnAppId}`);
-        
+        // Step 2: Create APPLICATION-SCOPED API Key (for devices, webhooks, traffic)
+        console.log(`[ttn-provision-org] Step 2: Creating application API key for ${ttnAppId}`);
+
         const createKeyResponse = await fetch(
           `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}/api-keys`,
           {
@@ -351,25 +355,54 @@ serve(async (req) => {
             },
             body: JSON.stringify({
               name: "FreshTracker Integration",
-              rights: [
-                "RIGHT_APPLICATION_INFO",
-                "RIGHT_APPLICATION_DEVICES_READ",
-                "RIGHT_APPLICATION_DEVICES_WRITE",
-                "RIGHT_APPLICATION_TRAFFIC_READ",
-                "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE",
-              ],
+              rights: APPLICATION_KEY_RIGHTS,
             }),
           }
         );
 
         if (!createKeyResponse.ok) {
           const errorText = await createKeyResponse.text();
-          throw new Error(`Failed to create API key: ${createKeyResponse.status} - ${errorText}`);
+          throw new Error(`Failed to create application API key: ${createKeyResponse.status} - ${errorText}`);
         }
 
         const keyData = await createKeyResponse.json();
         const newApiKey = keyData.key;
         const apiKeyId = keyData.id;
+
+        // Step 2b: Create USER-SCOPED API Key (for gateway provisioning)
+        // Gateway provisioning requires a personal/user-scoped key, not an application key
+        console.log(`[ttn-provision-org] Step 2b: Creating gateway API key for user ${ttnUserId}`);
+
+        let gatewayApiKey = "";
+        let gatewayApiKeyId = "";
+
+        const createGatewayKeyResponse = await fetch(
+          `${IDENTITY_SERVER_URL}/api/v3/users/${ttnUserId}/api-keys`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${ttnAdminKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name: `FreshTracker Gateway - ${org.slug}`,
+              rights: GATEWAY_KEY_RIGHTS,
+            }),
+          }
+        );
+
+        if (createGatewayKeyResponse.ok) {
+          const gatewayKeyData = await createGatewayKeyResponse.json();
+          gatewayApiKey = gatewayKeyData.key;
+          gatewayApiKeyId = gatewayKeyData.id;
+          console.log(`[ttn-provision-org] Gateway API key created successfully`);
+        } else {
+          const errorText = await createGatewayKeyResponse.text();
+          console.warn(`[ttn-provision-org] Warning: Failed to create gateway API key: ${createGatewayKeyResponse.status} - ${errorText}`);
+          console.warn(`[ttn-provision-org] Gateway provisioning will fall back to admin key`);
+          // Don't fail the whole provisioning - gateway key is optional
+          // The admin key fallback will be used for gateway provisioning
+        }
 
         // Step 3: Create webhook
         console.log(`[ttn-provision-org] Step 3: Creating webhook for ${ttnAppId}`);
@@ -462,9 +495,10 @@ serve(async (req) => {
 
         // Step 4: Save all credentials to database
         console.log(`[ttn-provision-org] Step 4: Saving credentials to database`);
-        
+
         const encryptedApiKey = obfuscateKey(newApiKey, encryptionSalt);
         const encryptedWebhookSecret = obfuscateKey(webhookSecret, encryptionSalt);
+        const encryptedGatewayKey = gatewayApiKey ? obfuscateKey(gatewayApiKey, encryptionSalt) : null;
 
         await supabase
           .from("ttn_connections")
@@ -475,6 +509,12 @@ serve(async (req) => {
             ttn_api_key_last4: getLast4(newApiKey),
             ttn_api_key_id: apiKeyId,
             ttn_api_key_updated_at: new Date().toISOString(),
+            // Gateway-specific API key (user-scoped for gateway provisioning)
+            ttn_gateway_api_key_encrypted: encryptedGatewayKey,
+            ttn_gateway_api_key_last4: gatewayApiKey ? getLast4(gatewayApiKey) : null,
+            ttn_gateway_api_key_id: gatewayApiKeyId || null,
+            ttn_gateway_rights_verified: !!gatewayApiKey,
+            // Webhook credentials
             ttn_webhook_secret_encrypted: encryptedWebhookSecret,
             ttn_webhook_secret_last4: getLast4(webhookSecret),
             ttn_webhook_url: webhookUrl,
@@ -513,6 +553,8 @@ serve(async (req) => {
             webhook_created: webhookCreated,
             api_key_last4: getLast4(newApiKey),
             webhook_secret_last4: getLast4(webhookSecret),
+            gateway_key_created: !!gatewayApiKey,
+            gateway_key_last4: gatewayApiKey ? getLast4(gatewayApiKey) : null,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );

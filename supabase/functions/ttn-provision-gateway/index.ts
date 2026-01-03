@@ -277,49 +277,67 @@ serve(async (req) => {
       };
 
       // Step 3: Try multiple registration strategies
+      // Priority: 1. Gateway-specific key (user-scoped), 2. User-scoped key, 3. Admin fallback
       const strategies: Array<{
         name: string;
         endpoint: string;
-        useAdminKey?: boolean;
+        apiKey?: string;
         condition: () => boolean;
       }> = [];
 
-      // Strategy A: User-scoped registration (if API key is user-scoped)
+      // Strategy A: Use gateway-specific API key (PREFERRED - has gateway rights)
+      // This key is user-scoped and created specifically for gateway provisioning
+      if (ttnConfig.hasGatewayKey && ttnConfig.gatewayApiKey) {
+        const adminUserId = Deno.env.get("TTN_USER_ID");
+        if (adminUserId) {
+          strategies.push({
+            name: `gateway-key-user-scoped (${adminUserId})`,
+            endpoint: `/api/v3/users/${adminUserId}/gateways`,
+            apiKey: ttnConfig.gatewayApiKey,
+            condition: () => true,
+          });
+        }
+      }
+
+      // Strategy B: User-scoped registration (if main API key is user-scoped)
       if (authInfo?.user_ids && authInfo.user_ids.length > 0) {
         const userId = authInfo.user_ids[0].user_id;
         strategies.push({
           name: `user-scoped (${userId})`,
           endpoint: `/api/v3/users/${userId}/gateways`,
+          apiKey: ttnConfig.apiKey,
           condition: () => true,
         });
       }
 
-      // Strategy B: Organization-scoped registration (if API key is org-scoped)
+      // Strategy C: Organization-scoped registration (if API key is org-scoped)
       if (authInfo?.organization_ids && authInfo.organization_ids.length > 0) {
         const ttnOrgId = authInfo.organization_ids[0].organization_id;
         strategies.push({
           name: `org-scoped (${ttnOrgId})`,
           endpoint: `/api/v3/organizations/${ttnOrgId}/gateways`,
+          apiKey: ttnConfig.apiKey,
           condition: () => true,
         });
       }
 
-      // Strategy C: Admin key fallback (if available)
+      // Strategy D: Admin key fallback (if available)
       const adminApiKey = Deno.env.get("TTN_ADMIN_API_KEY");
       const adminUserId = Deno.env.get("TTN_USER_ID");
       if (adminApiKey && adminUserId) {
         strategies.push({
           name: `admin-user-scoped (${adminUserId})`,
           endpoint: `/api/v3/users/${adminUserId}/gateways`,
-          useAdminKey: true,
+          apiKey: adminApiKey,
           condition: () => true,
         });
       }
 
-      // Strategy D: Direct registration (rarely works but try as last resort)
+      // Strategy E: Direct registration (rarely works but try as last resort)
       strategies.push({
         name: "direct",
         endpoint: "/api/v3/gateways",
+        apiKey: ttnConfig.apiKey,
         condition: () => true,
       });
 
@@ -335,11 +353,11 @@ serve(async (req) => {
         console.log(`[ttn-provision-gateway] [${requestId}] Trying strategy: ${strategy.name}`);
         console.log(`[ttn-provision-gateway] [${requestId}] Endpoint: ${strategy.endpoint}`);
 
-        const apiKey = strategy.useAdminKey ? adminApiKey : ttnConfig.apiKey;
+        const strategyApiKey = strategy.apiKey || ttnConfig.apiKey;
         const createResponse = await ttnFetch(strategy.endpoint, {
           method: "POST",
           body: JSON.stringify(gatewayPayload),
-        }, apiKey);
+        }, strategyApiKey);
 
         if (createResponse.ok) {
           console.log(`[ttn-provision-gateway] [${requestId}] Gateway registered via ${strategy.name}`);

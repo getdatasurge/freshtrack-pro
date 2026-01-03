@@ -40,6 +40,47 @@ export const REQUIRED_RIGHTS = {
   ],
 };
 
+// Required rights for gateway provisioning
+// NOTE: These require a USER-SCOPED or ORGANIZATION-SCOPED API key
+// Application-scoped API keys CANNOT have gateway rights
+export const GATEWAY_RIGHTS = {
+  // Minimum required for gateway provisioning
+  required: [
+    "RIGHT_GATEWAY_INFO",             // Read gateway info
+    "RIGHT_GATEWAY_SETTINGS_BASIC",   // Basic gateway config (create, update)
+    "RIGHT_GATEWAY_LINK",             // Link gateway to network server
+  ],
+  // Optional but recommended
+  extended: [
+    "RIGHT_GATEWAY_STATUS_READ",      // Read gateway status
+    "RIGHT_GATEWAY_LOCATION_READ",    // Read gateway location
+    "RIGHT_GATEWAY_DELETE",           // Delete gateways
+  ],
+  // Alternative: grant all gateway rights
+  all: "RIGHT_GATEWAY_ALL",
+};
+
+// Complete set of application rights for auto-provisioned key
+export const APPLICATION_KEY_RIGHTS = [
+  "RIGHT_APPLICATION_INFO",
+  "RIGHT_APPLICATION_DEVICES_READ",
+  "RIGHT_APPLICATION_DEVICES_WRITE",
+  "RIGHT_APPLICATION_TRAFFIC_READ",
+  "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE",
+  "RIGHT_APPLICATION_SETTINGS_BASIC", // For webhook management
+];
+
+// Complete set of gateway rights for user-scoped gateway key
+export const GATEWAY_KEY_RIGHTS = [
+  "RIGHT_GATEWAY_INFO",
+  "RIGHT_GATEWAY_SETTINGS_BASIC",
+  "RIGHT_GATEWAY_SETTINGS_API_KEYS",
+  "RIGHT_GATEWAY_LINK",
+  "RIGHT_GATEWAY_STATUS_READ",
+  "RIGHT_GATEWAY_LOCATION_READ",
+  "RIGHT_GATEWAY_DELETE",
+];
+
 // Human-readable permission names for UI
 export const PERMISSION_LABELS: Record<string, string> = {
   "RIGHT_APPLICATION_INFO": "Read application info",

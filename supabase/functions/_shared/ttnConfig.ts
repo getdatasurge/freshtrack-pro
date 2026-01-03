@@ -60,6 +60,9 @@ export interface TtnConfig {
   webhookUrl?: string;
   isEnabled: boolean;
   provisioningStatus: string;
+  // Gateway-specific API key (user-scoped, has gateway rights)
+  gatewayApiKey?: string;
+  hasGatewayKey: boolean;
 }
 
 export interface TtnConnectionRow {
@@ -70,6 +73,12 @@ export interface TtnConnectionRow {
   ttn_application_id: string | null;
   ttn_api_key_encrypted: string | null;
   ttn_api_key_last4: string | null;
+  // Gateway-specific API key (user-scoped for gateway provisioning)
+  ttn_gateway_api_key_encrypted: string | null;
+  ttn_gateway_api_key_last4: string | null;
+  ttn_gateway_api_key_id: string | null;
+  ttn_gateway_rights_verified: boolean | null;
+  // Webhook credentials
   ttn_webhook_secret_encrypted: string | null;
   ttn_webhook_secret_last4: string | null;
   ttn_webhook_url: string | null;
@@ -233,6 +242,11 @@ export async function getTtnConfigForOrg(
     ? deobfuscateKey(settings.ttn_webhook_secret_encrypted, encryptionSalt)
     : undefined;
 
+  // Decrypt gateway API key (user-scoped key for gateway provisioning)
+  const gatewayApiKey = settings.ttn_gateway_api_key_encrypted
+    ? deobfuscateKey(settings.ttn_gateway_api_key_encrypted, encryptionSalt)
+    : undefined;
+
   // Normalize region (ensure lowercase)
   const region = (settings.ttn_region || "nam1").toLowerCase();
 
@@ -246,6 +260,8 @@ export async function getTtnConfigForOrg(
     webhookUrl: settings.ttn_webhook_url || undefined,
     isEnabled: settings.is_enabled || false,
     provisioningStatus: settings.provisioning_status || "not_started",
+    gatewayApiKey,
+    hasGatewayKey: !!gatewayApiKey && gatewayApiKey.length > 0,
   };
 }
 
