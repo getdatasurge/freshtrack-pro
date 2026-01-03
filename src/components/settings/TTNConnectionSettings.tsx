@@ -90,6 +90,8 @@ interface TTNSettings {
   ttn_application_id: string | null;
   provisioning_status: 'not_started' | 'provisioning' | 'completed' | 'failed';
   provisioning_error: string | null;
+  provisioning_last_step: string | null;
+  provisioning_can_retry: boolean;
   provisioned_at: string | null;
   has_api_key: boolean;
   api_key_last4: string | null;
@@ -203,6 +205,8 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           ttn_application_id: data.ttn_application_id ?? null,
           provisioning_status: data.provisioning_status ?? 'not_started',
           provisioning_error: data.provisioning_error ?? null,
+          provisioning_last_step: data.provisioning_last_step ?? null,
+          provisioning_can_retry: data.provisioning_can_retry ?? true,
           provisioned_at: data.ttn_application_provisioned_at ?? null,
           has_api_key: data.has_api_key ?? false,
           api_key_last4: data.api_key_last4 ?? null,
@@ -389,7 +393,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     checkBootstrapHealth();
   }, [loadSettings, checkBootstrapHealth]);
 
-  const handleProvision = async () => {
+  const handleProvision = async (isRetry: boolean = false, fromStep?: string) => {
     if (!organizationId) return;
 
     setIsProvisioning(true);
@@ -405,9 +409,10 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
         body: {
-          action: "provision",
+          action: isRetry ? "retry" : "provision",
           organization_id: organizationId,
           ttn_region: region,
+          from_step: fromStep,
         },
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
@@ -419,14 +424,24 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         await loadSettings();
       } else {
         // Show more helpful error messages
-        const errorMsg = data?.error || "Provisioning failed";
+        const errorMsg = data?.error || data?.message || "Provisioning failed";
         const hint = data?.hint || "";
+        const isRetryable = data?.retryable;
 
         if (errorMsg.includes("TTN admin credentials not configured")) {
-          toast.error("TTN credentials not configured. Please contact your administrator to set up TTN_ADMIN_API_KEY and TTN_USER_ID in Supabase secrets.");
+          toast.error("TTN credentials not configured", {
+            description: "Please contact your administrator to set up TTN_ADMIN_API_KEY and TTN_USER_ID secrets.",
+          });
+        } else if (errorMsg.includes("timed out")) {
+          toast.error("Request timed out", {
+            description: isRetryable ? "TTN is taking too long to respond. You can retry." : errorMsg,
+          });
         } else {
           toast.error(hint ? `${errorMsg}: ${hint}` : errorMsg);
         }
+        
+        // Refresh to show updated status
+        await loadSettings();
       }
     } catch (err: any) {
       console.error("Provisioning error:", err);
@@ -437,6 +452,9 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       } else {
         toast.error(err.message || "Failed to provision TTN application");
       }
+      
+      // Refresh to show current status
+      await loadSettings();
     } finally {
       setIsProvisioning(false);
     }
@@ -932,13 +950,20 @@ Cluster: ${region}
               <div>
                 <h3 className="font-medium">Provisioning TTN Application...</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Creating your dedicated TTN application. This may take a moment.
+                  Creating your dedicated TTN application. This may take up to 60 seconds.
                 </p>
+                {settings?.provisioning_last_step && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Current step: <span className="font-mono">{settings.provisioning_last_step}</span>
+                  </p>
+                )}
               </div>
-              <Button onClick={loadSettings} variant="outline" size="sm">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Check Status
-              </Button>
+              <div className="flex items-center justify-center gap-2">
+                <Button onClick={loadSettings} variant="outline" size="sm">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Refresh Status
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -972,7 +997,7 @@ Cluster: ${region}
                 </Select>
               </div>
               
-              <Button onClick={handleProvision} disabled={isProvisioning} size="lg">
+              <Button onClick={() => handleProvision(false)} disabled={isProvisioning} size="lg">
                 {isProvisioning ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
@@ -989,17 +1014,41 @@ Cluster: ${region}
           <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/30">
             <div className="flex items-start gap-3">
               <XCircle className="h-5 w-5 text-destructive mt-0.5" />
-              <div className="flex-1 space-y-2">
-                <p className="font-medium text-destructive">Provisioning Failed</p>
-                <p className="text-sm text-muted-foreground">{settings?.provisioning_error}</p>
-                <Button onClick={handleProvision} variant="outline" size="sm" disabled={isProvisioning}>
-                  {isProvisioning ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 mr-2" />
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="font-medium text-destructive">Provisioning Failed</p>
+                  <p className="text-sm text-muted-foreground mt-1">{settings?.provisioning_error}</p>
+                  {settings?.provisioning_last_step && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Failed at step: <span className="font-mono">{settings.provisioning_last_step}</span>
+                    </p>
                   )}
-                  Retry Provisioning
-                </Button>
+                </div>
+                <div className="flex items-center gap-2">
+                  {settings?.provisioning_can_retry && settings?.provisioning_last_step && (
+                    <Button 
+                      onClick={() => handleProvision(true, settings.provisioning_last_step!)} 
+                      variant="outline" 
+                      size="sm" 
+                      disabled={isProvisioning}
+                    >
+                      {isProvisioning ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                      )}
+                      Retry from {settings.provisioning_last_step}
+                    </Button>
+                  )}
+                  <Button 
+                    onClick={() => handleProvision(false)} 
+                    variant="ghost" 
+                    size="sm" 
+                    disabled={isProvisioning}
+                  >
+                    Start Fresh
+                  </Button>
+                </div>
               </div>
             </div>
           </div>

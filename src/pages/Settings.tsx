@@ -49,6 +49,7 @@ import { GatewayManager } from "@/components/settings/GatewayManager";
 import { SensorManager } from "@/components/settings/SensorManager";
 import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
 import { TTNCredentialsPanel } from "@/components/settings/TTNCredentialsPanel";
+import { TTNProvisioningLogs } from "@/components/settings/TTNProvisioningLogs";
 import { EmulatorSyncHistory } from "@/components/settings/EmulatorSyncHistory";
 import { EmulatorResyncCard } from "@/components/settings/EmulatorResyncCard";
 import { AccountDeletionModal } from "@/components/settings/AccountDeletionModal";
@@ -1142,6 +1143,7 @@ const Settings = () => {
               <DebugModeToggle />
               <TTNCredentialsPanel organizationId={organization?.id || null} />
               <TTNConnectionSettings organizationId={organization?.id || null} />
+              <TTNProvisioningLogs organizationId={organization?.id || null} />
               <EmulatorResyncCard organizationId={organization?.id || null} />
               <EmulatorSyncHistory organizationId={organization?.id || null} />
               <EdgeFunctionDiagnostics />

@@ -14,7 +14,7 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   generateTtnApplicationId,
   generateWebhookSecret,
@@ -32,9 +32,10 @@ const corsHeaders = {
 };
 
 interface ProvisionOrgRequest {
-  action: "provision" | "status" | "delete" | "regenerate_webhook_secret";
+  action: "provision" | "status" | "delete" | "regenerate_webhook_secret" | "retry";
   organization_id: string;
   ttn_region?: string;
+  from_step?: string; // For retry action
 }
 
 const REGIONAL_URLS: Record<string, string> = {
@@ -54,10 +55,91 @@ const FREQUENCY_PLANS: Record<string, string> = {
   as1: "AS_923_925_LBT",
 };
 
+// Request timeout in milliseconds
+const REQUEST_TIMEOUT_MS = 15000;
+const MAX_RETRIES = 2;
+
+/**
+ * Fetch with timeout wrapper
+ */
+async function fetchWithTimeout(
+  url: string, 
+  options: RequestInit, 
+  timeoutMs: number = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Log a provisioning step to the database
+ */
+async function logProvisioningStep(
+  supabase: SupabaseClient,
+  organizationId: string,
+  step: string,
+  status: 'started' | 'success' | 'failed' | 'skipped',
+  message: string,
+  payload?: Record<string, unknown>,
+  durationMs?: number,
+  requestId?: string
+): Promise<void> {
+  try {
+    await supabase.from("ttn_provisioning_logs").insert({
+      organization_id: organizationId,
+      step,
+      status,
+      message,
+      payload: payload || null,
+      duration_ms: durationMs || null,
+      request_id: requestId || null,
+    });
+  } catch (err) {
+    console.error(`[ttn-provision-org] Failed to log step ${step}:`, err);
+  }
+}
+
+/**
+ * Update provisioning status with step info
+ */
+async function updateProvisioningStatus(
+  supabase: SupabaseClient,
+  organizationId: string,
+  status: string,
+  currentStep: string,
+  error?: string,
+  stepDetails?: Record<string, unknown>
+): Promise<void> {
+  await supabase
+    .from("ttn_connections")
+    .update({
+      provisioning_status: status,
+      provisioning_last_step: currentStep,
+      provisioning_error: error || null,
+      provisioning_step_details: stepDetails || null,
+      provisioning_can_retry: status === 'failed',
+      last_provisioning_attempt_at: new Date().toISOString(),
+    })
+    .eq("organization_id", organizationId);
+}
+
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v1.1-webhook-fix-20251231";
-  console.log(`[ttn-provision-org] Build: ${BUILD_VERSION}`);
-  console.log(`[ttn-provision-org] Method: ${req.method}, URL: ${req.url}`);
+  const BUILD_VERSION = "ttn-provision-org-v1.2-timeout-logging-20260103";
+  const requestId = crypto.randomUUID().slice(0, 8);
+  console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
+  console.log(`[ttn-provision-org] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
 
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -75,12 +157,19 @@ serve(async (req) => {
         function: "ttn-provision-org",
         version: BUILD_VERSION,
         timestamp: new Date().toISOString(),
+        request_id: requestId,
         environment: {
           hasSupabaseUrl: !!Deno.env.get("SUPABASE_URL"),
           hasServiceKey: !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
           hasTtnAdminKey,
           hasTtnUserId,
           ready: hasTtnAdminKey && hasTtnUserId,
+        },
+        capabilities: {
+          timeout_ms: REQUEST_TIMEOUT_MS,
+          max_retries: MAX_RETRIES,
+          provisioning_logs: true,
+          retry_support: true,
         },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -96,7 +185,7 @@ serve(async (req) => {
 
     if (!supabaseUrl || !supabaseServiceKey) {
       return new Response(
-        JSON.stringify({ success: false, error: "Missing Supabase credentials" }),
+        JSON.stringify({ success: false, error: "Missing Supabase credentials", request_id: requestId }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -107,6 +196,7 @@ serve(async (req) => {
           success: false, 
           error: "TTN admin credentials not configured",
           hint: "Contact your administrator to set up TTN_ADMIN_API_KEY and TTN_USER_ID secrets",
+          request_id: requestId,
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -118,7 +208,7 @@ serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
+        JSON.stringify({ error: "Missing authorization header", request_id: requestId }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -128,17 +218,17 @@ serve(async (req) => {
 
     if (userError || !user) {
       return new Response(
-        JSON.stringify({ error: "Invalid user session" }),
+        JSON.stringify({ error: "Invalid user session", request_id: requestId }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // Parse request
     const body: ProvisionOrgRequest = await req.json();
-    const { action, organization_id, ttn_region } = body;
+    const { action, organization_id, ttn_region, from_step } = body;
     const region = (ttn_region || "nam1").toLowerCase();
 
-    console.log(`[ttn-provision-org] Action: ${action}, Org: ${organization_id}, Region: ${region}`);
+    console.log(`[ttn-provision-org] [${requestId}] Action: ${action}, Org: ${organization_id}, Region: ${region}`);
 
     // Verify user is admin/owner
     const { data: roleCheck } = await supabase
@@ -150,7 +240,7 @@ serve(async (req) => {
 
     if (!roleCheck || !["owner", "admin"].includes(roleCheck.role)) {
       return new Response(
-        JSON.stringify({ error: "Only admins and owners can manage TTN provisioning" }),
+        JSON.stringify({ error: "Only admins and owners can manage TTN provisioning", request_id: requestId }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -164,7 +254,7 @@ serve(async (req) => {
 
     if (orgError || !org) {
       return new Response(
-        JSON.stringify({ error: "Organization not found" }),
+        JSON.stringify({ error: "Organization not found", request_id: requestId }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -183,14 +273,17 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
+          request_id: requestId,
           provisioning_status: ttnConn?.provisioning_status || "not_started",
+          provisioning_last_step: ttnConn?.provisioning_last_step || null,
+          provisioning_can_retry: ttnConn?.provisioning_can_retry ?? true,
+          provisioning_error: ttnConn?.provisioning_error || null,
           ttn_application_id: ttnConn?.ttn_application_id || null,
           ttn_region: ttnConn?.ttn_region || "nam1",
           has_api_key: !!ttnConn?.ttn_api_key_encrypted,
           has_webhook_secret: !!ttnConn?.ttn_webhook_secret_encrypted,
           webhook_url: ttnConn?.ttn_webhook_url || null,
           provisioned_at: ttnConn?.ttn_application_provisioned_at || null,
-          error: ttnConn?.provisioning_error || null,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -202,7 +295,7 @@ serve(async (req) => {
     if (action === "regenerate_webhook_secret") {
       if (!ttnConn?.ttn_application_id) {
         return new Response(
-          JSON.stringify({ error: "TTN application not provisioned yet" }),
+          JSON.stringify({ error: "TTN application not provisioned yet", request_id: requestId }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -210,77 +303,90 @@ serve(async (req) => {
       const newSecret = generateWebhookSecret();
       const encryptedSecret = obfuscateKey(newSecret, encryptionSalt);
       
-      // Update webhook in TTN with new secret
-      const webhookUrl = `${supabaseUrl}/functions/v1/ttn-webhook`;
+      // Ensure absolute webhook URL
+      const webhookUrl = supabaseUrl.startsWith('http') 
+        ? `${supabaseUrl}/functions/v1/ttn-webhook`
+        : `https://${supabaseUrl}/functions/v1/ttn-webhook`;
       const regionalUrl = REGIONAL_URLS[region] || REGIONAL_URLS.nam1;
       
-      const updateWebhookResponse = await fetch(
-        `${regionalUrl}/api/v3/as/webhooks/${ttnConn.ttn_application_id}/freshtracker`,
-        {
-          method: "PUT",
-          headers: {
-            "Authorization": `Bearer ${ttnAdminKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            webhook: {
-              ids: {
-                webhook_id: "freshtracker",
-                application_ids: { application_id: ttnConn.ttn_application_id },
-              },
-              base_url: webhookUrl,
-              headers: {
-                "X-Webhook-Secret": newSecret,
-              },
+      try {
+        const updateWebhookResponse = await fetchWithTimeout(
+          `${regionalUrl}/api/v3/as/webhooks/${ttnConn.ttn_application_id}/freshtracker`,
+          {
+            method: "PUT",
+            headers: {
+              "Authorization": `Bearer ${ttnAdminKey}`,
+              "Content-Type": "application/json",
             },
-            field_mask: {
-              paths: ["headers", "base_url", "format", "uplink_message", "join_accept"],
-            },
-          }),
-        }
-      );
+            body: JSON.stringify({
+              webhook: {
+                ids: {
+                  webhook_id: "freshtracker",
+                  application_ids: { application_id: ttnConn.ttn_application_id },
+                },
+                base_url: webhookUrl,
+                headers: {
+                  "X-Webhook-Secret": newSecret,
+                },
+              },
+              field_mask: {
+                paths: ["headers", "base_url", "format", "uplink_message", "join_accept"],
+              },
+            }),
+          }
+        );
 
-      if (!updateWebhookResponse.ok) {
-        const errorText = await updateWebhookResponse.text();
-        console.error(`[ttn-provision-org] Failed to update webhook: ${errorText}`);
+        if (!updateWebhookResponse.ok) {
+          const errorText = await updateWebhookResponse.text();
+          console.error(`[ttn-provision-org] [${requestId}] Failed to update webhook: ${errorText}`);
+          return new Response(
+            JSON.stringify({ success: false, error: "Failed to update webhook in TTN", details: errorText, request_id: requestId }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Save new secret to database
+        await supabase
+          .from("ttn_connections")
+          .update({
+            ttn_webhook_secret_encrypted: encryptedSecret,
+            ttn_webhook_secret_last4: getLast4(newSecret),
+            updated_by: user.id,
+          })
+          .eq("id", ttnConn.id);
+
         return new Response(
-          JSON.stringify({ success: false, error: "Failed to update webhook in TTN", details: errorText }),
+          JSON.stringify({
+            success: true,
+            message: "Webhook secret regenerated",
+            webhook_secret_last4: getLast4(newSecret),
+            request_id: requestId,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[ttn-provision-org] [${requestId}] Regenerate webhook failed:`, err);
+        return new Response(
+          JSON.stringify({ success: false, error: errorMessage, request_id: requestId }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-
-      // Save new secret to database
-      await supabase
-        .from("ttn_connections")
-        .update({
-          ttn_webhook_secret_encrypted: encryptedSecret,
-          ttn_webhook_secret_last4: getLast4(newSecret),
-          updated_by: user.id,
-        })
-        .eq("id", ttnConn.id);
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: "Webhook secret regenerated",
-          webhook_secret_last4: getLast4(newSecret),
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
     // ========================================
-    // ACTION: PROVISION - Create TTN application for org
+    // ACTION: PROVISION or RETRY - Create TTN application for org
     // ========================================
-    if (action === "provision") {
-      // Check if already provisioned
-      if (ttnConn?.ttn_application_id && ttnConn.provisioning_status === "completed") {
+    if (action === "provision" || action === "retry") {
+      // Check if already provisioned (only for fresh provision)
+      if (action === "provision" && ttnConn?.ttn_application_id && ttnConn.provisioning_status === "completed") {
         return new Response(
           JSON.stringify({
             success: true,
             message: "TTN application already provisioned",
             ttn_application_id: ttnConn.ttn_application_id,
             provisioning_status: "completed",
+            request_id: requestId,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -288,17 +394,23 @@ serve(async (req) => {
 
       // Generate TTN application ID from org UUID (fg-{first8chars})
       const ttnAppId = generateTtnApplicationId(org.id);
-      console.log(`[ttn-provision-org] Provisioning TTN app: ${ttnAppId} for org ${org.slug}`);
+      console.log(`[ttn-provision-org] [${requestId}] Provisioning TTN app: ${ttnAppId} for org ${org.slug}`);
 
-      // Update status to provisioning
+      // Determine which steps to run based on retry
+      const skipToStep = action === "retry" ? from_step : null;
+      const completedSteps: Record<string, unknown> = ttnConn?.provisioning_step_details || {};
+
+      // Initialize or update ttn_connections record
       if (ttnConn) {
         await supabase
           .from("ttn_connections")
           .update({
             provisioning_status: "provisioning",
             provisioning_error: null,
+            provisioning_can_retry: false,
             ttn_region: region,
             updated_by: user.id,
+            provisioning_attempts: (ttnConn.provisioning_attempts || 0) + 1,
           })
           .eq("id", ttnConn.id);
       } else {
@@ -309,218 +421,336 @@ serve(async (req) => {
             ttn_region: region,
             provisioning_status: "provisioning",
             created_by: user.id,
+            provisioning_attempts: 1,
           })
           .select()
           .single();
         ttnConn = newConn;
       }
 
+      // Ensure absolute webhook URL
+      const webhookUrl = supabaseUrl.startsWith('http') 
+        ? `${supabaseUrl}/functions/v1/ttn-webhook`
+        : `https://${supabaseUrl}/functions/v1/ttn-webhook`;
+      const regionalUrl = REGIONAL_URLS[region] || REGIONAL_URLS.nam1;
+
+      let newApiKey = "";
+      let apiKeyId = "";
+      let gatewayApiKey = "";
+      let gatewayApiKeyId = "";
+      let webhookSecret = "";
+      let webhookCreated = false;
+
       try {
-        // Step 1: Create TTN Application
-        console.log(`[ttn-provision-org] Step 1: Creating TTN application ${ttnAppId}`);
+        // ============ STEP 1: Create TTN Application ============
+        const step1Start = Date.now();
+        const shouldRunStep1 = !skipToStep || skipToStep === "create_application" || !completedSteps.application_created;
         
-        const createAppResponse = await fetch(
-          `${IDENTITY_SERVER_URL}/api/v3/users/${ttnUserId}/applications`,
-          {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${ttnAdminKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              application: {
-                ids: { application_id: ttnAppId },
-                name: `FreshTracker - ${org.name}`,
-                description: `FreshTracker temperature monitoring for ${org.name}`,
-              },
-            }),
-          }
-        );
-
-        if (!createAppResponse.ok && createAppResponse.status !== 409) {
-          const errorText = await createAppResponse.text();
-          throw new Error(`Failed to create application: ${createAppResponse.status} - ${errorText}`);
-        }
-
-        // Step 2: Create APPLICATION-SCOPED API Key (for devices, webhooks, traffic)
-        console.log(`[ttn-provision-org] Step 2: Creating application API key for ${ttnAppId}`);
-
-        const createKeyResponse = await fetch(
-          `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}/api-keys`,
-          {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${ttnAdminKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              name: "FreshTracker Integration",
-              rights: APPLICATION_KEY_RIGHTS,
-            }),
-          }
-        );
-
-        if (!createKeyResponse.ok) {
-          const errorText = await createKeyResponse.text();
-          throw new Error(`Failed to create application API key: ${createKeyResponse.status} - ${errorText}`);
-        }
-
-        const keyData = await createKeyResponse.json();
-        const newApiKey = keyData.key;
-        const apiKeyId = keyData.id;
-
-        // Step 2b: Create USER-SCOPED API Key (for gateway provisioning)
-        // Gateway provisioning requires a personal/user-scoped key, not an application key
-        console.log(`[ttn-provision-org] Step 2b: Creating gateway API key for user ${ttnUserId}`);
-
-        let gatewayApiKey = "";
-        let gatewayApiKeyId = "";
-
-        const createGatewayKeyResponse = await fetch(
-          `${IDENTITY_SERVER_URL}/api/v3/users/${ttnUserId}/api-keys`,
-          {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${ttnAdminKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              name: `FreshTracker Gateway - ${org.slug}`,
-              rights: GATEWAY_KEY_RIGHTS,
-            }),
-          }
-        );
-
-        if (createGatewayKeyResponse.ok) {
-          const gatewayKeyData = await createGatewayKeyResponse.json();
-          gatewayApiKey = gatewayKeyData.key;
-          gatewayApiKeyId = gatewayKeyData.id;
-          console.log(`[ttn-provision-org] Gateway API key created successfully`);
-        } else {
-          const errorText = await createGatewayKeyResponse.text();
-          console.warn(`[ttn-provision-org] Warning: Failed to create gateway API key: ${createGatewayKeyResponse.status} - ${errorText}`);
-          console.warn(`[ttn-provision-org] Gateway provisioning will fall back to admin key`);
-          // Don't fail the whole provisioning - gateway key is optional
-          // The admin key fallback will be used for gateway provisioning
-        }
-
-        // Step 3: Create webhook
-        console.log(`[ttn-provision-org] Step 3: Creating webhook for ${ttnAppId}`);
-        
-        const webhookSecret = generateWebhookSecret();
-        const webhookUrl = `${supabaseUrl}/functions/v1/ttn-webhook`;
-        const regionalUrl = REGIONAL_URLS[region] || REGIONAL_URLS.nam1;
-
-        // Enhanced webhook creation with retry and PUT fallback
-        let webhookCreated = false;
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const createWebhookResponse = await fetch(
-            `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}`,
+        if (shouldRunStep1 && !completedSteps.application_created) {
+          await logProvisioningStep(supabase, organization_id, "create_application", "started", "Creating TTN application", { ttn_app_id: ttnAppId }, undefined, requestId);
+          await updateProvisioningStatus(supabase, organization_id, "provisioning", "create_application");
+          
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Creating TTN application ${ttnAppId}`);
+          
+          const createAppResponse = await fetchWithTimeout(
+            `${IDENTITY_SERVER_URL}/api/v3/users/${ttnUserId}/applications`,
             {
               method: "POST",
               headers: {
-                "Authorization": `Bearer ${newApiKey}`,
+                "Authorization": `Bearer ${ttnAdminKey}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                webhook: {
-                  ids: {
-                    webhook_id: "freshtracker",
-                    application_ids: { application_id: ttnAppId },
-                  },
-                  base_url: webhookUrl,
-                  format: "json",
-                  headers: { "X-Webhook-Secret": webhookSecret },
-                  uplink_message: {},
-                  join_accept: {},
+                application: {
+                  ids: { application_id: ttnAppId },
+                  name: `FreshTracker - ${org.name}`,
+                  description: `FreshTracker temperature monitoring for ${org.name}`,
                 },
               }),
             }
           );
 
-          if (createWebhookResponse.ok) {
-            webhookCreated = true;
-            console.log(`[ttn-provision-org] Webhook created successfully`);
-            break;
-          } else if (createWebhookResponse.status === 409) {
-            // Webhook exists, try PUT to update
-            console.log(`[ttn-provision-org] Webhook exists, updating...`);
-            const updateResponse = await fetch(
-              `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}/freshtracker`,
+          if (!createAppResponse.ok && createAppResponse.status !== 409) {
+            const errorText = await createAppResponse.text();
+            const duration = Date.now() - step1Start;
+            await logProvisioningStep(supabase, organization_id, "create_application", "failed", `HTTP ${createAppResponse.status}: ${errorText}`, { status: createAppResponse.status }, duration, requestId);
+            throw new Error(`Failed to create application: ${createAppResponse.status} - ${errorText}`);
+          }
+
+          const duration = Date.now() - step1Start;
+          await logProvisioningStep(supabase, organization_id, "create_application", "success", "TTN application created", { ttn_app_id: ttnAppId }, duration, requestId);
+          completedSteps.application_created = true;
+          
+          // Save progress immediately
+          await supabase
+            .from("ttn_connections")
+            .update({
+              ttn_application_id: ttnAppId,
+              ttn_application_name: `FreshTracker - ${org.name}`,
+              provisioning_step_details: completedSteps,
+            })
+            .eq("organization_id", organization_id);
+        } else {
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Skipping (already completed)`);
+        }
+
+        // ============ STEP 2: Create Application API Key ============
+        const step2Start = Date.now();
+        const shouldRunStep2 = !skipToStep || skipToStep === "create_api_key" || 
+                              (skipToStep === "create_application" && completedSteps.application_created) ||
+                              !completedSteps.api_key_created;
+
+        if (shouldRunStep2 && !completedSteps.api_key_created) {
+          await logProvisioningStep(supabase, organization_id, "create_api_key", "started", "Creating application API key", undefined, undefined, requestId);
+          await updateProvisioningStatus(supabase, organization_id, "provisioning", "create_api_key");
+          
+          console.log(`[ttn-provision-org] [${requestId}] Step 2: Creating application API key for ${ttnAppId}`);
+
+          const createKeyResponse = await fetchWithTimeout(
+            `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}/api-keys`,
+            {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${ttnAdminKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                name: "FreshTracker Integration",
+                rights: APPLICATION_KEY_RIGHTS,
+              }),
+            }
+          );
+
+          if (!createKeyResponse.ok) {
+            const errorText = await createKeyResponse.text();
+            const duration = Date.now() - step2Start;
+            await logProvisioningStep(supabase, organization_id, "create_api_key", "failed", `HTTP ${createKeyResponse.status}: ${errorText}`, { status: createKeyResponse.status }, duration, requestId);
+            throw new Error(`Failed to create application API key: ${createKeyResponse.status} - ${errorText}`);
+          }
+
+          const keyData = await createKeyResponse.json();
+          newApiKey = keyData.key;
+          apiKeyId = keyData.id;
+
+          const duration = Date.now() - step2Start;
+          await logProvisioningStep(supabase, organization_id, "create_api_key", "success", "Application API key created", { key_last4: getLast4(newApiKey) }, duration, requestId);
+          completedSteps.api_key_created = true;
+
+          // Save API key immediately
+          const encryptedApiKey = obfuscateKey(newApiKey, encryptionSalt);
+          await supabase
+            .from("ttn_connections")
+            .update({
+              ttn_api_key_encrypted: encryptedApiKey,
+              ttn_api_key_last4: getLast4(newApiKey),
+              ttn_api_key_id: apiKeyId,
+              ttn_api_key_updated_at: new Date().toISOString(),
+              provisioning_step_details: completedSteps,
+            })
+            .eq("organization_id", organization_id);
+        } else {
+          console.log(`[ttn-provision-org] [${requestId}] Step 2: Skipping (already completed)`);
+        }
+
+        // ============ STEP 2b: Create Gateway API Key (optional) ============
+        const step2bStart = Date.now();
+        if (!completedSteps.gateway_key_attempted) {
+          await logProvisioningStep(supabase, organization_id, "create_gateway_key", "started", "Creating gateway API key", undefined, undefined, requestId);
+          console.log(`[ttn-provision-org] [${requestId}] Step 2b: Creating gateway API key for user ${ttnUserId}`);
+
+          try {
+            const createGatewayKeyResponse = await fetchWithTimeout(
+              `${IDENTITY_SERVER_URL}/api/v3/users/${ttnUserId}/api-keys`,
               {
-                method: "PUT",
+                method: "POST",
                 headers: {
-                  "Authorization": `Bearer ${newApiKey}`,
+                  "Authorization": `Bearer ${ttnAdminKey}`,
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                  webhook: {
-                    ids: {
-                      webhook_id: "freshtracker",
-                      application_ids: { application_id: ttnAppId },
-                    },
-                    base_url: webhookUrl,
-                    format: "json",
-                    headers: { "X-Webhook-Secret": webhookSecret },
-                    uplink_message: {},
-                    join_accept: {},
-                  },
-                  field_mask: {
-                    paths: ["headers", "base_url", "format", "uplink_message", "join_accept"],
-                  },
+                  name: `FreshTracker Gateway - ${org.slug}`,
+                  rights: GATEWAY_KEY_RIGHTS,
                 }),
               }
             );
-            if (updateResponse.ok) {
-              webhookCreated = true;
-              console.log(`[ttn-provision-org] Webhook updated successfully`);
-              break;
+
+            if (createGatewayKeyResponse.ok) {
+              const gatewayKeyData = await createGatewayKeyResponse.json();
+              gatewayApiKey = gatewayKeyData.key;
+              gatewayApiKeyId = gatewayKeyData.id;
+              
+              const duration = Date.now() - step2bStart;
+              await logProvisioningStep(supabase, organization_id, "create_gateway_key", "success", "Gateway API key created", { key_last4: getLast4(gatewayApiKey) }, duration, requestId);
+              completedSteps.gateway_key_created = true;
+
+              // Save gateway key immediately
+              const encryptedGatewayKey = obfuscateKey(gatewayApiKey, encryptionSalt);
+              await supabase
+                .from("ttn_connections")
+                .update({
+                  ttn_gateway_api_key_encrypted: encryptedGatewayKey,
+                  ttn_gateway_api_key_last4: getLast4(gatewayApiKey),
+                  ttn_gateway_api_key_id: gatewayApiKeyId,
+                  ttn_gateway_rights_verified: true,
+                })
+                .eq("organization_id", organization_id);
             } else {
-              const updateError = await updateResponse.text();
-              console.warn(`[ttn-provision-org] Webhook update failed: ${updateError}`);
+              const errorText = await createGatewayKeyResponse.text();
+              const duration = Date.now() - step2bStart;
+              await logProvisioningStep(supabase, organization_id, "create_gateway_key", "skipped", `Gateway key creation failed (non-blocking): ${errorText}`, { status: createGatewayKeyResponse.status }, duration, requestId);
+              console.warn(`[ttn-provision-org] [${requestId}] Warning: Failed to create gateway API key - will fall back to admin key`);
             }
+          } catch (gatewayErr) {
+            const duration = Date.now() - step2bStart;
+            const errMsg = gatewayErr instanceof Error ? gatewayErr.message : "Unknown error";
+            await logProvisioningStep(supabase, organization_id, "create_gateway_key", "skipped", `Gateway key creation failed (non-blocking): ${errMsg}`, undefined, duration, requestId);
+            console.warn(`[ttn-provision-org] [${requestId}] Warning: Gateway key creation timed out - will fall back to admin key`);
+          }
+          
+          completedSteps.gateway_key_attempted = true;
+          await supabase
+            .from("ttn_connections")
+            .update({ provisioning_step_details: completedSteps })
+            .eq("organization_id", organization_id);
+        }
+
+        // ============ STEP 3: Create Webhook ============
+        const step3Start = Date.now();
+        const shouldRunStep3 = !completedSteps.webhook_created;
+
+        if (shouldRunStep3) {
+          await logProvisioningStep(supabase, organization_id, "create_webhook", "started", "Creating TTN webhook", { webhook_url: webhookUrl }, undefined, requestId);
+          await updateProvisioningStatus(supabase, organization_id, "provisioning", "create_webhook");
+          
+          console.log(`[ttn-provision-org] [${requestId}] Step 3: Creating webhook for ${ttnAppId}`);
+          
+          webhookSecret = generateWebhookSecret();
+          
+          // Use the API key we just created (or try to get from DB if retry)
+          let apiKeyToUse = newApiKey;
+          if (!apiKeyToUse && ttnConn?.ttn_api_key_encrypted) {
+            // For retry, we'd need to decrypt - for now use admin key
+            apiKeyToUse = ttnAdminKey;
+          }
+
+          // Try POST first, then PUT if exists
+          for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            try {
+              const createWebhookResponse = await fetchWithTimeout(
+                `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Authorization": `Bearer ${apiKeyToUse}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    webhook: {
+                      ids: {
+                        webhook_id: "freshtracker",
+                        application_ids: { application_id: ttnAppId },
+                      },
+                      base_url: webhookUrl,
+                      format: "json",
+                      headers: { "X-Webhook-Secret": webhookSecret },
+                      uplink_message: {},
+                      join_accept: {},
+                    },
+                  }),
+                }
+              );
+
+              if (createWebhookResponse.ok) {
+                webhookCreated = true;
+                console.log(`[ttn-provision-org] [${requestId}] Webhook created successfully`);
+                break;
+              } else if (createWebhookResponse.status === 409) {
+                // Webhook exists, try PUT to update
+                console.log(`[ttn-provision-org] [${requestId}] Webhook exists, updating...`);
+                const updateResponse = await fetchWithTimeout(
+                  `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}/freshtracker`,
+                  {
+                    method: "PUT",
+                    headers: {
+                      "Authorization": `Bearer ${apiKeyToUse}`,
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                      webhook: {
+                        ids: {
+                          webhook_id: "freshtracker",
+                          application_ids: { application_id: ttnAppId },
+                        },
+                        base_url: webhookUrl,
+                        format: "json",
+                        headers: { "X-Webhook-Secret": webhookSecret },
+                        uplink_message: {},
+                        join_accept: {},
+                      },
+                      field_mask: {
+                        paths: ["headers", "base_url", "format", "uplink_message", "join_accept"],
+                      },
+                    }),
+                  }
+                );
+                if (updateResponse.ok) {
+                  webhookCreated = true;
+                  console.log(`[ttn-provision-org] [${requestId}] Webhook updated successfully`);
+                  break;
+                } else {
+                  const updateError = await updateResponse.text();
+                  console.warn(`[ttn-provision-org] [${requestId}] Webhook update failed: ${updateError}`);
+                }
+              } else {
+                const errorText = await createWebhookResponse.text();
+                console.warn(`[ttn-provision-org] [${requestId}] Webhook creation attempt ${attempt + 1} failed: ${errorText}`);
+              }
+
+              if (attempt < MAX_RETRIES - 1) {
+                await new Promise(r => setTimeout(r, 500 * (attempt + 1))); // Backoff
+              }
+            } catch (webhookErr) {
+              const errMsg = webhookErr instanceof Error ? webhookErr.message : "Unknown error";
+              console.warn(`[ttn-provision-org] [${requestId}] Webhook attempt ${attempt + 1} error: ${errMsg}`);
+              if (attempt < MAX_RETRIES - 1) {
+                await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+              }
+            }
+          }
+
+          const duration = Date.now() - step3Start;
+          if (webhookCreated) {
+            await logProvisioningStep(supabase, organization_id, "create_webhook", "success", "Webhook configured", { webhook_url: webhookUrl }, duration, requestId);
+            completedSteps.webhook_created = true;
+
+            // Save webhook credentials
+            const encryptedWebhookSecret = obfuscateKey(webhookSecret, encryptionSalt);
+            await supabase
+              .from("ttn_connections")
+              .update({
+                ttn_webhook_secret_encrypted: encryptedWebhookSecret,
+                ttn_webhook_secret_last4: getLast4(webhookSecret),
+                ttn_webhook_url: webhookUrl,
+                ttn_webhook_id: "freshtracker",
+                provisioning_step_details: completedSteps,
+              })
+              .eq("organization_id", organization_id);
           } else {
-            const errorText = await createWebhookResponse.text();
-            console.warn(`[ttn-provision-org] Webhook creation attempt ${attempt + 1} failed: ${errorText}`);
-          }
-
-          if (attempt === 0) {
-            await new Promise(r => setTimeout(r, 500)); // Brief delay before retry
+            await logProvisioningStep(supabase, organization_id, "create_webhook", "failed", "Webhook creation failed after retries", undefined, duration, requestId);
+            console.warn(`[ttn-provision-org] [${requestId}] Webhook creation failed - will need manual setup`);
           }
         }
 
-        if (!webhookCreated) {
-          console.warn(`[ttn-provision-org] Webhook creation failed - will need manual setup`);
-        }
-
-        // Step 4: Save all credentials to database
-        console.log(`[ttn-provision-org] Step 4: Saving credentials to database`);
-
-        const encryptedApiKey = obfuscateKey(newApiKey, encryptionSalt);
-        const encryptedWebhookSecret = obfuscateKey(webhookSecret, encryptionSalt);
-        const encryptedGatewayKey = gatewayApiKey ? obfuscateKey(gatewayApiKey, encryptionSalt) : null;
+        // ============ STEP 4: Finalize ============
+        console.log(`[ttn-provision-org] [${requestId}] Step 4: Finalizing provisioning`);
 
         await supabase
           .from("ttn_connections")
           .update({
-            ttn_application_id: ttnAppId,
-            ttn_application_name: `FreshTracker - ${org.name}`,
-            ttn_api_key_encrypted: encryptedApiKey,
-            ttn_api_key_last4: getLast4(newApiKey),
-            ttn_api_key_id: apiKeyId,
-            ttn_api_key_updated_at: new Date().toISOString(),
-            // Gateway-specific API key (user-scoped for gateway provisioning)
-            ttn_gateway_api_key_encrypted: encryptedGatewayKey,
-            ttn_gateway_api_key_last4: gatewayApiKey ? getLast4(gatewayApiKey) : null,
-            ttn_gateway_api_key_id: gatewayApiKeyId || null,
-            ttn_gateway_rights_verified: !!gatewayApiKey,
-            // Webhook credentials
-            ttn_webhook_secret_encrypted: encryptedWebhookSecret,
-            ttn_webhook_secret_last4: getLast4(webhookSecret),
-            ttn_webhook_url: webhookUrl,
-            ttn_webhook_id: "freshtracker",
             provisioning_status: "completed",
             provisioning_error: null,
+            provisioning_can_retry: false,
+            provisioning_last_step: "complete",
             ttn_application_provisioned_at: new Date().toISOString(),
             is_enabled: true,
             updated_by: user.id,
@@ -539,10 +769,17 @@ serve(async (req) => {
             ttn_application_id: ttnAppId,
             region,
             webhook_url: webhookUrl,
+            webhook_created: webhookCreated,
+            request_id: requestId,
           },
         });
 
-        console.log(`[ttn-provision-org] Provisioning complete for ${ttnAppId}`);
+        await logProvisioningStep(supabase, organization_id, "complete", "success", "Provisioning completed", { 
+          ttn_app_id: ttnAppId, 
+          webhook_created: webhookCreated 
+        }, undefined, requestId);
+
+        console.log(`[ttn-provision-org] [${requestId}] Provisioning complete for ${ttnAppId}`);
 
         return new Response(
           JSON.stringify({
@@ -551,16 +788,21 @@ serve(async (req) => {
             provisioning_status: "completed",
             webhook_url: webhookUrl,
             webhook_created: webhookCreated,
-            api_key_last4: getLast4(newApiKey),
-            webhook_secret_last4: getLast4(webhookSecret),
+            api_key_last4: newApiKey ? getLast4(newApiKey) : ttnConn?.ttn_api_key_last4,
+            webhook_secret_last4: webhookSecret ? getLast4(webhookSecret) : null,
             gateway_key_created: !!gatewayApiKey,
             gateway_key_last4: gatewayApiKey ? getLast4(gatewayApiKey) : null,
+            request_id: requestId,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (provisionError) {
         const errorMessage = provisionError instanceof Error ? provisionError.message : "Unknown error";
-        console.error(`[ttn-provision-org] Provisioning failed:`, provisionError);
+        console.error(`[ttn-provision-org] [${requestId}] Provisioning failed:`, provisionError);
+
+        // Determine retryable and which step failed
+        const isTimeout = errorMessage.includes("timed out");
+        const isRetryable = isTimeout || errorMessage.includes("network") || errorMessage.includes("fetch");
 
         // Save error to database
         await supabase
@@ -568,15 +810,23 @@ serve(async (req) => {
           .update({
             provisioning_status: "failed",
             provisioning_error: errorMessage,
+            provisioning_can_retry: isRetryable,
+            provisioning_step_details: completedSteps,
           })
           .eq("organization_id", organization_id);
+
+        await logProvisioningStep(supabase, organization_id, "error", "failed", errorMessage, { retryable: isRetryable }, undefined, requestId);
 
         return new Response(
           JSON.stringify({
             success: false,
             error: "Provisioning failed",
+            message: errorMessage,
             details: errorMessage,
             provisioning_status: "failed",
+            retryable: isRetryable,
+            completed_steps: completedSteps,
+            request_id: requestId,
           }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -589,14 +839,16 @@ serve(async (req) => {
     if (action === "delete") {
       if (!ttnConn?.ttn_application_id) {
         return new Response(
-          JSON.stringify({ success: true, message: "No TTN application to delete" }),
+          JSON.stringify({ success: true, message: "No TTN application to delete", request_id: requestId }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
       try {
+        await logProvisioningStep(supabase, organization_id, "delete_application", "started", "Deleting TTN application", { ttn_app_id: ttnConn.ttn_application_id }, undefined, requestId);
+
         // Delete the TTN application (this also deletes all devices and webhooks)
-        const deleteResponse = await fetch(
+        const deleteResponse = await fetchWithTimeout(
           `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnConn.ttn_application_id}`,
           {
             method: "DELETE",
@@ -625,11 +877,15 @@ serve(async (req) => {
             ttn_webhook_url: null,
             provisioning_status: "not_started",
             provisioning_error: null,
+            provisioning_last_step: null,
+            provisioning_step_details: null,
             ttn_application_provisioned_at: null,
             is_enabled: false,
             updated_by: user.id,
           })
           .eq("organization_id", organization_id);
+
+        await logProvisioningStep(supabase, organization_id, "delete_application", "success", "TTN application deleted", undefined, undefined, requestId);
 
         // Log event
         await supabase.from("event_logs").insert({
@@ -641,32 +897,34 @@ serve(async (req) => {
           actor_id: user.id,
           event_data: {
             ttn_application_id: ttnConn.ttn_application_id,
+            request_id: requestId,
           },
         });
 
         return new Response(
-          JSON.stringify({ success: true, message: "TTN application deleted" }),
+          JSON.stringify({ success: true, message: "TTN application deleted", request_id: requestId }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       } catch (deleteError) {
         const errorMessage = deleteError instanceof Error ? deleteError.message : "Unknown error";
-        console.error(`[ttn-provision-org] Delete failed:`, deleteError);
+        console.error(`[ttn-provision-org] [${requestId}] Delete failed:`, deleteError);
+        await logProvisioningStep(supabase, organization_id, "delete_application", "failed", errorMessage, undefined, undefined, requestId);
 
         return new Response(
-          JSON.stringify({ success: false, error: "Delete failed", details: errorMessage }),
+          JSON.stringify({ success: false, error: "Delete failed", details: errorMessage, request_id: requestId }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
     }
 
     return new Response(
-      JSON.stringify({ error: "Unknown action" }),
+      JSON.stringify({ error: "Unknown action", request_id: requestId }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("[ttn-provision-org] Error:", error);
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Internal error" }),
+      JSON.stringify({ error: error instanceof Error ? error.message : "Internal error", request_id: requestId }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
