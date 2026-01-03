@@ -2276,8 +2276,11 @@ export type Database = {
           last_provisioning_attempt_at: string | null
           organization_id: string
           provisioning_attempts: number | null
+          provisioning_can_retry: boolean | null
           provisioning_error: string | null
+          provisioning_last_step: string | null
           provisioning_status: string | null
+          provisioning_step_details: Json | null
           ttn_api_key_encrypted: string | null
           ttn_api_key_id: string | null
           ttn_api_key_last4: string | null
@@ -2325,8 +2328,11 @@ export type Database = {
           last_provisioning_attempt_at?: string | null
           organization_id: string
           provisioning_attempts?: number | null
+          provisioning_can_retry?: boolean | null
           provisioning_error?: string | null
+          provisioning_last_step?: string | null
           provisioning_status?: string | null
+          provisioning_step_details?: Json | null
           ttn_api_key_encrypted?: string | null
           ttn_api_key_id?: string | null
           ttn_api_key_last4?: string | null
@@ -2374,8 +2380,11 @@ export type Database = {
           last_provisioning_attempt_at?: string | null
           organization_id?: string
           provisioning_attempts?: number | null
+          provisioning_can_retry?: boolean | null
           provisioning_error?: string | null
+          provisioning_last_step?: string | null
           provisioning_status?: string | null
+          provisioning_step_details?: Json | null
           ttn_api_key_encrypted?: string | null
           ttn_api_key_id?: string | null
           ttn_api_key_last4?: string | null
@@ -2494,6 +2503,50 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "ttn_deprovision_jobs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ttn_provisioning_logs: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          id: string
+          message: string | null
+          organization_id: string
+          payload: Json | null
+          request_id: string | null
+          status: string
+          step: string
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          message?: string | null
+          organization_id: string
+          payload?: Json | null
+          request_id?: string | null
+          status: string
+          step: string
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          id?: string
+          message?: string | null
+          organization_id?: string
+          payload?: Json | null
+          request_id?: string | null
+          status?: string
+          step?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ttn_provisioning_logs_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
