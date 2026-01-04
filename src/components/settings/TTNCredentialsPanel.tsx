@@ -39,6 +39,10 @@ interface TTNCredentials {
   last_http_status: number | null;
   last_http_body: string | null;
   credentials_last_rotated_at: string | null;
+  // New diagnostics fields
+  app_rights_check_status: string | null;
+  last_ttn_correlation_id: string | null;
+  last_ttn_error_name: string | null;
 }
 
 interface TTNCredentialsPanelProps {
@@ -51,6 +55,7 @@ const PROVISIONING_STEPS = [
   { id: 'create_organization', label: 'Create Organization', description: 'Create TTN organization for tenant isolation' },
   { id: 'create_org_api_key', label: 'Create Org API Key', description: 'Create org-scoped API key' },
   { id: 'create_application', label: 'Create Application', description: 'Create TTN application under org' },
+  { id: 'verify_application_rights', label: 'Verify App Rights', description: 'Check application ownership' },
   { id: 'create_app_api_key', label: 'Create App API Key', description: 'Create application API key' },
   { id: 'create_webhook', label: 'Create Webhook', description: 'Configure webhook endpoint' },
   { id: 'complete', label: 'Complete', description: 'Provisioning finished' },
@@ -61,6 +66,7 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
   const [isLoading, setIsLoading] = useState(true);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [isStartingFresh, setIsStartingFresh] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
@@ -152,11 +158,29 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
         },
       });
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      // Handle transport errors
+      if (error) {
+        console.error("Transport error:", error);
+        toast.error(error.message || "Failed to connect");
+        return;
+      }
+
+      // Handle structured responses (HTTP 200 with success:false)
+      if (data && !data.success) {
+        if (data.use_start_fresh) {
+          toast.error("Cannot retry - use Start Fresh", {
+            description: data.message || "Application is owned by different account",
+          });
+        } else {
+          toast.error(data.error || "Provisioning failed", {
+            description: data.message,
+          });
+        }
+        await fetchCredentials();
+        return;
+      }
 
       toast.success("Provisioning started");
-      // Refresh credentials after a delay to get updated status
       setTimeout(fetchCredentials, 2000);
     } catch (err: any) {
       console.error("Failed to retry provisioning:", err);
@@ -164,6 +188,62 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
     } finally {
       setIsRetrying(false);
     }
+  };
+
+  const handleStartFresh = async () => {
+    if (!organizationId) return;
+
+    setIsStartingFresh(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Not authenticated");
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
+        body: { 
+          action: "start_fresh",
+          organization_id: organizationId,
+        },
+      });
+
+      // Handle transport errors
+      if (error) {
+        console.error("Transport error:", error);
+        toast.error(error.message || "Failed to connect");
+        return;
+      }
+
+      // Handle structured responses
+      if (data && !data.success) {
+        toast.error(data.error || "Start Fresh failed", {
+          description: data.message,
+        });
+        await fetchCredentials();
+        return;
+      }
+
+      toast.success("Start Fresh completed", {
+        description: data.app_id_rotated 
+          ? "Created new application ID under current key" 
+          : "Recreated application successfully",
+      });
+      setTimeout(fetchCredentials, 2000);
+    } catch (err: any) {
+      console.error("Failed to start fresh:", err);
+      toast.error(err.message || "Failed to start fresh");
+    } finally {
+      setIsStartingFresh(false);
+    }
+  };
+
+  // Check if the error indicates an unowned application
+  const isUnownedAppError = () => {
+    if (!credentials) return false;
+    return credentials.app_rights_check_status === "forbidden" ||
+           credentials.last_ttn_error_name === "no_application_rights" ||
+           credentials.last_http_body?.includes("no_application_rights");
   };
 
   const handleCheckStatus = async () => {
@@ -354,15 +434,43 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/50">
                 {(credentials?.provisioning_status === 'failed' || !credentials?.ttn_application_id) && (
-                  <Button
-                    variant="default"
-                    onClick={handleRetryProvisioning}
-                    disabled={isRetrying || isLoading}
-                    className="gap-2"
-                  >
-                    <PlayCircle className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
-                    {credentials?.ttn_application_id ? "Retry Provisioning" : "Start Provisioning"}
-                  </Button>
+                  <>
+                    {/* Show Start Fresh prominently when app is unowned */}
+                    {isUnownedAppError() ? (
+                      <Button
+                        variant="default"
+                        onClick={handleStartFresh}
+                        disabled={isStartingFresh || isLoading}
+                        className="gap-2"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${isStartingFresh ? "animate-spin" : ""}`} />
+                        Start Fresh
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="default"
+                        onClick={handleRetryProvisioning}
+                        disabled={isRetrying || isLoading}
+                        className="gap-2"
+                      >
+                        <PlayCircle className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
+                        {credentials?.ttn_application_id ? "Retry Provisioning" : "Start Provisioning"}
+                      </Button>
+                    )}
+                    
+                    {/* Show Retry as secondary when app is unowned */}
+                    {isUnownedAppError() && (
+                      <Button
+                        variant="outline"
+                        onClick={handleRetryProvisioning}
+                        disabled={isRetrying || isLoading}
+                        className="gap-2"
+                      >
+                        <PlayCircle className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
+                        Retry
+                      </Button>
+                    )}
+                  </>
                 )}
                 
                 <Button
@@ -441,7 +549,21 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                         <p className="font-medium text-alarm">Provisioning Failed</p>
                         <p className="text-sm text-muted-foreground mt-1">{credentials.provisioning_error}</p>
                         
-                        {(credentials.last_http_status || credentials.last_http_body) && (
+                        {/* Special message for unowned app error */}
+                        {isUnownedAppError() && (
+                          <div className="mt-3 p-3 bg-warning/10 rounded border border-warning/30 text-sm">
+                            <p className="font-medium text-warning">Application Ownership Issue</p>
+                            <p className="text-muted-foreground mt-1">
+                              This TTN application exists but the current provisioning key has no rights to it. 
+                              This commonly happens with legacy apps created under another account.
+                            </p>
+                            <p className="text-foreground mt-2">
+                              Use <strong>Start Fresh</strong> to recreate or generate a new app ID under the current key.
+                            </p>
+                          </div>
+                        )}
+                        
+                        {(credentials.last_http_status || credentials.last_http_body || credentials.last_ttn_correlation_id) && (
                           <CollapsibleTrigger asChild>
                             <Button variant="ghost" size="sm" className="mt-2 h-auto p-0 text-xs text-muted-foreground hover:text-foreground">
                               {showErrorDetails ? (
@@ -459,6 +581,18 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                               <div>
                                 <span className="text-muted-foreground">HTTP Status:</span>{" "}
                                 <span className="text-alarm">{credentials.last_http_status}</span>
+                              </div>
+                            )}
+                            {credentials.last_ttn_error_name && (
+                              <div>
+                                <span className="text-muted-foreground">Error:</span>{" "}
+                                <span className="text-alarm">{credentials.last_ttn_error_name}</span>
+                              </div>
+                            )}
+                            {credentials.last_ttn_correlation_id && (
+                              <div>
+                                <span className="text-muted-foreground">Correlation ID:</span>{" "}
+                                <span className="text-foreground/70">{credentials.last_ttn_correlation_id}</span>
                               </div>
                             )}
                             {credentials.last_http_body && (
