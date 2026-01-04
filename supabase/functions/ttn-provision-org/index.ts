@@ -20,6 +20,7 @@ import {
   generateTtnOrganizationId,
   generateWebhookSecret,
   obfuscateKey,
+  deobfuscateKey,
   getLast4,
 } from "../_shared/ttnConfig.ts";
 import {
@@ -864,7 +865,6 @@ serve(async (req) => {
           console.log(`[ttn-provision-org] [${requestId}] Step 1b: Skipping (org key already created)`);
           // Load existing org API key for subsequent steps
           if (ttnConn?.ttn_org_api_key_encrypted) {
-            const { deobfuscateKey } = await import("../_shared/ttnConfig.ts");
             orgApiKey = deobfuscateKey(ttnConn.ttn_org_api_key_encrypted, encryptionSalt);
           }
         }
