@@ -32,12 +32,17 @@ const stepLabels: Record<string, string> = {
   create_organization: "Create Organization",
   create_org_api_key: "Create Org API Key",
   create_application: "Create Application",
+  verify_application_rights: "Verify App Rights",
   create_api_key: "Create API Key",
+  create_app_api_key: "Create App API Key",
   create_gateway_key: "Create Gateway Key",
   create_webhook: "Configure Webhook",
   delete_application: "Delete Application",
   delete_organization: "Delete Organization",
+  delete_unowned_app: "Delete Unowned App",
+  rotate_app_id: "Rotate App ID",
   complete: "Complete",
+  finalize: "Finalize",
   error: "Error",
 };
 
