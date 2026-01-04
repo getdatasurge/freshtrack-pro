@@ -231,16 +231,38 @@ export async function validateMainUserApiKey(
 
     const data = await response.json();
     
-    // Extract user info from various possible response formats
-    const userId = data.oauth_access_token?.user_ids?.user_id 
-      || data.api_key?.api_key_id 
-      || data.user_session?.session?.user_ids?.user_id
-      || "unknown";
+    console.log(`[ttnPermissions] [${requestId}] Preflight: raw response keys: ${Object.keys(data).join(', ')}`);
     
-    const universalRights = data.universal_rights || [];
+    // Determine entity type and extract info from api_key response
+    // Personal API keys return: { api_key: { entity_ids: { user_ids: { user_id: "..." } }, rights: [...] } }
+    // Application API keys return: { api_key: { entity_ids: { application_ids: { application_id: "..." } }, rights: [...] } }
+    // Organization API keys return: { api_key: { entity_ids: { organization_ids: { organization_id: "..." } }, rights: [...] } }
+    const apiKeyInfo = data.api_key;
+    const entityIds = apiKeyInfo?.entity_ids || {};
+    const entityType = Object.keys(entityIds)[0] || null; // "user_ids", "application_ids", "organization_ids", or null
+    
+    // Extract user ID from various response formats
+    let userId = "unknown";
+    if (entityIds.user_ids?.user_id) {
+      userId = entityIds.user_ids.user_id;
+    } else if (data.oauth_access_token?.user_ids?.user_id) {
+      userId = data.oauth_access_token.user_ids.user_id;
+    } else if (data.user_session?.session?.user_ids?.user_id) {
+      userId = data.user_session.session.user_ids.user_id;
+    } else if (apiKeyInfo?.api_key_id) {
+      userId = apiKeyInfo.api_key_id;
+    }
+    
     const isAdmin = data.is_admin || false;
     
-    console.log(`[ttnPermissions] [${requestId}] Preflight: user_id=${userId}, is_admin=${isAdmin}, universal_rights=${universalRights.length}`);
+    // For Personal API keys (user_ids scoped), rights come from api_key.rights
+    // universal_rights is typically empty for API keys (it's for OAuth tokens)
+    const apiKeyRights = apiKeyInfo?.rights || [];
+    const universalRights = data.universal_rights || [];
+    const allRights = [...new Set([...apiKeyRights, ...universalRights])];
+    
+    console.log(`[ttnPermissions] [${requestId}] Preflight: entity_type=${entityType}, user_id=${userId}, is_admin=${isAdmin}`);
+    console.log(`[ttnPermissions] [${requestId}] Preflight: api_key.rights=${apiKeyRights.length}, universal_rights=${universalRights.length}, total=${allRights.length}`);
     
     // If admin, they have all rights
     if (isAdmin) {
@@ -254,36 +276,75 @@ export async function validateMainUserApiKey(
       };
     }
 
+    // CRITICAL: Only accept user-scoped keys (Personal API Keys)
+    // Reject application_ids and organization_ids scoped keys
+    if (entityType === "application_ids") {
+      const appId = entityIds.application_ids?.application_id || "unknown";
+      console.log(`[ttnPermissions] [${requestId}] Preflight: Rejected - Application-scoped key for ${appId}`);
+      return {
+        success: false,
+        user_id: userId,
+        granted_rights: apiKeyRights,
+        missing_rights: MAIN_USER_KEY_REQUIRED_RIGHTS,
+        error: "This is an Application API key, not a Personal API key",
+        hint: `This key is scoped to application '${appId}'. Provisioning requires a Personal API Key (user-scoped). Create one in TTN Console → User Settings → API Keys with 'Grant all current and future rights' checked.`,
+      };
+    }
+    
+    if (entityType === "organization_ids") {
+      const orgId = entityIds.organization_ids?.organization_id || "unknown";
+      console.log(`[ttnPermissions] [${requestId}] Preflight: Rejected - Organization-scoped key for ${orgId}`);
+      return {
+        success: false,
+        user_id: userId,
+        granted_rights: apiKeyRights,
+        missing_rights: MAIN_USER_KEY_REQUIRED_RIGHTS,
+        error: "This is an Organization API key, not a Personal API key",
+        hint: `This key is scoped to organization '${orgId}'. Provisioning requires a Personal API Key (user-scoped). Create one in TTN Console → User Settings → API Keys with 'Grant all current and future rights' checked.`,
+      };
+    }
+    
+    if (entityType === "gateway_ids") {
+      const gwId = entityIds.gateway_ids?.gateway_id || "unknown";
+      console.log(`[ttnPermissions] [${requestId}] Preflight: Rejected - Gateway-scoped key for ${gwId}`);
+      return {
+        success: false,
+        user_id: userId,
+        granted_rights: apiKeyRights,
+        missing_rights: MAIN_USER_KEY_REQUIRED_RIGHTS,
+        error: "This is a Gateway API key, not a Personal API key",
+        hint: `This key is scoped to gateway '${gwId}'. Provisioning requires a Personal API Key (user-scoped). Create one in TTN Console → User Settings → API Keys with 'Grant all current and future rights' checked.`,
+      };
+    }
+
     // Check for required user-level rights
-    const grantedSet = new Set(universalRights);
+    // For Personal API keys, allRights should contain the granted rights
+    const grantedSet = new Set(allRights);
     const missingRights = MAIN_USER_KEY_REQUIRED_RIGHTS.filter(r => !grantedSet.has(r));
     
-    console.log(`[ttnPermissions] [${requestId}] Preflight: ${universalRights.length} universal rights, ${missingRights.length} missing`);
+    console.log(`[ttnPermissions] [${requestId}] Preflight: ${allRights.length} total rights, ${missingRights.length} missing`);
     
-    // If no universal rights at all, this is probably a scoped key (org/app)
-    if (universalRights.length === 0 && !isAdmin) {
-      // Try to detect if it's an org or app scoped key
-      const apiKeyInfo = data.api_key;
-      if (apiKeyInfo?.entity_ids) {
-        const entityType = Object.keys(apiKeyInfo.entity_ids)[0] || "unknown";
-        return {
-          success: false,
-          user_id: userId,
-          granted_rights: [],
-          missing_rights: MAIN_USER_KEY_REQUIRED_RIGHTS,
-          error: "API key is scoped to specific entity",
-          hint: `This appears to be a ${entityType}-scoped API key. Provisioning requires a Personal API Key (user-scoped) with full rights. Create one in TTN Console → User Settings → API Keys with 'Grant all current and future rights' checked.`,
-        };
-      }
+    // Check if key has sufficient rights
+    if (missingRights.length > 0) {
+      console.log(`[ttnPermissions] [${requestId}] Preflight: Missing rights: ${missingRights.join(', ')}`);
+      return {
+        success: false,
+        user_id: userId,
+        granted_rights: allRights,
+        missing_rights: missingRights,
+        error: "Personal API key is missing required rights",
+        hint: `The key is valid but missing these rights: ${missingRights.slice(0, 3).map(r => PERMISSION_LABELS[r] || r).join(', ')}${missingRights.length > 3 ? ` and ${missingRights.length - 3} more` : ''}. Edit the key in TTN Console or create a new one with 'Grant all current and future rights' checked.`,
+      };
     }
 
     // Success - key is valid and has sufficient rights
+    console.log(`[ttnPermissions] [${requestId}] Preflight: SUCCESS - Valid Personal API key with all required rights`);
     return {
       success: true,
       user_id: userId,
       is_admin: false,
-      granted_rights: universalRights,
-      missing_rights: missingRights,
+      granted_rights: allRights,
+      missing_rights: [],
     };
   } catch (err) {
     console.error(`[ttnPermissions] [${requestId}] Preflight exception:`, err);

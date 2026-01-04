@@ -447,9 +447,9 @@ serve(async (req) => {
         last_http_body: ttnConn?.last_http_body || null,
         app_rights_check_status: ttnConn?.app_rights_check_status || null,
         last_ttn_correlation_id: ttnConn?.last_ttn_correlation_id || null,
-        // TTN Organization info
-        ttn_organization_id: ttnConn?.ttn_organization_id || null,
-        ttn_organization_name: ttnConn?.ttn_organization_name || null,
+        last_ttn_error_name: ttnConn?.last_ttn_error_name || null,
+        // TTN Organization info (use canonical tts_* columns)
+        ttn_organization_id: ttnConn?.tts_organization_id || null,
         has_org_api_key: !!ttnConn?.ttn_org_api_key_encrypted,
         // TTN Application info
         ttn_application_id: ttnConn?.ttn_application_id || null,
@@ -485,14 +485,14 @@ serve(async (req) => {
         ttnConn?.ttn_application_id &&
         (ttnConn.provisioning_status === "completed" || ttnConn.provisioning_status === "ready")
       ) {
-        return buildResponse({
-          success: true,
-          message: "TTN application already provisioned",
-          ttn_organization_id: ttnConn.ttn_organization_id,
-          ttn_application_id: ttnConn.ttn_application_id,
-          provisioning_status: "ready",
-          request_id: requestId,
-        });
+      return buildResponse({
+        success: true,
+        message: "TTN application already provisioned",
+        ttn_organization_id: ttnConn.tts_organization_id,
+        ttn_application_id: ttnConn.ttn_application_id,
+        provisioning_status: "ready",
+        request_id: requestId,
+      });
       }
 
       // Generate TTN organization and application IDs
@@ -741,9 +741,9 @@ serve(async (req) => {
           await supabase
             .from("ttn_connections")
             .update({
-              ttn_organization_id: ttnOrgId,
-              ttn_organization_name: `FrostGuard - ${org.name}`,
-              ttn_organization_provisioned_at: new Date().toISOString(),
+              // Use canonical column names (tts_* not ttn_organization_*)
+              tts_organization_id: ttnOrgId,
+              tts_org_provisioned_at: new Date().toISOString(),
               provisioning_step_details: completedSteps,
             })
             .eq("organization_id", organization_id);
