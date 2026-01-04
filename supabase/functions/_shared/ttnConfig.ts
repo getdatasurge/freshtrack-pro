@@ -70,10 +70,17 @@ export interface TtnConnectionRow {
   organization_id: string;
   is_enabled: boolean;
   ttn_region: string;
+  // TTN Organization (created per customer)
+  ttn_organization_id: string | null;
+  ttn_org_api_key_encrypted: string | null;
+  ttn_org_api_key_last4: string | null;
+  ttn_org_api_key_id: string | null;
+  // TTN Application (created under the org)
   ttn_application_id: string | null;
   ttn_api_key_encrypted: string | null;
   ttn_api_key_last4: string | null;
-  // Gateway-specific API key (user-scoped for gateway provisioning)
+  ttn_api_key_id: string | null;
+  // Gateway-specific API key (org-scoped for gateway provisioning)
   ttn_gateway_api_key_encrypted: string | null;
   ttn_gateway_api_key_last4: string | null;
   ttn_gateway_api_key_id: string | null;
@@ -132,9 +139,37 @@ export function generateWebhookSecret(): string {
 }
 
 /**
+ * Generate TTN Organization ID from customer organization UUID
+ * Format: fg-org-{first 8 chars of UUID}
+ *
+ * TTN Organizations provide tenant isolation:
+ * - Each customer gets their own TTN Organization
+ * - All applications and gateways are created under this org
+ * - Org-scoped API key controls all resources
+ */
+export function generateTtnOrganizationId(orgId: string): string {
+  // Extract first 8 hex characters from UUID (remove dashes, lowercase)
+  const shortId = orgId.replace(/-/g, '').slice(0, 8).toLowerCase();
+
+  // Validate we have 8 hex chars
+  if (!/^[0-9a-f]{8}$/.test(shortId)) {
+    console.warn(`[generateTtnOrganizationId] Invalid UUID format: ${orgId}, using hash fallback`);
+    const hash = Array.from(orgId)
+      .reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
+      .toString(16)
+      .replace('-', '')
+      .slice(0, 8)
+      .padStart(8, '0');
+    return `fg-org-${hash}`;
+  }
+
+  return `fg-org-${shortId}`;
+}
+
+/**
  * Generate TTN application ID from organization ID (UUID)
  * Format: fg-{first 8 chars of UUID} (max 11 chars, lowercase, alphanumeric)
- * 
+ *
  * Using UUID instead of slug ensures:
  * - Globally unique application IDs
  * - No conflicts when orgs have similar names
@@ -143,7 +178,7 @@ export function generateWebhookSecret(): string {
 export function generateTtnApplicationId(orgId: string): string {
   // Extract first 8 hex characters from UUID (remove dashes, lowercase)
   const shortId = orgId.replace(/-/g, '').slice(0, 8).toLowerCase();
-  
+
   // Validate we have 8 hex chars
   if (!/^[0-9a-f]{8}$/.test(shortId)) {
     // Fallback: hash the input if it's not a valid UUID
@@ -156,7 +191,7 @@ export function generateTtnApplicationId(orgId: string): string {
       .padStart(8, '0');
     return `fg-${hash}`;
   }
-  
+
   return `fg-${shortId}`;
 }
 
