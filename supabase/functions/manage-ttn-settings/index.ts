@@ -256,6 +256,11 @@ Deno.serve(async (req: Request) => {
       const appApiSecret = safeDecrypt(settings.ttn_api_key_encrypted, encryptionSalt);
       const webhookSecret = safeDecrypt(settings.ttn_webhook_secret_encrypted, encryptionSalt);
 
+      // Map legacy status values
+      let provisioningStatus = settings.provisioning_status || "idle";
+      if (provisioningStatus === "not_started") provisioningStatus = "idle";
+      if (provisioningStatus === "completed") provisioningStatus = "ready";
+
       return new Response(
         JSON.stringify({
           organization_name: org?.name || "Unknown",
@@ -263,13 +268,19 @@ Deno.serve(async (req: Request) => {
           ttn_application_id: settings.ttn_application_id,
           ttn_region: settings.ttn_region,
           org_api_secret: orgApiSecret,
-          org_api_secret_last4: settings.ttn_org_api_key_last4,
+          org_api_secret_last4: settings.ttn_org_api_key_last4 || settings.ttn_gateway_api_key_last4,
           app_api_secret: appApiSecret,
           app_api_secret_last4: settings.ttn_api_key_last4,
           webhook_secret: webhookSecret,
           webhook_secret_last4: settings.ttn_webhook_secret_last4,
           webhook_url: settings.ttn_webhook_url,
-          provisioning_status: settings.provisioning_status,
+          // New state machine fields
+          provisioning_status: provisioningStatus,
+          provisioning_step: settings.provisioning_step || settings.provisioning_last_step || null,
+          provisioning_error: settings.provisioning_error,
+          provisioning_attempt_count: settings.provisioning_attempt_count || 0,
+          last_http_status: settings.last_http_status || null,
+          last_http_body: settings.last_http_body || null,
           credentials_last_rotated_at: settings.credentials_last_rotated_at,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
