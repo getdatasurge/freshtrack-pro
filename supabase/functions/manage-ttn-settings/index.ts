@@ -281,6 +281,12 @@ Deno.serve(async (req: Request) => {
           provisioning_attempt_count: settings.provisioning_attempt_count || 0,
           last_http_status: settings.last_http_status || null,
           last_http_body: settings.last_http_body || null,
+          // Diagnostics fields for Start Fresh detection
+          app_rights_check_status: settings.app_rights_check_status || null,
+          last_ttn_http_status: settings.last_ttn_http_status || null,
+          last_ttn_error_namespace: settings.last_ttn_error_namespace || null,
+          last_ttn_error_name: settings.last_ttn_error_name || null,
+          last_ttn_correlation_id: settings.last_ttn_correlation_id || null,
           credentials_last_rotated_at: settings.credentials_last_rotated_at,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
