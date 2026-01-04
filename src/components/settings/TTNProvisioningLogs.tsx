@@ -28,11 +28,15 @@ interface TTNProvisioningLogsProps {
 }
 
 const stepLabels: Record<string, string> = {
+  preflight: "Preflight Check",
+  create_organization: "Create Organization",
+  create_org_api_key: "Create Org API Key",
   create_application: "Create Application",
   create_api_key: "Create API Key",
   create_gateway_key: "Create Gateway Key",
   create_webhook: "Configure Webhook",
   delete_application: "Delete Application",
+  delete_organization: "Delete Organization",
   complete: "Complete",
   error: "Error",
 };

@@ -70,13 +70,15 @@ export interface TtnConnectionRow {
   organization_id: string;
   is_enabled: boolean;
   ttn_region: string;
-  // TTN Organization (created per customer)
+  // TTN Organization (created first for better permission isolation)
   ttn_organization_id: string | null;
+  ttn_organization_name: string | null;
   ttn_org_api_key_encrypted: string | null;
   ttn_org_api_key_last4: string | null;
   ttn_org_api_key_id: string | null;
-  // TTN Application (created under the org)
+  // TTN Application (created under organization)
   ttn_application_id: string | null;
+  ttn_application_name: string | null;
   ttn_api_key_encrypted: string | null;
   ttn_api_key_last4: string | null;
   ttn_api_key_id: string | null;
@@ -139,13 +141,10 @@ export function generateWebhookSecret(): string {
 }
 
 /**
- * Generate TTN Organization ID from customer organization UUID
- * Format: fg-org-{first 8 chars of UUID}
+ * Generate TTN organization ID from organization ID (UUID)
+ * Format: fg-org-{first 8 chars of UUID} (lowercase, alphanumeric)
  *
- * TTN Organizations provide tenant isolation:
- * - Each customer gets their own TTN Organization
- * - All applications and gateways are created under this org
- * - Org-scoped API key controls all resources
+ * TTN Organizations provide better permission isolation than user-owned apps.
  */
 export function generateTtnOrganizationId(orgId: string): string {
   // Extract first 8 hex characters from UUID (remove dashes, lowercase)
@@ -153,6 +152,7 @@ export function generateTtnOrganizationId(orgId: string): string {
 
   // Validate we have 8 hex chars
   if (!/^[0-9a-f]{8}$/.test(shortId)) {
+    // Fallback: hash the input if it's not a valid UUID
     console.warn(`[generateTtnOrganizationId] Invalid UUID format: ${orgId}, using hash fallback`);
     const hash = Array.from(orgId)
       .reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
