@@ -61,11 +61,10 @@ export const GATEWAY_RIGHTS = {
 };
 
 // ============================================================================
-// ORGANIZATION-SCOPED API KEY RIGHTS
-// Used to create applications and gateways under the organization
-// This key replaces the master key for all org-specific operations
+// ORGANIZATION-SCOPED API KEY RIGHTS (ALL)
+// Grants full access - use sparingly, prefer granular rights
 // ============================================================================
-export const ORGANIZATION_KEY_RIGHTS = [
+export const ORGANIZATION_KEY_RIGHTS_ALL = [
   "RIGHT_ORGANIZATION_ALL",           // Full org access (manage members, settings)
   "RIGHT_APPLICATION_ALL",            // Create/manage applications under this org
   "RIGHT_GATEWAY_ALL",                // Create/manage gateways under this org
