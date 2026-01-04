@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, RefreshCw, Key, Building2, ExternalLink } from "lucide-react";
+import { AlertTriangle, RefreshCw, Key, Building2, ExternalLink, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, PlayCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SecretField } from "./SecretField";
@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 interface TTNCredentials {
   organization_name: string;
@@ -31,7 +32,12 @@ interface TTNCredentials {
   webhook_secret: string | null;
   webhook_secret_last4: string | null;
   webhook_url: string | null;
-  provisioning_status: string | null;
+  provisioning_status: 'idle' | 'provisioning' | 'ready' | 'failed' | string | null;
+  provisioning_step: string | null;
+  provisioning_error: string | null;
+  provisioning_attempt_count: number | null;
+  last_http_status: number | null;
+  last_http_body: string | null;
   credentials_last_rotated_at: string | null;
 }
 
@@ -39,12 +45,23 @@ interface TTNCredentialsPanelProps {
   organizationId: string | null;
 }
 
+// Define provisioning steps for step tracker
+const PROVISIONING_STEPS = [
+  { id: 'preflight', label: 'Preflight Check', description: 'Verify TTN credentials' },
+  { id: 'create_ttn_app', label: 'Create Application', description: 'Create TTN application' },
+  { id: 'create_api_key', label: 'Create API Key', description: 'Create application API key' },
+  { id: 'create_webhook', label: 'Create Webhook', description: 'Configure webhook endpoint' },
+  { id: 'complete', label: 'Complete', description: 'Provisioning finished' },
+];
+
 export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps) {
   const [credentials, setCredentials] = useState<TTNCredentials | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmChecked, setConfirmChecked] = useState(false);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   const fetchCredentials = useCallback(async () => {
     if (!organizationId) {
@@ -115,6 +132,62 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
     }
   };
 
+  const handleRetryProvisioning = async () => {
+    if (!organizationId) return;
+
+    setIsRetrying(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Not authenticated");
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
+        body: { 
+          action: "retry",
+          organization_id: organizationId,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success("Provisioning started");
+      // Refresh credentials after a delay to get updated status
+      setTimeout(fetchCredentials, 2000);
+    } catch (err: any) {
+      console.error("Failed to retry provisioning:", err);
+      toast.error(err.message || "Failed to retry provisioning");
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  const handleCheckStatus = async () => {
+    if (!organizationId) return;
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
+        body: { 
+          action: "status",
+          organization_id: organizationId,
+        },
+      });
+
+      if (error) throw error;
+      
+      // Refresh full credentials after status check
+      await fetchCredentials();
+      toast.success("Status refreshed");
+    } catch (err: any) {
+      console.error("Failed to check status:", err);
+      toast.error(err.message || "Failed to check status");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const getOverallStatus = () => {
     if (!credentials) return "missing";
     
@@ -128,14 +201,53 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
   };
 
   const getStatusBadge = () => {
-    const status = getOverallStatus();
-    switch (status) {
+    const status = credentials?.provisioning_status;
+    if (status === 'provisioning') {
+      return <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">Provisioning...</Badge>;
+    }
+    if (status === 'failed') {
+      return <Badge variant="outline" className="bg-alarm/10 text-alarm border-alarm/30">Failed</Badge>;
+    }
+    if (status === 'ready') {
+      return <Badge variant="outline" className="bg-safe/10 text-safe border-safe/30">Fully Provisioned</Badge>;
+    }
+    
+    const overallStatus = getOverallStatus();
+    switch (overallStatus) {
       case "provisioned":
         return <Badge variant="outline" className="bg-safe/10 text-safe border-safe/30">Fully Provisioned</Badge>;
       case "partial":
         return <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">Partially Configured</Badge>;
       case "missing":
         return <Badge variant="outline" className="bg-alarm/10 text-alarm border-alarm/30">Not Configured</Badge>;
+    }
+  };
+
+  const getStepStatus = (stepId: string) => {
+    if (!credentials) return 'pending';
+    const currentStep = credentials.provisioning_step;
+    const status = credentials.provisioning_status;
+    
+    const stepIndex = PROVISIONING_STEPS.findIndex(s => s.id === stepId);
+    const currentIndex = PROVISIONING_STEPS.findIndex(s => s.id === currentStep);
+    
+    if (status === 'ready' || status === 'completed') return 'success';
+    if (status === 'failed' && currentStep === stepId) return 'failed';
+    if (stepIndex < currentIndex) return 'success';
+    if (stepIndex === currentIndex && status === 'provisioning') return 'running';
+    return 'pending';
+  };
+
+  const renderStepIcon = (status: string) => {
+    switch (status) {
+      case 'success':
+        return <CheckCircle2 className="h-4 w-4 text-safe" />;
+      case 'failed':
+        return <XCircle className="h-4 w-4 text-alarm" />;
+      case 'running':
+        return <RefreshCw className="h-4 w-4 text-primary animate-spin" />;
+      default:
+        return <Clock className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
@@ -238,18 +350,40 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
               )}
 
               {/* Actions */}
-              <div className="flex items-center gap-3 pt-2 border-t border-border/50">
+              <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/50">
+                {(credentials?.provisioning_status === 'failed' || !credentials?.ttn_application_id) && (
+                  <Button
+                    variant="default"
+                    onClick={handleRetryProvisioning}
+                    disabled={isRetrying || isLoading}
+                    className="gap-2"
+                  >
+                    <PlayCircle className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
+                    {credentials?.ttn_application_id ? "Retry Provisioning" : "Start Provisioning"}
+                  </Button>
+                )}
+                
+                <Button
+                  variant="outline"
+                  onClick={handleCheckStatus}
+                  disabled={isLoading}
+                  className="gap-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                  Check Status
+                </Button>
+
                 <Button
                   variant="outline"
                   onClick={() => setShowConfirmDialog(true)}
-                  disabled={isRegenerating}
+                  disabled={isRegenerating || !credentials?.ttn_application_id}
                   className="gap-2"
                 >
                   <RefreshCw className={`h-4 w-4 ${isRegenerating ? "animate-spin" : ""}`} />
                   Regenerate All
                 </Button>
 
-                {credentials.ttn_application_id && credentials.ttn_region && (
+                {credentials?.ttn_application_id && credentials?.ttn_region && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -267,16 +401,99 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                   </Button>
                 )}
               </div>
+
+              {/* Step Tracker - show when provisioning or failed */}
+              {(credentials?.provisioning_status === 'provisioning' || credentials?.provisioning_status === 'failed') && (
+                <div className="mt-4 p-4 bg-muted/30 rounded-lg border border-border/50">
+                  <h4 className="text-sm font-medium mb-3">Provisioning Steps</h4>
+                  <div className="space-y-2">
+                    {PROVISIONING_STEPS.map((step) => {
+                      const status = getStepStatus(step.id);
+                      return (
+                        <div key={step.id} className="flex items-center gap-3 text-sm">
+                          {renderStepIcon(status)}
+                          <span className={status === 'pending' ? 'text-muted-foreground' : ''}>{step.label}</span>
+                          {status === 'running' && (
+                            <span className="text-xs text-muted-foreground">(in progress)</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {credentials?.provisioning_attempt_count && credentials.provisioning_attempt_count > 1 && (
+                    <p className="text-xs text-muted-foreground mt-3">
+                      Attempt {credentials.provisioning_attempt_count}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Error Details - show when failed */}
+              {credentials?.provisioning_status === 'failed' && credentials?.provisioning_error && (
+                <Collapsible open={showErrorDetails} onOpenChange={setShowErrorDetails}>
+                  <div className="mt-4 p-4 bg-alarm/10 rounded-lg border border-alarm/30">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="h-5 w-5 text-alarm flex-shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-alarm">Provisioning Failed</p>
+                        <p className="text-sm text-muted-foreground mt-1">{credentials.provisioning_error}</p>
+                        
+                        {(credentials.last_http_status || credentials.last_http_body) && (
+                          <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm" className="mt-2 h-auto p-0 text-xs text-muted-foreground hover:text-foreground">
+                              {showErrorDetails ? (
+                                <>Hide Details <ChevronUp className="h-3 w-3 ml-1" /></>
+                              ) : (
+                                <>Show Details <ChevronDown className="h-3 w-3 ml-1" /></>
+                              )}
+                            </Button>
+                          </CollapsibleTrigger>
+                        )}
+                        
+                        <CollapsibleContent>
+                          <div className="mt-3 p-3 bg-muted/50 rounded text-xs font-mono space-y-2">
+                            {credentials.last_http_status && (
+                              <div>
+                                <span className="text-muted-foreground">HTTP Status:</span>{" "}
+                                <span className="text-alarm">{credentials.last_http_status}</span>
+                              </div>
+                            )}
+                            {credentials.last_http_body && (
+                              <div>
+                                <span className="text-muted-foreground">Response:</span>
+                                <pre className="mt-1 whitespace-pre-wrap break-all text-foreground/70">
+                                  {credentials.last_http_body}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        </CollapsibleContent>
+                      </div>
+                    </div>
+                  </div>
+                </Collapsible>
+              )}
             </>
           ) : (
             <div className="flex items-center gap-3 p-4 bg-warning/10 rounded-lg border border-warning/30">
               <AlertTriangle className="h-5 w-5 text-warning" />
-              <div>
+              <div className="flex-1">
                 <p className="font-medium text-warning">TTN not configured</p>
                 <p className="text-sm text-muted-foreground">
                   TTN credentials have not been provisioned for this organization.
                 </p>
               </div>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleRetryProvisioning}
+                disabled={isRetrying}
+                className="gap-2"
+              >
+                <PlayCircle className="h-4 w-4" />
+                Start Provisioning
+              </Button>
             </div>
           )}
         </CardContent>

@@ -661,6 +661,62 @@ serve(async (req) => {
       let webhookCreated = false;
 
       try {
+// ============ STEP 0: Preflight - Verify admin key has rights ============
+        const step0Start = Date.now();
+        if (!completedSteps.preflight_done) {
+          await logProvisioningStep(supabase, organization_id, "preflight", "started", "Verifying TTN admin credentials", undefined, undefined, requestId);
+          await updateProvisioningState(supabase, organization_id, { step: "preflight" });
+          
+          console.log(`[ttn-provision-org] [${requestId}] Step 0: Preflight check for admin key`);
+          
+          // Test that the admin key can access the identity server
+          try {
+            const authInfoResponse = await fetchWithTimeout(
+              `${IDENTITY_SERVER_URL}/api/v3/auth_info`,
+              {
+                method: "GET",
+                headers: {
+                  "Authorization": `Bearer ${ttnAdminKey}`,
+                  "Accept": "application/json",
+                },
+              }
+            );
+            
+            if (!authInfoResponse.ok) {
+              const errorText = await authInfoResponse.text();
+              const duration = Date.now() - step0Start;
+              await logProvisioningStep(supabase, organization_id, "preflight", "failed", `Admin key validation failed: HTTP ${authInfoResponse.status}`, { status: authInfoResponse.status }, duration, requestId, authInfoResponse.status, errorText, "credential_invalid");
+              await updateProvisioningState(supabase, organization_id, {
+                status: 'failed',
+                error: `TTN admin key is invalid or expired (HTTP ${authInfoResponse.status}). Contact your administrator.`,
+                last_http_status: authInfoResponse.status,
+                last_http_body: errorText,
+              });
+              throw new Error(`TTN admin key validation failed: ${authInfoResponse.status}`);
+            }
+            
+            const authInfo = await authInfoResponse.json();
+            console.log(`[ttn-provision-org] [${requestId}] Preflight: Admin key valid, principal: ${authInfo.universal_rights ? 'admin' : 'user'}`);
+            
+            const duration = Date.now() - step0Start;
+            await logProvisioningStep(supabase, organization_id, "preflight", "success", "Admin credentials verified", { has_universal_rights: !!authInfo.universal_rights }, duration, requestId);
+            completedSteps.preflight_done = true;
+            
+            await supabase
+              .from("ttn_connections")
+              .update({ provisioning_step_details: completedSteps })
+              .eq("organization_id", organization_id);
+          } catch (preflightErr) {
+            if ((preflightErr as Error).message.includes("validation failed")) {
+              throw preflightErr; // Re-throw credential errors
+            }
+            const duration = Date.now() - step0Start;
+            const errMsg = preflightErr instanceof Error ? preflightErr.message : "Preflight check failed";
+            await logProvisioningStep(supabase, organization_id, "preflight", "failed", errMsg, { error: errMsg }, duration, requestId, undefined, undefined, "network_error");
+            throw preflightErr;
+          }
+        }
+
         // ============ STEP 1: Create TTN Application ============
         const step1Start = Date.now();
         const shouldRunStep1 = !skipToStep || skipToStep === "create_application" || !completedSteps.application_created;
@@ -765,7 +821,30 @@ serve(async (req) => {
             const errorText = await createKeyResponse.text();
             const duration = Date.now() - step2Start;
             const category = classifyError(errorText, createKeyResponse.status);
-            await logProvisioningStep(supabase, organization_id, "create_api_key", "failed", `HTTP ${createKeyResponse.status}`, { status: createKeyResponse.status }, duration, requestId, createKeyResponse.status, errorText, category, ttnEndpoint);
+            
+            // Enhanced error messaging for 403
+            let errorDetail = `HTTP ${createKeyResponse.status}`;
+            let userHint = "";
+            if (createKeyResponse.status === 403) {
+              userHint = "The TTN admin key does not have permission to create API keys for this application. " +
+                "This can happen if the admin key was created before the application, or if TTN requires the user to be a collaborator. " +
+                "Try manually adding an API key in TTN Console.";
+              errorDetail = "Permission denied - admin key lacks application rights";
+            }
+            
+            await logProvisioningStep(supabase, organization_id, "create_api_key", "failed", errorDetail, { 
+              status: createKeyResponse.status,
+              hint: userHint,
+            }, duration, requestId, createKeyResponse.status, errorText, category, ttnEndpoint);
+            
+            // Store detailed error state
+            await updateProvisioningState(supabase, organization_id, {
+              status: 'failed',
+              error: userHint || `Failed to create application API key: ${createKeyResponse.status}`,
+              last_http_status: createKeyResponse.status,
+              last_http_body: errorText,
+            });
+            
             throw new Error(`Failed to create application API key: ${createKeyResponse.status} - ${errorText}`);
           }
 
