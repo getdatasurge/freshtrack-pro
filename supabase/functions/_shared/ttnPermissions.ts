@@ -1,12 +1,13 @@
 /**
  * TTN Permission Constants & Utilities
  * 
- * Single source of truth for:
- * - Required rights definitions
- * - Fetching actual rights from TTN /rights endpoint
- * - Computing permission reports
+ * ARCHITECTURE:
+ * - MAIN_USER_KEY_REQUIRED_RIGHTS: Rights the Main User API Key must have for ALL provisioning
+ * - ORGANIZATION_KEY_RIGHTS: Rights granted to per-org API keys (output artifacts for runtime)
+ * - APPLICATION_KEY_RIGHTS: Rights granted to per-app API keys (output artifacts for runtime)
  * 
- * Used by: ttn-bootstrap, ttn-provision-device, ttn-provision-gateway
+ * CRITICAL: The Main User API Key (TTN_ADMIN_API_KEY) is used for ALL provisioning steps.
+ * Created Org/App API keys are OUTPUT ARTIFACTS for runtime use, NOT inputs to provisioning.
  */
 
 // TTN regional Identity Server URLs
@@ -17,8 +18,19 @@ export const REGIONAL_URLS: Record<string, string> = {
   as1: "https://as1.cloud.thethings.network",
 };
 
-// Required rights for FrostGuard TTN integration
-// These MUST match the exact strings returned by TTN's /rights endpoint
+// ============================================================================
+// MAIN USER API KEY REQUIRED RIGHTS
+// These are the rights the TTN_ADMIN_API_KEY (Main User Key) must have
+// to perform ALL provisioning operations end-to-end.
+// ============================================================================
+export const MAIN_USER_KEY_REQUIRED_RIGHTS = [
+  // User-level rights for creating top-level entities
+  "RIGHT_USER_ORGANIZATIONS_CREATE",       // Create new organizations
+  "RIGHT_USER_APPLICATIONS_CREATE",        // Create applications (user-level)
+  "RIGHT_USER_GATEWAYS_CREATE",            // Create gateways
+];
+
+// Required rights for application-level operations (after provisioning)
 export const REQUIRED_RIGHTS = {
   // Minimum required permissions for basic functionality
   core: [
@@ -41,51 +53,71 @@ export const REQUIRED_RIGHTS = {
 };
 
 // Required rights for gateway provisioning
-// NOTE: These require a USER-SCOPED or ORGANIZATION-SCOPED API key
-// Application-scoped API keys CANNOT have gateway rights
 export const GATEWAY_RIGHTS = {
-  // Minimum required for gateway provisioning
   required: [
-    "RIGHT_GATEWAY_INFO",             // Read gateway info
-    "RIGHT_GATEWAY_SETTINGS_BASIC",   // Basic gateway config (create, update)
-    "RIGHT_GATEWAY_LINK",             // Link gateway to network server
+    "RIGHT_GATEWAY_INFO",
+    "RIGHT_GATEWAY_SETTINGS_BASIC",
+    "RIGHT_GATEWAY_LINK",
   ],
-  // Optional but recommended
   extended: [
-    "RIGHT_GATEWAY_STATUS_READ",      // Read gateway status
-    "RIGHT_GATEWAY_LOCATION_READ",    // Read gateway location
-    "RIGHT_GATEWAY_DELETE",           // Delete gateways
+    "RIGHT_GATEWAY_STATUS_READ",
+    "RIGHT_GATEWAY_LOCATION_READ",
+    "RIGHT_GATEWAY_DELETE",
   ],
-  // Alternative: grant all gateway rights
   all: "RIGHT_GATEWAY_ALL",
 };
 
 // ============================================================================
 // ORGANIZATION-SCOPED API KEY RIGHTS (ALL)
-// Grants full access - use sparingly, prefer granular rights
+// Grants full access - used when creating org API key as output artifact
 // ============================================================================
 export const ORGANIZATION_KEY_RIGHTS_ALL = [
-  "RIGHT_ORGANIZATION_ALL",           // Full org access (manage members, settings)
-  "RIGHT_APPLICATION_ALL",            // Create/manage applications under this org
-  "RIGHT_GATEWAY_ALL",                // Create/manage gateways under this org
+  "RIGHT_ORGANIZATION_ALL",
+  "RIGHT_APPLICATION_ALL",
+  "RIGHT_GATEWAY_ALL",
+];
+
+// ============================================================================
+// ORGANIZATION-LEVEL API KEY RIGHTS (Granular)
+// Output artifact: created by provisioning, used for runtime org operations
+// ============================================================================
+export const ORGANIZATION_KEY_RIGHTS = [
+  "RIGHT_ORGANIZATION_INFO",
+  "RIGHT_ORGANIZATION_SETTINGS_BASIC",
+  "RIGHT_ORGANIZATION_SETTINGS_API_KEYS",
+  "RIGHT_ORGANIZATION_APPLICATIONS_CREATE",
+  "RIGHT_ORGANIZATION_APPLICATIONS_LIST",
+  "RIGHT_ORGANIZATION_GATEWAYS_CREATE",
+  "RIGHT_ORGANIZATION_GATEWAYS_LIST",
+  "RIGHT_APPLICATION_INFO",
+  "RIGHT_APPLICATION_SETTINGS_BASIC",
+  "RIGHT_APPLICATION_SETTINGS_API_KEYS",
+  "RIGHT_APPLICATION_DEVICES_READ",
+  "RIGHT_APPLICATION_DEVICES_WRITE",
+  "RIGHT_APPLICATION_TRAFFIC_READ",
+  "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE",
+  "RIGHT_GATEWAY_INFO",
+  "RIGHT_GATEWAY_SETTINGS_BASIC",
+  "RIGHT_GATEWAY_STATUS_READ",
+  "RIGHT_GATEWAY_LINK",
 ];
 
 // ============================================================================
 // APPLICATION-SCOPED API KEY RIGHTS
-// Created using ORG key, stored for webhook auth and device management
-// This is the key used for runtime operations (webhooks, device provisioning)
+// Output artifact: created by provisioning, used for runtime app operations
 // ============================================================================
 export const APPLICATION_KEY_RIGHTS = [
-  "RIGHT_APPLICATION_INFO",           // Read application info
-  "RIGHT_APPLICATION_LINK",           // Link to Network Server
-  "RIGHT_APPLICATION_DEVICES_READ",   // Read device registry
-  "RIGHT_APPLICATION_DEVICES_WRITE",  // Write device registry
-  "RIGHT_APPLICATION_TRAFFIC_READ",   // Read uplink messages
-  "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE", // Send downlink messages
-  "RIGHT_APPLICATION_SETTINGS_BASIC", // For webhook management (CRITICAL for step 4)
+  "RIGHT_APPLICATION_INFO",
+  "RIGHT_APPLICATION_LINK",
+  "RIGHT_APPLICATION_DEVICES_READ",
+  "RIGHT_APPLICATION_DEVICES_WRITE",
+  "RIGHT_APPLICATION_TRAFFIC_READ",
+  "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE",
+  "RIGHT_APPLICATION_SETTINGS_BASIC",
+  "RIGHT_APPLICATION_SETTINGS_API_KEYS",
 ];
 
-// Complete set of gateway rights for org-scoped gateway operations
+// Complete set of gateway rights for gateway API keys
 export const GATEWAY_KEY_RIGHTS = [
   "RIGHT_GATEWAY_INFO",
   "RIGHT_GATEWAY_SETTINGS_BASIC",
@@ -96,21 +128,6 @@ export const GATEWAY_KEY_RIGHTS = [
   "RIGHT_GATEWAY_DELETE",
 ];
 
-// Organization-level rights for org API key (used to create applications and app keys)
-export const ORGANIZATION_KEY_RIGHTS = [
-  "RIGHT_ORGANIZATION_INFO",
-  "RIGHT_ORGANIZATION_SETTINGS_BASIC",
-  "RIGHT_ORGANIZATION_APPLICATIONS_CREATE",
-  "RIGHT_ORGANIZATION_APPLICATIONS_LIST",
-  "RIGHT_APPLICATION_INFO",
-  "RIGHT_APPLICATION_SETTINGS_BASIC",
-  "RIGHT_APPLICATION_SETTINGS_API_KEYS",
-  "RIGHT_APPLICATION_DEVICES_READ",
-  "RIGHT_APPLICATION_DEVICES_WRITE",
-  "RIGHT_APPLICATION_TRAFFIC_READ",
-  "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE",
-];
-
 // Human-readable permission names for UI
 export const PERMISSION_LABELS: Record<string, string> = {
   "RIGHT_APPLICATION_INFO": "Read application info",
@@ -119,7 +136,14 @@ export const PERMISSION_LABELS: Record<string, string> = {
   "RIGHT_APPLICATION_DEVICES_READ": "Read devices",
   "RIGHT_APPLICATION_DEVICES_WRITE": "Write devices",
   "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE": "Send downlink messages",
+  "RIGHT_USER_ORGANIZATIONS_CREATE": "Create organizations",
+  "RIGHT_USER_APPLICATIONS_CREATE": "Create applications",
+  "RIGHT_USER_GATEWAYS_CREATE": "Create gateways",
 };
+
+// ============================================================================
+// INTERFACES
+// ============================================================================
 
 export interface PermissionReport {
   valid: boolean;
@@ -139,13 +163,141 @@ export interface FetchRightsResult {
   error?: string;
   hint?: string;
   statusCode?: number;
-  method?: "direct" | "probe"; // Which method was used
+  method?: "direct" | "probe";
 }
 
-/**
- * Fetch actual rights from TTN's /rights endpoint
- * This is the CORRECT way to get permissions - not probing endpoints
- */
+export interface PreflightResult {
+  success: boolean;
+  user_id?: string;
+  granted_rights?: string[];
+  missing_rights?: string[];
+  is_admin?: boolean;
+  error?: string;
+  hint?: string;
+  statusCode?: number;
+}
+
+// ============================================================================
+// PREFLIGHT: VALIDATE MAIN USER API KEY
+// Verifies the Main User API Key has all rights needed for provisioning
+// ============================================================================
+export async function validateMainUserApiKey(
+  cluster: string,
+  apiKey: string,
+  requestId: string
+): Promise<PreflightResult> {
+  const baseUrl = REGIONAL_URLS[cluster];
+  if (!baseUrl) {
+    return {
+      success: false,
+      error: `Unknown cluster: ${cluster}`,
+      hint: "Supported clusters: eu1, nam1, au1, as1",
+    };
+  }
+
+  const url = `${baseUrl}/api/v3/auth_info`;
+  console.log(`[ttnPermissions] [${requestId}] Preflight: checking Main User API Key at ${url}`);
+  console.log(`[ttnPermissions] [${requestId}] API key last4: ...${apiKey.slice(-4)}`);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Accept": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[ttnPermissions] [${requestId}] Preflight failed: ${response.status} ${errorText}`);
+      
+      if (response.status === 401) {
+        return {
+          success: false,
+          error: "Invalid Main User API Key",
+          hint: "The TTN_ADMIN_API_KEY is invalid or expired. Generate a new Personal API Key in TTN Console → User Settings → API Keys.",
+          statusCode: 401,
+        };
+      }
+      
+      return {
+        success: false,
+        error: `Preflight failed: HTTP ${response.status}`,
+        hint: errorText.substring(0, 200),
+        statusCode: response.status,
+      };
+    }
+
+    const data = await response.json();
+    
+    // Extract user info from various possible response formats
+    const userId = data.oauth_access_token?.user_ids?.user_id 
+      || data.api_key?.api_key_id 
+      || data.user_session?.session?.user_ids?.user_id
+      || "unknown";
+    
+    const universalRights = data.universal_rights || [];
+    const isAdmin = data.is_admin || false;
+    
+    console.log(`[ttnPermissions] [${requestId}] Preflight: user_id=${userId}, is_admin=${isAdmin}, universal_rights=${universalRights.length}`);
+    
+    // If admin, they have all rights
+    if (isAdmin) {
+      console.log(`[ttnPermissions] [${requestId}] Preflight: User is admin, all rights granted`);
+      return {
+        success: true,
+        user_id: userId,
+        is_admin: true,
+        granted_rights: ["ADMIN_ALL_RIGHTS"],
+        missing_rights: [],
+      };
+    }
+
+    // Check for required user-level rights
+    const grantedSet = new Set(universalRights);
+    const missingRights = MAIN_USER_KEY_REQUIRED_RIGHTS.filter(r => !grantedSet.has(r));
+    
+    console.log(`[ttnPermissions] [${requestId}] Preflight: ${universalRights.length} universal rights, ${missingRights.length} missing`);
+    
+    // If no universal rights at all, this is probably a scoped key (org/app)
+    if (universalRights.length === 0 && !isAdmin) {
+      // Try to detect if it's an org or app scoped key
+      const apiKeyInfo = data.api_key;
+      if (apiKeyInfo?.entity_ids) {
+        const entityType = Object.keys(apiKeyInfo.entity_ids)[0] || "unknown";
+        return {
+          success: false,
+          user_id: userId,
+          granted_rights: [],
+          missing_rights: MAIN_USER_KEY_REQUIRED_RIGHTS,
+          error: "API key is scoped to specific entity",
+          hint: `This appears to be a ${entityType}-scoped API key. Provisioning requires a Personal API Key (user-scoped) with full rights. Create one in TTN Console → User Settings → API Keys with 'Grant all current and future rights' checked.`,
+        };
+      }
+    }
+
+    // Success - key is valid and has sufficient rights
+    return {
+      success: true,
+      user_id: userId,
+      is_admin: false,
+      granted_rights: universalRights,
+      missing_rights: missingRights,
+    };
+  } catch (err) {
+    console.error(`[ttnPermissions] [${requestId}] Preflight exception:`, err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Network error during preflight",
+      hint: "Check network connectivity and TTN service status.",
+    };
+  }
+}
+
+// ============================================================================
+// FETCH APPLICATION RIGHTS (for app-scoped keys)
+// ============================================================================
 export async function fetchTtnRights(
   cluster: string,
   applicationId: string,
@@ -171,19 +323,11 @@ export async function fetchTtnRights(
       const errorText = await response.text();
       console.error(`[ttnPermissions] [${requestId}] Rights fetch failed: ${response.status} ${errorText}`);
       
-      // Parse TTN error for better messaging
-      let ttnError: { code?: number; message?: string } = {};
-      try {
-        ttnError = JSON.parse(errorText);
-      } catch {
-        // Not JSON
-      }
-      
       if (response.status === 401) {
         return {
           success: false,
           error: "Invalid or expired API key",
-          hint: "Generate a new API key in TTN Console → Applications → API keys",
+          hint: "Generate a new API key in TTN Console",
           statusCode: 401,
         };
       }
@@ -192,7 +336,7 @@ export async function fetchTtnRights(
         return {
           success: false,
           error: "API key lacks permission to read rights",
-          hint: `This API key cannot access application '${applicationId}'. Verify it was created for the correct application.`,
+          hint: `This API key cannot access application '${applicationId}'.`,
           statusCode: 403,
         };
       }
@@ -201,7 +345,7 @@ export async function fetchTtnRights(
         return {
           success: false,
           error: "Application not found",
-          hint: `Application '${applicationId}' doesn't exist on cluster '${cluster}'. Check the Application ID and cluster selection.`,
+          hint: `Application '${applicationId}' doesn't exist on cluster '${cluster}'.`,
           statusCode: 404,
         };
       }
@@ -209,7 +353,7 @@ export async function fetchTtnRights(
       return {
         success: false,
         error: `TTN API error (${response.status})`,
-        hint: ttnError.message || errorText.slice(0, 200),
+        hint: errorText.slice(0, 200),
         statusCode: response.status,
       };
     }
@@ -234,10 +378,9 @@ export async function fetchTtnRights(
   }
 }
 
-/**
- * Compute a detailed permission report from a list of rights
- * Uses exact string matching against REQUIRED_RIGHTS
- */
+// ============================================================================
+// COMPUTE PERMISSION REPORT
+// ============================================================================
 export function computePermissionReport(rights: string[]): PermissionReport {
   const missing_core = REQUIRED_RIGHTS.core.filter(r => !rights.includes(r));
   const missing_webhook = REQUIRED_RIGHTS.webhook.filter(r => !rights.includes(r));
@@ -256,21 +399,12 @@ export function computePermissionReport(rights: string[]): PermissionReport {
     can_send_downlinks: missing_downlink.length === 0,
   };
   
-  console.log(`[ttnPermissions] Permission report:`, {
-    valid: report.valid,
-    rightsCount: rights.length,
-    missingCore: missing_core,
-    canWebhook: report.can_configure_webhook,
-    canDevices: report.can_manage_devices,
-  });
-  
   return report;
 }
 
-/**
- * Validate API key and return both the fetched rights and computed report
- * This is the main entry point for permission checking
- */
+// ============================================================================
+// VALIDATE AND ANALYZE PERMISSIONS (for app-scoped keys)
+// ============================================================================
 export async function validateAndAnalyzePermissions(
   cluster: string,
   applicationId: string,
@@ -283,7 +417,6 @@ export async function validateAndAnalyzePermissions(
   hint?: string;
   statusCode?: number;
 }> {
-  // Fetch actual rights from TTN
   const rightsResult = await fetchTtnRights(cluster, applicationId, apiKey, requestId);
   
   if (!rightsResult.success) {
@@ -295,7 +428,6 @@ export async function validateAndAnalyzePermissions(
     };
   }
   
-  // Compute permission report
   const report = computePermissionReport(rightsResult.rights || []);
   
   return {
