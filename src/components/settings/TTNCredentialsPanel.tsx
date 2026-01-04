@@ -47,11 +47,11 @@ interface TTNCredentialsPanelProps {
 
 // Define provisioning steps for step tracker (organization-based flow)
 const PROVISIONING_STEPS = [
-  { id: 'preflight', label: 'Preflight Check', description: 'Verify TTN credentials' },
-  { id: 'create_ttn_org', label: 'Create Organization', description: 'Create TTN organization' },
-  { id: 'create_org_api_key', label: 'Create Org API Key', description: 'Create organization API key' },
-  { id: 'create_ttn_app', label: 'Create Application', description: 'Create TTN application' },
-  { id: 'create_api_key', label: 'Create API Key', description: 'Create application API key' },
+  { id: 'preflight', label: 'Preflight Check', description: 'Verify TTN admin credentials' },
+  { id: 'create_organization', label: 'Create Organization', description: 'Create TTN organization for tenant isolation' },
+  { id: 'create_org_api_key', label: 'Create Org API Key', description: 'Create org-scoped API key' },
+  { id: 'create_application', label: 'Create Application', description: 'Create TTN application under org' },
+  { id: 'create_app_api_key', label: 'Create App API Key', description: 'Create application API key' },
   { id: 'create_webhook', label: 'Create Webhook', description: 'Configure webhook endpoint' },
   { id: 'complete', label: 'Complete', description: 'Provisioning finished' },
 ];

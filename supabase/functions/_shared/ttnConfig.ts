@@ -81,7 +81,8 @@ export interface TtnConnectionRow {
   ttn_application_name: string | null;
   ttn_api_key_encrypted: string | null;
   ttn_api_key_last4: string | null;
-  // Gateway-specific API key (user-scoped for gateway provisioning)
+  ttn_api_key_id: string | null;
+  // Gateway-specific API key (org-scoped for gateway provisioning)
   ttn_gateway_api_key_encrypted: string | null;
   ttn_gateway_api_key_last4: string | null;
   ttn_gateway_api_key_id: string | null;

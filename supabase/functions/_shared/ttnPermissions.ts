@@ -60,17 +60,33 @@ export const GATEWAY_RIGHTS = {
   all: "RIGHT_GATEWAY_ALL",
 };
 
-// Complete set of application rights for auto-provisioned key
-export const APPLICATION_KEY_RIGHTS = [
-  "RIGHT_APPLICATION_INFO",
-  "RIGHT_APPLICATION_DEVICES_READ",
-  "RIGHT_APPLICATION_DEVICES_WRITE",
-  "RIGHT_APPLICATION_TRAFFIC_READ",
-  "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE",
-  "RIGHT_APPLICATION_SETTINGS_BASIC", // For webhook management
+// ============================================================================
+// ORGANIZATION-SCOPED API KEY RIGHTS
+// Used to create applications and gateways under the organization
+// This key replaces the master key for all org-specific operations
+// ============================================================================
+export const ORGANIZATION_KEY_RIGHTS = [
+  "RIGHT_ORGANIZATION_ALL",           // Full org access (manage members, settings)
+  "RIGHT_APPLICATION_ALL",            // Create/manage applications under this org
+  "RIGHT_GATEWAY_ALL",                // Create/manage gateways under this org
 ];
 
-// Complete set of gateway rights for user-scoped gateway key
+// ============================================================================
+// APPLICATION-SCOPED API KEY RIGHTS
+// Created using ORG key, stored for webhook auth and device management
+// This is the key used for runtime operations (webhooks, device provisioning)
+// ============================================================================
+export const APPLICATION_KEY_RIGHTS = [
+  "RIGHT_APPLICATION_INFO",           // Read application info
+  "RIGHT_APPLICATION_LINK",           // Link to Network Server
+  "RIGHT_APPLICATION_DEVICES_READ",   // Read device registry
+  "RIGHT_APPLICATION_DEVICES_WRITE",  // Write device registry
+  "RIGHT_APPLICATION_TRAFFIC_READ",   // Read uplink messages
+  "RIGHT_APPLICATION_TRAFFIC_DOWN_WRITE", // Send downlink messages
+  "RIGHT_APPLICATION_SETTINGS_BASIC", // For webhook management (CRITICAL for step 4)
+];
+
+// Complete set of gateway rights for org-scoped gateway operations
 export const GATEWAY_KEY_RIGHTS = [
   "RIGHT_GATEWAY_INFO",
   "RIGHT_GATEWAY_SETTINGS_BASIC",
