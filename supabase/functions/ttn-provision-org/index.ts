@@ -305,7 +305,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.7-hybrid-key-model-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.8-strict-key-persist-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -576,6 +576,20 @@ serve(async (req) => {
       let completedSteps: Record<string, unknown> = {};
       if (!appIdRotated && action !== "start_fresh") {
         completedSteps = ttnConn?.provisioning_step_details || {};
+      }
+
+      // ============ CONSISTENCY REPAIR: Fix stale org_api_key_created flag ============
+      // If the step cache says org key was created but DB has no encrypted key, reset the flag
+      if (completedSteps.org_api_key_created && !ttnConn?.ttn_org_api_key_encrypted) {
+        console.log(`[ttn-provision-org] [${requestId}] CONSISTENCY REPAIR: org_api_key_created=true but ttn_org_api_key_encrypted is NULL - resetting flag`);
+        await logProvisioningStep(supabase, organization_id, "consistency_repair", "success", 
+          "Reset org_api_key_created flag - key was not persisted", 
+          { had_flag: true, had_key: false }, undefined, requestId);
+        completedSteps.org_api_key_created = false;
+        await supabase
+          .from("ttn_connections")
+          .update({ provisioning_step_details: completedSteps })
+          .eq("organization_id", organization_id);
       }
 
       // Ensure absolute webhook URL with defensive validation
@@ -1167,22 +1181,98 @@ serve(async (req) => {
           const orgApiKey = orgKeyData.key;
           const orgApiKeyId = orgKeyData.id;
 
-          const duration = Date.now() - step1bStart;
-          await logProvisioningStep(supabase, organization_id, "create_org_api_key", "success", "Organization API key created [output artifact]", { key_last4: getLast4(orgApiKey) }, duration, requestId, createOrgKeyResponse.status, undefined, undefined, ttnEndpoint);
-          completedSteps.org_api_key_created = true;
+          if (!orgApiKey) {
+            const duration = Date.now() - step1bStart;
+            await logProvisioningStep(supabase, organization_id, "create_org_api_key", "failed", 
+              "TTN returned success but no key value in response", 
+              { response_keys: Object.keys(orgKeyData) }, duration, requestId);
+            
+            await updateProvisioningState(supabase, organization_id, {
+              status: "failed",
+              step: "create_org_api_key",
+              error: "TTN did not return API key value",
+            });
+            
+            return buildResponse({
+              success: false,
+              error: "TTN created org API key but did not return the key value",
+              step: "create_org_api_key",
+              retryable: true,
+              request_id: requestId,
+            });
+          }
 
           const encryptedOrgKey = obfuscateKey(orgApiKey, encryptionSalt);
-          await supabase
+          
+          // STRICT PERSISTENCE: Verify the DB write succeeds before marking step complete
+          const { error: persistError } = await supabase
             .from("ttn_connections")
             .update({
               ttn_org_api_key_encrypted: encryptedOrgKey,
               ttn_org_api_key_last4: getLast4(orgApiKey),
               ttn_org_api_key_id: orgApiKeyId,
-              provisioning_step_details: completedSteps,
+              ttn_org_api_key_updated_at: new Date().toISOString(),
             })
             .eq("organization_id", organization_id);
+
+          if (persistError) {
+            const duration = Date.now() - step1bStart;
+            console.error(`[ttn-provision-org] [${requestId}] Step 1B: FAILED to persist org API key:`, persistError);
+            await logProvisioningStep(supabase, organization_id, "create_org_api_key", "failed", 
+              `Created key but failed to persist: ${persistError.message}`, 
+              { db_error: persistError.message }, duration, requestId);
+            
+            await updateProvisioningState(supabase, organization_id, {
+              status: "failed",
+              step: "create_org_api_key",
+              error: `Failed to save org API key to database: ${persistError.message}`,
+            });
+            
+            return buildResponse({
+              success: false,
+              error: "Created org API key but failed to save to database - please retry",
+              step: "create_org_api_key",
+              retryable: true,
+              request_id: requestId,
+            });
+          }
+
+          // Only mark as complete AFTER successful DB write
+          const duration = Date.now() - step1bStart;
+          completedSteps.org_api_key_created = true;
+          
+          await supabase
+            .from("ttn_connections")
+            .update({ provisioning_step_details: completedSteps })
+            .eq("organization_id", organization_id);
+
+          await logProvisioningStep(supabase, organization_id, "create_org_api_key", "success", 
+            "Organization API key created and persisted [output artifact]", 
+            { key_last4: getLast4(orgApiKey), key_id: orgApiKeyId }, duration, requestId, createOrgKeyResponse.status, undefined, undefined, ttnEndpoint);
+          
+          console.log(`[ttn-provision-org] [${requestId}] Step 1B: Org API key created and persisted (key_last4: ${getLast4(orgApiKey)})`);
         } else {
-          console.log(`[ttn-provision-org] [${requestId}] Step 1B: Skipping (org key already created)`);
+          // Verify the key actually exists in DB before skipping
+          const { data: keyCheck } = await supabase
+            .from("ttn_connections")
+            .select("ttn_org_api_key_encrypted, ttn_org_api_key_last4")
+            .eq("organization_id", organization_id)
+            .single();
+          
+          if (!keyCheck?.ttn_org_api_key_encrypted) {
+            console.log(`[ttn-provision-org] [${requestId}] Step 1B: Flag says created but key missing - re-running step`);
+            completedSteps.org_api_key_created = false;
+            // Recursive call will re-run this step on next provision attempt
+            return buildResponse({
+              success: false,
+              error: "Org API key flag was set but key not found in database - please retry",
+              step: "create_org_api_key",
+              retryable: true,
+              request_id: requestId,
+            });
+          }
+          
+          console.log(`[ttn-provision-org] [${requestId}] Step 1B: Skipping (org key already created, key_last4: ${keyCheck.ttn_org_api_key_last4})`);
         }
 
         // ============ STEP 2: Create Application under Organization (using Main User API Key) ============
