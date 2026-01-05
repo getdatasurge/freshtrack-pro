@@ -305,7 +305,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.11-fix-start-fresh-clear-orgkey-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.12-fix-start-fresh-unconditional-clear-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -575,12 +575,39 @@ serve(async (req) => {
           .eq("organization_id", organization_id);
       }
       
+      // UNCONDITIONAL: For ANY start_fresh, clear org API key to force recreation
+      // This runs even if app_rights_check_status !== "forbidden"
+      if (action === "start_fresh" && ttnConn?.ttn_org_api_key_encrypted) {
+        console.log(`[ttn-provision-org] [${requestId}] Start Fresh: UNCONDITIONALLY clearing org API key (had encrypted key)`);
+        
+        const { error: clearError } = await supabase
+          .from("ttn_connections")
+          .update({
+            ttn_org_api_key_encrypted: null,
+            ttn_org_api_key_last4: null,
+            ttn_org_api_key_id: null,
+            ttn_org_api_key_updated_at: null,
+            provisioning_step_details: null,
+          })
+          .eq("organization_id", organization_id);
+          
+        if (clearError) {
+          console.error(`[ttn-provision-org] [${requestId}] Start Fresh: Failed to clear org key: ${clearError.message}`);
+        } else {
+          console.log(`[ttn-provision-org] [${requestId}] Start Fresh: Org API key cleared from database`);
+        }
+      }
+      
       console.log(`[ttn-provision-org] [${requestId}] Provisioning TTN org: ${ttnOrgId}, app: ${ttnAppId} for org ${org.slug}${appIdRotated ? ' (rotated)' : ''}`);
       console.log(`[ttn-provision-org] [${requestId}] ALL STEPS will use token_source: ${TOKEN_SOURCE}`);
 
       // Track completed steps for idempotency
       let completedSteps: Record<string, unknown> = {};
-      if (!appIdRotated && action !== "start_fresh") {
+      // For start_fresh, ALWAYS reset completedSteps to force Step 1B to run
+      if (action === "start_fresh") {
+        completedSteps = {};
+        console.log(`[ttn-provision-org] [${requestId}] Start Fresh: Reset completedSteps to force all steps to run`);
+      } else if (!appIdRotated) {
         completedSteps = ttnConn?.provisioning_step_details || {};
       }
 
