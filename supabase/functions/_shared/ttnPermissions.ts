@@ -241,6 +241,8 @@ export async function validateMainUserApiKey(
 
     const data = await response.json();
     
+    // DEBUG: Log the full raw response to diagnose user_id extraction issues
+    console.log(`[ttnPermissions] [${requestId}] DEBUG raw auth_info (truncated): ${JSON.stringify(data).substring(0, 1500)}`);
     console.log(`[ttnPermissions] [${requestId}] Preflight: raw response keys: ${Object.keys(data).join(', ')}`);
     
     // CRITICAL: TTN auth_info response structure for Personal API keys is DOUBLE-NESTED:
@@ -248,6 +250,10 @@ export async function validateMainUserApiKey(
     // The outer api_key contains entity_ids, the inner api_key.api_key contains rights
     const outer = data.api_key;
     const inner = outer?.api_key;
+    
+    // DEBUG: Log the entity_ids structure specifically
+    console.log(`[ttnPermissions] [${requestId}] DEBUG entity_ids raw: ${JSON.stringify(outer?.entity_ids)}`);
+    console.log(`[ttnPermissions] [${requestId}] DEBUG user_ids raw: ${JSON.stringify(outer?.entity_ids?.user_ids)}`);
     
     // Parse rights with correct fallback chain
     const rights = inner?.rights ?? outer?.rights ?? data.universal_rights ?? [];
@@ -258,6 +264,9 @@ export async function validateMainUserApiKey(
     
     // Extract user ID - NO innerApiKey.entity_ids fallback
     const userId = entityIds?.user_ids?.user_id ?? "unknown";
+    
+    // DEBUG: Log the final userId extraction
+    console.log(`[ttnPermissions] [${requestId}] DEBUG final userId extracted: "${userId}"`);
     
     const isAdmin = data.is_admin || false;
     
