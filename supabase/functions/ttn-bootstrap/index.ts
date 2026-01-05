@@ -26,7 +26,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const TTN_BASE_URL = "https://eu1.cloud.thethings.network";
 const TTN_REGION = "eu1";
-const FUNCTION_VERSION = "ttn-bootstrap-v2.0-20260104";
+const FUNCTION_VERSION = "ttn-bootstrap-v2.0-20260105";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
