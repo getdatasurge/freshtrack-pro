@@ -302,7 +302,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.4-auto-rotate-org-id-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.5-accept-200-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -775,8 +775,8 @@ serve(async (req) => {
             });
           }
 
-          // Handle response: 201 = created, 409 = exists, anything else = fail BEFORE verification
-          if (createOrgResponse.status !== 201 && createOrgResponse.status !== 409) {
+          // Handle response: 200/201 = created/success, 409 = exists, anything else = fail BEFORE verification
+          if (createOrgResponse.status !== 200 && createOrgResponse.status !== 201 && createOrgResponse.status !== 409) {
             const duration = Date.now() - step1Start;
             const category = classifyError(createResponseText, createOrgResponse.status);
             const ttnError = parseTTNError(createResponseText);
@@ -807,9 +807,9 @@ serve(async (req) => {
             });
           }
 
-          // Mark as potentially created (201) or existing (409) - either way, proceed to verification
-          const wasCreated = createOrgResponse.status === 201;
-          console.log(`[ttn-provision-org] [${requestId}] Step 1: Org ${wasCreated ? 'created (201)' : 'exists (409)'}, proceeding to verification`);
+          // Mark as potentially created (200/201) or existing (409) - either way, proceed to verification
+          const wasCreated = createOrgResponse.status === 200 || createOrgResponse.status === 201;
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Org ${wasCreated ? 'created (200/201)' : 'exists (409)'}, proceeding to verification`);
 
           // ============ STEP 1 VERIFICATION: Verify org exists and we have rights ============
           console.log(`[ttn-provision-org] [${requestId}] Step 1 Verification: Checking org ${effectiveTtnOrgId}`);
