@@ -302,7 +302,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v4.0-ownership-check-20260104";
+  const BUILD_VERSION = "ttn-provision-org-v5.0-user-scoped-org-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -667,14 +667,16 @@ serve(async (req) => {
         }
 
         // ============ STEP 1: Create TTN Organization (using Main User API Key) ============
-        // STRICT + IDEMPOTENT: Use POST /api/v3/organizations (not user-scoped endpoint)
+        // FIX: TTN requires user-scoped endpoint: POST /api/v3/users/{user_id}/organizations
+        // The global /api/v3/organizations endpoint returns "Method Not Allowed" for POST
         // Handle 201 = created, 409 = exists (verify), anything else = fail
         const step1Start = Date.now();
         let effectiveTtnOrgId = ttnOrgId;
         
         if (!completedSteps.organization_created || !completedSteps.organization_verified) {
-          // Use the correct organizations endpoint (not user-scoped)
-          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/organizations`;
+          // Use user-scoped endpoint - TTN requires this for organization creation
+          const preflightUserId = completedSteps.preflight_user_id || "frostguard";
+          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/users/${preflightUserId}/organizations`;
           const createPayload = {
             organization: {
               ids: { organization_id: effectiveTtnOrgId },
