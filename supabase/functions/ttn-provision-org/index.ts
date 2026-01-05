@@ -302,7 +302,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.2-debug-userid-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.3-always-preflight-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -615,8 +615,14 @@ serve(async (req) => {
 
       try {
         // ============ STEP 0: Preflight - Verify Main User API Key ============
+        // CRITICAL FIX: ALWAYS run preflight to get fresh user_id from the current TTN_ADMIN_API_KEY
+        // This prevents stale cached preflight_user_id from causing 403 errors when keys change
         const step0Start = Date.now();
-        if (!completedSteps.preflight_done) {
+        const cachedPreflightUserId = completedSteps.preflight_user_id as string | undefined;
+        console.log(`[ttn-provision-org] [${requestId}] Step 0: Cached preflight_user_id="${cachedPreflightUserId || 'none'}", forcing fresh preflight`);
+        
+        // Always run preflight - never skip based on preflight_done
+        {
           const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
           await logProvisioningStep(supabase, organization_id, "preflight", "started", 
             `Verifying Main User API Key (token_source: ${TOKEN_SOURCE})`, 
@@ -659,6 +665,15 @@ serve(async (req) => {
             duration, requestId, undefined, undefined, undefined, ttnEndpoint);
           completedSteps.preflight_done = true;
           completedSteps.preflight_user_id = preflightResult.user_id;
+          
+          // Log if user_id changed from cached value
+          if (cachedPreflightUserId && cachedPreflightUserId !== preflightResult.user_id) {
+            console.log(`[ttn-provision-org] [${requestId}] Step 0: User ID CHANGED: "${cachedPreflightUserId}" -> "${preflightResult.user_id}"`);
+            await logProvisioningStep(supabase, organization_id, "preflight_user_changed", "success", 
+              `User ID updated from cached value`, 
+              { old_user_id: cachedPreflightUserId, new_user_id: preflightResult.user_id }, 
+              undefined, requestId);
+          }
 
           await supabase
             .from("ttn_connections")
@@ -675,7 +690,22 @@ serve(async (req) => {
         
         if (!completedSteps.organization_created || !completedSteps.organization_verified) {
           // Use user-scoped endpoint - TTN requires this for organization creation
-          const preflightUserId = completedSteps.preflight_user_id || "frostguard101";
+          // CRITICAL: Use the FRESH preflight_user_id from Step 0, never a hardcoded fallback
+          const preflightUserId = completedSteps.preflight_user_id as string;
+          if (!preflightUserId || preflightUserId === "unknown") {
+            await updateProvisioningState(supabase, organization_id, {
+              status: "failed",
+              error: "Preflight did not return a valid user_id",
+            });
+            return buildResponse({
+              success: false,
+              error: "Preflight did not return a valid TTN user_id. Check that TTN_ADMIN_API_KEY is a Personal API Key.",
+              step: "create_organization",
+              retryable: true,
+              request_id: requestId,
+            });
+          }
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Using preflight_user_id="${preflightUserId}" for org creation endpoint`);
           const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/users/${preflightUserId}/organizations`;
           const createPayload = {
             organization: {
