@@ -302,7 +302,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.1-username-fix-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.2-debug-userid-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
