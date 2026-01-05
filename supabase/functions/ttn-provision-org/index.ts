@@ -305,7 +305,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.10-debug-key-roundtrip-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.11-fix-start-fresh-clear-orgkey-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -551,7 +551,8 @@ serve(async (req) => {
           console.log(`[ttn-provision-org] [${requestId}] Delete failed, rotating ID: ${oldAppId} -> ${ttnAppId}`);
         }
         
-        // Clear app-dependent outputs
+        // Clear app-dependent outputs AND org API key for truly fresh start
+        console.log(`[ttn-provision-org] [${requestId}] Start Fresh: Clearing ALL keys including org API key`);
         await supabase
           .from("ttn_connections")
           .update({
@@ -559,6 +560,11 @@ serve(async (req) => {
             ttn_api_key_encrypted: null,
             ttn_api_key_last4: null,
             ttn_api_key_id: null,
+            // Also clear org API key to force recreation with new debug verification
+            ttn_org_api_key_encrypted: null,
+            ttn_org_api_key_last4: null,
+            ttn_org_api_key_id: null,
+            ttn_org_api_key_updated_at: null,
             ttn_webhook_secret_encrypted: null,
             ttn_webhook_secret_last4: null,
             ttn_webhook_url: null,
@@ -1139,6 +1145,34 @@ serve(async (req) => {
               retryable: category === "timeout" || category === "network",
               request_id: requestId,
             });
+          }
+
+          // Handle 409 conflict - key with same name exists, retry with unique name
+          if (createOrgKeyResponse.status === 409) {
+            console.log(`[ttn-provision-org] [${requestId}] Step 1B: API key name conflict (409), retrying with unique name`);
+            const uniqueSuffix = crypto.randomUUID().slice(0, 8);
+            const uniqueKeyName = `FrostGuard Org Key - ${org.slug} - ${uniqueSuffix}`;
+            
+            try {
+              createOrgKeyResponse = await fetchWithTimeout(
+                ttnEndpoint,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${ttnAdminKey}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    name: uniqueKeyName,
+                    rights: ORGANIZATION_KEY_RIGHTS,
+                  }),
+                }
+              );
+              console.log(`[ttn-provision-org] [${requestId}] Step 1B: Retry with unique name result: ${createOrgKeyResponse.status}`);
+            } catch (retryErr) {
+              const errMsg = retryErr instanceof Error ? retryErr.message : "Retry fetch failed";
+              console.error(`[ttn-provision-org] [${requestId}] Step 1B: Retry with unique name failed: ${errMsg}`);
+            }
           }
 
           if (!createOrgKeyResponse.ok) {
