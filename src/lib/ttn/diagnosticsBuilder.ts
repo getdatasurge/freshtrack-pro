@@ -75,16 +75,31 @@ async function fetchEdgeFunctionVersions(): Promise<TTNDiagnostics['edge_functio
     ttn_gateway_preflight: null,
   };
 
-  const fetchVersion = async (funcName: string): Promise<string | null> => {
+const fetchVersion = async (funcName: string): Promise<string | null> => {
     try {
-      const response = await supabase.functions.invoke(funcName, {
-        method: 'GET',
-      });
+      // Use native fetch with GET to avoid Supabase SDK always sending POST
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/${funcName}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (!response.ok) {
+        console.warn(`[diagnostics] ${funcName} returned ${response.status}`);
+        return null;
+      }
+      
+      const data = await response.json();
       // Handle multiple response formats from different edge functions
-      return response.data?.version 
-        || response.data?.contract?.version 
-        || response.data?.BUILD_VERSION
-        || null;
+      return data?.version || data?.contract?.version || data?.BUILD_VERSION || null;
     } catch (err) {
       console.warn(`[diagnostics] Failed to fetch version for ${funcName}:`, err);
       return null;
