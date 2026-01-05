@@ -302,7 +302,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.5-accept-200-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.6-fix-webhook-url-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -575,10 +575,29 @@ serve(async (req) => {
         completedSteps = ttnConn?.provisioning_step_details || {};
       }
 
-      // Ensure absolute webhook URL
-      const webhookUrl = supabaseUrl.startsWith("http")
-        ? `${supabaseUrl}/functions/v1/ttn-webhook`
-        : `https://${supabaseUrl}/functions/v1/ttn-webhook`;
+      // Ensure absolute webhook URL with defensive validation
+      const trimmedSupabaseUrl = (supabaseUrl || "").trim();
+      if (!trimmedSupabaseUrl) {
+        console.error(`[ttn-provision-org] [${requestId}] SUPABASE_URL is empty or undefined`);
+        return buildResponse({
+          success: false,
+          error: "SUPABASE_URL environment variable is not configured",
+          step: "init",
+          retryable: false,
+          request_id: requestId,
+        });
+      }
+      
+      // Normalize URL: ensure https prefix and remove trailing slash
+      let normalizedUrl = trimmedSupabaseUrl;
+      if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
+        normalizedUrl = `https://${normalizedUrl}`;
+      }
+      normalizedUrl = normalizedUrl.replace(/\/+$/, ""); // Remove trailing slashes
+      
+      const webhookUrl = `${normalizedUrl}/functions/v1/ttn-webhook`;
+      console.log(`[ttn-provision-org] [${requestId}] Webhook URL constructed: ${webhookUrl}`);
+      
       const regionalUrl = REGIONAL_URLS[region] || REGIONAL_URLS.eu1;
 
       // Initialize or update ttn_connections record
