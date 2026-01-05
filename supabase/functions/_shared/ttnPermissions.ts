@@ -90,6 +90,7 @@ export const ORGANIZATION_KEY_RIGHTS = [
   "RIGHT_ORGANIZATION_GATEWAYS_CREATE",
   "RIGHT_ORGANIZATION_GATEWAYS_LIST",
   "RIGHT_APPLICATION_INFO",
+  "RIGHT_APPLICATION_LINK",              // Link app to Network Server (critical for data flow)
   "RIGHT_APPLICATION_SETTINGS_BASIC",
   "RIGHT_APPLICATION_SETTINGS_API_KEYS",
   "RIGHT_APPLICATION_DEVICES_READ",
@@ -131,6 +132,7 @@ export const GATEWAY_KEY_RIGHTS = [
 // Human-readable permission names for UI
 export const PERMISSION_LABELS: Record<string, string> = {
   "RIGHT_APPLICATION_INFO": "Read application info",
+  "RIGHT_APPLICATION_LINK": "Link application to Network Server",
   "RIGHT_APPLICATION_TRAFFIC_READ": "Read uplink messages",
   "RIGHT_APPLICATION_SETTINGS_BASIC": "Manage application settings (webhooks)",
   "RIGHT_APPLICATION_DEVICES_READ": "Read devices",
