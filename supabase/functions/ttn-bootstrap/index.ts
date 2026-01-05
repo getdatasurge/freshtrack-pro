@@ -26,7 +26,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const TTN_BASE_URL = "https://eu1.cloud.thethings.network";
 const TTN_REGION = "eu1";
-const FUNCTION_VERSION = "ttn-bootstrap-v2.1-user-scoped-org-20260105";
+const FUNCTION_VERSION = "ttn-bootstrap-v2.7-hybrid-key-chain-20260105";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -980,8 +980,12 @@ async function runProvisioning(
   //                                                                          
   // STEP 2: Create Application
   //                                                                          
+  // Use orgApiKey if available (has RIGHT_APPLICATION_ALL), fallback to adminApiKey
+  const appCreationKey = orgApiKey || adminApiKey;
+  console.log(`[Step2] Using credential: ${orgApiKey ? 'org_api_key' : 'admin_api_key'} (key_last4: ${appCreationKey.slice(-4)})`);
+  
   const appId = `${currentOrgId}-app`;
-  const step2 = await createApplication(currentOrgId, appId, adminApiKey);
+  const step2 = await createApplication(currentOrgId, appId, appCreationKey);
   steps.push(step2);
 
   if (!step2.success) {
@@ -999,7 +1003,11 @@ async function runProvisioning(
   //                                                                          
   // STEP 2B: Create Application API Key
   //                                                                          
-  const step2b = await createAppApiKey(sanitizedAppId, adminApiKey);
+  // CRITICAL: Use orgApiKey here - it has RIGHT_APPLICATION_ALL needed to create app keys
+  const appKeyCreationKey = orgApiKey || adminApiKey;
+  console.log(`[Step2B] Using credential: ${orgApiKey ? 'org_api_key' : 'admin_api_key'} (key_last4: ${appKeyCreationKey.slice(-4)})`);
+  
+  const step2b = await createAppApiKey(sanitizedAppId, appKeyCreationKey);
   steps.push(step2b);
 
   if (!step2b.success) {
@@ -1018,8 +1026,11 @@ async function runProvisioning(
   //                                                                          
   // STEP 3: Create Webhook
   //                                                                          
+  const webhookCreationKey = orgApiKey || adminApiKey;
+  console.log(`[Step3] Using credential: ${orgApiKey ? 'org_api_key' : 'admin_api_key'} (key_last4: ${webhookCreationKey.slice(-4)})`);
+  
   const webhookUrl = `${webhookBaseUrl}/functions/v1/ttn-webhook`;
-  const step3 = await createWebhook(sanitizedAppId, adminApiKey, webhookUrl);
+  const step3 = await createWebhook(sanitizedAppId, webhookCreationKey, webhookUrl);
   steps.push(step3);
 
   if (!step3.success) {
