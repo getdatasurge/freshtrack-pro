@@ -302,7 +302,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.0-user-scoped-org-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.1-username-fix-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -675,7 +675,7 @@ serve(async (req) => {
         
         if (!completedSteps.organization_created || !completedSteps.organization_verified) {
           // Use user-scoped endpoint - TTN requires this for organization creation
-          const preflightUserId = completedSteps.preflight_user_id || "frostguard";
+          const preflightUserId = completedSteps.preflight_user_id || "frostguard101";
           const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/users/${preflightUserId}/organizations`;
           const createPayload = {
             organization: {
