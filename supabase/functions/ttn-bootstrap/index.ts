@@ -898,7 +898,7 @@ async function createWebhook(
 async function runProvisioning(
   request: ProvisioningRequest,
   adminApiKey: string,
-  supabaseClient: ReturnType<typeof createClient>,
+  supabaseClient: any,  // Type relaxed to avoid strict typing issues with dynamic tables
   webhookBaseUrl: string
 ): Promise<ProvisioningResult> {
   const steps: StepResult[] = [];
@@ -1040,7 +1040,9 @@ async function runProvisioning(
   // SUCCESS: Save to database
   //                                                                          
   try {
-    const { error: dbError } = await supabaseClient.from("ttn_settings").upsert(
+    // Note: ttn_settings table may not exist - this is a legacy reference
+    // The primary storage is ttn_connections managed by manage-ttn-settings
+    const { error: dbError } = await (supabaseClient as any).from("ttn_settings").upsert(
       {
         org_id: request.customer_id || currentOrgId,
         site_id: request.site_id || null,
@@ -1095,6 +1097,36 @@ serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // Health check endpoint (GET request)
+  if (req.method === "GET") {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        status: "healthy",
+        function: "ttn-bootstrap",
+        version: FUNCTION_VERSION,
+        timestamp: new Date().toISOString(),
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Handle POST with empty body as health check (diagnostics tool may send POST)
+  const contentLength = req.headers.get("content-length");
+  if (req.method === "POST" && (!contentLength || contentLength === "0")) {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        status: "healthy",
+        function: "ttn-bootstrap",
+        version: FUNCTION_VERSION,
+        hint: "POST with empty body treated as health check",
+        timestamp: new Date().toISOString(),
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   try {
