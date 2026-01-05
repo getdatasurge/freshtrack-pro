@@ -1,25 +1,27 @@
 /**
  * TTN Organization Provisioning Edge Function
  * 
- * ARCHITECTURE: Single User API Key Model
- * =========================================
- * ALL provisioning operations use the SAME Main User API Key (TTN_ADMIN_API_KEY).
- * Created Org/App API keys are OUTPUT ARTIFACTS for runtime use, NOT inputs to provisioning.
+ * ARCHITECTURE: Hybrid Key Model
+ * ==============================
+ * - Steps 0-2B use the Main User API Key (TTN_ADMIN_API_KEY)
+ * - Steps 3-4 use the Org API Key (created in Step 1B)
  * 
- * This eliminates the "no_application_rights" 403 error that occurred when
- * switching to newly-created org API keys mid-provisioning.
+ * The Org API Key has RIGHT_APPLICATION_ALL which is required to
+ * create API keys and webhooks for applications within the org.
+ * The Main User API Key can create organizations and applications,
+ * but may not have collaborator rights to manage them afterward.
  * 
  * PROVISIONING STEPS:
  * - Step 0: Preflight - Validate Main User API Key has required rights
  * - Step 1: Create TTN Organization (idempotent) - uses TTN_ADMIN_API_KEY
- * - Step 1B: Create Org API Key (output artifact for runtime) - uses TTN_ADMIN_API_KEY
+ * - Step 1B: Create Org API Key (output artifact) - uses TTN_ADMIN_API_KEY
  * - Step 2: Create TTN Application (idempotent) - uses TTN_ADMIN_API_KEY
  * - Step 2B: Verify Application Rights - check if we own the app
- * - Step 3: Create App API Key (output artifact for runtime) - uses TTN_ADMIN_API_KEY
- * - Step 3B: Create Gateway API Key (optional, output artifact) - uses TTN_ADMIN_API_KEY
- * - Step 4: Create/Update Webhook - uses TTN_ADMIN_API_KEY
+ * - Step 3: Create App API Key - uses ORG_API_KEY (hybrid model)
+ * - Step 3B: Create Gateway API Key (optional) - uses ORG_API_KEY
+ * - Step 4: Create/Update Webhook - uses ORG_API_KEY
  * 
- * All steps use TTN_ADMIN_API_KEY. All logs include token_source for audit.
+ * Steps 0-2B use TTN_ADMIN_API_KEY, Steps 3-4 use ORG_API_KEY.
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -31,6 +33,7 @@ import {
   sanitizeTtnSlug,
   generateWebhookSecret,
   obfuscateKey,
+  deobfuscateKey,
   getLast4,
 } from "../_shared/ttnConfig.ts";
 import {
@@ -302,7 +305,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.6-fix-webhook-url-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.7-hybrid-key-model-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -1422,16 +1425,43 @@ serve(async (req) => {
           console.log(`[ttn-provision-org] [${requestId}] Step 2B: Skipping (rights already verified)`);
         }
 
-        // ============ STEP 3: Create App-scoped API Key (using Main User API Key) ============
+        // ============ RETRIEVE ORG API KEY FOR STEPS 3-4 (Hybrid Model) ============
+        // The Org API Key (created in Step 1B) has the rights needed to manage applications
+        let orgApiKeyForAppOps: string | null = null;
+        if (completedSteps.org_api_key_created) {
+          const { data: ttnConnRefresh } = await supabase
+            .from("ttn_connections")
+            .select("ttn_org_api_key_encrypted")
+            .eq("organization_id", organization_id)
+            .single();
+
+          if (ttnConnRefresh?.ttn_org_api_key_encrypted) {
+            orgApiKeyForAppOps = deobfuscateKey(ttnConnRefresh.ttn_org_api_key_encrypted, encryptionSalt);
+            console.log(`[ttn-provision-org] [${requestId}] Retrieved Org API Key for Steps 3-4 (key_last4: ${getLast4(orgApiKeyForAppOps)})`);
+          }
+        }
+
+        if (!orgApiKeyForAppOps) {
+          console.error(`[ttn-provision-org] [${requestId}] Org API Key not found - required for app operations`);
+          return buildResponse({
+            success: false,
+            error: "Org API Key not found - required for app operations. Try 'Start Fresh' to re-provision.",
+            step: "retrieve_org_key",
+            retryable: true,
+            request_id: requestId,
+          });
+        }
+
+        // ============ STEP 3: Create App-scoped API Key (using Org API Key) ============
         const step3Start = Date.now();
         if (!completedSteps.app_api_key_created) {
           const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}/api-keys`;
           await logProvisioningStep(supabase, organization_id, "create_app_api_key", "started", 
-            `Creating application API key [output artifact] (token_source: ${TOKEN_SOURCE})`, 
+            `Creating application API key (token_source: org_api_key)`, 
             { endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningState(supabase, organization_id, { step: "create_app_api_key" });
 
-          console.log(`[ttn-provision-org] [${requestId}] Step 3: Creating app-scoped API key for ${ttnAppId} (token_source: ${TOKEN_SOURCE})`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 3: Creating app-scoped API key for ${ttnAppId} (token_source: org_api_key)`);
 
           let createAppKeyResponse: Response;
           try {
@@ -1440,7 +1470,7 @@ serve(async (req) => {
               {
                 method: "POST",
                 headers: {
-                  Authorization: `Bearer ${ttnAdminKey}`,
+                  Authorization: `Bearer ${orgApiKeyForAppOps}`,
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
@@ -1532,14 +1562,14 @@ serve(async (req) => {
           console.log(`[ttn-provision-org] [${requestId}] Step 3: Skipping (app key already created)`);
         }
 
-        // ============ STEP 3B: Create Gateway API Key (optional, using Main User API Key) ============
+        // ============ STEP 3B: Create Gateway API Key (optional, using Org API Key) ============
         const step3bStart = Date.now();
         if (!completedSteps.gateway_key_attempted) {
           await logProvisioningStep(supabase, organization_id, "create_gateway_key", "started", 
-            `Creating gateway API key [optional output artifact] (token_source: ${TOKEN_SOURCE})`, 
+            `Creating gateway API key [optional] (token_source: org_api_key)`, 
             undefined, undefined, requestId);
 
-          console.log(`[ttn-provision-org] [${requestId}] Step 3B: Creating gateway API key for org ${effectiveTtnOrgId} (token_source: ${TOKEN_SOURCE})`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 3B: Creating gateway API key for org ${effectiveTtnOrgId} (token_source: org_api_key)`);
 
           try {
             const createGatewayKeyResponse = await fetchWithTimeout(
@@ -1547,7 +1577,7 @@ serve(async (req) => {
               {
                 method: "POST",
                 headers: {
-                  Authorization: `Bearer ${ttnAdminKey}`,
+                  Authorization: `Bearer ${orgApiKeyForAppOps}`,
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
@@ -1598,17 +1628,17 @@ serve(async (req) => {
           console.log(`[ttn-provision-org] [${requestId}] Step 3B: Skipping (already attempted)`);
         }
 
-        // ============ STEP 4: Create Webhook (using Main User API Key) ============
+        // ============ STEP 4: Create Webhook (using Org API Key) ============
         const step4Start = Date.now();
         if (!completedSteps.webhook_created) {
           const webhookId = "frostguard-webhook";
           const ttnEndpoint = `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}`;
           await logProvisioningStep(supabase, organization_id, "create_webhook", "started", 
-            `Creating webhook (token_source: ${TOKEN_SOURCE})`, 
+            `Creating webhook (token_source: org_api_key)`, 
             { webhook_url: webhookUrl, endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningState(supabase, organization_id, { step: "create_webhook" });
 
-          console.log(`[ttn-provision-org] [${requestId}] Step 4: Creating webhook for ${ttnAppId} (token_source: ${TOKEN_SOURCE})`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 4: Creating webhook for ${ttnAppId} (token_source: org_api_key)`);
 
           const webhookSecret = generateWebhookSecret();
 
@@ -1619,7 +1649,7 @@ serve(async (req) => {
               {
                 method: "POST",
                 headers: {
-                  Authorization: `Bearer ${ttnAdminKey}`,
+                  Authorization: `Bearer ${orgApiKeyForAppOps}`,
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
@@ -1677,7 +1707,7 @@ serve(async (req) => {
               {
                 method: "PUT",
                 headers: {
-                  Authorization: `Bearer ${ttnAdminKey}`,
+                  Authorization: `Bearer ${orgApiKeyForAppOps}`,
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
