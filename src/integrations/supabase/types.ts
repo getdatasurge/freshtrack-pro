@@ -2307,6 +2307,7 @@ export type Database = {
           ttn_last_test_source: string | null
           ttn_last_updated_source: string | null
           ttn_org_api_key_encrypted: string | null
+          ttn_org_api_key_id: string | null
           ttn_org_api_key_last4: string | null
           ttn_org_api_key_updated_at: string | null
           ttn_owner_scope: string | null
@@ -2371,6 +2372,7 @@ export type Database = {
           ttn_last_test_source?: string | null
           ttn_last_updated_source?: string | null
           ttn_org_api_key_encrypted?: string | null
+          ttn_org_api_key_id?: string | null
           ttn_org_api_key_last4?: string | null
           ttn_org_api_key_updated_at?: string | null
           ttn_owner_scope?: string | null
@@ -2435,6 +2437,7 @@ export type Database = {
           ttn_last_test_source?: string | null
           ttn_last_updated_source?: string | null
           ttn_org_api_key_encrypted?: string | null
+          ttn_org_api_key_id?: string | null
           ttn_org_api_key_last4?: string | null
           ttn_org_api_key_updated_at?: string | null
           ttn_owner_scope?: string | null
