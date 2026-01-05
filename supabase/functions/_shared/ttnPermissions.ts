@@ -212,6 +212,16 @@ export async function validateMainUserApiKey(
       const errorText = await response.text();
       console.error(`[ttnPermissions] [${requestId}] Preflight failed: ${response.status} ${errorText}`);
       
+      // Check for route not found (wrong region/cluster)
+      if (response.status === 404 || errorText.includes('route_not_found')) {
+        return {
+          success: false,
+          error: "TTN region/API base mismatch",
+          hint: `Verify TTN cluster setting matches your TTN Console region (e.g., eu1 vs nam1). Current cluster: ${cluster}`,
+          statusCode: 404,
+        };
+      }
+      
       if (response.status === 401) {
         return {
           success: false,
@@ -233,36 +243,31 @@ export async function validateMainUserApiKey(
     
     console.log(`[ttnPermissions] [${requestId}] Preflight: raw response keys: ${Object.keys(data).join(', ')}`);
     
-    // Determine entity type and extract info from api_key response
-    // Personal API keys return: { api_key: { entity_ids: { user_ids: { user_id: "..." } }, rights: [...] } }
-    // Application API keys return: { api_key: { entity_ids: { application_ids: { application_id: "..." } }, rights: [...] } }
-    // Organization API keys return: { api_key: { entity_ids: { organization_ids: { organization_id: "..." } }, rights: [...] } }
-    const apiKeyInfo = data.api_key;
-    const entityIds = apiKeyInfo?.entity_ids || {};
+    // CRITICAL: TTN auth_info response structure for Personal API keys is DOUBLE-NESTED:
+    // { api_key: { api_key: { rights: [...] }, entity_ids: { user_ids: { user_id: "..." } } } }
+    // The outer api_key contains entity_ids, the inner api_key.api_key contains rights
+    const outer = data.api_key;
+    const inner = outer?.api_key;
+    
+    // Parse rights with correct fallback chain
+    const rights = inner?.rights ?? outer?.rights ?? data.universal_rights ?? [];
+    
+    // Parse entity ownership ONLY from outer.entity_ids (NOT innerApiKey.entity_ids)
+    const entityIds = outer?.entity_ids ?? {};
     const entityType = Object.keys(entityIds)[0] || null; // "user_ids", "application_ids", "organization_ids", or null
     
-    // Extract user ID from various response formats
-    let userId = "unknown";
-    if (entityIds.user_ids?.user_id) {
-      userId = entityIds.user_ids.user_id;
-    } else if (data.oauth_access_token?.user_ids?.user_id) {
-      userId = data.oauth_access_token.user_ids.user_id;
-    } else if (data.user_session?.session?.user_ids?.user_id) {
-      userId = data.user_session.session.user_ids.user_id;
-    } else if (apiKeyInfo?.api_key_id) {
-      userId = apiKeyInfo.api_key_id;
-    }
+    // Extract user ID - NO innerApiKey.entity_ids fallback
+    const userId = entityIds?.user_ids?.user_id ?? "unknown";
     
     const isAdmin = data.is_admin || false;
     
-    // For Personal API keys (user_ids scoped), rights come from api_key.rights
-    // universal_rights is typically empty for API keys (it's for OAuth tokens)
-    const apiKeyRights = apiKeyInfo?.rights || [];
-    const universalRights = data.universal_rights || [];
-    const allRights = [...new Set([...apiKeyRights, ...universalRights])];
-    
+    // Debug logging for structure verification
+    console.log(`[ttnPermissions] [${requestId}] Preflight: outer keys: ${Object.keys(outer || {}).join(', ')}`);
+    console.log(`[ttnPermissions] [${requestId}] Preflight: inner exists: ${!!inner}, rights count: ${rights.length}`);
     console.log(`[ttnPermissions] [${requestId}] Preflight: entity_type=${entityType}, user_id=${userId}, is_admin=${isAdmin}`);
-    console.log(`[ttnPermissions] [${requestId}] Preflight: api_key.rights=${apiKeyRights.length}, universal_rights=${universalRights.length}, total=${allRights.length}`);
+    
+    // allRights for compatibility with downstream checks
+    const allRights = rights;
     
     // If admin, they have all rights
     if (isAdmin) {
@@ -284,7 +289,7 @@ export async function validateMainUserApiKey(
       return {
         success: false,
         user_id: userId,
-        granted_rights: apiKeyRights,
+        granted_rights: rights,
         missing_rights: MAIN_USER_KEY_REQUIRED_RIGHTS,
         error: "This is an Application API key, not a Personal API key",
         hint: `This key is scoped to application '${appId}'. Provisioning requires a Personal API Key (user-scoped). Create one in TTN Console → User Settings → API Keys with 'Grant all current and future rights' checked.`,
@@ -297,7 +302,7 @@ export async function validateMainUserApiKey(
       return {
         success: false,
         user_id: userId,
-        granted_rights: apiKeyRights,
+        granted_rights: rights,
         missing_rights: MAIN_USER_KEY_REQUIRED_RIGHTS,
         error: "This is an Organization API key, not a Personal API key",
         hint: `This key is scoped to organization '${orgId}'. Provisioning requires a Personal API Key (user-scoped). Create one in TTN Console → User Settings → API Keys with 'Grant all current and future rights' checked.`,
@@ -310,7 +315,7 @@ export async function validateMainUserApiKey(
       return {
         success: false,
         user_id: userId,
-        granted_rights: apiKeyRights,
+        granted_rights: rights,
         missing_rights: MAIN_USER_KEY_REQUIRED_RIGHTS,
         error: "This is a Gateway API key, not a Personal API key",
         hint: `This key is scoped to gateway '${gwId}'. Provisioning requires a Personal API Key (user-scoped). Create one in TTN Console → User Settings → API Keys with 'Grant all current and future rights' checked.`,
