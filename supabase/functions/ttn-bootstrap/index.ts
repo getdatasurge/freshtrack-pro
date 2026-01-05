@@ -1,914 +1,1258 @@
 /**
- * TTN Bootstrap Edge Function
+ * TTN Bootstrap Edge Function v2.0
  *
- * Automates TTN webhook setup when a user saves their API key:
- * 1. Validates API key permissions (applications:read, webhooks:read/write, etc.)
- * 2. Creates or updates the webhook configuration in TTN
- * 3. Stores webhook secret and configuration in FrostGuard
+ * Handles full TTN provisioning flow:
+ * Step 1:  Create Organization
+ * Step 1B: Create Organization API Key
+ * Step 2:  Create Application
+ * Step 2B: Create Application API Key
+ * Step 3:  Create Webhook
  *
- * This function is designed for users who:
- * - Already have a TTN application (manually created or via ttn-provision-org)
- * - Want to configure their own API key with proper permissions
- *
- * Security:
- * - Requires user authentication (JWT)
- * - Validates org membership (admin/owner)
- * - Never returns full API keys or secrets to client
+ * Key fixes in this version:
+ * - ALWAYS uses EU1 cluster
+ * - Sanitizes org_id (no @ttn suffix, lowercase, URL-safe)
+ * - Verifies org ownership BEFORE marking step 1 success
+ * - Correct auth_info parsing (nested rights path)
+ * - Proper error classification
+ * - Start Fresh with org_id rotation on failure
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  generateWebhookSecret,
-  obfuscateKey,
-  getLast4,
-} from "../_shared/ttnConfig.ts";
-import {
-  fetchTtnRights,
-  computePermissionReport,
-  REQUIRED_RIGHTS as SHARED_REQUIRED_RIGHTS,
-  PERMISSION_LABELS as SHARED_PERMISSION_LABELS,
-  type PermissionReport,
-} from "../_shared/ttnPermissions.ts";
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const TTN_BASE_URL = "https://eu1.cloud.thethings.network";
+const TTN_REGION = "eu1";
+const FUNCTION_VERSION = "ttn-bootstrap-v2.0-20260104";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 
-// TTN API endpoints
-const IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network";
-const REGIONAL_URLS: Record<string, string> = {
-  nam1: "https://nam1.cloud.thethings.network",
-  eu1: "https://eu1.cloud.thethings.network",
-  au1: "https://au1.cloud.thethings.network",
-  as1: "https://as1.cloud.thethings.network",
-};
+// ============================================================================
+// TYPES
+// ============================================================================
 
-// Re-export from shared module for backward compatibility
-const REQUIRED_RIGHTS = SHARED_REQUIRED_RIGHTS;
-const PERMISSION_LABELS = SHARED_PERMISSION_LABELS;
-
-interface BootstrapRequest {
-  action: "validate" | "validate_only" | "configure" | "save_and_configure";
-  organization_id: string;
-  cluster: string;
-  application_id: string;
-  api_key?: string; // Only required for new/changed key
+interface ProvisioningRequest {
+  action: "preflight" | "provision" | "start_fresh" | "status";
+  org_id: string;
+  customer_id?: string;
+  site_id?: string;
+  force_new_org?: boolean;
 }
 
-interface WebhookConfig {
-  webhook_id: string;
-  base_url: string;
-  format: string;
-  events_enabled: string[];
-  secret_configured: boolean;
+interface StepResult {
+  step: string;
+  success: boolean;
+  message: string;
+  data?: Record<string, unknown>;
+  error_code?: string;
+  error_category?: ErrorCategory;
 }
 
-interface BootstrapResult {
+interface ProvisioningResult {
+  success: boolean;
+  steps: StepResult[];
+  ttn_org_id?: string;
+  ttn_org_api_key?: string;
+  ttn_app_id?: string;
+  ttn_app_api_key?: string;
+  webhook_id?: string;
+  webhook_secret?: string;
+  version: string;
+}
+
+type ErrorCategory =
+  | "ORGANIZATION_OWNERSHIP_ISSUE"
+  | "APPLICATION_OWNERSHIP_ISSUE"
+  | "WRONG_REGION"
+  | "INVALID_CREDENTIALS"
+  | "RATE_LIMITED"
+  | "NETWORK_ERROR"
+  | "UNKNOWN";
+
+interface TtnAuthInfo {
+  rights: string[];
+  userId?: string;
+  entityType: "user" | "organization" | "application" | "gateway" | "unknown";
+  entityId?: string;
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Sanitize a TTN identifier to be valid:
+ * - lowercase
+ * - only alphanumeric and hyphens
+ * - no leading/trailing hyphens
+ * - no consecutive hyphens
+ * - strip @ttn suffix
+ * - max 36 characters
+ */
+function sanitizeTtnId(input: string): string {
+  let sanitized = input
+    .toLowerCase()
+    .replace(/@ttn$/i, "")           // Remove @ttn suffix
+    .replace(/[^a-z0-9-]/g, "-")     // Replace invalid chars with hyphen
+    .replace(/-+/g, "-")              // Collapse consecutive hyphens
+    .replace(/^-+|-+$/g, "");         // Trim leading/trailing hyphens
+
+  // Ensure max length of 36 chars (TTN limit)
+  if (sanitized.length > 36) {
+    sanitized = sanitized.substring(0, 36).replace(/-+$/, "");
+  }
+
+  // Ensure it starts with a letter (TTN requirement)
+  if (!/^[a-z]/.test(sanitized)) {
+    sanitized = "fg-" + sanitized;
+  }
+
+  return sanitized;
+}
+
+/**
+ * Generate a short random suffix for org_id rotation
+ */
+function generateSuffix(): string {
+  return Math.random().toString(36).substring(2, 8);
+}
+
+/**
+ * Make a request to TTN API with proper error handling
+ */
+async function ttnRequest<T = unknown>(
+  endpoint: string,
+  options: {
+    method?: "GET" | "POST" | "PUT" | "DELETE";
+    apiKey: string;
+    body?: Record<string, unknown>;
+  }
+): Promise<{
   ok: boolean;
-  request_id: string;
-  action: string;
+  status: number;
+  data?: T;
+  error?: string;
+  errorCode?: string;
+  errorCategory: ErrorCategory;
+}> {
+  const { method = "GET", apiKey, body } = options;
 
-  // Permission validation results
-  permissions?: PermissionReport;
+  const url = `${TTN_BASE_URL}${endpoint}`;
+  console.log(`[TTN] ${method} ${url}`);
 
-  // Webhook configuration results
-  webhook?: WebhookConfig;
-  webhook_action?: "created" | "updated" | "unchanged";
-
-  // Error information
-  error?: {
-    code: string;
-    message: string;
-    hint: string;
-    missing_permissions?: string[];
-  };
-
-  // Stored configuration metadata
-  config?: {
-    api_key_last4: string;
-    webhook_secret_last4: string;
-    webhook_url: string;
-    application_id: string;
-    cluster: string;
-    updated_at: string;
-  };
-}
-
-/**
- * Validate API key by fetching the actual rights from TTN's /rights endpoint
- * This is the CORRECT way - not probe-based guessing
- */
-async function validateApiKeyPermissions(
-  apiKey: string,
-  applicationId: string,
-  cluster: string,
-  requestId: string
-): Promise<{ success: boolean; rights?: string[]; error?: string; hint?: string; statusCode?: number }> {
-  console.log(`[ttn-bootstrap] [${requestId}] Validating API key for app: ${applicationId} on cluster: ${cluster}`);
-  console.log(`[ttn-bootstrap] [${requestId}] API key last4: ...${apiKey.slice(-4)}`);
-
-  // Use the shared fetchTtnRights which calls the /rights endpoint directly
-  const result = await fetchTtnRights(cluster, applicationId, apiKey, requestId);
-  
-  if (!result.success) {
-    // Map errors to be consistent with existing error handling
-    console.error(`[ttn-bootstrap] [${requestId}] Rights fetch failed:`, result.error);
-    return {
-      success: false,
-      error: result.error,
-      hint: result.hint,
-      statusCode: result.statusCode,
-    };
-  }
-
-  // Log the actual rights for debugging
-  console.log(`[ttn-bootstrap] [${requestId}] Fetched rights from TTN /rights endpoint:`, result.rights);
-  console.log(`[ttn-bootstrap] [${requestId}] Rights count: ${result.rights?.length || 0}`);
-
-  return { 
-    success: true, 
-    rights: result.rights || [] 
-  };
-}
-
-/**
- * Check permissions and return detailed results
- * Uses the shared computePermissionReport for consistency
- */
-function analyzePermissions(rights: string[]): PermissionReport {
-  return computePermissionReport(rights);
-}
-
-/**
- * Create or update webhook in TTN
- */
-async function upsertWebhook(
-  apiKey: string,
-  applicationId: string,
-  cluster: string,
-  webhookSecret: string,
-  webhookUrl: string,
-  requestId: string
-): Promise<{ success: boolean; action?: "created" | "updated"; error?: string; hint?: string }> {
-  // Validate webhook URL is absolute before sending to TTN
-  if (!webhookUrl || !webhookUrl.startsWith("https://")) {
-    console.error(`[ttn-bootstrap] [${requestId}] Invalid webhookUrl passed to upsertWebhook: ${webhookUrl}`);
-    return {
-      success: false,
-      error: "Invalid webhook URL configuration",
-      hint: `Expected https:// URL, got: ${webhookUrl?.slice(0, 50) || 'undefined'}. Contact support.`,
-    };
-  }
-  
-  console.log(`[ttn-bootstrap] [${requestId}] Webhook base_url to be sent to TTN: ${webhookUrl}`);
-  
-  const webhookId = "freshtracker";
-  const regionalUrl = REGIONAL_URLS[cluster] || REGIONAL_URLS.nam1;
-
-  console.log(`[ttn-bootstrap] [${requestId}] Upserting webhook: ${webhookId} on ${regionalUrl}`);
-
-  const webhookConfig = {
-    webhook: {
-      ids: {
-        webhook_id: webhookId,
-        application_ids: { application_id: applicationId },
-      },
-      base_url: webhookUrl,
-      format: "json",
+  try {
+    const response = await fetch(url, {
+      method,
       headers: {
-        "X-Webhook-Secret": webhookSecret,
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "User-Agent": `FrostGuard/${FUNCTION_VERSION}`,
       },
-      uplink_message: {},
-      join_accept: {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const responseText = await response.text();
+    let data: T | undefined;
+    let errorCode: string | undefined;
+    let errorMessage: string | undefined;
+
+    try {
+      const parsed = JSON.parse(responseText);
+      if (response.ok) {
+        data = parsed as T;
+      } else {
+        // TTN error response shape: { code: number, message: string, details: [...] }
+        errorCode = parsed.code?.toString() || parsed.message;
+        errorMessage = parsed.message || responseText;
+      }
+    } catch {
+      errorMessage = responseText;
+    }
+
+    // Classify error category
+    let errorCategory: ErrorCategory = "UNKNOWN";
+    if (response.ok) {
+      errorCategory = "UNKNOWN"; // Not an error
+    } else if (response.status === 404 && responseText.includes("route_not_found")) {
+      errorCategory = "WRONG_REGION";
+    } else if (response.status === 403) {
+      if (errorMessage?.includes("no_organization_rights") || errorCode === "no_organization_rights") {
+        errorCategory = "ORGANIZATION_OWNERSHIP_ISSUE";
+      } else if (errorMessage?.includes("no_application_rights") || errorCode === "no_application_rights") {
+        errorCategory = "APPLICATION_OWNERSHIP_ISSUE";
+      } else {
+        errorCategory = "INVALID_CREDENTIALS";
+      }
+    } else if (response.status === 401) {
+      errorCategory = "INVALID_CREDENTIALS";
+    } else if (response.status === 429) {
+      errorCategory = "RATE_LIMITED";
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      data,
+      error: errorMessage,
+      errorCode,
+      errorCategory,
+    };
+  } catch (err) {
+    console.error(`[TTN] Network error:`, err);
+    return {
+      ok: false,
+      status: 0,
+      error: err instanceof Error ? err.message : "Network error",
+      errorCategory: "NETWORK_ERROR",
+    };
+  }
+}
+
+/**
+ * Parse TTN auth_info response with correct nested path handling
+ *
+ * Response shape:
+ * {
+ *   "api_key": {
+ *     "api_key": {
+ *       "rights": [...]
+ *     },
+ *     "entity_ids": {
+ *       "user_ids": { "user_id": "..." } |
+ *       "organization_ids": { "organization_id": "..." } |
+ *       "application_ids": { "application_id": "..." }
+ *     }
+ *   }
+ * }
+ *
+ * OR for some keys:
+ * {
+ *   "api_key": {
+ *     "rights": [...]
+ *   }
+ * }
+ *
+ * OR universal rights:
+ * {
+ *   "universal_rights": [...]
+ * }
+ */
+function parseAuthInfo(data: Record<string, unknown>): TtnAuthInfo {
+  let rights: string[] = [];
+  let entityType: TtnAuthInfo["entityType"] = "unknown";
+  let entityId: string | undefined;
+  let userId: string | undefined;
+
+  // Try nested path first: data.api_key.api_key.rights
+  const apiKeyOuter = data.api_key as Record<string, unknown> | undefined;
+  if (apiKeyOuter) {
+    const apiKeyInner = apiKeyOuter.api_key as Record<string, unknown> | undefined;
+    if (apiKeyInner && Array.isArray(apiKeyInner.rights)) {
+      rights = apiKeyInner.rights as string[];
+    } else if (Array.isArray(apiKeyOuter.rights)) {
+      // Fallback: data.api_key.rights
+      rights = apiKeyOuter.rights as string[];
+    }
+
+    // Parse entity_ids
+    const entityIds = apiKeyOuter.entity_ids as Record<string, unknown> | undefined;
+    if (entityIds) {
+      if (entityIds.user_ids) {
+        const userIds = entityIds.user_ids as Record<string, string>;
+        entityType = "user";
+        userId = userIds.user_id;
+        entityId = userIds.user_id;
+      } else if (entityIds.organization_ids) {
+        const orgIds = entityIds.organization_ids as Record<string, string>;
+        entityType = "organization";
+        entityId = orgIds.organization_id;
+      } else if (entityIds.application_ids) {
+        const appIds = entityIds.application_ids as Record<string, string>;
+        entityType = "application";
+        entityId = appIds.application_id;
+      } else if (entityIds.gateway_ids) {
+        const gwIds = entityIds.gateway_ids as Record<string, string>;
+        entityType = "gateway";
+        entityId = gwIds.gateway_id;
+      }
+    }
+  }
+
+  // Fallback: universal_rights
+  if (rights.length === 0 && Array.isArray(data.universal_rights)) {
+    rights = data.universal_rights as string[];
+  }
+
+  console.log(`[AuthInfo] Parsed: entityType=${entityType}, entityId=${entityId}, rights=${rights.length}`);
+
+  return { rights, userId, entityType, entityId };
+}
+
+/**
+ * Verify that the API key is a valid personal (user-scoped) key
+ * REJECT keys scoped to organizations, applications, or gateways
+ * ACCEPT keys scoped to user_ids (personal keys)
+ */
+async function validateApiKey(apiKey: string): Promise<{
+  valid: boolean;
+  authInfo?: TtnAuthInfo;
+  error?: string;
+  errorCategory?: ErrorCategory;
+}> {
+  const result = await ttnRequest<Record<string, unknown>>("/api/v3/auth_info", {
+    apiKey,
+  });
+
+  if (!result.ok) {
+    return {
+      valid: false,
+      error: result.error || "Failed to validate API key",
+      errorCategory: result.errorCategory,
+    };
+  }
+
+  const authInfo = parseAuthInfo(result.data!);
+
+  // Personal keys are scoped to user_ids - this is EXPECTED and VALID
+  if (authInfo.entityType === "user") {
+    // Check for required rights
+    const hasOrgCreate =
+      authInfo.rights.includes("RIGHT_USER_ALL") ||
+      authInfo.rights.includes("RIGHT_USER_ORGANIZATIONS_CREATE");
+
+    if (!hasOrgCreate) {
+      return {
+        valid: false,
+        authInfo,
+        error: "API key lacks RIGHT_USER_ORGANIZATIONS_CREATE permission",
+        errorCategory: "INVALID_CREDENTIALS",
+      };
+    }
+
+    return { valid: true, authInfo };
+  }
+
+  // REJECT keys scoped to other entity types
+  if (authInfo.entityType === "organization") {
+    return {
+      valid: false,
+      authInfo,
+      error: "API key is scoped to an organization. Use a personal (user-scoped) API key.",
+      errorCategory: "INVALID_CREDENTIALS",
+    };
+  }
+
+  if (authInfo.entityType === "application") {
+    return {
+      valid: false,
+      authInfo,
+      error: "API key is scoped to an application. Use a personal (user-scoped) API key.",
+      errorCategory: "INVALID_CREDENTIALS",
+    };
+  }
+
+  if (authInfo.entityType === "gateway") {
+    return {
+      valid: false,
+      authInfo,
+      error: "API key is scoped to a gateway. Use a personal (user-scoped) API key.",
+      errorCategory: "INVALID_CREDENTIALS",
+    };
+  }
+
+  // Unknown entity type - might still work if rights are present
+  if (authInfo.rights.length > 0) {
+    return { valid: true, authInfo };
+  }
+
+  return {
+    valid: false,
+    authInfo,
+    error: "Could not determine API key scope",
+    errorCategory: "INVALID_CREDENTIALS",
+  };
+}
+
+/**
+ * Verify organization ownership by checking:
+ * 1. Organization exists (GET /organizations/{orgId})
+ * 2. User has required rights (GET /organizations/{orgId}/rights)
+ */
+async function verifyOrgOwnership(
+  orgId: string,
+  apiKey: string
+): Promise<{
+  verified: boolean;
+  error?: string;
+  errorCategory?: ErrorCategory;
+  rights?: string[];
+}> {
+  console.log(`[Verify] Checking ownership of org: ${orgId}`);
+
+  // Step 1: Check org exists and we can access it
+  const orgResult = await ttnRequest<Record<string, unknown>>(
+    `/api/v3/organizations/${orgId}`,
+    { apiKey }
+  );
+
+  if (!orgResult.ok) {
+    console.log(`[Verify] Org GET failed: ${orgResult.status} ${orgResult.error}`);
+    return {
+      verified: false,
+      error: orgResult.error || `Organization ${orgId} not found or not accessible`,
+      errorCategory: orgResult.errorCategory,
+    };
+  }
+
+  // Step 2: Check we have required rights
+  const rightsResult = await ttnRequest<{ rights?: string[] }>(
+    `/api/v3/organizations/${orgId}/rights`,
+    { apiKey }
+  );
+
+  if (!rightsResult.ok) {
+    console.log(`[Verify] Rights GET failed: ${rightsResult.status} ${rightsResult.error}`);
+    return {
+      verified: false,
+      error: rightsResult.error || `Cannot read rights for organization ${orgId}`,
+      errorCategory: rightsResult.errorCategory,
+    };
+  }
+
+  const rights = rightsResult.data?.rights || [];
+  console.log(`[Verify] Org rights: ${rights.join(", ")}`);
+
+  // Check for required rights to create API keys
+  const hasApiKeyRight =
+    rights.includes("RIGHT_ORGANIZATION_ALL") ||
+    rights.includes("RIGHT_ORGANIZATION_SETTINGS_API_KEYS");
+
+  if (!hasApiKeyRight) {
+    return {
+      verified: false,
+      error: `Missing RIGHT_ORGANIZATION_SETTINGS_API_KEYS for ${orgId}`,
+      errorCategory: "ORGANIZATION_OWNERSHIP_ISSUE",
+      rights,
+    };
+  }
+
+  return { verified: true, rights };
+}
+
+/**
+ * Verify application ownership
+ */
+async function verifyAppOwnership(
+  appId: string,
+  apiKey: string
+): Promise<{
+  verified: boolean;
+  error?: string;
+  errorCategory?: ErrorCategory;
+  rights?: string[];
+}> {
+  console.log(`[Verify] Checking ownership of app: ${appId}`);
+
+  const appResult = await ttnRequest<Record<string, unknown>>(
+    `/api/v3/applications/${appId}`,
+    { apiKey }
+  );
+
+  if (!appResult.ok) {
+    return {
+      verified: false,
+      error: appResult.error || `Application ${appId} not found or not accessible`,
+      errorCategory: appResult.errorCategory,
+    };
+  }
+
+  const rightsResult = await ttnRequest<{ rights?: string[] }>(
+    `/api/v3/applications/${appId}/rights`,
+    { apiKey }
+  );
+
+  if (!rightsResult.ok) {
+    return {
+      verified: false,
+      error: rightsResult.error || `Cannot read rights for application ${appId}`,
+      errorCategory: rightsResult.errorCategory,
+    };
+  }
+
+  const rights = rightsResult.data?.rights || [];
+  const hasRequired =
+    rights.includes("RIGHT_APPLICATION_ALL") ||
+    (rights.includes("RIGHT_APPLICATION_SETTINGS_API_KEYS") &&
+      rights.includes("RIGHT_APPLICATION_TRAFFIC_READ"));
+
+  if (!hasRequired) {
+    return {
+      verified: false,
+      error: `Missing required rights for ${appId}`,
+      errorCategory: "APPLICATION_OWNERSHIP_ISSUE",
+      rights,
+    };
+  }
+
+  return { verified: true, rights };
+}
+
+// ============================================================================
+// PROVISIONING STEPS
+// ============================================================================
+
+/**
+ * Step 1: Create TTN Organization
+ */
+async function createOrganization(
+  orgId: string,
+  apiKey: string,
+  _userId: string
+): Promise<StepResult> {
+  const sanitizedOrgId = sanitizeTtnId(orgId);
+  console.log(`[Step1] Creating org: ${sanitizedOrgId} (original: ${orgId})`);
+
+  const createResult = await ttnRequest<Record<string, unknown>>("/api/v3/organizations", {
+    method: "POST",
+    apiKey,
+    body: {
+      organization: {
+        ids: { organization_id: sanitizedOrgId },
+        name: `FrostGuard - ${sanitizedOrgId}`,
+        description: `Auto-provisioned by FrostGuard for customer monitoring`,
+      },
     },
-  };
+  });
 
-  // First, try to check if webhook exists
-  const getResponse = await fetch(
-    `${regionalUrl}/api/v3/as/webhooks/${applicationId}/${webhookId}`,
+  // Handle response status codes STRICTLY
+  if (createResult.status === 201) {
+    // Success - but MUST verify ownership
+    console.log(`[Step1] Org created with 201, verifying ownership...`);
+    const verify = await verifyOrgOwnership(sanitizedOrgId, apiKey);
+
+    if (!verify.verified) {
+      return {
+        step: "1_create_org",
+        success: false,
+        message: `Organization created but ownership verification failed: ${verify.error}`,
+        error_code: "VERIFY_FAILED",
+        error_category: verify.errorCategory,
+        data: { org_id: sanitizedOrgId },
+      };
+    }
+
+    return {
+      step: "1_create_org",
+      success: true,
+      message: `Organization ${sanitizedOrgId} created and verified`,
+      data: { org_id: sanitizedOrgId, rights: verify.rights },
+    };
+  }
+
+  if (createResult.status === 409) {
+    // Org exists - MUST verify we own it
+    console.log(`[Step1] Org exists (409), verifying ownership...`);
+    const verify = await verifyOrgOwnership(sanitizedOrgId, apiKey);
+
+    if (!verify.verified) {
+      return {
+        step: "1_create_org",
+        success: false,
+        message: `Organization ${sanitizedOrgId} exists but you don't own it: ${verify.error}`,
+        error_code: "NOT_OWNER",
+        error_category: verify.errorCategory,
+        data: { org_id: sanitizedOrgId },
+      };
+    }
+
+    return {
+      step: "1_create_org",
+      success: true,
+      message: `Organization ${sanitizedOrgId} already exists and ownership verified`,
+      data: { org_id: sanitizedOrgId, rights: verify.rights, existed: true },
+    };
+  }
+
+  // Any other status = FAIL
+  return {
+    step: "1_create_org",
+    success: false,
+    message: `Failed to create organization: ${createResult.error}`,
+    error_code: createResult.errorCode || `HTTP_${createResult.status}`,
+    error_category: createResult.errorCategory,
+    data: { org_id: sanitizedOrgId },
+  };
+}
+
+/**
+ * Step 1B: Create Organization API Key
+ */
+async function createOrgApiKey(
+  orgId: string,
+  apiKey: string
+): Promise<StepResult & { orgApiKey?: string }> {
+  const sanitizedOrgId = sanitizeTtnId(orgId);
+  console.log(`[Step1B] Creating API key for org: ${sanitizedOrgId}`);
+
+  const keyName = `frostguard-org-key-${Date.now()}`;
+
+  const result = await ttnRequest<{ api_key?: string; key?: string }>(
+    `/api/v3/organizations/${sanitizedOrgId}/api-keys`,
     {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Accept": "application/json",
+      method: "POST",
+      apiKey,
+      body: {
+        name: keyName,
+        rights: [
+          "RIGHT_ORGANIZATION_ALL",
+          "RIGHT_APPLICATION_ALL",
+        ],
+        expires_at: null, // No expiration
       },
     }
   );
 
-  if (getResponse.ok) {
-    // Webhook exists, update it
-    console.log(`[ttn-bootstrap] [${requestId}] Webhook exists, updating...`);
-
-    const updateResponse = await fetch(
-      `${regionalUrl}/api/v3/as/webhooks/${applicationId}/${webhookId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...webhookConfig,
-          field_mask: {
-            paths: ["headers", "base_url", "format", "uplink_message", "join_accept"],
-          },
-        }),
-      }
-    );
-
-    if (updateResponse.ok) {
-      return { success: true, action: "updated" };
-    }
-
-    const errorText = await updateResponse.text();
-    console.error(`[ttn-bootstrap] [${requestId}] Webhook update failed: ${updateResponse.status} ${errorText}`);
-
-    if (updateResponse.status === 403) {
-      return {
-        success: false,
-        error: "API key lacks permission to update webhooks",
-        hint: "Your API key needs 'Write application settings' or 'Manage webhooks' permission. Create a new key with this scope in TTN Console.",
-      };
-    }
-
+  if (!result.ok) {
     return {
+      step: "1b_create_org_api_key",
       success: false,
-      error: `Failed to update webhook (${updateResponse.status})`,
-      hint: errorText.slice(0, 200),
+      message: `Failed to create org API key: ${result.error}`,
+      error_code: result.errorCode,
+      error_category: result.errorCategory,
+      data: { org_id: sanitizedOrgId },
     };
   }
 
-  if (getResponse.status === 404) {
-    // Webhook doesn't exist, create it
-    console.log(`[ttn-bootstrap] [${requestId}] Webhook doesn't exist, creating...`);
+  // TTN returns the key in either api_key or key field
+  const orgApiKey = result.data?.api_key || result.data?.key;
 
-    const createResponse = await fetch(
-      `${regionalUrl}/api/v3/as/webhooks/${applicationId}`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(webhookConfig),
-      }
-    );
-
-    if (createResponse.ok) {
-      return { success: true, action: "created" };
-    }
-
-    const errorText = await createResponse.text();
-    console.error(`[ttn-bootstrap] [${requestId}] Webhook creation failed: ${createResponse.status} ${errorText}`);
-
-    if (createResponse.status === 403) {
-      return {
-        success: false,
-        error: "API key lacks permission to create webhooks",
-        hint: "Your API key needs 'Write application settings' or 'Manage webhooks' permission. Create a new key with this scope in TTN Console.",
-      };
-    }
-
+  if (!orgApiKey) {
     return {
+      step: "1b_create_org_api_key",
       success: false,
-      error: `Failed to create webhook (${createResponse.status})`,
-      hint: errorText.slice(0, 200),
-    };
-  }
-
-  // Unexpected response from GET
-  const errorText = await getResponse.text();
-  console.error(`[ttn-bootstrap] [${requestId}] Unexpected webhook check response: ${getResponse.status}`);
-
-  if (getResponse.status === 403) {
-    return {
-      success: false,
-      error: "API key lacks permission to read webhooks",
-      hint: "Your API key needs 'Read application settings' permission to check existing webhooks.",
+      message: "API key created but key value not returned",
+      error_code: "NO_KEY_RETURNED",
+      error_category: "UNKNOWN",
+      data: { org_id: sanitizedOrgId },
     };
   }
 
   return {
-    success: false,
-    error: `Failed to check existing webhook (${getResponse.status})`,
-    hint: errorText.slice(0, 200),
+    step: "1b_create_org_api_key",
+    success: true,
+    message: `Organization API key created: ${keyName}`,
+    data: { org_id: sanitizedOrgId, key_name: keyName },
+    orgApiKey,
   };
 }
 
-serve(async (req) => {
-  const BUILD_VERSION = "ttn-bootstrap-v1.0-20260102";
-  const requestId = crypto.randomUUID().slice(0, 8);
-  console.log(`[ttn-bootstrap] [${requestId}] Build: ${BUILD_VERSION}`);
-  console.log(`[ttn-bootstrap] [${requestId}] Method: ${req.method}`);
+/**
+ * Step 2: Create TTN Application under Organization
+ */
+async function createApplication(
+  orgId: string,
+  appId: string,
+  apiKey: string
+): Promise<StepResult> {
+  const sanitizedOrgId = sanitizeTtnId(orgId);
+  const sanitizedAppId = sanitizeTtnId(appId);
+  console.log(`[Step2] Creating app: ${sanitizedAppId} under org: ${sanitizedOrgId}`);
 
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+  const createResult = await ttnRequest<Record<string, unknown>>(
+    `/api/v3/organizations/${sanitizedOrgId}/applications`,
+    {
+      method: "POST",
+      apiKey,
+      body: {
+        application: {
+          ids: { application_id: sanitizedAppId },
+          name: `FrostGuard App - ${sanitizedAppId}`,
+          description: "Temperature monitoring application",
+        },
+      },
+    }
+  );
+
+  if (createResult.status === 201) {
+    // Verify ownership
+    const verify = await verifyAppOwnership(sanitizedAppId, apiKey);
+    if (!verify.verified) {
+      return {
+        step: "2_create_app",
+        success: false,
+        message: `Application created but verification failed: ${verify.error}`,
+        error_code: "VERIFY_FAILED",
+        error_category: verify.errorCategory,
+        data: { org_id: sanitizedOrgId, app_id: sanitizedAppId },
+      };
+    }
+
+    return {
+      step: "2_create_app",
+      success: true,
+      message: `Application ${sanitizedAppId} created and verified`,
+      data: { org_id: sanitizedOrgId, app_id: sanitizedAppId },
+    };
   }
 
-  // Health check with contract metadata
-  if (req.method === "GET") {
-    return new Response(
-      JSON.stringify({
-        status: "ok",
-        function: "ttn-bootstrap",
-        version: BUILD_VERSION,
-        timestamp: new Date().toISOString(),
-        contract: {
-          required_fields: [
-            "organization_id",
-            "cluster",
-            "application_id",
-            "action"
-          ],
-          optional_fields: [
-            "api_key",
-            "owner_scope",
-            "credential_type"
-          ],
-          supported_actions: [
-            "validate",
-            "validate_only",
-            "configure",
-            "save_and_configure"
-          ],
-          supported_clusters: Object.keys(REGIONAL_URLS),
+  if (createResult.status === 409) {
+    // App exists - verify ownership
+    const verify = await verifyAppOwnership(sanitizedAppId, apiKey);
+    if (!verify.verified) {
+      return {
+        step: "2_create_app",
+        success: false,
+        message: `Application ${sanitizedAppId} exists but you don't own it: ${verify.error}`,
+        error_code: "NOT_OWNER",
+        error_category: verify.errorCategory,
+        data: { org_id: sanitizedOrgId, app_id: sanitizedAppId },
+      };
+    }
+
+    return {
+      step: "2_create_app",
+      success: true,
+      message: `Application ${sanitizedAppId} already exists and ownership verified`,
+      data: { org_id: sanitizedOrgId, app_id: sanitizedAppId, existed: true },
+    };
+  }
+
+  return {
+    step: "2_create_app",
+    success: false,
+    message: `Failed to create application: ${createResult.error}`,
+    error_code: createResult.errorCode || `HTTP_${createResult.status}`,
+    error_category: createResult.errorCategory,
+    data: { org_id: sanitizedOrgId, app_id: sanitizedAppId },
+  };
+}
+
+/**
+ * Step 2B: Create Application API Key
+ */
+async function createAppApiKey(
+  appId: string,
+  apiKey: string
+): Promise<StepResult & { appApiKey?: string }> {
+  const sanitizedAppId = sanitizeTtnId(appId);
+  console.log(`[Step2B] Creating API key for app: ${sanitizedAppId}`);
+
+  const keyName = `frostguard-app-key-${Date.now()}`;
+
+  const result = await ttnRequest<{ api_key?: string; key?: string }>(
+    `/api/v3/applications/${sanitizedAppId}/api-keys`,
+    {
+      method: "POST",
+      apiKey,
+      body: {
+        name: keyName,
+        rights: [
+          "RIGHT_APPLICATION_ALL",
+        ],
+        expires_at: null,
+      },
+    }
+  );
+
+  if (!result.ok) {
+    return {
+      step: "2b_create_app_api_key",
+      success: false,
+      message: `Failed to create app API key: ${result.error}`,
+      error_code: result.errorCode,
+      error_category: result.errorCategory,
+      data: { app_id: sanitizedAppId },
+    };
+  }
+
+  const appApiKey = result.data?.api_key || result.data?.key;
+
+  if (!appApiKey) {
+    return {
+      step: "2b_create_app_api_key",
+      success: false,
+      message: "API key created but key value not returned",
+      error_code: "NO_KEY_RETURNED",
+      error_category: "UNKNOWN",
+      data: { app_id: sanitizedAppId },
+    };
+  }
+
+  return {
+    step: "2b_create_app_api_key",
+    success: true,
+    message: `Application API key created: ${keyName}`,
+    data: { app_id: sanitizedAppId, key_name: keyName },
+    appApiKey,
+  };
+}
+
+/**
+ * Step 3: Create Webhook
+ */
+async function createWebhook(
+  appId: string,
+  apiKey: string,
+  webhookUrl: string
+): Promise<StepResult & { webhookId?: string; webhookSecret?: string }> {
+  const sanitizedAppId = sanitizeTtnId(appId);
+  const webhookId = `frostguard-webhook`;
+  const webhookSecret = crypto.randomUUID().replace(/-/g, "");
+
+  console.log(`[Step3] Creating webhook for app: ${sanitizedAppId}`);
+
+  // First, check if webhook exists and delete it
+  const existingCheck = await ttnRequest(
+    `/api/v3/as/webhooks/${sanitizedAppId}/${webhookId}`,
+    { apiKey }
+  );
+
+  if (existingCheck.ok) {
+    console.log(`[Step3] Existing webhook found, deleting...`);
+    await ttnRequest(`/api/v3/as/webhooks/${sanitizedAppId}/${webhookId}`, {
+      method: "DELETE",
+      apiKey,
+    });
+  }
+
+  // Create new webhook
+  const result = await ttnRequest<Record<string, unknown>>(
+    `/api/v3/as/webhooks/${sanitizedAppId}`,
+    {
+      method: "POST",
+      apiKey,
+      body: {
+        webhook: {
+          ids: {
+            application_ids: { application_id: sanitizedAppId },
+            webhook_id: webhookId,
+          },
+          base_url: webhookUrl,
+          format: "json",
+          headers: {
+            "X-Webhook-Secret": webhookSecret,
+          },
+          uplink_message: {
+            path: "",
+          },
+          join_accept: {
+            path: "/join",
+          },
+          downlink_ack: {
+            path: "/ack",
+          },
+          downlink_nack: {
+            path: "/nack",
+          },
+          downlink_sent: {
+            path: "/sent",
+          },
+          downlink_failed: {
+            path: "/failed",
+          },
+          downlink_queued: {
+            path: "/queued",
+          },
+          location_solved: {
+            path: "/location",
+          },
+          service_data: {
+            path: "/service",
+          },
         },
-        capabilities: {
-          validate_only: true,
-          webhook_management: true,
-          permission_detection: true,
+      },
+    }
+  );
+
+  if (!result.ok) {
+    return {
+      step: "3_create_webhook",
+      success: false,
+      message: `Failed to create webhook: ${result.error}`,
+      error_code: result.errorCode,
+      error_category: result.errorCategory,
+      data: { app_id: sanitizedAppId },
+    };
+  }
+
+  return {
+    step: "3_create_webhook",
+    success: true,
+    message: `Webhook ${webhookId} created successfully`,
+    data: { app_id: sanitizedAppId, webhook_id: webhookId },
+    webhookId,
+    webhookSecret,
+  };
+}
+
+// ============================================================================
+// MAIN PROVISIONING FLOW
+// ============================================================================
+
+async function runProvisioning(
+  request: ProvisioningRequest,
+  adminApiKey: string,
+  supabaseClient: ReturnType<typeof createClient>,
+  webhookBaseUrl: string
+): Promise<ProvisioningResult> {
+  const steps: StepResult[] = [];
+  let currentOrgId = request.org_id;
+  let orgApiKey: string | undefined;
+  let appApiKey: string | undefined;
+  let webhookId: string | undefined;
+  let webhookSecret: string | undefined;
+
+  // Validate API key first
+  const validation = await validateApiKey(adminApiKey);
+  if (!validation.valid) {
+    return {
+      success: false,
+      steps: [
+        {
+          step: "0_preflight",
+          success: false,
+          message: validation.error || "API key validation failed",
+          error_category: validation.errorCategory,
         },
-      }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      ],
+      version: FUNCTION_VERSION,
+    };
+  }
+
+  const userId = validation.authInfo?.userId || "frostguard101";
+
+  //                                                                          
+  // STEP 1: Create Organization
+  //                                                                          
+  let step1 = await createOrganization(currentOrgId, adminApiKey, userId);
+
+  // If step 1 fails with ownership issue, try rotating org_id (Start Fresh logic)
+  if (
+    !step1.success &&
+    (step1.error_category === "ORGANIZATION_OWNERSHIP_ISSUE" ||
+      step1.error_code === "NOT_OWNER") &&
+    !request.force_new_org
+  ) {
+    console.log(`[Provision] Step 1 failed, rotating org_id...`);
+    const rotatedOrgId = `${sanitizeTtnId(request.org_id)}-${generateSuffix()}`;
+    step1 = await createOrganization(rotatedOrgId, adminApiKey, userId);
+    if (step1.success) {
+      currentOrgId = rotatedOrgId;
+    }
+  }
+
+  steps.push(step1);
+  if (!step1.success) {
+    return {
+      success: false,
+      steps,
+      ttn_org_id: sanitizeTtnId(currentOrgId),
+      version: FUNCTION_VERSION,
+    };
+  }
+
+  currentOrgId = sanitizeTtnId(currentOrgId);
+
+  //                                                                          
+  // STEP 1B: Create Organization API Key
+  //                                                                          
+  const step1b = await createOrgApiKey(currentOrgId, adminApiKey);
+  steps.push(step1b);
+
+  if (!step1b.success) {
+    return {
+      success: false,
+      steps,
+      ttn_org_id: currentOrgId,
+      version: FUNCTION_VERSION,
+    };
+  }
+
+  orgApiKey = step1b.orgApiKey;
+
+  //                                                                          
+  // STEP 2: Create Application
+  //                                                                          
+  const appId = `${currentOrgId}-app`;
+  const step2 = await createApplication(currentOrgId, appId, adminApiKey);
+  steps.push(step2);
+
+  if (!step2.success) {
+    return {
+      success: false,
+      steps,
+      ttn_org_id: currentOrgId,
+      ttn_org_api_key: orgApiKey,
+      version: FUNCTION_VERSION,
+    };
+  }
+
+  const sanitizedAppId = sanitizeTtnId(appId);
+
+  //                                                                          
+  // STEP 2B: Create Application API Key
+  //                                                                          
+  const step2b = await createAppApiKey(sanitizedAppId, adminApiKey);
+  steps.push(step2b);
+
+  if (!step2b.success) {
+    return {
+      success: false,
+      steps,
+      ttn_org_id: currentOrgId,
+      ttn_org_api_key: orgApiKey,
+      ttn_app_id: sanitizedAppId,
+      version: FUNCTION_VERSION,
+    };
+  }
+
+  appApiKey = step2b.appApiKey;
+
+  //                                                                          
+  // STEP 3: Create Webhook
+  //                                                                          
+  const webhookUrl = `${webhookBaseUrl}/functions/v1/ttn-webhook`;
+  const step3 = await createWebhook(sanitizedAppId, adminApiKey, webhookUrl);
+  steps.push(step3);
+
+  if (!step3.success) {
+    return {
+      success: false,
+      steps,
+      ttn_org_id: currentOrgId,
+      ttn_org_api_key: orgApiKey,
+      ttn_app_id: sanitizedAppId,
+      ttn_app_api_key: appApiKey,
+      version: FUNCTION_VERSION,
+    };
+  }
+
+  webhookId = step3.webhookId;
+  webhookSecret = step3.webhookSecret;
+
+  //                                                                          
+  // SUCCESS: Save to database
+  //                                                                          
+  try {
+    const { error: dbError } = await supabaseClient.from("ttn_settings").upsert(
+      {
+        org_id: request.customer_id || currentOrgId,
+        site_id: request.site_id || null,
+        enabled: true,
+        cluster: TTN_REGION,
+        application_id: sanitizedAppId,
+        api_key: appApiKey, // Store app API key for webhook auth
+        webhook_secret: webhookSecret,
+        last_test_at: new Date().toISOString(),
+        last_test_success: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "org_id" }
     );
+
+    if (dbError) {
+      console.error(`[DB] Failed to save settings:`, dbError);
+      steps.push({
+        step: "4_save_settings",
+        success: false,
+        message: `TTN provisioning succeeded but failed to save settings: ${dbError.message}`,
+      });
+    } else {
+      steps.push({
+        step: "4_save_settings",
+        success: true,
+        message: "Settings saved to database",
+      });
+    }
+  } catch (err) {
+    console.error(`[DB] Exception:`, err);
+  }
+
+  return {
+    success: true,
+    steps,
+    ttn_org_id: currentOrgId,
+    ttn_org_api_key: orgApiKey,
+    ttn_app_id: sanitizedAppId,
+    ttn_app_api_key: appApiKey,
+    webhook_id: webhookId,
+    webhook_secret: webhookSecret,
+    version: FUNCTION_VERSION,
+  };
+}
+
+// ============================================================================
+// HTTP HANDLER
+// ============================================================================
+
+serve(async (req: Request) => {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    // Validate and get SUPABASE_URL with fallback
-    const rawSupabaseUrl = Deno.env.get("SUPABASE_URL");
-    const FALLBACK_SUPABASE_URL = "https://mfwyiifehsvwnjwqoxht.supabase.co";
-    
-    // Validate URL is absolute and starts with https://
-    const supabaseUrl = (() => {
-      if (rawSupabaseUrl && rawSupabaseUrl.startsWith("https://")) {
-        return rawSupabaseUrl;
-      }
-      console.warn(`[ttn-bootstrap] [${requestId}] SUPABASE_URL invalid or undefined (value: ${rawSupabaseUrl?.slice(0, 20) || 'undefined'}), using fallback`);
-      return FALLBACK_SUPABASE_URL;
-    })();
-    
-    console.log(`[ttn-bootstrap] [${requestId}] Using SUPABASE_URL: ${supabaseUrl}`);
-    
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || supabaseServiceKey.slice(0, 32);
+    // Get environment variables
+    const adminApiKey = Deno.env.get("TTN_ADMIN_API_KEY")?.trim();
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    // Authenticate user
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    if (!adminApiKey) {
       return new Response(
         JSON.stringify({
-          ok: false,
-          error: { code: "UNAUTHORIZED", message: "Missing authorization header", hint: "Log in again" },
-          request_id: requestId,
+          success: false,
+          error: "TTN_ADMIN_API_KEY not configured",
+          version: FUNCTION_VERSION,
         }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
       );
     }
 
+    if (!supabaseUrl || !supabaseServiceKey) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Supabase environment variables not configured",
+          version: FUNCTION_VERSION,
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Parse request
+    const body = (await req.json()) as ProvisioningRequest;
+
+    if (!body.action) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Missing action parameter",
+          version: FUNCTION_VERSION,
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Create Supabase client
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : authHeader.trim();
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: { code: "UNAUTHORIZED", message: "Invalid user session", hint: "Log in again" },
-          request_id: requestId,
-        }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`[ttn-bootstrap] [${requestId}] User: ${user.id}`);
-
-    // Parse request body
-    const body: BootstrapRequest = await req.json();
-    const { action, organization_id, cluster, application_id, api_key } = body;
-
-    console.log(`[ttn-bootstrap] [${requestId}] Action: ${action}, Org: ${organization_id}, App: ${application_id}, Cluster: ${cluster}`);
-
-    // Validate required fields
-    if (!organization_id || !cluster || !application_id) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: {
-            code: "INVALID_REQUEST",
-            message: "Missing required fields",
-            hint: "Provide organization_id, cluster, and application_id"
-          },
-          request_id: requestId,
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Verify user is admin/owner of the org
-    const { data: roleCheck } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("organization_id", organization_id)
-      .maybeSingle();
-
-    if (!roleCheck || !["owner", "admin"].includes(roleCheck.role)) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: { code: "FORBIDDEN", message: "Only admins and owners can configure TTN", hint: "Contact your org admin" },
-          request_id: requestId,
-        }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Get existing TTN settings
-    const { data: existingSettings } = await supabase
-      .from("ttn_connections")
-      .select("*")
-      .eq("organization_id", organization_id)
-      .maybeSingle();
-
-    // Determine which API key to use
-    let effectiveApiKey = api_key;
-
-    if (!effectiveApiKey && existingSettings?.ttn_api_key_encrypted) {
-      // Decrypt existing key
-      const { deobfuscateKey } = await import("../_shared/ttnConfig.ts");
-      effectiveApiKey = deobfuscateKey(existingSettings.ttn_api_key_encrypted, encryptionSalt);
-    }
-
-    if (!effectiveApiKey) {
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: {
-            code: "NO_API_KEY",
-            message: "No API key provided or stored",
-            hint: "Enter your TTN API key"
-          },
-          request_id: requestId,
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ========================================
-    // ACTION: VALIDATE - Check API key permissions only
-    // ========================================
-    if (action === "validate") {
-      const validation = await validateApiKeyPermissions(effectiveApiKey, application_id, cluster, requestId);
-
-      if (!validation.success) {
+    // Handle different actions
+    switch (body.action) {
+      case "preflight": {
+        const validation = await validateApiKey(adminApiKey);
         return new Response(
           JSON.stringify({
-            ok: false,
-            action: "validate",
-            error: {
-              code: "TTN_VALIDATION_FAILED",
-              message: validation.error || "Validation failed",
-              hint: validation.hint || "",
-            },
-            request_id: requestId,
-          } as BootstrapResult),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const permissions = analyzePermissions(validation.rights || []);
-
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          action: "validate",
-          permissions,
-          request_id: requestId,
-        } as BootstrapResult),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ========================================
-    // ACTION: VALIDATE_ONLY - Dry-run validation without persisting state
-    // ========================================
-    if (action === "validate_only") {
-      console.log(`[ttn-bootstrap] [${requestId}] Validate-only mode - no state changes will be made`);
-      
-      // Build validation errors for required fields
-      const validationErrors: string[] = [];
-      if (!organization_id) validationErrors.push("organization_id is required");
-      if (!cluster) validationErrors.push("cluster is required");
-      if (!application_id) validationErrors.push("application_id is required");
-      
-      if (!REGIONAL_URLS[cluster]) {
-        validationErrors.push(`Invalid cluster: ${cluster}. Valid: ${Object.keys(REGIONAL_URLS).join(", ")}`);
-      }
-      
-      if (validationErrors.length > 0) {
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            valid: false,
-            action: "validate_only",
-            validation_errors: validationErrors,
-            request_id: requestId,
-            dry_run: true,
-            state_modified: false,
+            success: validation.valid,
+            message: validation.valid
+              ? "API key validated successfully"
+              : validation.error,
+            auth_info: validation.authInfo,
+            region: TTN_REGION,
+            base_url: TTN_BASE_URL,
+            version: FUNCTION_VERSION,
           }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          {
+            status: validation.valid ? 200 : 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
         );
       }
-      
-      // If api_key provided, test permissions against TTN
-      let permissionCheck = null;
-      const warnings: string[] = [];
-      
-      if (effectiveApiKey) {
-        const keyValidation = await validateApiKeyPermissions(effectiveApiKey, application_id, cluster, requestId);
-        
-        if (!keyValidation.success) {
+
+      case "provision":
+      case "start_fresh": {
+        if (!body.org_id) {
           return new Response(
             JSON.stringify({
-              ok: false,
-              valid: false,
-              action: "validate_only",
-              error: { 
-                code: "TTN_KEY_INVALID",
-                message: keyValidation.error || "API key validation failed",
-                hint: keyValidation.hint,
-              },
-              request_id: requestId,
-              dry_run: true,
-              state_modified: false,
+              success: false,
+              error: "Missing org_id parameter",
+              version: FUNCTION_VERSION,
             }),
-            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
           );
         }
-        
-        // Analyze permissions
-        permissionCheck = analyzePermissions(keyValidation.rights || []);
-        
-        if (!permissionCheck.can_configure_webhook) {
-          warnings.push("API key may lack webhook management permissions");
+
+        // For start_fresh, force a new org_id suffix
+        if (body.action === "start_fresh") {
+          body.org_id = `${sanitizeTtnId(body.org_id)}-${generateSuffix()}`;
         }
-        if (!permissionCheck.can_manage_devices) {
-          warnings.push("API key cannot manage devices - you won't be able to provision sensors");
-        }
-      } else {
-        warnings.push("No API key provided - cannot verify TTN permissions");
+
+        const result = await runProvisioning(
+          body,
+          adminApiKey,
+          supabase,
+          supabaseUrl
+        );
+
+        return new Response(JSON.stringify(result), {
+          status: result.success ? 200 : 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      
-      // Return validation result (no state changes made)
-      console.log(`[ttn-bootstrap] [${requestId}] Validate-only completed - valid: true, warnings: ${warnings.length}`);
-      
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          valid: true,
-          action: "validate_only",
-          request_id: requestId,
-          resolved: {
-            cluster,
-            application_id,
-            organization_id,
-          },
-          permissions: permissionCheck,
-          warnings,
-          dry_run: true,
-          state_modified: false,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+
+      case "status": {
+        // Return current deployment status and diagnostics
+        const validation = await validateApiKey(adminApiKey);
+        return new Response(
+          JSON.stringify({
+            success: true,
+            version: FUNCTION_VERSION,
+            region: TTN_REGION,
+            base_url: TTN_BASE_URL,
+            api_key_valid: validation.valid,
+            api_key_entity_type: validation.authInfo?.entityType,
+            api_key_user_id: validation.authInfo?.userId,
+            api_key_rights_count: validation.authInfo?.rights.length,
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      default:
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `Unknown action: ${body.action}`,
+            version: FUNCTION_VERSION,
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
     }
-
-    // ========================================
-    // ACTION: CONFIGURE - Configure webhook only (no settings save)
-    // ========================================
-    if (action === "configure") {
-      // Validate first
-      const validation = await validateApiKeyPermissions(effectiveApiKey, application_id, cluster, requestId);
-
-      if (!validation.success) {
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            action: "configure",
-            error: {
-              code: "TTN_VALIDATION_FAILED",
-              message: validation.error || "Validation failed",
-              hint: validation.hint || "",
-            },
-            request_id: requestId,
-          } as BootstrapResult),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Generate webhook URL
-      const webhookUrl = `${supabaseUrl}/functions/v1/ttn-webhook`;
-
-      // Generate or reuse webhook secret
-      let webhookSecret: string;
-      if (existingSettings?.ttn_webhook_secret_encrypted) {
-        const { deobfuscateKey } = await import("../_shared/ttnConfig.ts");
-        webhookSecret = deobfuscateKey(existingSettings.ttn_webhook_secret_encrypted, encryptionSalt);
-      } else {
-        webhookSecret = generateWebhookSecret();
-      }
-
-      // Configure webhook in TTN
-      const webhookResult = await upsertWebhook(
-        effectiveApiKey,
-        application_id,
-        cluster,
-        webhookSecret,
-        webhookUrl,
-        requestId
-      );
-
-      if (!webhookResult.success) {
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            action: "configure",
-            error: {
-              code: "WEBHOOK_SETUP_FAILED",
-              message: webhookResult.error || "Webhook setup failed",
-              hint: webhookResult.hint || "",
-            },
-            request_id: requestId,
-          } as BootstrapResult),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const permissions = analyzePermissions(validation.rights || []);
-
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          action: "configure",
-          permissions,
-          webhook: {
-            webhook_id: "freshtracker",
-            base_url: webhookUrl,
-            format: "json",
-            events_enabled: ["uplink_message", "join_accept"],
-            secret_configured: true,
-          },
-          webhook_action: webhookResult.action,
-          request_id: requestId,
-        } as BootstrapResult),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ========================================
-    // ACTION: SAVE_AND_CONFIGURE - Full workflow
-    // ========================================
-    if (action === "save_and_configure") {
-      // Step 1: Validate API key permissions
-      console.log(`[ttn-bootstrap] [${requestId}] Step 1: Validating API key permissions`);
-      const validation = await validateApiKeyPermissions(effectiveApiKey, application_id, cluster, requestId);
-
-      if (!validation.success) {
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            action: "save_and_configure",
-            error: {
-              code: "TTN_PERMISSION_MISSING",
-              message: validation.error || "API key validation failed",
-              hint: validation.hint || "Check your API key permissions",
-            },
-            request_id: requestId,
-          } as BootstrapResult),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      const permissions = analyzePermissions(validation.rights || []);
-
-      // Check if we have minimum required permissions
-      if (!permissions.valid) {
-        const missingLabels = permissions.missing_core.map((r: string) => PERMISSION_LABELS[r] || r);
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            action: "save_and_configure",
-            permissions,
-            error: {
-              code: "TTN_PERMISSION_MISSING",
-              message: "API key is missing required permissions",
-              hint: `Missing: ${missingLabels.join(", ")}. Create a new API key with these scopes.`,
-              missing_permissions: permissions.missing_core,
-            },
-            request_id: requestId,
-          } as BootstrapResult),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Step 2: Generate webhook URL and secret
-      console.log(`[ttn-bootstrap] [${requestId}] Step 2: Preparing webhook configuration`);
-      const webhookUrl = `${supabaseUrl}/functions/v1/ttn-webhook`;
-
-      // Generate new webhook secret if this is a new key or no secret exists
-      let webhookSecret: string;
-      const isNewKey = api_key && (!existingSettings?.ttn_api_key_last4 || getLast4(api_key) !== existingSettings.ttn_api_key_last4);
-
-      if (isNewKey || !existingSettings?.ttn_webhook_secret_encrypted) {
-        webhookSecret = generateWebhookSecret();
-        console.log(`[ttn-bootstrap] [${requestId}] Generated new webhook secret`);
-      } else {
-        const { deobfuscateKey } = await import("../_shared/ttnConfig.ts");
-        webhookSecret = deobfuscateKey(existingSettings.ttn_webhook_secret_encrypted, encryptionSalt);
-        console.log(`[ttn-bootstrap] [${requestId}] Reusing existing webhook secret`);
-      }
-
-      // Step 3: Configure webhook in TTN
-      console.log(`[ttn-bootstrap] [${requestId}] Step 3: Configuring webhook in TTN`);
-      const webhookResult = await upsertWebhook(
-        effectiveApiKey,
-        application_id,
-        cluster,
-        webhookSecret,
-        webhookUrl,
-        requestId
-      );
-
-      if (!webhookResult.success) {
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            action: "save_and_configure",
-            permissions,
-            error: {
-              code: "WEBHOOK_SETUP_FAILED",
-              message: webhookResult.error || "Failed to configure webhook in TTN",
-              hint: webhookResult.hint || "Check your API key has webhook write permissions",
-            },
-            request_id: requestId,
-          } as BootstrapResult),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Step 4: Save settings to database
-      console.log(`[ttn-bootstrap] [${requestId}] Step 4: Saving configuration to database`);
-
-      const encryptedApiKey = obfuscateKey(effectiveApiKey, encryptionSalt);
-      const encryptedWebhookSecret = obfuscateKey(webhookSecret, encryptionSalt);
-      const now = new Date().toISOString();
-
-      const settingsData = {
-        organization_id: organization_id,
-        is_enabled: true,
-        ttn_region: cluster.toLowerCase(),
-        ttn_application_id: application_id,
-        ttn_api_key_encrypted: encryptedApiKey,
-        ttn_api_key_last4: getLast4(effectiveApiKey),
-        ttn_api_key_updated_at: now,
-        ttn_webhook_secret_encrypted: encryptedWebhookSecret,
-        ttn_webhook_secret_last4: getLast4(webhookSecret),
-        ttn_webhook_url: webhookUrl,
-        ttn_webhook_id: "freshtracker",
-        ttn_webhook_events: ["uplink_message", "join_accept"],
-        provisioning_status: "completed",
-        provisioning_error: null,
-        ttn_last_updated_source: "frostguard",
-        updated_by: user.id,
-        updated_at: now,
-      };
-
-      let upsertResult;
-      if (existingSettings) {
-        upsertResult = await supabase
-          .from("ttn_connections")
-          .update(settingsData)
-          .eq("id", existingSettings.id)
-          .select()
-          .single();
-      } else {
-        upsertResult = await supabase
-          .from("ttn_connections")
-          .insert({
-            ...settingsData,
-            created_by: user.id,
-          })
-          .select()
-          .single();
-      }
-
-      if (upsertResult.error) {
-        console.error(`[ttn-bootstrap] [${requestId}] Database error:`, upsertResult.error);
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            action: "save_and_configure",
-            permissions,
-            webhook: {
-              webhook_id: "freshtracker",
-              base_url: webhookUrl,
-              format: "json",
-              events_enabled: ["uplink_message", "join_accept"],
-              secret_configured: true,
-            },
-            webhook_action: webhookResult.action,
-            error: {
-              code: "DATABASE_ERROR",
-              message: "Webhook configured but failed to save settings",
-              hint: "The webhook is set up in TTN but we couldn't save locally. Try again.",
-            },
-            request_id: requestId,
-          } as BootstrapResult),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      // Log success event
-      await supabase.from("event_logs").insert({
-        organization_id: organization_id,
-        event_type: "ttn.bootstrap.completed",
-        category: "settings",
-        severity: "info",
-        title: "TTN Webhook Configured",
-        actor_id: user.id,
-        event_data: {
-          application_id,
-          cluster,
-          webhook_action: webhookResult.action,
-          api_key_last4: getLast4(effectiveApiKey),
-          request_id: requestId,
-        },
-      });
-
-      console.log(`[ttn-bootstrap] [${requestId}] Bootstrap completed successfully`);
-
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          action: "save_and_configure",
-          permissions,
-          webhook: {
-            webhook_id: "freshtracker",
-            base_url: webhookUrl,
-            format: "json",
-            events_enabled: ["uplink_message", "join_accept"],
-            secret_configured: true,
-          },
-          webhook_action: webhookResult.action,
-          config: {
-            api_key_last4: getLast4(effectiveApiKey),
-            webhook_secret_last4: getLast4(webhookSecret),
-            webhook_url: webhookUrl,
-            application_id,
-            cluster,
-            updated_at: now,
-          },
-          request_id: requestId,
-        } as BootstrapResult),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
+  } catch (err) {
+    console.error(`[Handler] Unhandled error:`, err);
     return new Response(
       JSON.stringify({
-        ok: false,
-        error: { code: "UNKNOWN_ACTION", message: `Unknown action: ${action}`, hint: "Use 'validate', 'configure', or 'save_and_configure'" },
-        request_id: requestId,
+        success: false,
+        error: err instanceof Error ? err.message : "Internal error",
+        version: FUNCTION_VERSION,
       }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-
-  } catch (error) {
-    console.error(`[ttn-bootstrap] [${requestId}] Error:`, error);
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        error: {
-          code: "INTERNAL_ERROR",
-          message: error instanceof Error ? error.message : "Internal error",
-          hint: "Check server logs"
-        },
-        request_id: requestId,
-      }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
     );
   }
 });
