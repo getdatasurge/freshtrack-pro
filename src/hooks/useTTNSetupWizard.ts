@@ -44,7 +44,7 @@ const INITIAL_STATE: TTNWizardState = {
     isComplete: false,
     error: undefined,
   })),
-  region: 'nam1',
+  region: 'eu1',
   applicationId: null,
   hasApiKey: false,
   apiKeyLast4: null,

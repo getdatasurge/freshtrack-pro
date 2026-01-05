@@ -27,6 +27,8 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 import {
   generateTtnApplicationId,
   generateTtnOrganizationId,
+  generateCollisionSafeOrgId,
+  sanitizeTtnSlug,
   generateWebhookSecret,
   obfuscateKey,
   getLast4,
@@ -103,6 +105,15 @@ function isNoApplicationRightsError(errorText: string, statusCode: number): bool
 }
 
 /**
+ * Check if error indicates "no rights" to an organization
+ */
+function isNoOrganizationRightsError(errorText: string, statusCode: number): boolean {
+  if (statusCode !== 403) return false;
+  const details = parseTTNError(errorText);
+  return details.name === "no_organization_rights" || errorText.includes("no_organization_rights");
+}
+
+/**
  * Classify error for better diagnostics
  */
 function classifyError(error: unknown, statusCode?: number): string {
@@ -121,6 +132,7 @@ function classifyError(error: unknown, statusCode?: number): string {
   if (errorStr.includes("permission") || errorStr.includes("denied")) return "authorization";
   if (errorStr.includes("not found")) return "not_found";
   if (errorStr.includes("no_application_rights")) return "no_application_rights";
+  if (errorStr.includes("no_organization_rights")) return "no_organization_rights";
   
   return "unknown";
 }
@@ -655,17 +667,38 @@ serve(async (req) => {
         }
 
         // ============ STEP 1: Create TTN Organization (using Main User API Key) ============
+        // STRICT + IDEMPOTENT: Use POST /api/v3/organizations (not user-scoped endpoint)
+        // Handle 201 = created, 409 = exists (verify), anything else = fail
         const step1Start = Date.now();
-        if (!completedSteps.organization_created) {
-          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/users/${ttnUserId}/organizations`;
+        let effectiveTtnOrgId = ttnOrgId;
+        
+        if (!completedSteps.organization_created || !completedSteps.organization_verified) {
+          // Use the correct organizations endpoint (not user-scoped)
+          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/organizations`;
+          const createPayload = {
+            organization: {
+              ids: { organization_id: effectiveTtnOrgId },
+              name: `FrostGuard - ${org.name}`,
+              description: `FrostGuard temperature monitoring organization for ${org.name}`,
+            },
+          };
+          
           await logProvisioningStep(supabase, organization_id, "create_organization", "started", 
             `Creating TTN organization (token_source: ${TOKEN_SOURCE})`, 
-            { ttn_org_id: ttnOrgId, endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
+            { 
+              ttn_org_id: effectiveTtnOrgId, 
+              endpoint: ttnEndpoint,
+              base_url: IDENTITY_SERVER_URL,
+              payload: { org_id: effectiveTtnOrgId, name: createPayload.organization.name },
+            }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningState(supabase, organization_id, { step: "create_ttn_org" });
 
-          console.log(`[ttn-provision-org] [${requestId}] Step 1: Creating TTN organization ${ttnOrgId} (token_source: ${TOKEN_SOURCE})`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Creating TTN organization ${effectiveTtnOrgId}`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Endpoint: ${ttnEndpoint}`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Payload: ${JSON.stringify(createPayload)}`);
 
           let createOrgResponse: Response;
+          let createResponseText = "";
           try {
             createOrgResponse = await fetchWithTimeout(
               ttnEndpoint,
@@ -675,15 +708,11 @@ serve(async (req) => {
                   Authorization: `Bearer ${ttnAdminKey}`,
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({
-                  organization: {
-                    ids: { organization_id: ttnOrgId },
-                    name: `FrostGuard - ${org.name}`,
-                    description: `FrostGuard temperature monitoring organization for ${org.name}`,
-                  },
-                }),
+                body: JSON.stringify(createPayload),
               }
             );
+            createResponseText = await createOrgResponse.text();
+            console.log(`[ttn-provision-org] [${requestId}] Step 1: Response status=${createOrgResponse.status}, body=${createResponseText.slice(0, 500)}`);
           } catch (fetchErr) {
             const duration = Date.now() - step1Start;
             const category = classifyError(fetchErr);
@@ -705,20 +734,23 @@ serve(async (req) => {
             });
           }
 
-          if (!createOrgResponse.ok && createOrgResponse.status !== 409) {
-            const errorText = await createOrgResponse.text();
+          // Handle response: 201 = created, 409 = exists, anything else = fail BEFORE verification
+          if (createOrgResponse.status !== 201 && createOrgResponse.status !== 409) {
             const duration = Date.now() - step1Start;
-            const category = classifyError(errorText, createOrgResponse.status);
-            const ttnError = parseTTNError(errorText);
+            const category = classifyError(createResponseText, createOrgResponse.status);
+            const ttnError = parseTTNError(createResponseText);
             
-            await logProvisioningStep(supabase, organization_id, "create_organization", "failed", `HTTP ${createOrgResponse.status}`, { status: createOrgResponse.status }, duration, requestId, createOrgResponse.status, errorText, category, ttnEndpoint);
+            await logProvisioningStep(supabase, organization_id, "create_organization", "failed", 
+              `HTTP ${createOrgResponse.status}`, 
+              { status: createOrgResponse.status, response: createResponseText.slice(0, 500) }, 
+              duration, requestId, createOrgResponse.status, createResponseText, category, ttnEndpoint);
             
             await updateProvisioningState(supabase, organization_id, {
               status: "failed",
               step: "create_organization",
               error: `Failed to create TTN organization: ${createOrgResponse.status}`,
               last_http_status: createOrgResponse.status,
-              last_http_body: errorText,
+              last_http_body: createResponseText,
               last_ttn_correlation_id: ttnError.correlation_id,
               last_ttn_error_namespace: ttnError.namespace,
               last_ttn_error_name: ttnError.name,
@@ -734,33 +766,221 @@ serve(async (req) => {
             });
           }
 
+          // Mark as potentially created (201) or existing (409) - either way, proceed to verification
+          const wasCreated = createOrgResponse.status === 201;
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Org ${wasCreated ? 'created (201)' : 'exists (409)'}, proceeding to verification`);
+
+          // ============ STEP 1 VERIFICATION: Verify org exists and we have rights ============
+          console.log(`[ttn-provision-org] [${requestId}] Step 1 Verification: Checking org ${effectiveTtnOrgId}`);
+          
+          // 1a. Check org exists
+          const verifyOrgEndpoint = `${IDENTITY_SERVER_URL}/api/v3/organizations/${effectiveTtnOrgId}`;
+          let verifyOrgResponse: Response;
+          try {
+            verifyOrgResponse = await fetchWithTimeout(verifyOrgEndpoint, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${ttnAdminKey}` },
+            });
+          } catch (fetchErr) {
+            const duration = Date.now() - step1Start;
+            const errMsg = fetchErr instanceof Error ? fetchErr.message : "Fetch failed";
+            await logProvisioningStep(supabase, organization_id, "verify_organization", "failed", 
+              `Failed to verify org: ${errMsg}`, {}, duration, requestId);
+            
+            await updateProvisioningState(supabase, organization_id, {
+              status: "failed",
+              step: "create_organization",
+              error: `Failed to verify organization: ${errMsg}`,
+            });
+            
+            return buildResponse({
+              success: false,
+              error: `Failed to verify organization: ${errMsg}`,
+              step: "create_organization",
+              retryable: true,
+              request_id: requestId,
+            });
+          }
+
+          if (!verifyOrgResponse.ok) {
+            const verifyText = await verifyOrgResponse.text();
+            const duration = Date.now() - step1Start;
+            
+            // If org doesn't exist (404) or we have no rights (403), fail Step 1
+            if (verifyOrgResponse.status === 404 || verifyOrgResponse.status === 403) {
+              const isNoRights = isNoOrganizationRightsError(verifyText, verifyOrgResponse.status);
+              const ttnError = parseTTNError(verifyText);
+              
+              await logProvisioningStep(supabase, organization_id, "verify_organization", "failed", 
+                `Org verification failed: ${verifyOrgResponse.status}`, 
+                { status: verifyOrgResponse.status, response: verifyText.slice(0, 500) }, 
+                duration, requestId, verifyOrgResponse.status, verifyText, undefined, verifyOrgEndpoint);
+              
+              await updateProvisioningState(supabase, organization_id, {
+                status: "failed",
+                step: "create_organization",
+                error: isNoRights 
+                  ? "No organization rights - org may exist under another account" 
+                  : `Organization verification failed: ${verifyOrgResponse.status}`,
+                last_http_status: verifyOrgResponse.status,
+                last_http_body: verifyText,
+                last_ttn_error_name: isNoRights ? "no_organization_rights" : ttnError.name,
+              });
+              
+              return buildResponse({
+                success: false,
+                error: isNoRights 
+                  ? "No organization rights - org may exist under another account or different cluster"
+                  : `Organization verification failed: ${verifyOrgResponse.status}`,
+                step: "create_organization",
+                retryable: false,
+                use_start_fresh: true,
+                request_id: requestId,
+              });
+            }
+          }
+
+          // 1b. Check we have RIGHT_ORGANIZATION_SETTINGS_API_KEYS
+          const verifyRightsEndpoint = `${IDENTITY_SERVER_URL}/api/v3/organizations/${effectiveTtnOrgId}/rights`;
+          let verifyRightsResponse: Response;
+          try {
+            verifyRightsResponse = await fetchWithTimeout(verifyRightsEndpoint, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${ttnAdminKey}` },
+            });
+          } catch (fetchErr) {
+            const duration = Date.now() - step1Start;
+            const errMsg = fetchErr instanceof Error ? fetchErr.message : "Fetch failed";
+            await logProvisioningStep(supabase, organization_id, "verify_organization", "failed", 
+              `Failed to verify org rights: ${errMsg}`, {}, duration, requestId);
+            
+            return buildResponse({
+              success: false,
+              error: `Failed to verify organization rights: ${errMsg}`,
+              step: "create_organization",
+              retryable: true,
+              request_id: requestId,
+            });
+          }
+
+          if (!verifyRightsResponse.ok) {
+            const rightsText = await verifyRightsResponse.text();
+            const duration = Date.now() - step1Start;
+            const isNoRights = isNoOrganizationRightsError(rightsText, verifyRightsResponse.status);
+            
+            await logProvisioningStep(supabase, organization_id, "verify_organization", "failed", 
+              `Org rights check failed: ${verifyRightsResponse.status}`, 
+              { status: verifyRightsResponse.status }, duration, requestId, verifyRightsResponse.status, rightsText);
+            
+            await updateProvisioningState(supabase, organization_id, {
+              status: "failed",
+              step: "create_organization",
+              error: isNoRights 
+                ? "No organization rights" 
+                : `Organization rights check failed: ${verifyRightsResponse.status}`,
+              last_http_status: verifyRightsResponse.status,
+              last_http_body: rightsText,
+              last_ttn_error_name: isNoRights ? "no_organization_rights" : undefined,
+            });
+            
+            return buildResponse({
+              success: false,
+              error: isNoRights 
+                ? "No organization rights - org may exist under another account"
+                : `Organization rights check failed: ${verifyRightsResponse.status}`,
+              step: "create_organization",
+              retryable: false,
+              use_start_fresh: true,
+              request_id: requestId,
+            });
+          }
+
+          // Parse rights and check for required right
+          const rightsData = await verifyRightsResponse.json();
+          const orgRights: string[] = rightsData.rights || [];
+          const hasOrgApiKeyRight = orgRights.some(r => 
+            r === "RIGHT_ORGANIZATION_SETTINGS_API_KEYS" || r === "RIGHT_ORGANIZATION_ALL"
+          );
+
+          if (!hasOrgApiKeyRight) {
+            const duration = Date.now() - step1Start;
+            await logProvisioningStep(supabase, organization_id, "verify_organization", "failed", 
+              `Missing RIGHT_ORGANIZATION_SETTINGS_API_KEYS`, 
+              { available_rights: orgRights }, duration, requestId);
+            
+            await updateProvisioningState(supabase, organization_id, {
+              status: "failed",
+              step: "create_organization",
+              error: "Missing required organization rights (RIGHT_ORGANIZATION_SETTINGS_API_KEYS)",
+              last_ttn_error_name: "no_organization_rights",
+            });
+            
+            return buildResponse({
+              success: false,
+              error: "Missing required organization rights (RIGHT_ORGANIZATION_SETTINGS_API_KEYS)",
+              step: "create_organization",
+              retryable: false,
+              use_start_fresh: true,
+              request_id: requestId,
+            });
+          }
+
+          // VERIFICATION PASSED - now mark Step 1 as complete
           const duration = Date.now() - step1Start;
-          await logProvisioningStep(supabase, organization_id, "create_organization", "success", "TTN organization created", { ttn_org_id: ttnOrgId }, duration, requestId, createOrgResponse.status, undefined, undefined, ttnEndpoint);
+          await logProvisioningStep(supabase, organization_id, "create_organization", "success", 
+            `TTN organization ${wasCreated ? 'created' : 'verified'} with rights`, 
+            { ttn_org_id: effectiveTtnOrgId, rights: orgRights.length }, 
+            duration, requestId, 200, undefined, undefined, ttnEndpoint);
+          
           completedSteps.organization_created = true;
+          completedSteps.organization_verified = true;
 
           await supabase
             .from("ttn_connections")
             .update({
-              // Use canonical column names (tts_* not ttn_organization_*)
-              tts_organization_id: ttnOrgId,
+              tts_organization_id: effectiveTtnOrgId,
               tts_org_provisioned_at: new Date().toISOString(),
               provisioning_step_details: completedSteps,
             })
             .eq("organization_id", organization_id);
+            
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Organization ${effectiveTtnOrgId} verified successfully`);
         } else {
-          console.log(`[ttn-provision-org] [${requestId}] Step 1: Skipping (org already created)`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Skipping (org already created and verified)`);
+          // Use stored org ID if exists
+          if (ttnConn?.tts_organization_id) {
+            effectiveTtnOrgId = ttnConn.tts_organization_id;
+          }
         }
 
         // ============ STEP 1B: Create Org-scoped API Key (using Main User API Key) ============
+        // GUARD: Only run if organization is verified
         const step1bStart = Date.now();
         if (!completedSteps.org_api_key_created) {
-          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/organizations/${ttnOrgId}/api-keys`;
+          // Guard: require org verification before creating API key
+          if (!completedSteps.organization_verified) {
+            console.log(`[ttn-provision-org] [${requestId}] Step 1B: Blocked - org not verified`);
+            await updateProvisioningState(supabase, organization_id, {
+              status: "failed",
+              step: "create_org_api_key",
+              error: "Organization verification required before creating API key",
+            });
+            return buildResponse({
+              success: false,
+              error: "Organization verification required before creating API key",
+              step: "create_org_api_key",
+              retryable: true,
+              request_id: requestId,
+            });
+          }
+
+          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/organizations/${effectiveTtnOrgId}/api-keys`;
           await logProvisioningStep(supabase, organization_id, "create_org_api_key", "started", 
             `Creating organization API key [output artifact] (token_source: ${TOKEN_SOURCE})`, 
-            { endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
+            { endpoint: ttnEndpoint, org_id: effectiveTtnOrgId }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningState(supabase, organization_id, { step: "create_org_api_key" });
 
-          console.log(`[ttn-provision-org] [${requestId}] Step 1B: Creating org-scoped API key for ${ttnOrgId} (token_source: ${TOKEN_SOURCE})`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1B: Creating org-scoped API key for ${effectiveTtnOrgId} (token_source: ${TOKEN_SOURCE})`);
 
           let createOrgKeyResponse: Response;
           try {
@@ -804,23 +1024,32 @@ serve(async (req) => {
             const duration = Date.now() - step1bStart;
             const category = classifyError(errorText, createOrgKeyResponse.status);
             const ttnError = parseTTNError(errorText);
+            const isNoRights = isNoOrganizationRightsError(errorText, createOrgKeyResponse.status);
             
-            await logProvisioningStep(supabase, organization_id, "create_org_api_key", "failed", `HTTP ${createOrgKeyResponse.status}`, { status: createOrgKeyResponse.status }, duration, requestId, createOrgKeyResponse.status, errorText, category, ttnEndpoint);
+            await logProvisioningStep(supabase, organization_id, "create_org_api_key", "failed", 
+              `HTTP ${createOrgKeyResponse.status}${isNoRights ? ' (no_organization_rights)' : ''}`, 
+              { status: createOrgKeyResponse.status }, duration, requestId, createOrgKeyResponse.status, errorText, category, ttnEndpoint);
 
             await updateProvisioningState(supabase, organization_id, {
               status: "failed",
               step: "create_org_api_key",
-              error: `Failed to create organization API key: ${createOrgKeyResponse.status}`,
+              error: isNoRights 
+                ? "No organization rights - cannot create API key"
+                : `Failed to create organization API key: ${createOrgKeyResponse.status}`,
               last_http_status: createOrgKeyResponse.status,
               last_http_body: errorText,
               last_ttn_correlation_id: ttnError.correlation_id,
+              last_ttn_error_name: isNoRights ? "no_organization_rights" : ttnError.name,
             });
 
             return buildResponse({
               success: false,
-              error: `Failed to create org API key: ${createOrgKeyResponse.status}`,
+              error: isNoRights 
+                ? "No organization rights - cannot create API key. Use Start Fresh to recreate."
+                : `Failed to create org API key: ${createOrgKeyResponse.status}`,
               step: "create_org_api_key",
-              retryable: createOrgKeyResponse.status >= 500,
+              retryable: !isNoRights && createOrgKeyResponse.status >= 500,
+              use_start_fresh: isNoRights,
               request_id: requestId,
               correlation_id: ttnError.correlation_id,
             });
@@ -851,13 +1080,13 @@ serve(async (req) => {
         // ============ STEP 2: Create Application under Organization (using Main User API Key) ============
         const step2Start = Date.now();
         if (!completedSteps.application_created) {
-          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/organizations/${ttnOrgId}/applications`;
+          const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/organizations/${effectiveTtnOrgId}/applications`;
           await logProvisioningStep(supabase, organization_id, "create_application", "started", 
             `Creating TTN application under organization (token_source: ${TOKEN_SOURCE})`, 
-            { ttn_app_id: ttnAppId, ttn_org_id: ttnOrgId, endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
+            { ttn_app_id: ttnAppId, ttn_org_id: effectiveTtnOrgId, endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningState(supabase, organization_id, { step: "create_application" });
 
-          console.log(`[ttn-provision-org] [${requestId}] Step 2: Creating application ${ttnAppId} under org ${ttnOrgId} (token_source: ${TOKEN_SOURCE})`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 2: Creating application ${ttnAppId} under org ${effectiveTtnOrgId} (token_source: ${TOKEN_SOURCE})`);
 
           let createAppResponse: Response;
           try {
@@ -1205,11 +1434,11 @@ serve(async (req) => {
             `Creating gateway API key [optional output artifact] (token_source: ${TOKEN_SOURCE})`, 
             undefined, undefined, requestId);
 
-          console.log(`[ttn-provision-org] [${requestId}] Step 3B: Creating gateway API key for org ${ttnOrgId} (token_source: ${TOKEN_SOURCE})`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 3B: Creating gateway API key for org ${effectiveTtnOrgId} (token_source: ${TOKEN_SOURCE})`);
 
           try {
             const createGatewayKeyResponse = await fetchWithTimeout(
-              `${IDENTITY_SERVER_URL}/api/v3/organizations/${ttnOrgId}/api-keys`,
+              `${IDENTITY_SERVER_URL}/api/v3/organizations/${effectiveTtnOrgId}/api-keys`,
               {
                 method: "POST",
                 headers: {

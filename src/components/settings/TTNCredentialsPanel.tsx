@@ -246,6 +246,13 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
            credentials.last_http_body?.includes("no_application_rights");
   };
 
+  // Check if the error indicates no organization rights
+  const isNoOrgRightsError = () => {
+    if (!credentials) return false;
+    return credentials.last_ttn_error_name === "no_organization_rights" ||
+           credentials.last_http_body?.includes("no_organization_rights");
+  };
+
   const handleCheckStatus = async () => {
     if (!organizationId) return;
     setIsLoading(true);
@@ -550,7 +557,7 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                         <p className="text-sm text-muted-foreground mt-1">{credentials.provisioning_error}</p>
                         
                         {/* Special message for unowned app error */}
-                        {isUnownedAppError() && (
+                        {isUnownedAppError() && !isNoOrgRightsError() && (
                           <div className="mt-3 p-3 bg-warning/10 rounded border border-warning/30 text-sm">
                             <p className="font-medium text-warning">Application Ownership Issue</p>
                             <p className="text-muted-foreground mt-1">
@@ -559,6 +566,20 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                             </p>
                             <p className="text-foreground mt-2">
                               Use <strong>Start Fresh</strong> to recreate or generate a new app ID under the current key.
+                            </p>
+                          </div>
+                        )}
+                        
+                        {/* Special message for no organization rights */}
+                        {isNoOrgRightsError() && (
+                          <div className="mt-3 p-3 bg-alarm/10 rounded border border-alarm/30 text-sm">
+                            <p className="font-medium text-alarm">No Organization Rights</p>
+                            <p className="text-muted-foreground mt-1">
+                              The TTN organization exists but the current provisioning key has no rights to it. 
+                              This usually means the organization was created under another account or on a different cluster.
+                            </p>
+                            <p className="text-foreground mt-2">
+                              Use <strong>Start Fresh</strong> to attempt with a new organization ID, or verify your TTN admin key has the correct rights.
                             </p>
                           </div>
                         )}

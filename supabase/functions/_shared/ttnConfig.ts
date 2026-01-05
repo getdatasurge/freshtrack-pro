@@ -141,9 +141,24 @@ export function generateWebhookSecret(): string {
 }
 
 /**
+ * Sanitize a string to be a valid TTN slug: lowercase, alphanumeric + dashes, min 3 chars
+ * Strip any @ttn suffix (invalid for TTN org/app IDs)
+ */
+export function sanitizeTtnSlug(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/@.*$/, '') // Strip @ttn or any @... suffix
+    .replace(/[^a-z0-9-]/g, '-') // Replace invalid chars with dashes
+    .replace(/--+/g, '-') // Collapse multiple dashes
+    .replace(/^-|-$/g, '') // Trim leading/trailing dashes
+    .slice(0, 36); // TTN max length
+}
+
+/**
  * Generate TTN organization ID from organization ID (UUID)
  * Format: fg-org-{first 8 chars of UUID} (lowercase, alphanumeric)
- *
+ * 
+ * IMPORTANT: Result is a valid TTN slug [a-z0-9-]{3,} without @ttn suffix
  * TTN Organizations provide better permission isolation than user-owned apps.
  */
 export function generateTtnOrganizationId(orgId: string): string {
@@ -160,10 +175,21 @@ export function generateTtnOrganizationId(orgId: string): string {
       .replace('-', '')
       .slice(0, 8)
       .padStart(8, '0');
-    return `fg-org-${hash}`;
+    return sanitizeTtnSlug(`fg-org-${hash}`);
   }
 
-  return `fg-org-${shortId}`;
+  return sanitizeTtnSlug(`fg-org-${shortId}`);
+}
+
+/**
+ * Generate a collision-safe TTN organization ID with suffix
+ * Used when initial org ID creation fails with 409 but verification also fails
+ */
+export function generateCollisionSafeOrgId(orgId: string): string {
+  const base = generateTtnOrganizationId(orgId);
+  const suffix = crypto.getRandomValues(new Uint8Array(3))
+    .reduce((s, b) => s + (b % 36).toString(36), '');
+  return sanitizeTtnSlug(`${base}-${suffix}`);
 }
 
 /**
@@ -291,15 +317,15 @@ export async function getTtnConfigForOrg(
     ? deobfuscateKey(settings.ttn_gateway_api_key_encrypted, encryptionSalt)
     : undefined;
 
-  // Normalize region (ensure lowercase)
-  const region = (settings.ttn_region || "nam1").toLowerCase();
+  // Normalize region (ensure lowercase) - default to eu1
+  const region = (settings.ttn_region || "eu1").toLowerCase();
 
   return {
     region,
     apiKey,
     applicationId: applicationId || "",
     identityBaseUrl: IDENTITY_SERVER_URL,
-    regionalBaseUrl: REGIONAL_URLS[region] || REGIONAL_URLS.nam1,
+    regionalBaseUrl: REGIONAL_URLS[region] || REGIONAL_URLS.eu1,
     webhookSecret,
     webhookUrl: settings.ttn_webhook_url || undefined,
     isEnabled: settings.is_enabled || false,
