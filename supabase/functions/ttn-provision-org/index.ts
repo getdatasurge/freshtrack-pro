@@ -302,7 +302,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.3-always-preflight-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.4-auto-rotate-org-id-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -685,10 +685,16 @@ serve(async (req) => {
         // FIX: TTN requires user-scoped endpoint: POST /api/v3/users/{user_id}/organizations
         // The global /api/v3/organizations endpoint returns "Method Not Allowed" for POST
         // Handle 201 = created, 409 = exists (verify), anything else = fail
+        // NEW: Auto-rotate org ID on collision (409+403/404) to handle orphaned org IDs
         const step1Start = Date.now();
-        let effectiveTtnOrgId = ttnOrgId;
         
-        if (!completedSteps.organization_created || !completedSteps.organization_verified) {
+        // Use stored org ID if we rotated previously, otherwise use generated ID
+        let effectiveTtnOrgId = (completedSteps.effective_ttn_org_id as string) || ttnOrgId;
+        const maxOrgRotationAttempts = 3;
+        let orgRotationAttempts = (completedSteps.org_rotation_attempts as number) || 0;
+        
+        // Organization creation loop - handles collision detection and auto-rotation
+        orgCreationLoop: while (!completedSteps.organization_created || !completedSteps.organization_verified) {
           // Use user-scoped endpoint - TTN requires this for organization creation
           // CRITICAL: Use the FRESH preflight_user_id from Step 0, never a hardcoded fallback
           const preflightUserId = completedSteps.preflight_user_id as string;
@@ -706,6 +712,8 @@ serve(async (req) => {
             });
           }
           console.log(`[ttn-provision-org] [${requestId}] Step 1: Using preflight_user_id="${preflightUserId}" for org creation endpoint`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Org ID attempt: "${effectiveTtnOrgId}" (rotation ${orgRotationAttempts}/${maxOrgRotationAttempts})`);
+          
           const ttnEndpoint = `${IDENTITY_SERVER_URL}/api/v3/users/${preflightUserId}/organizations`;
           const createPayload = {
             organization: {
@@ -722,6 +730,7 @@ serve(async (req) => {
               endpoint: ttnEndpoint,
               base_url: IDENTITY_SERVER_URL,
               payload: { org_id: effectiveTtnOrgId, name: createPayload.organization.name },
+              rotation_attempt: orgRotationAttempts,
             }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningState(supabase, organization_id, { step: "create_ttn_org" });
 
@@ -838,22 +847,61 @@ serve(async (req) => {
             const verifyText = await verifyOrgResponse.text();
             const duration = Date.now() - step1Start;
             
-            // If org doesn't exist (404) or we have no rights (403), fail Step 1
+            // If org doesn't exist (404) or we have no rights (403), this is a COLLISION
+            // The org exists under a different account. Try rotating the org ID.
             if (verifyOrgResponse.status === 404 || verifyOrgResponse.status === 403) {
               const isNoRights = isNoOrganizationRightsError(verifyText, verifyOrgResponse.status);
               const ttnError = parseTTNError(verifyText);
               
+              // Check if we can rotate
+              if (orgRotationAttempts < maxOrgRotationAttempts) {
+                // Rotate the org ID and retry
+                const oldOrgId = effectiveTtnOrgId;
+                effectiveTtnOrgId = generateCollisionSafeOrgId(organization_id);
+                orgRotationAttempts++;
+                
+                console.log(`[ttn-provision-org] [${requestId}] ORG COLLISION DETECTED: "${oldOrgId}" exists but no access (${verifyOrgResponse.status})`);
+                console.log(`[ttn-provision-org] [${requestId}] Rotating org ID: "${oldOrgId}" -> "${effectiveTtnOrgId}" (attempt ${orgRotationAttempts}/${maxOrgRotationAttempts})`);
+                
+                await logProvisioningStep(supabase, organization_id, "rotate_org_id", "success", 
+                  `Rotated org ID due to collision (${verifyOrgResponse.status})`, 
+                  { 
+                    old_org_id: oldOrgId, 
+                    new_org_id: effectiveTtnOrgId, 
+                    rotation_attempt: orgRotationAttempts,
+                    verify_status: verifyOrgResponse.status,
+                  }, 
+                  duration, requestId);
+                
+                // Persist the new org ID and rotation state
+                completedSteps.effective_ttn_org_id = effectiveTtnOrgId;
+                completedSteps.org_rotation_attempts = orgRotationAttempts;
+                completedSteps.organization_created = false;
+                completedSteps.organization_verified = false;
+                
+                await supabase
+                  .from("ttn_connections")
+                  .update({ 
+                    tts_organization_id: effectiveTtnOrgId,
+                    provisioning_step_details: completedSteps,
+                    provisioning_error: null, // Clear previous error
+                  })
+                  .eq("organization_id", organization_id);
+                
+                // Continue the loop to retry with new org ID
+                continue orgCreationLoop;
+              }
+              
+              // Max rotation attempts reached - fail permanently
               await logProvisioningStep(supabase, organization_id, "verify_organization", "failed", 
-                `Org verification failed: ${verifyOrgResponse.status}`, 
-                { status: verifyOrgResponse.status, response: verifyText.slice(0, 500) }, 
+                `Org verification failed after ${orgRotationAttempts} rotation attempts: ${verifyOrgResponse.status}`, 
+                { status: verifyOrgResponse.status, response: verifyText.slice(0, 500), rotation_attempts: orgRotationAttempts }, 
                 duration, requestId, verifyOrgResponse.status, verifyText, undefined, verifyOrgEndpoint);
               
               await updateProvisioningState(supabase, organization_id, {
                 status: "failed",
                 step: "create_organization",
-                error: isNoRights 
-                  ? "No organization rights - org may exist under another account" 
-                  : `Organization verification failed: ${verifyOrgResponse.status}`,
+                error: `Max org ID rotation attempts (${maxOrgRotationAttempts}) reached. Contact support.`,
                 last_http_status: verifyOrgResponse.status,
                 last_http_body: verifyText,
                 last_ttn_error_name: isNoRights ? "no_organization_rights" : ttnError.name,
@@ -861,9 +909,7 @@ serve(async (req) => {
               
               return buildResponse({
                 success: false,
-                error: isNoRights 
-                  ? "No organization rights - org may exist under another account or different cluster"
-                  : `Organization verification failed: ${verifyOrgResponse.status}`,
+                error: `Max org ID rotation attempts (${maxOrgRotationAttempts}) reached. The TTN namespace may be saturated. Contact support.`,
                 step: "create_organization",
                 retryable: false,
                 use_start_fresh: true,
@@ -871,7 +917,7 @@ serve(async (req) => {
               });
             }
           }
-
+          
           // 1b. Check we have RIGHT_ORGANIZATION_SETTINGS_API_KEYS
           const verifyRightsEndpoint = `${IDENTITY_SERVER_URL}/api/v3/organizations/${effectiveTtnOrgId}/rights`;
           let verifyRightsResponse: Response;
@@ -957,15 +1003,16 @@ serve(async (req) => {
             });
           }
 
-          // VERIFICATION PASSED - now mark Step 1 as complete
+          // VERIFICATION PASSED - mark Step 1 as complete and break the loop
           const duration = Date.now() - step1Start;
           await logProvisioningStep(supabase, organization_id, "create_organization", "success", 
-            `TTN organization ${wasCreated ? 'created' : 'verified'} with rights`, 
-            { ttn_org_id: effectiveTtnOrgId, rights: orgRights.length }, 
-            duration, requestId, 200, undefined, undefined, ttnEndpoint);
+            `TTN organization verified with rights${orgRotationAttempts > 0 ? ` (after ${orgRotationAttempts} rotation(s))` : ''}`, 
+            { ttn_org_id: effectiveTtnOrgId, rights: orgRights.length, rotation_attempts: orgRotationAttempts }, 
+            duration, requestId, 200, undefined, undefined, verifyRightsEndpoint);
           
           completedSteps.organization_created = true;
           completedSteps.organization_verified = true;
+          completedSteps.effective_ttn_org_id = effectiveTtnOrgId;
 
           await supabase
             .from("ttn_connections")
@@ -976,11 +1023,18 @@ serve(async (req) => {
             })
             .eq("organization_id", organization_id);
             
-          console.log(`[ttn-provision-org] [${requestId}] Step 1: Organization ${effectiveTtnOrgId} verified successfully`);
-        } else {
+          console.log(`[ttn-provision-org] [${requestId}] Step 1: Organization ${effectiveTtnOrgId} verified successfully${orgRotationAttempts > 0 ? ` (after ${orgRotationAttempts} ID rotation(s))` : ''}`);
+          
+          // Break out of the loop - org creation complete
+          break orgCreationLoop;
+        }
+        
+        // If loop was skipped (org already verified), use stored org ID
+        if (completedSteps.organization_created && completedSteps.organization_verified) {
           console.log(`[ttn-provision-org] [${requestId}] Step 1: Skipping (org already created and verified)`);
-          // Use stored org ID if exists
-          if (ttnConn?.tts_organization_id) {
+          if (completedSteps.effective_ttn_org_id) {
+            effectiveTtnOrgId = completedSteps.effective_ttn_org_id as string;
+          } else if (ttnConn?.tts_organization_id) {
             effectiveTtnOrgId = ttnConn.tts_organization_id;
           }
         }
