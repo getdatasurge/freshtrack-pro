@@ -80,8 +80,13 @@ async function fetchEdgeFunctionVersions(): Promise<TTNDiagnostics['edge_functio
       const response = await supabase.functions.invoke(funcName, {
         method: 'GET',
       });
-      return response.data?.version || response.data?.contract?.version || null;
-    } catch {
+      // Handle multiple response formats from different edge functions
+      return response.data?.version 
+        || response.data?.contract?.version 
+        || response.data?.BUILD_VERSION
+        || null;
+    } catch (err) {
+      console.warn(`[diagnostics] Failed to fetch version for ${funcName}:`, err);
       return null;
     }
   };
