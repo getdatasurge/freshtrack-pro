@@ -50,8 +50,11 @@ interface PreflightResult {
  * Validates TTN API key type and gateway permissions BEFORE any provisioning attempt.
  * Returns actionable errors with step-by-step fix instructions.
  */
+// EU1 is the ONLY identity server for Personal API keys
+const TTN_IDENTITY_BASE = "https://eu1.cloud.thethings.network";
+
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-gateway-preflight-v1-20250102";
+  const BUILD_VERSION = "ttn-gateway-preflight-v2.0-authinfo-fix-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
 
   console.log(`[ttn-gateway-preflight] Build: ${BUILD_VERSION}`);
@@ -206,9 +209,10 @@ serve(async (req) => {
     }
 
     // Check API key scope using auth_info endpoint
-    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info`);
+    // CRITICAL: Always use EU1 identity server for auth_info - Personal API keys are global
+    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${TTN_IDENTITY_BASE}`);
 
-    const authInfoResponse = await fetch(`${ttnConfig.identityBaseUrl}/api/v3/auth_info`, {
+    const authInfoResponse = await fetch(`${TTN_IDENTITY_BASE}/api/v3/auth_info`, {
       headers: {
         Authorization: `Bearer ${ttnConfig.apiKey}`,
         "Content-Type": "application/json",

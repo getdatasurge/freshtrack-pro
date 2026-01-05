@@ -42,6 +42,20 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Health check endpoint (GET with no body)
+  if (req.method === "GET") {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        status: "healthy",
+        function: "manage-ttn-settings",
+        version: BUILD_VERSION,
+        timestamp: new Date().toISOString(),
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
