@@ -305,7 +305,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.8-strict-key-persist-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.10-debug-key-roundtrip-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -1178,11 +1178,32 @@ serve(async (req) => {
           }
 
           const orgKeyData = await createOrgKeyResponse.json();
-          const orgApiKey = orgKeyData.key;
+          let orgApiKey = orgKeyData.key;
           const orgApiKeyId = orgKeyData.id;
+
+          // DEBUG: Log response structure to diagnose key capture issues
+          console.log(`[ttn-provision-org] [${requestId}] Step 1B DEBUG: TTN response keys: ${JSON.stringify(Object.keys(orgKeyData))}`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1B DEBUG: key value type: ${typeof orgApiKey}, length: ${orgApiKey?.length || 0}`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1B DEBUG: key prefix (safe): ${orgApiKey?.substring(0, 6) || 'EMPTY'}`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1B DEBUG: key_id: ${orgApiKeyId}`);
+
+          // Check for nested key structure (TTN may return differently)
+          if (!orgApiKey && orgKeyData.api_key) {
+            const nestedKey = typeof orgKeyData.api_key === 'string' ? orgKeyData.api_key : orgKeyData.api_key?.key;
+            if (nestedKey && typeof nestedKey === 'string') {
+              console.log(`[ttn-provision-org] [${requestId}] Step 1B: Found key in nested api_key field`);
+              orgApiKey = nestedKey;
+            }
+          }
+
+          // Validate TTN key format
+          if (orgApiKey && !orgApiKey.startsWith('NNSXS.')) {
+            console.warn(`[ttn-provision-org] [${requestId}] Step 1B WARNING: Key doesn't start with NNSXS. prefix: ${orgApiKey.substring(0, 10)}`);
+          }
 
           if (!orgApiKey) {
             const duration = Date.now() - step1bStart;
+            console.error(`[ttn-provision-org] [${requestId}] Step 1B: No key value found. Full response: ${JSON.stringify(orgKeyData)}`);
             await logProvisioningStep(supabase, organization_id, "create_org_api_key", "failed", 
               "TTN returned success but no key value in response", 
               { response_keys: Object.keys(orgKeyData) }, duration, requestId);
@@ -1203,6 +1224,18 @@ serve(async (req) => {
           }
 
           const encryptedOrgKey = obfuscateKey(orgApiKey, encryptionSalt);
+
+          // DEBUG: Round-trip verification to detect encryption corruption
+          const decryptedVerify = deobfuscateKey(encryptedOrgKey, encryptionSalt);
+          const originalLast4 = getLast4(orgApiKey);
+          const decryptedLast4 = getLast4(decryptedVerify);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1B: Round-trip check - original_last4: ${originalLast4}, decrypted_last4: ${decryptedLast4}, match: ${originalLast4 === decryptedLast4}`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 1B: Original length: ${orgApiKey.length}, encrypted length: ${encryptedOrgKey.length}, decrypted length: ${decryptedVerify.length}`);
+          
+          if (orgApiKey !== decryptedVerify) {
+            console.error(`[ttn-provision-org] [${requestId}] Step 1B: ENCRYPTION CORRUPTION DETECTED!`);
+            console.error(`[ttn-provision-org] [${requestId}] Step 1B: Original prefix: ${orgApiKey.substring(0, 10)}, Decrypted prefix: ${decryptedVerify.substring(0, 10)}`);
+          }
           
           // STRICT PERSISTENCE: Verify the DB write succeeds before marking step complete
           const { error: persistError } = await supabase
@@ -1528,6 +1561,15 @@ serve(async (req) => {
           if (ttnConnRefresh?.ttn_org_api_key_encrypted) {
             orgApiKeyForAppOps = deobfuscateKey(ttnConnRefresh.ttn_org_api_key_encrypted, encryptionSalt);
             console.log(`[ttn-provision-org] [${requestId}] Retrieved Org API Key for Steps 3-4 (key_last4: ${getLast4(orgApiKeyForAppOps)})`);
+            
+            // DEBUG: Verify key format after decryption
+            console.log(`[ttn-provision-org] [${requestId}] Step 3 DEBUG: Decrypted key length: ${orgApiKeyForAppOps.length}`);
+            console.log(`[ttn-provision-org] [${requestId}] Step 3 DEBUG: Decrypted key prefix: ${orgApiKeyForAppOps.substring(0, 6)}`);
+            
+            if (!orgApiKeyForAppOps.startsWith('NNSXS.')) {
+              console.error(`[ttn-provision-org] [${requestId}] Step 3: DECRYPTION ISSUE - key doesn't start with NNSXS.`);
+              console.error(`[ttn-provision-org] [${requestId}] Step 3: encrypted_length: ${ttnConnRefresh.ttn_org_api_key_encrypted.length}, decrypted_length: ${orgApiKeyForAppOps.length}`);
+            }
           }
         }
 
