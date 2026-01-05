@@ -26,7 +26,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const TTN_BASE_URL = "https://eu1.cloud.thethings.network";
 const TTN_REGION = "eu1";
-const FUNCTION_VERSION = "ttn-bootstrap-v2.0-20260105";
+const FUNCTION_VERSION = "ttn-bootstrap-v2.1-user-scoped-org-20260105";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -513,12 +513,13 @@ async function verifyAppOwnership(
 async function createOrganization(
   orgId: string,
   apiKey: string,
-  _userId: string
+  userId: string
 ): Promise<StepResult> {
   const sanitizedOrgId = sanitizeTtnId(orgId);
-  console.log(`[Step1] Creating org: ${sanitizedOrgId} (original: ${orgId})`);
+  console.log(`[Step1] Creating org: ${sanitizedOrgId} (original: ${orgId}) under user: ${userId}`);
 
-  const createResult = await ttnRequest<Record<string, unknown>>("/api/v3/organizations", {
+  // TTN requires user-scoped endpoint for organization creation
+  const createResult = await ttnRequest<Record<string, unknown>>(`/api/v3/users/${userId}/organizations`, {
     method: "POST",
     apiKey,
     body: {
