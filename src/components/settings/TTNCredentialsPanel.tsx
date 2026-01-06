@@ -483,39 +483,27 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                 {/* Show provisioning buttons when credentials missing or failed */}
                 {(!credentials || credentials?.provisioning_status === 'failed' || !credentials?.ttn_application_id) && organizationId && (
                   <>
-                    {/* Show Start Fresh prominently when app is unowned */}
-                    {isUnownedAppError() ? (
+                    {/* Primary action: Retry/Start Provisioning */}
+                    <Button
+                      variant="default"
+                      onClick={handleRetryProvisioning}
+                      disabled={isRetrying || isLoading || !organizationId}
+                      className="gap-2"
+                    >
+                      <PlayCircle className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
+                      {credentials?.ttn_application_id ? "Retry Provisioning" : "Start Provisioning"}
+                    </Button>
+                    
+                    {/* Always show Start Fresh as secondary option when there's existing data or failed status */}
+                    {(credentials?.ttn_application_id || credentials?.provisioning_status === 'failed') && (
                       <Button
-                        variant="default"
+                        variant="outline"
                         onClick={handleStartFresh}
                         disabled={isStartingFresh || isLoading}
                         className="gap-2"
                       >
                         <RefreshCw className={`h-4 w-4 ${isStartingFresh ? "animate-spin" : ""}`} />
                         Start Fresh
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="default"
-                        onClick={handleRetryProvisioning}
-                        disabled={isRetrying || isLoading || !organizationId}
-                        className="gap-2"
-                      >
-                        <PlayCircle className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
-                        {credentials?.ttn_application_id ? "Retry Provisioning" : "Start Provisioning"}
-                      </Button>
-                    )}
-                    
-                    {/* Show Retry as secondary when app is unowned */}
-                    {isUnownedAppError() && (
-                      <Button
-                        variant="outline"
-                        onClick={handleRetryProvisioning}
-                        disabled={isRetrying || isLoading}
-                        className="gap-2"
-                      >
-                        <PlayCircle className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
-                        Retry
                       </Button>
                     )}
                   </>
