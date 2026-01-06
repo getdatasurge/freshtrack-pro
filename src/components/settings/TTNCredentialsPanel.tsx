@@ -154,9 +154,10 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
 
     setIsRetrying(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast.error("Not authenticated");
+      // Force network-verified token refresh before invoking (same as fetchCredentials)
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast.error("Session expired - please sign in again");
         return;
       }
 
@@ -204,9 +205,10 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
 
     setIsStartingFresh(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast.error("Not authenticated");
+      // Force network-verified token refresh before invoking (same as fetchCredentials)
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast.error("Session expired - please sign in again");
         return;
       }
 
