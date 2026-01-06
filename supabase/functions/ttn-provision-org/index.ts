@@ -28,6 +28,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   generateTtnApplicationId,
+  generateCollisionSafeAppId,
   generateTtnOrganizationId,
   generateCollisionSafeOrgId,
   sanitizeTtnSlug,
@@ -343,7 +344,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.17-fix-appid-order-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.18-collision-safe-appid-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -637,8 +638,15 @@ serve(async (req) => {
       
       // NOW assign ttnAppId AFTER the database has been cleared (for start_fresh)
       // This ensures we don't use stale app IDs that were cleared from the database
-      ttnAppId = ttnConn?.ttn_application_id || generateTtnApplicationId(org.id);
-      console.log(`[ttn-provision-org] [${requestId}] ttnAppId assigned: ${ttnAppId} (from DB: ${ttnConn?.ttn_application_id || 'null - generated fresh'})`);
+      // For start_fresh/retry: ALWAYS generate a collision-safe (random) app ID
+      // This prevents reusing a deleted TTN application ID which causes "no rights" errors
+      if (action === "start_fresh" || action === "retry") {
+        ttnAppId = generateCollisionSafeAppId(org.id);
+        console.log(`[ttn-provision-org] [${requestId}] Start Fresh/Retry: Generated collision-safe app ID: ${ttnAppId}`);
+      } else {
+        ttnAppId = ttnConn?.ttn_application_id || generateTtnApplicationId(org.id);
+        console.log(`[ttn-provision-org] [${requestId}] ttnAppId assigned: ${ttnAppId} (from DB: ${ttnConn?.ttn_application_id || 'null - generated fresh'})`);
+      }
       
       console.log(`[ttn-provision-org] [${requestId}] Provisioning TTN org: ${ttnOrgId}, app: ${ttnAppId} for org ${org.slug}${appIdRotated ? ' (rotated)' : ''}`);
       console.log(`[ttn-provision-org] [${requestId}] ALL STEPS will use token_source: ${TOKEN_SOURCE}`);

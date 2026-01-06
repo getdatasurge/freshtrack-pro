@@ -322,6 +322,18 @@ export function generateTtnApplicationId(orgId: string): string {
 }
 
 /**
+ * Generate a collision-safe TTN application ID with random suffix
+ * Used when Start Fresh needs a guaranteed unique app ID
+ * Format: fg-{first 8 chars of UUID}-{random 4 chars}
+ */
+export function generateCollisionSafeAppId(orgId: string): string {
+  const baseId = generateTtnApplicationId(orgId);
+  const suffix = crypto.getRandomValues(new Uint8Array(2))
+    .reduce((s, b) => s + (b % 36).toString(36), '');
+  return `${baseId}-${suffix}`;
+}
+
+/**
  * Look up organization by webhook secret
  * Used by ttn-webhook to authenticate incoming webhooks
  * Returns org_id if found, null otherwise
