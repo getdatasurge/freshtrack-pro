@@ -343,7 +343,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.13-fix-webhook-format-discovery-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.14-fix-app-key-roundtrip-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -1774,16 +1774,52 @@ serve(async (req) => {
           const appApiKey = appKeyData.key;
           const appApiKeyId = appKeyData.id;
 
+          // Round-trip verification to detect encryption corruption (same as Step 1B)
+          const encryptedAppKey = obfuscateKey(appApiKey, encryptionSalt);
+          const decryptedAppKeyVerify = deobfuscateKey(encryptedAppKey, encryptionSalt);
+          const originalAppLast4 = getLast4(appApiKey);
+          const decryptedAppLast4 = getLast4(decryptedAppKeyVerify);
+          console.log(`[ttn-provision-org] [${requestId}] Step 3: Round-trip check - original_last4: ${originalAppLast4}, decrypted_last4: ${decryptedAppLast4}, match: ${originalAppLast4 === decryptedAppLast4}`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 3: Original length: ${appApiKey.length}, encrypted length: ${encryptedAppKey.length}, decrypted length: ${decryptedAppKeyVerify.length}`);
+
+          if (appApiKey !== decryptedAppKeyVerify) {
+            console.error(`[ttn-provision-org] [${requestId}] Step 3: APP KEY ENCRYPTION CORRUPTION DETECTED!`);
+            console.error(`[ttn-provision-org] [${requestId}] Step 3: Original prefix: ${appApiKey.substring(0, 10)}, Decrypted prefix: ${decryptedAppKeyVerify.substring(0, 10)}`);
+            
+            const duration = Date.now() - step3Start;
+            await logProvisioningStep(supabase, organization_id, "create_app_api_key", "failed", 
+              "App API key encryption corruption detected - round-trip failed", 
+              { original_last4: originalAppLast4, decrypted_last4: decryptedAppLast4 }, duration, requestId);
+            
+            await updateProvisioningState(supabase, organization_id, {
+              status: "failed",
+              step: "create_app_api_key",
+              error: "App API key encryption corrupted - please retry",
+            });
+            
+            return buildResponse({
+              success: false,
+              error: "App API key was corrupted during encryption. Please click 'Retry' to recreate.",
+              step: "create_app_api_key",
+              retryable: true,
+              request_id: requestId,
+            });
+          }
+
+          // Validate NNSXS. prefix
+          if (!appApiKey.startsWith('NNSXS.')) {
+            console.warn(`[ttn-provision-org] [${requestId}] Step 3 WARNING: App key doesn't start with NNSXS. prefix`);
+          }
+
           const duration = Date.now() - step3Start;
-          await logProvisioningStep(supabase, organization_id, "create_app_api_key", "success", "Application API key created [output artifact]", { key_last4: getLast4(appApiKey) }, duration, requestId, createAppKeyResponse.status, undefined, undefined, ttnEndpoint);
+          await logProvisioningStep(supabase, organization_id, "create_app_api_key", "success", "Application API key created [output artifact]", { key_last4: originalAppLast4, roundtrip_verified: true }, duration, requestId, createAppKeyResponse.status, undefined, undefined, ttnEndpoint);
           completedSteps.app_api_key_created = true;
 
-          const encryptedAppKey = obfuscateKey(appApiKey, encryptionSalt);
           await supabase
             .from("ttn_connections")
             .update({
               ttn_api_key_encrypted: encryptedAppKey,
-              ttn_api_key_last4: getLast4(appApiKey),
+              ttn_api_key_last4: originalAppLast4,
               ttn_api_key_id: appApiKeyId,
               ttn_api_key_updated_at: new Date().toISOString(),
               provisioning_step_details: completedSteps,
@@ -1823,20 +1859,36 @@ serve(async (req) => {
               const gatewayApiKey = gatewayKeyData.key;
               const gatewayApiKeyId = gatewayKeyData.id;
 
-              const duration = Date.now() - step3bStart;
-              await logProvisioningStep(supabase, organization_id, "create_gateway_key", "success", "Gateway API key created [output artifact]", { key_last4: getLast4(gatewayApiKey) }, duration, requestId);
-              completedSteps.gateway_key_created = true;
-
+              // Round-trip verification for gateway key
               const encryptedGatewayKey = obfuscateKey(gatewayApiKey, encryptionSalt);
-              await supabase
-                .from("ttn_connections")
-                .update({
-                  ttn_gateway_api_key_encrypted: encryptedGatewayKey,
-                  ttn_gateway_api_key_last4: getLast4(gatewayApiKey),
-                  ttn_gateway_api_key_id: gatewayApiKeyId,
-                  ttn_gateway_rights_verified: true,
-                })
-                .eq("organization_id", organization_id);
+              const decryptedGwKeyVerify = deobfuscateKey(encryptedGatewayKey, encryptionSalt);
+              const originalGwLast4 = getLast4(gatewayApiKey);
+              const decryptedGwLast4 = getLast4(decryptedGwKeyVerify);
+              console.log(`[ttn-provision-org] [${requestId}] Step 3B: Round-trip check - original_last4: ${originalGwLast4}, decrypted_last4: ${decryptedGwLast4}, match: ${originalGwLast4 === decryptedGwLast4}`);
+
+              if (gatewayApiKey !== decryptedGwKeyVerify) {
+                console.error(`[ttn-provision-org] [${requestId}] Step 3B: GATEWAY KEY ENCRYPTION CORRUPTION DETECTED!`);
+                // Gateway key is optional - log warning but don't fail
+                const duration = Date.now() - step3bStart;
+                await logProvisioningStep(supabase, organization_id, "create_gateway_key", "skipped", 
+                  "Gateway key corrupted during encryption - skipping", 
+                  { original_last4: originalGwLast4, decrypted_last4: decryptedGwLast4 }, duration, requestId);
+              } else {
+                const duration = Date.now() - step3bStart;
+                await logProvisioningStep(supabase, organization_id, "create_gateway_key", "success", "Gateway API key created [output artifact]", { key_last4: originalGwLast4, roundtrip_verified: true }, duration, requestId);
+                completedSteps.gateway_key_created = true;
+
+                // Only store if verification passed
+                await supabase
+                  .from("ttn_connections")
+                  .update({
+                    ttn_gateway_api_key_encrypted: encryptedGatewayKey,
+                    ttn_gateway_api_key_last4: originalGwLast4,
+                    ttn_gateway_api_key_id: gatewayApiKeyId,
+                    ttn_gateway_rights_verified: true,
+                  })
+                  .eq("organization_id", organization_id);
+              }
             } else {
               const errorText = await createGatewayKeyResponse.text();
               console.log(`[ttn-provision-org] [${requestId}] Step 3B: Gateway key creation returned ${createGatewayKeyResponse.status}, continuing...`);
