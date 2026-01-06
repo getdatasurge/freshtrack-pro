@@ -120,7 +120,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Verify user is admin/owner of this org
+    // Verify user has appropriate role for this org
     const { data: roleCheck } = await supabaseAdmin
       .from("user_roles")
       .select("role")
@@ -128,9 +128,16 @@ Deno.serve(async (req: Request) => {
       .eq("organization_id", organizationId)
       .maybeSingle();
 
-    if (!roleCheck || !["owner", "admin"].includes(roleCheck.role)) {
+    // Read-only actions (get, get_credentials) allow manager role
+    const isReadOnlyAction = ["get", "get_credentials"].includes(action);
+    const allowedRoles = isReadOnlyAction 
+      ? ["owner", "admin", "manager"] 
+      : ["owner", "admin"];
+
+    if (!roleCheck || !allowedRoles.includes(roleCheck.role)) {
+      const actionType = isReadOnlyAction ? "view" : "manage";
       return new Response(
-        JSON.stringify({ error: "Only admins and owners can manage TTN settings" }),
+        JSON.stringify({ error: `Only ${allowedRoles.join("/")} can ${actionType} TTN settings` }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

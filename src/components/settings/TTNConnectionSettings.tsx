@@ -117,6 +117,7 @@ interface TTNSettings {
 
 interface TTNConnectionSettingsProps {
   organizationId: string | null;
+  readOnly?: boolean;
 }
 
 const TTN_REGIONS = [
@@ -140,7 +141,7 @@ const InfoTooltip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   </TooltipProvider>
 );
 
-export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsProps) {
+export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNConnectionSettingsProps) {
   const [settings, setSettings] = useState<TTNSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isProvisioning, setIsProvisioning] = useState(false);
@@ -948,6 +949,14 @@ Cluster: ${region}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Read-only notice for managers */}
+        {readOnly && (
+          <div className="p-3 rounded-lg bg-muted border border-border/50 flex items-center gap-2">
+            <Info className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">View-only access. Contact an admin to make changes.</span>
+          </div>
+        )}
+
         {/* Bootstrap Service Health Warning */}
         {bootstrapHealthError && (
           <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
@@ -1018,7 +1027,7 @@ Cluster: ${region}
                 </Select>
               </div>
               
-              <Button onClick={() => handleProvision(false)} disabled={isProvisioning} size="lg">
+              <Button onClick={() => handleProvision(false)} disabled={isProvisioning || readOnly} size="lg">
                 {isProvisioning ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
@@ -1046,7 +1055,7 @@ Cluster: ${region}
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {settings?.provisioning_can_retry && settings?.provisioning_last_step && (
+                  {!readOnly && settings?.provisioning_can_retry && settings?.provisioning_last_step && (
                     <Button 
                       onClick={() => handleProvision(true, settings.provisioning_last_step!)} 
                       variant="outline" 
@@ -1061,14 +1070,16 @@ Cluster: ${region}
                       Retry from {settings.provisioning_last_step}
                     </Button>
                   )}
-                  <Button 
-                    onClick={() => handleProvision(false)} 
-                    variant="ghost" 
-                    size="sm" 
-                    disabled={isProvisioning}
-                  >
-                    Start Fresh
-                  </Button>
+                  {!readOnly && (
+                    <Button 
+                      onClick={() => handleProvision(false)} 
+                      variant="ghost" 
+                      size="sm" 
+                      disabled={isProvisioning}
+                    >
+                      Start Fresh
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1115,7 +1126,7 @@ Cluster: ${region}
               <Switch
                 checked={isEnabled}
                 onCheckedChange={handleToggleEnabled}
-                disabled={isSaving}
+                disabled={isSaving || readOnly}
               />
             </div>
 
@@ -1218,7 +1229,7 @@ Cluster: ${region}
                 {/* Cluster Selection */}
                 <div className="space-y-1.5">
                   <Label className="text-sm">TTN Cluster</Label>
-                  <Select value={region} onValueChange={setRegion}>
+                  <Select value={region} onValueChange={setRegion} disabled={readOnly}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select cluster" />
                     </SelectTrigger>
@@ -1240,6 +1251,7 @@ Cluster: ${region}
                     value={newApplicationId}
                     onChange={(e) => setNewApplicationId(e.target.value)}
                     className="font-mono text-xs"
+                    disabled={readOnly}
                   />
                   <p className="text-xs text-muted-foreground">
                     Find this in TTN Console → Applications
@@ -1255,6 +1267,7 @@ Cluster: ${region}
                     value={newApiKey}
                     onChange={(e) => setNewApiKey(e.target.value)}
                     className="font-mono text-xs"
+                    disabled={readOnly}
                   />
                   <p className="text-xs text-muted-foreground">
                     Create a key with: Read/Write application settings, Read/Write devices, Read uplinks
@@ -1281,7 +1294,7 @@ Cluster: ${region}
                   <Button
                     variant="outline"
                     onClick={runPreflightValidation}
-                    disabled={isValidating || !newApplicationId.trim()}
+                    disabled={isValidating || !newApplicationId.trim() || readOnly}
                     className="flex-1"
                   >
                     {isValidating ? (
@@ -1306,7 +1319,8 @@ Cluster: ${region}
                               isSavingApiKey || 
                               !newApiKey.trim() || 
                               !newApplicationId.trim() ||
-                              (validationResult !== null && !validationResult.valid)
+                              (validationResult !== null && !validationResult.valid) ||
+                              readOnly
                             }
                             className="w-full"
                           >
@@ -1360,7 +1374,7 @@ Cluster: ${region}
                         <CheckCircle className="h-3 w-3 mr-1" />
                         Configured
                       </Badge>
-                      <Button variant="ghost" size="sm" onClick={startEditingWebhook}>
+                      <Button variant="ghost" size="sm" onClick={startEditingWebhook} disabled={readOnly}>
                         <Pencil className="h-4 w-4 mr-1" />
                         Edit
                       </Button>
@@ -1536,7 +1550,7 @@ Cluster: ${region}
                     variant="outline"
                     size="sm"
                     onClick={handleRegenerateWebhookSecret}
-                    disabled={isRegenerating || !settings.has_webhook_secret}
+                    disabled={isRegenerating || !settings.has_webhook_secret || readOnly}
                   >
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRegenerating ? "animate-spin" : ""}`} />
                     Regenerate
