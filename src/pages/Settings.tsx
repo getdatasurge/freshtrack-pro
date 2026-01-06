@@ -572,6 +572,8 @@ const Settings = () => {
   const canManageUsers = userRole === "owner" || userRole === "admin";
   const canEditOrg = userRole === "owner" || userRole === "admin";
   const canManageBilling = userRole === "owner";
+  const canViewDeveloperTools = ["owner", "admin", "manager"].includes(userRole || "");
+  const canManageTTN = userRole === "owner" || userRole === "admin";
 
   if (isLoading) {
     return (
@@ -1138,16 +1140,20 @@ const Settings = () => {
 
         {/* Developer Tab - always render content, show permission message if no access */}
         <TabsContent value="developer" className="space-y-6">
-          {canManageUsers ? (
+          {canViewDeveloperTools ? (
             <>
-              <DebugModeToggle />
-              <TTNCredentialsPanel organizationId={organization?.id || null} />
-              <TTNConnectionSettings organizationId={organization?.id || null} />
-              <TTNProvisioningLogs organizationId={organization?.id || null} />
-              <EmulatorResyncCard organizationId={organization?.id || null} />
-              <EmulatorSyncHistory organizationId={organization?.id || null} />
-              <EdgeFunctionDiagnostics />
-              <SensorSimulatorPanel organizationId={organization?.id || null} />
+              {canManageTTN && <DebugModeToggle />}
+              <TTNCredentialsPanel organizationId={organization?.id || null} readOnly={!canManageTTN} />
+              <TTNConnectionSettings organizationId={organization?.id || null} readOnly={!canManageTTN} />
+              {canManageTTN && (
+                <>
+                  <TTNProvisioningLogs organizationId={organization?.id || null} />
+                  <EmulatorResyncCard organizationId={organization?.id || null} />
+                  <EmulatorSyncHistory organizationId={organization?.id || null} />
+                  <EdgeFunctionDiagnostics />
+                  <SensorSimulatorPanel organizationId={organization?.id || null} />
+                </>
+              )}
             </>
           ) : (
             <Card>
@@ -1155,7 +1161,7 @@ const Settings = () => {
                 <AlertTriangle className="h-8 w-8 mx-auto text-warning mb-4" />
                 <h3 className="font-medium">Developer Tools Unavailable</h3>
                 <p className="text-sm text-muted-foreground mt-2">
-                  This section requires Owner or Admin role. Current role: {userRole || "Not loaded"}
+                  This section requires Owner, Admin, or Manager role. Current role: {userRole || "Not loaded"}
                 </p>
                 <p className="text-xs text-muted-foreground mt-4">
                   Debug: Org ID {organization?.id?.slice(0, 8) || "none"}...

@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, RefreshCw, Key, Building2, ExternalLink, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, PlayCircle } from "lucide-react";
+import { AlertTriangle, RefreshCw, Key, Building2, ExternalLink, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, PlayCircle, Info } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SecretField } from "./SecretField";
@@ -47,6 +47,7 @@ interface TTNCredentials {
 
 interface TTNCredentialsPanelProps {
   organizationId: string | null;
+  readOnly?: boolean;
 }
 
 // Define provisioning steps for step tracker (organization-based flow)
@@ -61,7 +62,7 @@ const PROVISIONING_STEPS = [
   { id: 'complete', label: 'Complete', description: 'Provisioning finished' },
 ];
 
-export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps) {
+export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCredentialsPanelProps) {
   const [credentials, setCredentials] = useState<TTNCredentials | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -480,8 +481,16 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
 
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/50">
-                {/* Show provisioning buttons when credentials missing or failed */}
-                {(!credentials || credentials?.provisioning_status === 'failed' || !credentials?.ttn_application_id) && organizationId && (
+                {/* Read-only notice for managers */}
+                {readOnly && (
+                  <Badge variant="secondary" className="gap-1">
+                    <Info className="h-3 w-3" />
+                    View Only
+                  </Badge>
+                )}
+
+                {/* Show provisioning buttons when credentials missing or failed - only for admins/owners */}
+                {!readOnly && (!credentials || credentials?.provisioning_status === 'failed' || !credentials?.ttn_application_id) && organizationId && (
                   <>
                     {/* Primary action: Retry/Start Provisioning */}
                     <Button
@@ -519,15 +528,17 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                   Check Status
                 </Button>
 
-                <Button
-                  variant="outline"
-                  onClick={() => setShowConfirmDialog(true)}
-                  disabled={isRegenerating || !credentials?.ttn_application_id}
-                  className="gap-2"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isRegenerating ? "animate-spin" : ""}`} />
-                  Regenerate All
-                </Button>
+                {!readOnly && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowConfirmDialog(true)}
+                    disabled={isRegenerating || !credentials?.ttn_application_id}
+                    className="gap-2"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isRegenerating ? "animate-spin" : ""}`} />
+                    Regenerate All
+                  </Button>
+                )}
 
                 {credentials?.ttn_application_id && credentials?.ttn_region && (
                   <Button
