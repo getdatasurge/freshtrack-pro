@@ -344,7 +344,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.18-collision-safe-appid-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.19-debug-webhook-url-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -1948,6 +1948,18 @@ serve(async (req) => {
 
           const webhookSecret = generateWebhookSecret();
 
+          // Validate webhookUrl before building payload
+          if (!webhookUrl || typeof webhookUrl !== 'string' || !webhookUrl.startsWith('https://')) {
+            console.error(`[ttn-provision-org] [${requestId}] CRITICAL: Invalid webhookUrl at Step 4: "${webhookUrl}" (type: ${typeof webhookUrl})`);
+            return buildResponse({
+              success: false,
+              error: `Internal error: Invalid webhook URL configuration`,
+              step: "create_webhook",
+              retryable: false,
+              request_id: requestId,
+            });
+          }
+
           // Build webhook payload - only include format if we have a valid one
           const webhookPayload: Record<string, unknown> = {
             ids: {
@@ -1973,6 +1985,10 @@ serve(async (req) => {
           if (webhookFormat) {
             webhookPayload.format = webhookFormat;
           }
+
+          // DEBUG: Log exact payload being sent
+          console.log(`[ttn-provision-org] [${requestId}] Step 4: base_url value: "${webhookUrl}" (type: ${typeof webhookUrl})`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 4: Webhook payload:`, JSON.stringify({ webhook: webhookPayload }));
 
           let createWebhookResponse: Response;
           try {
