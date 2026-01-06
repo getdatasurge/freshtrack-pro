@@ -343,7 +343,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.14-fix-app-key-roundtrip-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.15-obfuscation-v2-startfresh-fullreset-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -613,27 +613,63 @@ serve(async (req) => {
           .eq("organization_id", organization_id);
       }
       
-      // UNCONDITIONAL: For ANY start_fresh, clear org API key to force recreation
-      // This runs even if app_rights_check_status !== "forbidden"
-      if (action === "start_fresh" && ttnConn?.ttn_org_api_key_encrypted) {
-        console.log(`[ttn-provision-org] [${requestId}] Start Fresh: UNCONDITIONALLY clearing org API key (had encrypted key)`);
+      // UNCONDITIONAL FULL RESET: For ANY start_fresh, clear ALL TTN credentials
+      // This ensures no corrupted keys remain and forces complete re-provisioning
+      if (action === "start_fresh") {
+        console.log(`[ttn-provision-org] [${requestId}] Start Fresh: UNCONDITIONALLY clearing ALL TTN credentials`);
         
         const { error: clearError } = await supabase
           .from("ttn_connections")
           .update({
+            // Org API key fields
             ttn_org_api_key_encrypted: null,
             ttn_org_api_key_last4: null,
             ttn_org_api_key_id: null,
             ttn_org_api_key_updated_at: null,
+            // App API key fields
+            ttn_api_key_encrypted: null,
+            ttn_api_key_last4: null,
+            ttn_api_key_id: null,
+            ttn_api_key_updated_at: null,
+            // Gateway key fields
+            ttn_gateway_api_key_encrypted: null,
+            ttn_gateway_api_key_last4: null,
+            ttn_gateway_api_key_id: null,
+            ttn_gateway_rights_verified: null,
+            ttn_gateway_rights_checked_at: null,
+            // Webhook fields
+            ttn_webhook_secret_encrypted: null,
+            ttn_webhook_secret_last4: null,
+            ttn_webhook_url: null,
+            ttn_webhook_id: null,
+            ttn_webhook_last_updated_at: null,
+            ttn_webhook_last_updated_by: null,
+            // Provisioning state and diagnostics
             provisioning_step_details: null,
+            provisioning_error: null,
+            app_rights_check_status: null,
+            last_http_status: null,
+            last_http_body: null,
+            last_ttn_http_status: null,
+            last_ttn_correlation_id: null,
+            last_ttn_error_namespace: null,
+            last_ttn_error_name: null,
           })
           .eq("organization_id", organization_id);
           
         if (clearError) {
-          console.error(`[ttn-provision-org] [${requestId}] Start Fresh: Failed to clear org key: ${clearError.message}`);
+          console.error(`[ttn-provision-org] [${requestId}] Start Fresh: Failed to clear credentials: ${clearError.message}`);
         } else {
-          console.log(`[ttn-provision-org] [${requestId}] Start Fresh: Org API key cleared from database`);
+          console.log(`[ttn-provision-org] [${requestId}] Start Fresh: ALL TTN credentials cleared from database`);
         }
+        
+        // Force refresh ttnConn to have null values
+        const { data: refreshedConn } = await supabase
+          .from("ttn_connections")
+          .select("*")
+          .eq("organization_id", organization_id)
+          .maybeSingle();
+        ttnConn = refreshedConn;
       }
       
       console.log(`[ttn-provision-org] [${requestId}] Provisioning TTN org: ${ttnOrgId}, app: ${ttnAppId} for org ${org.slug}${appIdRotated ? ' (rotated)' : ''}`);

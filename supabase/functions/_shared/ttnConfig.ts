@@ -107,8 +107,15 @@ const REGIONAL_URLS: Record<string, string> = {
   as1: "https://as1.cloud.thethings.network",
 };
 
-// XOR-based obfuscation (for API key storage)
-export function deobfuscateKey(encoded: string, salt: string): string {
+// ============================================================================
+// Byte-Safe Obfuscation (v2) with Legacy Fallback
+// ============================================================================
+
+/**
+ * Legacy XOR obfuscation (v1) - kept for backward compatibility
+ * This function has known issues with non-ASCII bytes but is needed to read old values
+ */
+function legacyDeobfuscateKey(encoded: string, salt: string): string {
   try {
     const decoded = atob(encoded);
     const result: number[] = [];
@@ -117,16 +124,109 @@ export function deobfuscateKey(encoded: string, salt: string): string {
     }
     return String.fromCharCode(...result);
   } catch {
+    console.warn("[legacyDeobfuscateKey] Failed to decode:", encoded.substring(0, 20));
     return "";
   }
 }
 
-export function obfuscateKey(key: string, salt: string): string {
+function legacyObfuscateKey(key: string, salt: string): string {
   const result: number[] = [];
   for (let i = 0; i < key.length; i++) {
     result.push(key.charCodeAt(i) ^ salt.charCodeAt(i % salt.length));
   }
   return btoa(String.fromCharCode(...result));
+}
+
+/**
+ * Byte-safe base64 encode for Uint8Array
+ */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Byte-safe base64 decode to Uint8Array
+ */
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * V2 Byte-safe XOR obfuscation
+ * Uses TextEncoder/TextDecoder to handle UTF-8 properly
+ * Prefixed with "v2:" to distinguish from legacy format
+ */
+function obfuscateKeyV2(key: string, salt: string): string {
+  const keyBytes = new TextEncoder().encode(key);
+  const saltBytes = new TextEncoder().encode(salt);
+  const result = new Uint8Array(keyBytes.length);
+  
+  for (let i = 0; i < keyBytes.length; i++) {
+    result[i] = keyBytes[i] ^ saltBytes[i % saltBytes.length];
+  }
+  
+  return `v2:${bytesToBase64(result)}`;
+}
+
+function deobfuscateKeyV2(encoded: string, salt: string): string {
+  // Strip the "v2:" prefix
+  const b64 = encoded.slice(3);
+  
+  try {
+    const encryptedBytes = base64ToBytes(b64);
+    const saltBytes = new TextEncoder().encode(salt);
+    const result = new Uint8Array(encryptedBytes.length);
+    
+    for (let i = 0; i < encryptedBytes.length; i++) {
+      result[i] = encryptedBytes[i] ^ saltBytes[i % saltBytes.length];
+    }
+    
+    return new TextDecoder().decode(result);
+  } catch (err) {
+    console.error("[deobfuscateKeyV2] Failed to decode:", err);
+    return "";
+  }
+}
+
+/**
+ * Deobfuscate a key - handles both v2 (prefixed) and legacy (v1) formats
+ * v2 format: "v2:base64data"
+ * v1 format: plain base64 (legacy)
+ */
+export function deobfuscateKey(encoded: string, salt: string): string {
+  if (!encoded) return "";
+  
+  // Check for v2 prefix
+  if (encoded.startsWith("v2:")) {
+    return deobfuscateKeyV2(encoded, salt);
+  }
+  
+  // Fall back to legacy decoding for old stored values
+  return legacyDeobfuscateKey(encoded, salt);
+}
+
+/**
+ * Obfuscate a key - always uses v2 byte-safe format
+ * New writes always use v2 to ensure round-trip integrity
+ */
+export function obfuscateKey(key: string, salt: string): string {
+  return obfuscateKeyV2(key, salt);
+}
+
+/**
+ * Export legacy obfuscation for backward-compatible webhook lookup
+ */
+export function obfuscateLegacy(key: string, salt: string): string {
+  return legacyObfuscateKey(key, salt);
 }
 
 export function getLast4(key: string): string {
@@ -225,6 +325,9 @@ export function generateTtnApplicationId(orgId: string): string {
  * Look up organization by webhook secret
  * Used by ttn-webhook to authenticate incoming webhooks
  * Returns org_id if found, null otherwise
+ * 
+ * BACKWARD COMPATIBILITY: Searches for both v2 and legacy (v1) encrypted formats
+ * to support both old stored values and newly provisioned organizations.
  */
 export async function lookupOrgByWebhookSecret(
   supabaseAdmin: SupabaseClient,
@@ -233,13 +336,15 @@ export async function lookupOrgByWebhookSecret(
   const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") || 
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.slice(0, 32) || "";
   
-  // Encrypt the incoming secret to compare against stored values
-  const encryptedSecret = obfuscateKey(webhookSecret, encryptionSalt);
+  // Compute both v2 and legacy encrypted values for backward compatibility
+  const v2EncryptedSecret = obfuscateKey(webhookSecret, encryptionSalt); // Always v2 now
+  const legacyEncryptedSecret = obfuscateLegacy(webhookSecret, encryptionSalt); // Legacy format
   
+  // Query using .in() to match either format
   const { data, error } = await supabaseAdmin
     .from("ttn_connections")
     .select("organization_id, ttn_application_id")
-    .eq("ttn_webhook_secret_encrypted", encryptedSecret)
+    .in("ttn_webhook_secret_encrypted", [v2EncryptedSecret, legacyEncryptedSecret])
     .eq("is_enabled", true)
     .maybeSingle();
   
