@@ -70,17 +70,21 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmChecked, setConfirmChecked] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchCredentials = useCallback(async () => {
     if (!organizationId) {
       setIsLoading(false);
+      setCredentials(null);
+      setFetchError(null);
       return;
     }
 
+    setFetchError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        toast.error("Not authenticated");
+        setFetchError("Not authenticated");
         return;
       }
 
@@ -97,7 +101,7 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
       setCredentials(data);
     } catch (err) {
       console.error("Failed to fetch TTN credentials:", err);
-      toast.error("Failed to load TTN credentials");
+      setFetchError("Unable to load TTN settings");
     } finally {
       setIsLoading(false);
     }
@@ -340,9 +344,20 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
     }
   };
 
-  if (!organizationId) {
-    return null;
-  }
+  // Helper to render structured skeleton for credential fields
+  const renderCredentialSkeleton = (label: string) => (
+    <div key={label} className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-5 w-20 rounded-full" />
+      </div>
+      <Skeleton className="h-3 w-64" />
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-10 flex-1 rounded-md" />
+        <Skeleton className="h-9 w-9 rounded-md" />
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -367,72 +382,90 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
         <CardContent className="space-y-6">
           {isLoading ? (
             <div className="space-y-4">
-              <Skeleton className="h-4 w-48" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
+              {/* Skeleton for Org Info section */}
+              <Skeleton className="h-20 w-full rounded-lg" />
+              
+              {/* Skeleton rows matching SecretField layout */}
+              {["Organization API Secret", "Application API Secret", "Webhook Secret", "Webhook URL"].map(renderCredentialSkeleton)}
             </div>
-          ) : credentials ? (
+          ) : (
             <>
-              {/* Organization Info */}
+              {/* Fetch Error Banner */}
+              {fetchError && (
+                <div className="p-3 bg-alarm/10 rounded-lg border border-alarm/30 flex items-center gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-alarm flex-shrink-0" />
+                  <span className="text-alarm flex-1">{fetchError}</span>
+                  <Button variant="ghost" size="sm" onClick={fetchCredentials} disabled={isLoading}>
+                    Retry
+                  </Button>
+                </div>
+              )}
+
+              {/* Organization Info - always render */}
               <div className="flex items-start gap-3 p-4 bg-muted/30 rounded-lg border border-border/50">
                 <Building2 className="h-5 w-5 text-muted-foreground mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium">{credentials.organization_name}</div>
-                  <div className="text-sm text-muted-foreground font-mono truncate">
-                    {credentials.organization_id}
-                  </div>
-                  {credentials.ttn_application_id && (
-                    <div className="text-sm text-muted-foreground mt-1">
-                      <span className="text-foreground">Application:</span>{" "}
-                      <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
-                        {credentials.ttn_application_id}
-                      </code>
-                      {credentials.ttn_region && (
-                        <span className="ml-2 text-xs">({credentials.ttn_region})</span>
-                      )}
+                {organizationId && credentials ? (
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium">{credentials.organization_name}</div>
+                    <div className="text-sm text-muted-foreground font-mono truncate">
+                      {credentials.organization_id}
                     </div>
-                  )}
-                </div>
+                    {credentials.ttn_application_id && (
+                      <div className="text-sm text-muted-foreground mt-1">
+                        <span className="text-foreground">Application:</span>{" "}
+                        <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
+                          {credentials.ttn_application_id}
+                        </code>
+                        {credentials.ttn_region && (
+                          <span className="ml-2 text-xs">({credentials.ttn_region})</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex-1 text-sm text-muted-foreground italic">
+                    {!organizationId ? "No organization selected" : "Organization info unavailable"}
+                  </div>
+                )}
               </div>
 
-              {/* Credential Fields */}
+              {/* Credential Fields - ALWAYS render these 4 rows */}
               <div className="space-y-4">
                 <SecretField
                   label="Organization API Secret"
-                  value={credentials.org_api_secret}
-                  last4={credentials.org_api_secret_last4}
-                  status={credentials.org_api_secret || credentials.org_api_secret_last4 ? "provisioned" : "missing"}
+                  value={credentials?.org_api_secret ?? null}
+                  last4={credentials?.org_api_secret_last4 ?? null}
+                  status={(credentials?.org_api_secret || credentials?.org_api_secret_last4) ? "provisioned" : "missing"}
                   description="Used for gateway registry and organization-level operations"
                 />
 
                 <SecretField
                   label="Application API Secret"
-                  value={credentials.app_api_secret}
-                  last4={credentials.app_api_secret_last4}
-                  status={credentials.app_api_secret || credentials.app_api_secret_last4 ? "provisioned" : "missing"}
+                  value={credentials?.app_api_secret ?? null}
+                  last4={credentials?.app_api_secret_last4 ?? null}
+                  status={(credentials?.app_api_secret || credentials?.app_api_secret_last4) ? "provisioned" : "missing"}
                   description="Used for device provisioning and application operations"
                 />
 
                 <SecretField
                   label="Webhook Secret"
-                  value={credentials.webhook_secret}
-                  last4={credentials.webhook_secret_last4}
-                  status={credentials.webhook_secret || credentials.webhook_secret_last4 ? "provisioned" : "missing"}
+                  value={credentials?.webhook_secret ?? null}
+                  last4={credentials?.webhook_secret_last4 ?? null}
+                  status={(credentials?.webhook_secret || credentials?.webhook_secret_last4) ? "provisioned" : "missing"}
                   description="Used to verify incoming webhook payloads from TTN"
                 />
 
                 <SecretField
                   label="Webhook URL"
-                  value={credentials.webhook_url}
-                  status={credentials.webhook_url ? "provisioned" : "missing"}
+                  value={credentials?.webhook_url ?? null}
+                  status={credentials?.webhook_url ? "provisioned" : "missing"}
                   isSecret={false}
                   description="The endpoint TTN sends uplink messages to"
                 />
               </div>
 
               {/* Last Rotation Info */}
-              {credentials.credentials_last_rotated_at && (
+              {credentials?.credentials_last_rotated_at && (
                 <p className="text-xs text-muted-foreground">
                   Last rotated: {new Date(credentials.credentials_last_rotated_at).toLocaleString()}
                 </p>
@@ -440,7 +473,8 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
 
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/50">
-                {(credentials?.provisioning_status === 'failed' || !credentials?.ttn_application_id) && (
+                {/* Show provisioning buttons when credentials missing or failed */}
+                {(!credentials || credentials?.provisioning_status === 'failed' || !credentials?.ttn_application_id) && organizationId && (
                   <>
                     {/* Show Start Fresh prominently when app is unowned */}
                     {isUnownedAppError() ? (
@@ -457,7 +491,7 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                       <Button
                         variant="default"
                         onClick={handleRetryProvisioning}
-                        disabled={isRetrying || isLoading}
+                        disabled={isRetrying || isLoading || !organizationId}
                         className="gap-2"
                       >
                         <PlayCircle className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
@@ -483,7 +517,7 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                 <Button
                   variant="outline"
                   onClick={handleCheckStatus}
-                  disabled={isLoading}
+                  disabled={isLoading || !organizationId}
                   className="gap-2"
                 >
                   <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -520,7 +554,7 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
               </div>
 
               {/* Step Tracker - show when provisioning or failed */}
-              {(credentials?.provisioning_status === 'provisioning' || credentials?.provisioning_status === 'failed') && (
+              {credentials && (credentials.provisioning_status === 'provisioning' || credentials.provisioning_status === 'failed') && (
                 <div className="mt-4 p-4 bg-muted/30 rounded-lg border border-border/50">
                   <h4 className="text-sm font-medium mb-3">Provisioning Steps</h4>
                   <div className="space-y-2">
@@ -538,7 +572,7 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                     })}
                   </div>
                   
-                  {credentials?.provisioning_attempt_count && credentials.provisioning_attempt_count > 1 && (
+                  {credentials.provisioning_attempt_count && credentials.provisioning_attempt_count > 1 && (
                     <p className="text-xs text-muted-foreground mt-3">
                       Attempt {credentials.provisioning_attempt_count}
                     </p>
@@ -632,26 +666,6 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
                 </Collapsible>
               )}
             </>
-          ) : (
-            <div className="flex items-center gap-3 p-4 bg-warning/10 rounded-lg border border-warning/30">
-              <AlertTriangle className="h-5 w-5 text-warning" />
-              <div className="flex-1">
-                <p className="font-medium text-warning">TTN not configured</p>
-                <p className="text-sm text-muted-foreground">
-                  TTN credentials have not been provisioned for this organization.
-                </p>
-              </div>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handleRetryProvisioning}
-                disabled={isRetrying}
-                className="gap-2"
-              >
-                <PlayCircle className="h-4 w-4" />
-                Start Provisioning
-              </Button>
-            </div>
           )}
         </CardContent>
       </Card>
