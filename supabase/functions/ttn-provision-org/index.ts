@@ -344,7 +344,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.22-no-xor-obfuscation-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.23-hardcode-json-format-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -2008,16 +2008,10 @@ serve(async (req) => {
 
           console.log(`[ttn-provision-org] [${requestId}] Step 4: Creating webhook for ${ttnAppId} (token_source: app_api_key, key_last4: ${getLast4(appApiKeyForWebhook)})`);
 
-          // Fetch valid webhook formats from TTN Application Server (using App API Key)
-          const validFormats = await getValidWebhookFormats(regionalUrl, appApiKeyForWebhook, requestId);
-          // Use "json" if available, otherwise first available format, or empty string as fallback
-          let webhookFormat = "";
-          if (validFormats.includes("json")) {
-            webhookFormat = "json";
-          } else if (validFormats.length > 0) {
-            webhookFormat = validFormats[0];
-          }
-          console.log(`[ttn-provision-org] [${requestId}] Step 4: Using webhook format: "${webhookFormat}" (available: ${validFormats.join(", ") || "none discovered"})`);
+          // Hardcode webhook format to "json" - universally available on all TTN clusters
+          // This avoids race conditions with newly created App API Keys and format discovery
+          const webhookFormat = "json";
+          console.log(`[ttn-provision-org] [${requestId}] Step 4: Using hardcoded webhook format: "json"`);
 
           const webhookSecret = generateWebhookSecret();
 
@@ -2033,13 +2027,14 @@ serve(async (req) => {
             });
           }
 
-          // Build webhook payload - only include format if we have a valid one
-          const webhookPayload: Record<string, unknown> = {
+          // Build webhook payload with hardcoded "json" format
+          const webhookPayload = {
             ids: {
               webhook_id: webhookId,
               application_ids: { application_id: ttnAppId },
             },
             base_url: webhookUrl,
+            format: "json",
             uplink_message: {},
             join_accept: {},
             downlink_ack: {},
@@ -2053,11 +2048,6 @@ serve(async (req) => {
               "X-Webhook-Secret": webhookSecret,
             },
           };
-          
-          // Only add format if we have a valid one from the server
-          if (webhookFormat) {
-            webhookPayload.format = webhookFormat;
-          }
 
           // DEBUG: Log exact payload being sent
           console.log(`[ttn-provision-org] [${requestId}] Step 4: base_url value: "${webhookUrl}" (type: ${typeof webhookUrl})`);
@@ -2117,7 +2107,7 @@ serve(async (req) => {
                       application_ids: { application_id: ttnAppId },
                     },
                     base_url: webhookUrl,
-                    ...(webhookFormat ? { format: webhookFormat } : {}),
+                    format: "json",
                     uplink_message: {},
                     join_accept: {},
                     headers: {
@@ -2125,9 +2115,7 @@ serve(async (req) => {
                     },
                   },
                   field_mask: {
-                    paths: webhookFormat 
-                      ? ["base_url", "format", "uplink_message", "join_accept", "headers"]
-                      : ["base_url", "uplink_message", "join_accept", "headers"],
+                    paths: ["base_url", "format", "uplink_message", "join_accept", "headers"],
                   },
                 }),
               }
