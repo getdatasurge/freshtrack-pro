@@ -344,7 +344,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.20-webhook-use-app-key-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.21-appkey-appid-mismatch-fix-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -657,6 +657,16 @@ serve(async (req) => {
       if (action === "start_fresh") {
         completedSteps = {};
         console.log(`[ttn-provision-org] [${requestId}] Start Fresh: Reset completedSteps to force all steps to run`);
+      } else if (action === "retry") {
+        // For retry with a new app ID, reset App API Key and Webhook flags
+        // since those are application-scoped
+        completedSteps = ttnConn?.provisioning_step_details || {};
+        const previousAppId = ttnConn?.ttn_application_id;
+        if (previousAppId && previousAppId !== ttnAppId) {
+          console.log(`[ttn-provision-org] [${requestId}] Retry: App ID changed from "${previousAppId}" to "${ttnAppId}" - resetting app-scoped steps`);
+          completedSteps.app_api_key_created = false;
+          completedSteps.webhook_created = false;
+        }
       } else if (!appIdRotated) {
         completedSteps = ttnConn?.provisioning_step_details || {};
       }
@@ -1697,17 +1707,34 @@ serve(async (req) => {
 
         // ============ RETRIEVE APP API KEY FOR STEP 4 (Webhook Creation) ============
         // The App API Key (created in Step 3) has application-level rights needed for webhooks
+        // CRITICAL: Only use cached App API Key if it was created for the CURRENT app ID
+        // App API Keys are application-scoped - an old key won't work for a new app ID
         let appApiKeyForWebhook: string | null = null;
         if (completedSteps.app_api_key_created) {
           const { data: ttnConnForAppKey } = await supabase
             .from("ttn_connections")
-            .select("ttn_api_key_encrypted")
+            .select("ttn_api_key_encrypted, ttn_application_id")
             .eq("organization_id", organization_id)
             .single();
           
-          if (ttnConnForAppKey?.ttn_api_key_encrypted) {
+          // Verify the stored key matches the current app ID
+          const storedAppId = ttnConnForAppKey?.ttn_application_id;
+          if (storedAppId !== ttnAppId) {
+            console.log(`[ttn-provision-org] [${requestId}] APP ID MISMATCH: Stored App API Key is for "${storedAppId}", but current app is "${ttnAppId}". Forcing recreation.`);
+            completedSteps.app_api_key_created = false;
+            // Clear the stale App API Key from database
+            await supabase
+              .from("ttn_connections")
+              .update({ 
+                ttn_api_key_encrypted: null, 
+                ttn_api_key_last4: null, 
+                ttn_api_key_id: null,
+                provisioning_step_details: completedSteps 
+              })
+              .eq("organization_id", organization_id);
+          } else if (ttnConnForAppKey?.ttn_api_key_encrypted) {
             appApiKeyForWebhook = deobfuscateKey(ttnConnForAppKey.ttn_api_key_encrypted, encryptionSalt);
-            console.log(`[ttn-provision-org] [${requestId}] Retrieved App API Key for Step 4 (key_last4: ${getLast4(appApiKeyForWebhook)})`);
+            console.log(`[ttn-provision-org] [${requestId}] Retrieved App API Key for Step 4 (key_last4: ${getLast4(appApiKeyForWebhook)}, app_id: ${storedAppId})`);
           }
         }
 
