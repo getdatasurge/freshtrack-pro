@@ -343,7 +343,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.15-obfuscation-v2-startfresh-fullreset-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.16-start-fresh-clears-all-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -621,6 +621,15 @@ serve(async (req) => {
         const { error: clearError } = await supabase
           .from("ttn_connections")
           .update({
+            // TTN Identity fields (CRITICAL - these must be cleared!)
+            tts_organization_id: null,
+            ttn_application_id: null,
+            ttn_application_name: null,
+            ttn_application_uid: null,
+            ttn_application_provisioned_at: null,
+            tts_org_provisioned_at: null,
+            tts_org_provisioning_status: null,
+            tts_org_admin_added: null,
             // Org API key fields
             ttn_org_api_key_encrypted: null,
             ttn_org_api_key_last4: null,
@@ -631,12 +640,6 @@ serve(async (req) => {
             ttn_api_key_last4: null,
             ttn_api_key_id: null,
             ttn_api_key_updated_at: null,
-            // Gateway key fields
-            ttn_gateway_api_key_encrypted: null,
-            ttn_gateway_api_key_last4: null,
-            ttn_gateway_api_key_id: null,
-            ttn_gateway_rights_verified: null,
-            ttn_gateway_rights_checked_at: null,
             // Webhook fields
             ttn_webhook_secret_encrypted: null,
             ttn_webhook_secret_last4: null,
@@ -644,9 +647,20 @@ serve(async (req) => {
             ttn_webhook_id: null,
             ttn_webhook_last_updated_at: null,
             ttn_webhook_last_updated_by: null,
-            // Provisioning state and diagnostics
+            ttn_webhook_events: null,
+            // Provisioning state
+            provisioning_status: null,
+            provisioning_step: null,
+            provisioning_last_step: null,
+            provisioning_can_retry: null,
             provisioning_step_details: null,
             provisioning_error: null,
+            provisioning_started_at: null,
+            provisioning_last_heartbeat_at: null,
+            provisioning_attempt_count: 0,
+            provisioning_attempts: null,
+            last_provisioning_attempt_at: null,
+            // Diagnostics
             app_rights_check_status: null,
             last_http_status: null,
             last_http_body: null,
