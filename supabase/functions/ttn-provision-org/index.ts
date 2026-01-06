@@ -344,7 +344,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.19-debug-webhook-url-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.20-webhook-use-app-key-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -1695,6 +1695,22 @@ serve(async (req) => {
           });
         }
 
+        // ============ RETRIEVE APP API KEY FOR STEP 4 (Webhook Creation) ============
+        // The App API Key (created in Step 3) has application-level rights needed for webhooks
+        let appApiKeyForWebhook: string | null = null;
+        if (completedSteps.app_api_key_created) {
+          const { data: ttnConnForAppKey } = await supabase
+            .from("ttn_connections")
+            .select("ttn_api_key_encrypted")
+            .eq("organization_id", organization_id)
+            .single();
+          
+          if (ttnConnForAppKey?.ttn_api_key_encrypted) {
+            appApiKeyForWebhook = deobfuscateKey(ttnConnForAppKey.ttn_api_key_encrypted, encryptionSalt);
+            console.log(`[ttn-provision-org] [${requestId}] Retrieved App API Key for Step 4 (key_last4: ${getLast4(appApiKeyForWebhook)})`);
+          }
+        }
+
         // ============ STEP 3: Create App-scoped API Key (using Org API Key) ============
         const step3Start = Date.now();
         if (!completedSteps.app_api_key_created) {
@@ -1826,6 +1842,10 @@ serve(async (req) => {
           const duration = Date.now() - step3Start;
           await logProvisioningStep(supabase, organization_id, "create_app_api_key", "success", "Application API key created [output artifact]", { key_last4: originalAppLast4, roundtrip_verified: true }, duration, requestId, createAppKeyResponse.status, undefined, undefined, ttnEndpoint);
           completedSteps.app_api_key_created = true;
+          
+          // Capture App API Key for immediate use in Step 4
+          appApiKeyForWebhook = appApiKey;
+          console.log(`[ttn-provision-org] [${requestId}] Step 3: Captured App API Key for Step 4 (key_last4: ${originalAppLast4})`);
 
           await supabase
             .from("ttn_connections")
@@ -1923,20 +1943,46 @@ serve(async (req) => {
           console.log(`[ttn-provision-org] [${requestId}] Step 3B: Skipping (already attempted)`);
         }
 
-        // ============ STEP 4: Create Webhook (using Org API Key) ============
+        // ============ STEP 4: Create Webhook (using App API Key) ============
         const step4Start = Date.now();
         if (!completedSteps.webhook_created) {
+          // Validate we have the App API Key for webhook creation
+          if (!appApiKeyForWebhook) {
+            // Try to retrieve from database if not captured in Step 3
+            const { data: ttnConnForAppKey } = await supabase
+              .from("ttn_connections")
+              .select("ttn_api_key_encrypted")
+              .eq("organization_id", organization_id)
+              .single();
+            
+            if (ttnConnForAppKey?.ttn_api_key_encrypted) {
+              appApiKeyForWebhook = deobfuscateKey(ttnConnForAppKey.ttn_api_key_encrypted, encryptionSalt);
+              console.log(`[ttn-provision-org] [${requestId}] Step 4: Retrieved App API Key from DB (key_last4: ${getLast4(appApiKeyForWebhook)})`);
+            }
+          }
+          
+          if (!appApiKeyForWebhook) {
+            console.error(`[ttn-provision-org] [${requestId}] Step 4: App API Key not available for webhook creation`);
+            return buildResponse({
+              success: false,
+              error: "App API Key not found - required for webhook creation. Try 'Start Fresh' to re-provision.",
+              step: "create_webhook",
+              retryable: true,
+              request_id: requestId,
+            });
+          }
+
           const webhookId = "frostguard-webhook";
           const ttnEndpoint = `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}`;
           await logProvisioningStep(supabase, organization_id, "create_webhook", "started", 
-            `Creating webhook (token_source: org_api_key)`, 
+            `Creating webhook (token_source: app_api_key, key_last4: ${getLast4(appApiKeyForWebhook)})`, 
             { webhook_url: webhookUrl, endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningState(supabase, organization_id, { step: "create_webhook" });
 
-          console.log(`[ttn-provision-org] [${requestId}] Step 4: Creating webhook for ${ttnAppId} (token_source: org_api_key)`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 4: Creating webhook for ${ttnAppId} (token_source: app_api_key, key_last4: ${getLast4(appApiKeyForWebhook)})`);
 
-          // Fetch valid webhook formats from TTN Application Server
-          const validFormats = await getValidWebhookFormats(regionalUrl, orgApiKeyForAppOps, requestId);
+          // Fetch valid webhook formats from TTN Application Server (using App API Key)
+          const validFormats = await getValidWebhookFormats(regionalUrl, appApiKeyForWebhook, requestId);
           // Use "json" if available, otherwise first available format, or empty string as fallback
           let webhookFormat = "";
           if (validFormats.includes("json")) {
@@ -1997,7 +2043,7 @@ serve(async (req) => {
               {
                 method: "POST",
                 headers: {
-                  Authorization: `Bearer ${orgApiKeyForAppOps}`,
+                  Authorization: `Bearer ${appApiKeyForWebhook}`,
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({ webhook: webhookPayload }),
@@ -2034,7 +2080,7 @@ serve(async (req) => {
               {
                 method: "PUT",
                 headers: {
-                  Authorization: `Bearer ${orgApiKeyForAppOps}`,
+                  Authorization: `Bearer ${appApiKeyForWebhook}`,
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
