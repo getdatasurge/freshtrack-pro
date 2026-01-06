@@ -343,7 +343,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.16-start-fresh-clears-all-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.17-fix-appid-order-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -548,70 +548,18 @@ serve(async (req) => {
       });
       }
 
-      // Generate TTN organization and application IDs
+      // Generate TTN organization ID
       const ttnOrgId = generateTtnOrganizationId(org.id);
       
-      // For start_fresh: may need to rotate app ID
-      let ttnAppId = ttnConn?.ttn_application_id || generateTtnApplicationId(org.id);
+      // ttnAppId will be assigned AFTER the unconditional clear for start_fresh
+      // This prevents using stale app IDs from the database
+      let ttnAppId: string = "";
       let appIdRotated = false;
       
-      if (action === "start_fresh" && ttnConn?.app_rights_check_status === "forbidden") {
-        // Try to delete the existing app first
-        console.log(`[ttn-provision-org] [${requestId}] Start Fresh: attempting to delete unowned app ${ttnAppId}`);
-        
-        try {
-          const deleteResponse = await fetchWithTimeout(
-            `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}`,
-            {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${ttnAdminKey}` },
-            }
-          );
-          
-          if (deleteResponse.ok || deleteResponse.status === 404) {
-            console.log(`[ttn-provision-org] [${requestId}] Deleted existing app or not found, will recreate`);
-            await logProvisioningStep(supabase, organization_id, "delete_unowned_app", "success", 
-              "Deleted unowned application to start fresh", { old_app_id: ttnAppId }, undefined, requestId);
-          } else {
-            // Cannot delete, generate new app ID
-            const oldAppId = ttnAppId;
-            ttnAppId = generateNewApplicationId(org.slug);
-            appIdRotated = true;
-            console.log(`[ttn-provision-org] [${requestId}] Cannot delete app, rotating ID: ${oldAppId} -> ${ttnAppId}`);
-            await logProvisioningStep(supabase, organization_id, "rotate_app_id", "success", 
-              `Rotated application ID: ${oldAppId} -> ${ttnAppId}`, { old_app_id: oldAppId, new_app_id: ttnAppId }, undefined, requestId);
-          }
-        } catch (err) {
-          // Delete failed, generate new app ID
-          const oldAppId = ttnAppId;
-          ttnAppId = generateNewApplicationId(org.slug);
-          appIdRotated = true;
-          console.log(`[ttn-provision-org] [${requestId}] Delete failed, rotating ID: ${oldAppId} -> ${ttnAppId}`);
-        }
-        
-        // Clear app-dependent outputs AND org API key for truly fresh start
-        console.log(`[ttn-provision-org] [${requestId}] Start Fresh: Clearing ALL keys including org API key`);
-        await supabase
-          .from("ttn_connections")
-          .update({
-            ttn_application_id: ttnAppId,
-            ttn_api_key_encrypted: null,
-            ttn_api_key_last4: null,
-            ttn_api_key_id: null,
-            // Also clear org API key to force recreation with new debug verification
-            ttn_org_api_key_encrypted: null,
-            ttn_org_api_key_last4: null,
-            ttn_org_api_key_id: null,
-            ttn_org_api_key_updated_at: null,
-            ttn_webhook_secret_encrypted: null,
-            ttn_webhook_secret_last4: null,
-            ttn_webhook_url: null,
-            ttn_webhook_id: null,
-            app_rights_check_status: null,
-            provisioning_step_details: null,
-          })
-          .eq("organization_id", organization_id);
-      }
+      // NOTE: The conditional block for app_rights_check_status === "forbidden" was removed
+      // because the unconditional clear below resets ALL fields including app_rights_check_status,
+      // making the conditional check always false after a start_fresh. The unconditional clear
+      // handles all cleanup, and a fresh app ID will be generated after the clear.
       
       // UNCONDITIONAL FULL RESET: For ANY start_fresh, clear ALL TTN credentials
       // This ensures no corrupted keys remain and forces complete re-provisioning
@@ -684,7 +632,13 @@ serve(async (req) => {
           .eq("organization_id", organization_id)
           .maybeSingle();
         ttnConn = refreshedConn;
+        console.log(`[ttn-provision-org] [${requestId}] Start Fresh: Refreshed ttnConn - ttn_application_id is now: ${ttnConn?.ttn_application_id}`);
       }
+      
+      // NOW assign ttnAppId AFTER the database has been cleared (for start_fresh)
+      // This ensures we don't use stale app IDs that were cleared from the database
+      ttnAppId = ttnConn?.ttn_application_id || generateTtnApplicationId(org.id);
+      console.log(`[ttn-provision-org] [${requestId}] ttnAppId assigned: ${ttnAppId} (from DB: ${ttnConn?.ttn_application_id || 'null - generated fresh'})`);
       
       console.log(`[ttn-provision-org] [${requestId}] Provisioning TTN org: ${ttnOrgId}, app: ${ttnAppId} for org ${org.slug}${appIdRotated ? ' (rotated)' : ''}`);
       console.log(`[ttn-provision-org] [${requestId}] ALL STEPS will use token_source: ${TOKEN_SOURCE}`);
