@@ -80,18 +80,22 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
       return;
     }
 
+    // Always show loading state when starting a fetch
+    setIsLoading(true);
     setFetchError(null);
+    
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setFetchError("Not authenticated");
+      // Force network-verified token refresh before invoking
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        setFetchError("Session expired - please sign in again");
         return;
       }
 
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { 
           action: "get_credentials",
-          organizationId 
+          organization_id: organizationId 
         },
       });
 
@@ -116,16 +120,17 @@ export function TTNCredentialsPanel({ organizationId }: TTNCredentialsPanelProps
 
     setIsRegenerating(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        toast.error("Not authenticated");
+      // Force network-verified token refresh before invoking
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast.error("Session expired - please sign in again");
         return;
       }
 
       const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
         body: { 
           action: "regenerate_all",
-          organizationId 
+          organization_id: organizationId 
         },
       });
 
