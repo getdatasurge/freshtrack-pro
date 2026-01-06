@@ -32,7 +32,7 @@ function safeDecrypt(encrypted: string | null, salt: string): string | null {
 }
 
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v6-identity-server-20260102";
+  const BUILD_VERSION = "manage-ttn-settings-v7-dev-rate-limit-bypass-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[manage-ttn-settings] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
@@ -332,22 +332,30 @@ Deno.serve(async (req: Request) => {
       }
 
       // Check rate limiting (max 3 regenerations per hour)
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      const { count: recentCount } = await supabaseAdmin
-        .from("event_logs")
-        .select("*", { count: "exact", head: true })
-        .eq("organization_id", organizationId)
-        .eq("event_type", "ttn.credentials.regenerate_all")
-        .gte("recorded_at", oneHourAgo);
+      // Bypass for development organizations
+      const DEV_ORG_IDS = ['c6a5a74b-a129-42bb-8f66-72646be3c7f3'];
+      const isDevOrg = DEV_ORG_IDS.includes(organizationId);
 
-      if ((recentCount || 0) >= 3) {
-        return new Response(
-          JSON.stringify({ 
-            error: "Rate limit exceeded", 
-            details: "Maximum 3 credential regenerations per hour. Please try again later." 
-          }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      if (!isDevOrg) {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { count: recentCount } = await supabaseAdmin
+          .from("event_logs")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .eq("event_type", "ttn.credentials.regenerate_all")
+          .gte("recorded_at", oneHourAgo);
+
+        if ((recentCount || 0) >= 3) {
+          return new Response(
+            JSON.stringify({ 
+              error: "Rate limit exceeded", 
+              details: "Maximum 3 credential regenerations per hour. Please try again later." 
+            }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        console.log(`[manage-ttn-settings] [${requestId}] Rate limit bypassed for dev org: ${organizationId}`);
       }
 
       // Generate new secrets
