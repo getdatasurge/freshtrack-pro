@@ -198,14 +198,33 @@ function deobfuscateKeyV2(encoded: string, salt: string): string {
 }
 
 /**
- * Deobfuscate a key - handles both v2 (prefixed) and legacy (v1) formats
- * v2 format: "v2:base64data"
- * v1 format: plain base64 (legacy)
+ * Deobfuscate a key - handles b64 (plain base64), v2 (XOR), and legacy formats
+ * b64 format: "b64:base64data" (NEW - plain base64, no XOR)
+ * v2 format: "v2:base64data" (XOR v2)
+ * v1 format: plain base64 (legacy XOR)
+ * 
+ * TEMPORARY: b64 format bypasses XOR to debug key corruption issues
  */
 export function deobfuscateKey(encoded: string, salt: string): string {
   if (!encoded) return "";
   
-  // Check for v2 prefix
+  // Handle new b64: prefix (plain base64, no XOR)
+  if (encoded.startsWith("b64:")) {
+    try {
+      const b64 = encoded.slice(4);
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return new TextDecoder().decode(bytes);
+    } catch (err) {
+      console.error("[deobfuscateKey] Failed to decode b64:", err);
+      return "";
+    }
+  }
+  
+  // Handle v2: prefix (XOR v2 format)
   if (encoded.startsWith("v2:")) {
     return deobfuscateKeyV2(encoded, salt);
   }
@@ -215,11 +234,19 @@ export function deobfuscateKey(encoded: string, salt: string): string {
 }
 
 /**
- * Obfuscate a key - always uses v2 byte-safe format
- * New writes always use v2 to ensure round-trip integrity
+ * Obfuscate a key - TEMPORARY: uses plain base64 (b64:) to bypass XOR corruption
+ * This is for debugging key corruption issues.
+ * TODO: Re-enable proper encryption after flow is stable
  */
 export function obfuscateKey(key: string, salt: string): string {
-  return obfuscateKeyV2(key, salt);
+  // Use plain base64 with b64: prefix (no XOR)
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(key);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return `b64:${btoa(binary)}`;
 }
 
 /**
