@@ -99,6 +99,44 @@ function parseTTNError(errorText: string): TTNErrorDetails {
 }
 
 /**
+ * Fetch valid webhook formats from TTN Application Server
+ * Returns array of valid format IDs (e.g., ["json", "protobuf"])
+ */
+async function getValidWebhookFormats(
+  regionalUrl: string,
+  apiKey: string,
+  requestId: string
+): Promise<string[]> {
+  try {
+    const response = await fetchWithTimeout(
+      `${regionalUrl}/api/v3/as/webhook-formats`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+      },
+      5000 // Short timeout for format discovery
+    );
+
+    if (!response.ok) {
+      console.log(`[ttn-provision-org] [${requestId}] Failed to fetch webhook formats: ${response.status}`);
+      return []; // Return empty, caller will use fallback
+    }
+
+    const data = await response.json();
+    // Response format: { formats: { "json": "JSON", "protobuf": "Protocol Buffers" } }
+    const formats = Object.keys(data.formats || {});
+    console.log(`[ttn-provision-org] [${requestId}] Available webhook formats: ${formats.join(", ")}`);
+    return formats;
+  } catch (err) {
+    console.log(`[ttn-provision-org] [${requestId}] Error fetching webhook formats:`, err);
+    return []; // Return empty on error
+  }
+}
+
+/**
  * Check if error indicates "no rights" to an application
  */
 function isNoApplicationRightsError(errorText: string, statusCode: number): boolean {
@@ -305,7 +343,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.12-fix-start-fresh-unconditional-clear-20260105";
+  const BUILD_VERSION = "ttn-provision-org-v5.13-fix-webhook-format-discovery-20260106";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -1833,7 +1871,44 @@ serve(async (req) => {
 
           console.log(`[ttn-provision-org] [${requestId}] Step 4: Creating webhook for ${ttnAppId} (token_source: org_api_key)`);
 
+          // Fetch valid webhook formats from TTN Application Server
+          const validFormats = await getValidWebhookFormats(regionalUrl, orgApiKeyForAppOps, requestId);
+          // Use "json" if available, otherwise first available format, or empty string as fallback
+          let webhookFormat = "";
+          if (validFormats.includes("json")) {
+            webhookFormat = "json";
+          } else if (validFormats.length > 0) {
+            webhookFormat = validFormats[0];
+          }
+          console.log(`[ttn-provision-org] [${requestId}] Step 4: Using webhook format: "${webhookFormat}" (available: ${validFormats.join(", ") || "none discovered"})`);
+
           const webhookSecret = generateWebhookSecret();
+
+          // Build webhook payload - only include format if we have a valid one
+          const webhookPayload: Record<string, unknown> = {
+            ids: {
+              webhook_id: webhookId,
+              application_ids: { application_id: ttnAppId },
+            },
+            base_url: webhookUrl,
+            uplink_message: {},
+            join_accept: {},
+            downlink_ack: {},
+            downlink_nack: {},
+            downlink_sent: {},
+            downlink_failed: {},
+            downlink_queued: {},
+            location_solved: {},
+            service_data: {},
+            headers: {
+              "X-Webhook-Secret": webhookSecret,
+            },
+          };
+          
+          // Only add format if we have a valid one from the server
+          if (webhookFormat) {
+            webhookPayload.format = webhookFormat;
+          }
 
           let createWebhookResponse: Response;
           try {
@@ -1845,28 +1920,7 @@ serve(async (req) => {
                   Authorization: `Bearer ${orgApiKeyForAppOps}`,
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({
-                  webhook: {
-                    ids: {
-                      webhook_id: webhookId,
-                      application_ids: { application_id: ttnAppId },
-                    },
-                    base_url: webhookUrl,
-                    format: "json",
-                    uplink_message: {},
-                    join_accept: {},
-                    downlink_ack: {},
-                    downlink_nack: {},
-                    downlink_sent: {},
-                    downlink_failed: {},
-                    downlink_queued: {},
-                    location_solved: {},
-                    service_data: {},
-                    headers: {
-                      "X-Webhook-Secret": webhookSecret,
-                    },
-                  },
-                }),
+                body: JSON.stringify({ webhook: webhookPayload }),
               }
             );
           } catch (fetchErr) {
@@ -1910,7 +1964,7 @@ serve(async (req) => {
                       application_ids: { application_id: ttnAppId },
                     },
                     base_url: webhookUrl,
-                    format: "json",
+                    ...(webhookFormat ? { format: webhookFormat } : {}),
                     uplink_message: {},
                     join_accept: {},
                     headers: {
@@ -1918,7 +1972,9 @@ serve(async (req) => {
                     },
                   },
                   field_mask: {
-                    paths: ["base_url", "format", "uplink_message", "join_accept", "headers"],
+                    paths: webhookFormat 
+                      ? ["base_url", "format", "uplink_message", "join_accept", "headers"]
+                      : ["base_url", "uplink_message", "join_accept", "headers"],
                   },
                 }),
               }
