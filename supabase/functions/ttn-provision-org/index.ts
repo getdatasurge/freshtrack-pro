@@ -1970,29 +1970,29 @@ serve(async (req) => {
           console.log(`[ttn-provision-org] [${requestId}] Step 3B: Skipping (already attempted)`);
         }
 
-        // ============ STEP 4: Create Webhook (using App API Key) ============
+        // ============ STEP 4: Create Webhook (using Org API Key - confirmed working via terminal testing) ============
         const step4Start = Date.now();
         if (!completedSteps.webhook_created) {
-          // Validate we have the App API Key for webhook creation
-          if (!appApiKeyForWebhook) {
-            // Try to retrieve from database if not captured in Step 3
-            const { data: ttnConnForAppKey } = await supabase
+          // Use Org API Key for webhook creation (confirmed working via terminal testing)
+          if (!orgApiKeyForAppOps) {
+            // Try to retrieve from database if not captured in Step 1B
+            const { data: ttnConnForOrgKey } = await supabase
               .from("ttn_connections")
-              .select("ttn_api_key_encrypted")
+              .select("ttn_org_api_key_encrypted")
               .eq("organization_id", organization_id)
               .single();
             
-            if (ttnConnForAppKey?.ttn_api_key_encrypted) {
-              appApiKeyForWebhook = deobfuscateKey(ttnConnForAppKey.ttn_api_key_encrypted, encryptionSalt);
-              console.log(`[ttn-provision-org] [${requestId}] Step 4: Retrieved App API Key from DB (key_last4: ${getLast4(appApiKeyForWebhook)})`);
+            if (ttnConnForOrgKey?.ttn_org_api_key_encrypted) {
+              orgApiKeyForAppOps = deobfuscateKey(ttnConnForOrgKey.ttn_org_api_key_encrypted, encryptionSalt);
+              console.log(`[ttn-provision-org] [${requestId}] Step 4: Retrieved Org API Key from DB (key_last4: ${getLast4(orgApiKeyForAppOps)})`);
             }
           }
           
-          if (!appApiKeyForWebhook) {
-            console.error(`[ttn-provision-org] [${requestId}] Step 4: App API Key not available for webhook creation`);
+          if (!orgApiKeyForAppOps) {
+            console.error(`[ttn-provision-org] [${requestId}] Step 4: Org API Key not available for webhook creation`);
             return buildResponse({
               success: false,
-              error: "App API Key not found - required for webhook creation. Try 'Start Fresh' to re-provision.",
+              error: "Org API Key not found - required for webhook creation. Try 'Start Fresh' to re-provision.",
               step: "create_webhook",
               retryable: true,
               request_id: requestId,
@@ -2000,18 +2000,14 @@ serve(async (req) => {
           }
 
           const webhookId = "frostguard-webhook";
-          const ttnEndpoint = `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}`;
+          // Use PUT method with webhook_id in URL path (confirmed working via terminal testing)
+          const ttnEndpoint = `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}/${webhookId}`;
           await logProvisioningStep(supabase, organization_id, "create_webhook", "started", 
-            `Creating webhook (token_source: app_api_key, key_last4: ${getLast4(appApiKeyForWebhook)})`, 
+            `Creating webhook via PUT (token_source: org_api_key, key_last4: ${getLast4(orgApiKeyForAppOps)})`, 
             { webhook_url: webhookUrl, endpoint: ttnEndpoint }, undefined, requestId, undefined, undefined, undefined, ttnEndpoint);
           await updateProvisioningState(supabase, organization_id, { step: "create_webhook" });
 
-          console.log(`[ttn-provision-org] [${requestId}] Step 4: Creating webhook for ${ttnAppId} (token_source: app_api_key, key_last4: ${getLast4(appApiKeyForWebhook)})`);
-
-          // Hardcode webhook format to "json" - universally available on all TTN clusters
-          // This avoids race conditions with newly created App API Keys and format discovery
-          const webhookFormat = "json";
-          console.log(`[ttn-provision-org] [${requestId}] Step 4: Using hardcoded webhook format: "json"`);
+          console.log(`[ttn-provision-org] [${requestId}] Step 4: Creating webhook for ${ttnAppId} via PUT (token_source: org_api_key, key_last4: ${getLast4(orgApiKeyForAppOps)})`);
 
           const webhookSecret = generateWebhookSecret();
 
@@ -2027,43 +2023,46 @@ serve(async (req) => {
             });
           }
 
-          // Build webhook payload with hardcoded "json" format
+          // Build webhook payload with field_mask (confirmed working via terminal testing)
           const webhookPayload = {
-            ids: {
-              webhook_id: webhookId,
-              application_ids: { application_id: ttnAppId },
+            webhook: {
+              ids: {
+                application_ids: { application_id: ttnAppId },
+                webhook_id: webhookId,
+              },
+              format: "json",
+              base_url: webhookUrl,
+              headers: {
+                "x-webhook-secret": webhookSecret,
+              },
+              uplink_message: {},
             },
-            base_url: webhookUrl,
-            format: "json",
-            uplink_message: {},
-            join_accept: {},
-            downlink_ack: {},
-            downlink_nack: {},
-            downlink_sent: {},
-            downlink_failed: {},
-            downlink_queued: {},
-            location_solved: {},
-            service_data: {},
-            headers: {
-              "X-Webhook-Secret": webhookSecret,
+            field_mask: {
+              paths: [
+                "format",
+                "base_url",
+                "headers",
+                "uplink_message",
+              ],
             },
           };
 
           // DEBUG: Log exact payload being sent
           console.log(`[ttn-provision-org] [${requestId}] Step 4: base_url value: "${webhookUrl}" (type: ${typeof webhookUrl})`);
-          console.log(`[ttn-provision-org] [${requestId}] Step 4: Webhook payload:`, JSON.stringify({ webhook: webhookPayload }));
+          console.log(`[ttn-provision-org] [${requestId}] Step 4: Webhook payload (PUT method):`, JSON.stringify(webhookPayload));
 
           let createWebhookResponse: Response;
           try {
+            // Use PUT method (idempotent - creates or updates)
             createWebhookResponse = await fetchWithTimeout(
               ttnEndpoint,
               {
-                method: "POST",
+                method: "PUT",
                 headers: {
-                  Authorization: `Bearer ${appApiKeyForWebhook}`,
+                  Authorization: `Bearer ${orgApiKeyForAppOps}`,
                   "Content-Type": "application/json",
                 },
-                body: JSON.stringify({ webhook: webhookPayload }),
+                body: JSON.stringify(webhookPayload),
               }
             );
           } catch (fetchErr) {
@@ -2087,40 +2086,7 @@ serve(async (req) => {
             });
           }
 
-          // Handle 409 (already exists) by trying PUT update
-          if (createWebhookResponse.status === 409) {
-            console.log(`[ttn-provision-org] [${requestId}] Webhook exists, updating...`);
-            const updateEndpoint = `${regionalUrl}/api/v3/as/webhooks/${ttnAppId}/${webhookId}`;
-            
-            createWebhookResponse = await fetchWithTimeout(
-              updateEndpoint,
-              {
-                method: "PUT",
-                headers: {
-                  Authorization: `Bearer ${appApiKeyForWebhook}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  webhook: {
-                    ids: {
-                      webhook_id: webhookId,
-                      application_ids: { application_id: ttnAppId },
-                    },
-                    base_url: webhookUrl,
-                    format: "json",
-                    uplink_message: {},
-                    join_accept: {},
-                    headers: {
-                      "X-Webhook-Secret": webhookSecret,
-                    },
-                  },
-                  field_mask: {
-                    paths: ["base_url", "format", "uplink_message", "join_accept", "headers"],
-                  },
-                }),
-              }
-            );
-          }
+          // PUT is idempotent - no need for 409 conflict handling
 
           if (!createWebhookResponse.ok) {
             const errorText = await createWebhookResponse.text();
