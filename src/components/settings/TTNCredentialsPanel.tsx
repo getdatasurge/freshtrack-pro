@@ -74,7 +74,6 @@ const PROVISIONING_STEPS = [
 export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCredentialsPanelProps) {
   const [credentials, setCredentials] = useState<TTNCredentials | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRegenerating, setIsRegenerating] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isStartingFresh, setIsStartingFresh] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
@@ -125,38 +124,11 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
     fetchCredentials();
   }, [fetchCredentials]);
 
-  const handleRegenerateAll = async () => {
-    if (!organizationId) return;
-
-    setIsRegenerating(true);
-    try {
-      // Force network-verified token refresh before invoking
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        toast.error("Session expired - please sign in again");
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke("manage-ttn-settings", {
-        body: { 
-          action: "regenerate_all",
-          organization_id: organizationId 
-        },
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      toast.success("All TTN credentials regenerated successfully");
-      setCredentials(data);
-      setShowConfirmDialog(false);
-      setConfirmChecked(false);
-    } catch (err: any) {
-      console.error("Failed to regenerate credentials:", err);
-      toast.error(err.message || "Failed to regenerate credentials");
-    } finally {
-      setIsRegenerating(false);
-    }
+  // handleStartFreshWithConfirm - called from confirmation dialog
+  const handleStartFreshWithConfirm = async () => {
+    setShowConfirmDialog(false);
+    setConfirmChecked(false);
+    await handleStartFresh();
   };
 
   const handleRetryProvisioning = async () => {
@@ -560,15 +532,16 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                   Check Status
                 </Button>
 
-                {!readOnly && (
+                {/* Start Fresh - always available when provisioned */}
+                {!readOnly && credentials?.ttn_application_id && credentials?.provisioning_status === 'ready' && (
                   <Button
                     variant="outline"
                     onClick={() => setShowConfirmDialog(true)}
-                    disabled={isRegenerating || !credentials?.ttn_application_id}
+                    disabled={isStartingFresh || isLoading}
                     className="gap-2"
                   >
-                    <RefreshCw className={`h-4 w-4 ${isRegenerating ? "animate-spin" : ""}`} />
-                    Regenerate All
+                    <RefreshCw className={`h-4 w-4 ${isStartingFresh ? "animate-spin" : ""}`} />
+                    Start Fresh
                   </Button>
                 )}
 
@@ -708,33 +681,33 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
         </CardContent>
       </Card>
 
-      {/* Regenerate Confirmation Dialog */}
+      {/* Start Fresh Confirmation Dialog */}
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-warning" />
-              Regenerate All TTN Credentials?
+              Start Fresh?
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-3">
-              <p>This will regenerate all TTN API keys and webhook secrets. This action:</p>
+              <p>This will deprovision and re-provision all TTN resources. This action:</p>
               <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>Creates a new TTN application with fresh credentials</li>
                 <li>Invalidates all existing API keys immediately</li>
                 <li>May temporarily interrupt active sensor connections</li>
-                <li>Will break any external integrations using current credentials</li>
-                <li>Updates the webhook configuration on TTN automatically</li>
+                <li>All devices will need to rejoin the new application</li>
               </ul>
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           <div className="flex items-start gap-3 py-4">
             <Checkbox
-              id="confirm-regenerate"
+              id="confirm-start-fresh"
               checked={confirmChecked}
               onCheckedChange={(checked) => setConfirmChecked(checked === true)}
             />
             <label
-              htmlFor="confirm-regenerate"
+              htmlFor="confirm-start-fresh"
               className="text-sm text-muted-foreground cursor-pointer"
             >
               I understand this action cannot be undone and may cause temporary service interruption
@@ -746,17 +719,17 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleRegenerateAll}
-              disabled={!confirmChecked || isRegenerating}
+              onClick={handleStartFreshWithConfirm}
+              disabled={!confirmChecked || isStartingFresh}
               className="bg-warning text-warning-foreground hover:bg-warning/90"
             >
-              {isRegenerating ? (
+              {isStartingFresh ? (
                 <>
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Regenerating...
+                  Starting Fresh...
                 </>
               ) : (
-                "Regenerate All"
+                "Start Fresh"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
