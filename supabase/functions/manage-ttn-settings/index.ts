@@ -282,6 +282,27 @@ Deno.serve(async (req: Request) => {
       if (provisioningStatus === "not_started") provisioningStatus = "idle";
       if (provisioningStatus === "completed") provisioningStatus = "ready";
 
+      // Check if all steps are actually complete in step_details but status is stale
+      const stepDetails = (settings.provisioning_step_details || {}) as Record<string, unknown>;
+      const allStepsComplete = stepDetails.webhook_created === true &&
+        stepDetails.app_api_key_created === true &&
+        stepDetails.application_created === true;
+      
+      // Auto-correct stale provisioning_status if all steps are complete
+      if (allStepsComplete && provisioningStatus === 'failed') {
+        console.log(`[manage-ttn-settings] [${requestId}] Auto-correcting stale status: all steps complete but status was 'failed'`);
+        provisioningStatus = 'ready';
+        // Also update the database to fix the stale status
+        await supabaseAdmin
+          .from("ttn_connections")
+          .update({ 
+            provisioning_status: 'ready',
+            provisioning_step: null,
+            provisioning_error: null,
+          })
+          .eq("organization_id", organizationId);
+      }
+
       return new Response(
         JSON.stringify({
           organization_name: org?.name || "Unknown",
@@ -298,6 +319,7 @@ Deno.serve(async (req: Request) => {
           // New state machine fields
           provisioning_status: provisioningStatus,
           provisioning_step: settings.provisioning_step || settings.provisioning_last_step || null,
+          provisioning_step_details: stepDetails,
           provisioning_error: settings.provisioning_error,
           provisioning_attempt_count: settings.provisioning_attempt_count || 0,
           last_http_status: settings.last_http_status || null,
