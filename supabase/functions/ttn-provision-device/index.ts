@@ -14,7 +14,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v6-perorg-20251231";
+  const BUILD_VERSION = "ttn-provision-device-v7-au1-region-20260108";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -223,7 +223,7 @@ serve(async (req) => {
           description: sensor.description || `FreshTracker ${sensor.sensor_type} sensor`,
           lorawan_version: "MAC_V1_0_3",
           lorawan_phy_version: "PHY_V1_0_3_REV_A",
-          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : "US_902_928_FSB_2",
+          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2",
           supports_join: true,
         },
         field_mask: {
@@ -312,7 +312,7 @@ serve(async (req) => {
           },
           lorawan_version: "MAC_V1_0_3",
           lorawan_phy_version: "PHY_V1_0_3_REV_A",
-          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : "US_902_928_FSB_2",
+          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2",
           supports_join: true,
         },
         field_mask: {
