@@ -25,8 +25,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // ============================================================================
 
 const TTN_BASE_URL = "https://eu1.cloud.thethings.network";
-const TTN_REGION = "eu1";
-const FUNCTION_VERSION = "ttn-bootstrap-v2.8-validate-action-20260108";
+const TTN_REGION = "eu1"; // Default region
+const FUNCTION_VERSION = "ttn-bootstrap-v2.9-region-param-20260108";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -67,6 +67,7 @@ interface ProvisioningResult {
   ttn_app_api_key?: string;
   webhook_id?: string;
   webhook_secret?: string;
+  region?: string;
   version: string;
 }
 
@@ -1055,6 +1056,10 @@ async function runProvisioning(
   //                                                                          
   // SUCCESS: Save to database
   //                                                                          
+  // Use region from request, fallback to default
+  const effectiveRegion = request.cluster || TTN_REGION;
+  console.log(`[DB] Saving with region: ${effectiveRegion}`);
+
   try {
     // Note: ttn_settings table may not exist - this is a legacy reference
     // The primary storage is ttn_connections managed by manage-ttn-settings
@@ -1063,7 +1068,7 @@ async function runProvisioning(
         org_id: request.customer_id || currentOrgId,
         site_id: request.site_id || null,
         enabled: true,
-        cluster: TTN_REGION,
+        cluster: effectiveRegion,
         application_id: sanitizedAppId,
         api_key: appApiKey, // Store app API key for webhook auth
         webhook_secret: webhookSecret,
@@ -1101,6 +1106,7 @@ async function runProvisioning(
     ttn_app_api_key: appApiKey,
     webhook_id: webhookId,
     webhook_secret: webhookSecret,
+    region: effectiveRegion,
     version: FUNCTION_VERSION,
   };
 }
