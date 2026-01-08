@@ -26,7 +26,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const TTN_BASE_URL = "https://eu1.cloud.thethings.network";
 const TTN_REGION = "eu1";
-const FUNCTION_VERSION = "ttn-bootstrap-v2.7-hybrid-key-chain-20260105";
+const FUNCTION_VERSION = "ttn-bootstrap-v2.8-validate-action-20260108";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,8 +38,12 @@ const corsHeaders = {
 // ============================================================================
 
 interface ProvisioningRequest {
-  action: "preflight" | "provision" | "start_fresh" | "status";
+  action: "preflight" | "provision" | "start_fresh" | "status" | "validate_only";
   org_id: string;
+  organization_id?: string;
+  cluster?: string;
+  application_id?: string;
+  api_key?: string;
   customer_id?: string;
   site_id?: string;
   force_new_org?: boolean;
@@ -1116,9 +1120,16 @@ serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         ok: true,
-        status: "healthy",
+        status: "ok",
         function: "ttn-bootstrap",
         version: FUNCTION_VERSION,
+        capabilities: {
+          validate_only: true,
+          preflight: true,
+          provision: true,
+          start_fresh: true,
+          status: true,
+        },
         timestamp: new Date().toISOString(),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -1264,6 +1275,52 @@ serve(async (req: Request) => {
             api_key_entity_type: validation.authInfo?.entityType,
             api_key_user_id: validation.authInfo?.userId,
             api_key_rights_count: validation.authInfo?.rights.length,
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      case "validate_only": {
+        // Validate API key and application access without provisioning
+        console.log(`[validate_only] Validating configuration for org: ${body.organization_id || body.org_id}`);
+        
+        const apiKeyToValidate = body.api_key || adminApiKey;
+        const validation = await validateApiKey(apiKeyToValidate);
+        
+        if (!validation.valid) {
+          return new Response(
+            JSON.stringify({
+              valid: false,
+              ok: false,
+              error: validation.error,
+              error_category: validation.errorCategory,
+              version: FUNCTION_VERSION,
+            }),
+            {
+              status: 200, // Return 200 with valid=false for application-level errors
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+        
+        // Return successful validation with permissions info
+        return new Response(
+          JSON.stringify({
+            valid: true,
+            ok: true,
+            message: "Configuration validated successfully",
+            permissions: {
+              rights: validation.authInfo?.rights || [],
+              entity_type: validation.authInfo?.entityType,
+              user_id: validation.authInfo?.userId,
+            },
+            region: TTN_REGION,
+            base_url: TTN_BASE_URL,
+            request_id: crypto.randomUUID().slice(0, 8),
+            version: FUNCTION_VERSION,
           }),
           {
             status: 200,

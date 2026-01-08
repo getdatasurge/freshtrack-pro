@@ -32,7 +32,7 @@ function safeDecrypt(encrypted: string | null, salt: string): string | null {
 }
 
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v7-dev-rate-limit-bypass-20260106";
+  const BUILD_VERSION = "manage-ttn-settings-v7.1-fix-status-check-20260108";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[manage-ttn-settings] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
@@ -605,11 +605,15 @@ Deno.serve(async (req: Request) => {
           .eq("organization_id", organizationId)
           .maybeSingle();
 
-        if (!existingCheck?.ttn_application_id || existingCheck.provisioning_status !== "completed") {
+        // Accept both "completed" and "ready" as valid completed states
+        const validStatuses = ["completed", "ready"];
+        if (!existingCheck?.ttn_application_id || !validStatuses.includes(existingCheck.provisioning_status || "")) {
           return new Response(
             JSON.stringify({ 
               error: "TTN application required", 
-              details: "You must provision a TTN application before enabling TTN integration." 
+              details: "You must provision a TTN application before enabling TTN integration.",
+              requires_provisioning: true,
+              current_status: existingCheck?.provisioning_status || "not_started",
             }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
