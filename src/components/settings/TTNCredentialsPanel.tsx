@@ -34,6 +34,15 @@ interface TTNCredentials {
   webhook_url: string | null;
   provisioning_status: 'idle' | 'provisioning' | 'ready' | 'failed' | string | null;
   provisioning_step: string | null;
+  provisioning_step_details: {
+    preflight_done?: boolean;
+    organization_created?: boolean;
+    org_api_key_created?: boolean;
+    application_created?: boolean;
+    app_rights_verified?: boolean;
+    app_api_key_created?: boolean;
+    webhook_created?: boolean;
+  } | null;
   provisioning_error: string | null;
   provisioning_attempt_count: number | null;
   last_http_status: number | null;
@@ -326,16 +335,39 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
 
   const getStepStatus = (stepId: string) => {
     if (!credentials) return 'pending';
-    const currentStep = credentials.provisioning_step;
     const status = credentials.provisioning_status;
+    const stepDetails = credentials.provisioning_step_details;
     
-    const stepIndex = PROVISIONING_STEPS.findIndex(s => s.id === stepId);
-    const currentIndex = PROVISIONING_STEPS.findIndex(s => s.id === currentStep);
-    
+    // If overall status is ready, all steps are complete
     if (status === 'ready' || status === 'completed') return 'success';
+    
+    // Map step IDs to step_details keys
+    const stepToDetailKey: Record<string, keyof NonNullable<typeof stepDetails>> = {
+      'preflight': 'preflight_done',
+      'create_organization': 'organization_created',
+      'create_org_api_key': 'org_api_key_created',
+      'create_application': 'application_created',
+      'verify_application_rights': 'app_rights_verified',
+      'create_app_api_key': 'app_api_key_created',
+      'create_webhook': 'webhook_created',
+    };
+    
+    // Check step_details for completion status
+    const detailKey = stepToDetailKey[stepId];
+    if (detailKey && stepDetails?.[detailKey]) {
+      return 'success';
+    }
+    
+    // 'complete' step is success only if overall status is ready
+    if (stepId === 'complete') {
+      return status === 'ready' ? 'success' : 'pending';
+    }
+    
+    // Check if this is the currently failing step
+    const currentStep = credentials.provisioning_step;
     if (status === 'failed' && currentStep === stepId) return 'failed';
-    if (stepIndex < currentIndex) return 'success';
-    if (stepIndex === currentIndex && status === 'provisioning') return 'running';
+    if (status === 'provisioning' && currentStep === stepId) return 'running';
+    
     return 'pending';
   };
 
