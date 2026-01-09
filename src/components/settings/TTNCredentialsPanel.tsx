@@ -143,12 +143,23 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
-        body: { 
-          action: "retry",
-          organization_id: organizationId,
-        },
-      });
+      // If status is failed, use manage-ttn-settings to reset state first
+      // Otherwise call ttn-provision-org directly
+      const isFailed = credentials?.provisioning_status === 'failed';
+      
+      const { data, error } = isFailed 
+        ? await supabase.functions.invoke("manage-ttn-settings", {
+            body: { 
+              action: "retry_provisioning",
+              organization_id: organizationId,
+            },
+          })
+        : await supabase.functions.invoke("ttn-provision-org", {
+            body: { 
+              action: "retry",
+              organization_id: organizationId,
+            },
+          });
 
       // Handle transport errors
       if (error) {
@@ -172,7 +183,7 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
         return;
       }
 
-      toast.success("Provisioning started");
+      toast.success("Provisioning retry initiated");
       setTimeout(fetchCredentials, 2000);
     } catch (err: any) {
       console.error("Failed to retry provisioning:", err);
