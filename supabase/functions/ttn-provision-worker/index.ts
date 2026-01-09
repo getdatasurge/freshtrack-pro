@@ -19,7 +19,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const BUILD_VERSION = "ttn-provision-worker-v1.0-20250103";
+const BUILD_VERSION = "ttn-provision-worker-v3-eu1-default-20260109";
 
 // Error codes that indicate permanent failure (no retry)
 const PERMANENT_ERROR_CODES = [
@@ -129,8 +129,8 @@ serve(async (req) => {
             body: JSON.stringify({
               action: "provision",
               organization_id: job.organization_id,
-              // Use nam1 as default, ttn-provision-org will check ttn_connections for saved region
-              ttn_region: "nam1",
+              // Use eu1 as default, ttn-provision-org will check ttn_connections for saved region
+              ttn_region: "eu1",
             }),
           }
         );
