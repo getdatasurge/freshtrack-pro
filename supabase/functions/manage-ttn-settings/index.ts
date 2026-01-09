@@ -32,7 +32,7 @@ function safeDecrypt(encrypted: string | null, salt: string): string | null {
 }
 
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v7.2-eu1-default-20260109";
+  const BUILD_VERSION = "manage-ttn-settings-v7.3-retry-provisioning-20260109";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[manage-ttn-settings] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
@@ -331,6 +331,86 @@ Deno.serve(async (req: Request) => {
           last_ttn_error_name: settings.last_ttn_error_name || null,
           last_ttn_correlation_id: settings.last_ttn_correlation_id || null,
           credentials_last_rotated_at: settings.credentials_last_rotated_at,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // RETRY_PROVISIONING action - Reset failed state and re-invoke ttn-provision-org
+    if (action === "retry_provisioning") {
+      console.log(`[manage-ttn-settings] [${requestId}] RETRY_PROVISIONING for org: ${organizationId}`);
+
+      // Get current provisioning state
+      const { data: current } = await supabaseAdmin
+        .from("ttn_connections")
+        .select("provisioning_status, provisioning_error, ttn_region")
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+
+      if (!current) {
+        return new Response(
+          JSON.stringify({ error: "TTN not configured for this organization" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (current.provisioning_status !== "failed") {
+        return new Response(
+          JSON.stringify({ 
+            error: "Retry only available for failed provisioning",
+            current_status: current.provisioning_status,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Reset state to pending
+      await supabaseAdmin
+        .from("ttn_connections")
+        .update({
+          provisioning_status: "pending",
+          provisioning_error: null,
+          provisioning_can_retry: true,
+        })
+        .eq("organization_id", organizationId);
+
+      // Log the retry attempt
+      await supabaseAdmin.from("event_logs").insert({
+        organization_id: organizationId,
+        event_type: "ttn.provisioning.retry_requested",
+        category: "settings",
+        severity: "info",
+        title: "TTN Provisioning Retry Requested",
+        actor_id: user.id,
+        event_data: { 
+          request_id: requestId,
+          previous_error: current.provisioning_error,
+        },
+      });
+
+      // Invoke ttn-provision-org with retry action
+      const provisionResult = await fetch(
+        `${supabaseUrl}/functions/v1/ttn-provision-org`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": authHeader,
+          },
+          body: JSON.stringify({
+            action: "retry",
+            organization_id: organizationId,
+          }),
+        }
+      );
+
+      const provisionData = await provisionResult.json();
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: "Provisioning retry initiated",
+          result: provisionData,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
