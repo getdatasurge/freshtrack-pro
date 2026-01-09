@@ -104,7 +104,15 @@ export const ORGANIZATION_KEY_RIGHTS = [
 ];
 
 // ============================================================================
-// APPLICATION-SCOPED API KEY RIGHTS
+// APPLICATION-SCOPED API KEY RIGHTS (ALL)
+// Grants full application access - simpler and future-proof
+// ============================================================================
+export const APPLICATION_KEY_RIGHTS_ALL = [
+  "RIGHT_APPLICATION_ALL",
+];
+
+// ============================================================================
+// APPLICATION-SCOPED API KEY RIGHTS (Granular - kept for reference)
 // Output artifact: created by provisioning, used for runtime app operations
 // ============================================================================
 export const APPLICATION_KEY_RIGHTS = [
@@ -118,7 +126,15 @@ export const APPLICATION_KEY_RIGHTS = [
   "RIGHT_APPLICATION_SETTINGS_API_KEYS",
 ];
 
-// Complete set of gateway rights for gateway API keys
+// ============================================================================
+// GATEWAY-SCOPED API KEY RIGHTS (ALL)
+// Grants full gateway access - simpler and future-proof
+// ============================================================================
+export const GATEWAY_KEY_RIGHTS_ALL = [
+  "RIGHT_GATEWAY_ALL",
+];
+
+// Complete set of gateway rights for gateway API keys (Granular - kept for reference)
 export const GATEWAY_KEY_RIGHTS = [
   "RIGHT_GATEWAY_INFO",
   "RIGHT_GATEWAY_SETTINGS_BASIC",

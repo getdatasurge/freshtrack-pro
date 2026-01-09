@@ -38,9 +38,9 @@ import {
   getLast4,
 } from "../_shared/ttnConfig.ts";
 import {
-  APPLICATION_KEY_RIGHTS,
-  ORGANIZATION_KEY_RIGHTS,
-  GATEWAY_KEY_RIGHTS,
+  APPLICATION_KEY_RIGHTS_ALL,
+  ORGANIZATION_KEY_RIGHTS_ALL,
+  GATEWAY_KEY_RIGHTS_ALL,
   validateMainUserApiKey,
 } from "../_shared/ttnPermissions.ts";
 
@@ -344,7 +344,7 @@ function buildResponse(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-org-v5.23-hardcode-json-format-20260106";
+  const BUILD_VERSION = "ttn-provision-org-v5.26-grant-all-rights-20260109";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[ttn-provision-org] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-org] [${requestId}] Token source for ALL steps: ${TOKEN_SOURCE}`);
@@ -1209,7 +1209,7 @@ serve(async (req) => {
                 },
                 body: JSON.stringify({
                   name: `FrostGuard Org Key - ${org.slug}`,
-                  rights: ORGANIZATION_KEY_RIGHTS,
+                  rights: ORGANIZATION_KEY_RIGHTS_ALL,
                 }),
               }
             );
@@ -1251,7 +1251,7 @@ serve(async (req) => {
                   },
                   body: JSON.stringify({
                     name: uniqueKeyName,
-                    rights: ORGANIZATION_KEY_RIGHTS,
+                    rights: ORGANIZATION_KEY_RIGHTS_ALL,
                   }),
                 }
               );
@@ -1761,7 +1761,7 @@ serve(async (req) => {
                 },
                 body: JSON.stringify({
                   name: "FrostGuard Integration",
-                  rights: APPLICATION_KEY_RIGHTS,
+                  rights: APPLICATION_KEY_RIGHTS_ALL,
                 }),
               }
             );
@@ -1908,7 +1908,7 @@ serve(async (req) => {
                 },
                 body: JSON.stringify({
                   name: `FrostGuard Gateway Key - ${org.slug}`,
-                  rights: GATEWAY_KEY_RIGHTS,
+                  rights: GATEWAY_KEY_RIGHTS_ALL,
                 }),
               }
             );
