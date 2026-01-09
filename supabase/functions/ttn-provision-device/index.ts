@@ -14,7 +14,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v7-au1-region-20260108";
+  const BUILD_VERSION = "ttn-provision-device-v8-cluster-validation-20260109";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -145,7 +145,11 @@ serve(async (req) => {
     }
 
     const deviceId = `sensor-${sensor.dev_eui.toLowerCase()}`;
+    const frequencyPlan = ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2";
+    
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
+    console.log(`[ttn-provision-device] Region from config: ${ttnConfig.region}`);
+    console.log(`[ttn-provision-device] Frequency plan: ${frequencyPlan}`);
     console.log(`[ttn-provision-device] Identity Server URL: ${ttnConfig.identityBaseUrl}`);
     console.log(`[ttn-provision-device] Regional Server URL: ${ttnConfig.regionalBaseUrl}`);
 
@@ -366,6 +370,40 @@ serve(async (req) => {
       if (!asResponse.ok) {
         const errorText = await asResponse.text();
         console.warn(`[ttn-provision-device] AS registration warning: ${errorText}`);
+      }
+
+      // Step 5: Verify device exists in correct cluster
+      console.log(`[ttn-provision-device] Step 5: Verifying device in ${ttnConfig.region?.toUpperCase() || 'EU1'} cluster`);
+
+      const verifyUrl = `${ttnConfig.identityBaseUrl}/api/v3/applications/${ttnAppId}/devices/${deviceId}`;
+      const verifyResponse = await ttnIsFetch(`/api/v3/applications/${ttnAppId}/devices/${deviceId}`, {
+        method: "GET",
+      });
+
+      if (!verifyResponse.ok) {
+        const errorText = await verifyResponse.text();
+        console.error(`[ttn-provision-device] Cluster verification failed: ${verifyResponse.status} - ${errorText}`);
+
+        // Check for "other cluster" indicator
+        if (errorText.includes("other_cluster") || errorText.includes("Other cluster")) {
+          await supabase
+            .from("lora_sensors")
+            .update({ status: "fault" })
+            .eq("id", sensor_id);
+
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "TTN resource created in wrong cluster",
+              details: `Device was provisioned to the wrong TTN cluster. ${ttnConfig.region?.toUpperCase() || 'EU1'} is required.`,
+              hint: "The device needs to be deleted and re-provisioned to the correct cluster",
+              cluster_error: true,
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        console.log(`[ttn-provision-device] Device verified in ${ttnConfig.region?.toUpperCase() || 'EU1'} cluster`);
       }
 
       // Update sensor with TTN info

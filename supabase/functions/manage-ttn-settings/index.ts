@@ -32,7 +32,7 @@ function safeDecrypt(encrypted: string | null, salt: string): string | null {
 }
 
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v7.1-fix-status-check-20260108";
+  const BUILD_VERSION = "manage-ttn-settings-v7.2-eu1-default-20260109";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[manage-ttn-settings] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
@@ -161,7 +161,7 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({
             exists: false,
             is_enabled: false,
-            ttn_region: "nam1",
+            ttn_region: "eu1",
             ttn_application_id: null,
             provisioning_status: "not_started",
             has_api_key: false,
@@ -189,7 +189,7 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           exists: true,
           is_enabled: settings.is_enabled,
-          ttn_region: settings.ttn_region || "nam1",
+          ttn_region: settings.ttn_region || "eu1",
           ttn_application_id: settings.ttn_application_id,
           ttn_application_name: settings.ttn_application_name,
           // New state machine fields
@@ -665,7 +665,7 @@ Deno.serve(async (req: Request) => {
           .insert({
             organization_id: organizationId,
             created_by: user.id,
-            ttn_region: "nam1",
+            ttn_region: "eu1",
             ...dbUpdates,
           })
           .select()

@@ -78,7 +78,7 @@ serve(async (req) => {
     // Get organization's TTN configuration
     let ttnConfig: TtnConfig = {
       enabled: false,
-      cluster: "nam1",
+      cluster: "eu1",
       application_id: null,
       api_key: null,
       api_key_last4: null,
@@ -106,7 +106,7 @@ serve(async (req) => {
 
         ttnConfig = {
           enabled: ttnConnection.is_enabled || false,
-          cluster: ttnConnection.ttn_region || "nam1",
+          cluster: ttnConnection.ttn_region || "eu1",
           application_id: ttnConnection.ttn_application_id || null,
           api_key: fullApiKey,
           api_key_last4: ttnConnection.ttn_api_key_last4 || null,
