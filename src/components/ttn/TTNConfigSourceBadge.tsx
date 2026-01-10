@@ -43,11 +43,11 @@ const STATE_CONFIG = {
     description: 'Configuration validated successfully',
   },
   canonical: {
-    label: 'Canonical',
+    label: 'Saved',
     variant: 'secondary' as const,
     icon: Database,
     color: 'text-primary',
-    description: 'Synced from FrostGuard backend',
+    description: 'Configuration persisted to database',
   },
   drifted: {
     label: 'Config Drift',
