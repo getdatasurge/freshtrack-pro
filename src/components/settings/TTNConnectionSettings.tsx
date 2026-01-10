@@ -212,7 +212,7 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
         if (status === 'not_started') status = 'idle';
         if (status === 'completed') status = 'ready';
         
-        setSettings({
+        const loadedSettings: TTNSettings = {
           exists: data.exists ?? false,
           is_enabled: data.is_enabled ?? false,
           ttn_region: data.ttn_region ?? null,
@@ -242,21 +242,41 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
           last_connection_test_result: data.last_connection_test_result ?? null,
           last_updated_source: data.last_updated_source ?? null,
           last_test_source: data.last_test_source ?? null,
-        });
+        };
+        
+        setSettings(loadedSettings);
         setRegion(data.ttn_region || "nam1");
         setIsEnabled(data.is_enabled ?? false);
+        
         // Set application ID for the form
         if (data.ttn_application_id) {
           setNewApplicationId(data.ttn_application_id);
+        }
+        
+        // Mark context as canonical if we have valid settings from DB
+        if (data.exists && data.ttn_application_id) {
+          const hash = hashConfigValues({
+            cluster: data.ttn_region || 'nam1',
+            application_id: data.ttn_application_id,
+            api_key_last4: data.api_key_last4,
+            is_enabled: data.is_enabled,
+          });
+          console.log('[TTN Config] Loaded from DB, setting canonical', { 
+            org_id: organizationId, 
+            app_id: data.ttn_application_id,
+            hash 
+          });
+          setCanonical(hash);
         }
       }
     } catch (err) {
       console.error("Error loading TTN settings:", err);
       toast.error("Failed to load TTN settings");
+      setInvalid("Failed to load TTN settings");
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId]);
+  }, [organizationId, setCanonical, setInvalid]);
 
   // Check bootstrap service health on mount
   const checkBootstrapHealth = useCallback(async () => {
@@ -443,6 +463,16 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
 
       if (data?.success) {
         toast.success("TTN Application provisioned successfully!");
+        
+        // Set canonical state after successful provisioning
+        const hash = hashConfigValues({
+          cluster: region,
+          application_id: data.application_id || settings?.ttn_application_id,
+          is_enabled: true,
+        });
+        console.log('[TTN Config] Provisioning complete, setting canonical', { hash });
+        setCanonical(hash);
+        
         await loadSettings();
       } else {
         // Show more helpful error messages
@@ -588,9 +618,20 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
 
       setIsEnabled(enabled);
       toast.success(enabled ? "TTN integration enabled" : "TTN integration disabled");
+      
+      // Update canonical state with new enabled value
+      const hash = hashConfigValues({
+        cluster: region,
+        application_id: settings?.ttn_application_id,
+        api_key_last4: settings?.api_key_last4,
+        is_enabled: enabled,
+      });
+      console.log('[TTN Config] Toggle enabled, setting canonical', { hash, enabled });
+      setCanonical(hash);
     } catch (err: any) {
       console.error("Toggle error:", err);
       toast.error(err.message || "Failed to update settings");
+      setInvalid(err.message || "Failed to update settings");
     } finally {
       setIsSaving(false);
     }
@@ -645,6 +686,18 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
           ? "Webhook updated in TTN"
           : "Configuration saved";
         toast.success(`API key validated. ${actionMsg}!`);
+        
+        // Set canonical state after successful save
+        const effectiveAppId = newApplicationId.trim() || settings?.ttn_application_id;
+        const hash = hashConfigValues({
+          cluster: region,
+          application_id: effectiveAppId,
+          api_key_last4: result.config?.api_key_last4,
+          is_enabled: settings?.is_enabled,
+        });
+        console.log('[TTN Config] API key saved, setting canonical', { hash, app_id: effectiveAppId });
+        setCanonical(hash);
+        
         await loadSettings();
       } else {
         // Handle structured error from edge function
@@ -697,6 +750,7 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
       toast.error("Unexpected error", {
         description: err.message || "Failed to save and configure TTN",
       });
+      setInvalid(err.message || "Failed to save and configure TTN");
     } finally {
       setIsSavingApiKey(false);
     }
@@ -821,6 +875,17 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
           description: `${data.changes?.length || 0} field(s) changed`,
         });
         setIsEditingWebhook(false);
+        
+        // Set canonical state after successful webhook save
+        const hash = hashConfigValues({
+          cluster: region,
+          application_id: settings?.ttn_application_id,
+          api_key_last4: settings?.api_key_last4,
+          is_enabled: settings?.is_enabled,
+        });
+        console.log('[TTN Config] Webhook saved, setting canonical', { hash });
+        setCanonical(hash);
+        
         await loadSettings();
       } else {
         toast.error(data?.error?.message || "Failed to update webhook", {
@@ -830,6 +895,7 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
     } catch (err: any) {
       console.error("Webhook update error:", err);
       toast.error(err.message || "Failed to update webhook configuration");
+      setInvalid(err.message || "Failed to update webhook configuration");
     } finally {
       setIsSavingWebhook(false);
     }
