@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,8 @@ import { AlertTriangle, RefreshCw, Key, Building2, ExternalLink, CheckCircle2, X
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SecretField } from "./SecretField";
+
+type SecretStatus = "provisioned" | "missing" | "invalid" | "decryption_failed";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,10 +29,13 @@ interface TTNCredentials {
   ttn_region: string | null;
   org_api_secret: string | null;
   org_api_secret_last4: string | null;
+  org_api_secret_status?: 'empty' | 'decrypted' | 'failed';
   app_api_secret: string | null;
   app_api_secret_last4: string | null;
+  app_api_secret_status?: 'empty' | 'decrypted' | 'failed';
   webhook_secret: string | null;
   webhook_secret_last4: string | null;
+  webhook_secret_status?: 'empty' | 'decrypted' | 'failed';
   webhook_url: string | null;
   provisioning_status: 'idle' | 'provisioning' | 'ready' | 'failed' | string | null;
   provisioning_step: string | null;
@@ -81,13 +86,27 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  // Track the last known organizationId to prevent clearing credentials during transitional states
+  const lastOrgIdRef = useRef<string | null>(null);
+
   const fetchCredentials = useCallback(async () => {
+    // Don't clear credentials if organizationId is temporarily null (transitional state)
     if (!organizationId) {
-      setIsLoading(false);
-      setCredentials(null);
-      setFetchError(null);
+      // Only clear if we never had an org before
+      if (!lastOrgIdRef.current) {
+        setIsLoading(false);
+        setCredentials(null);
+        setFetchError(null);
+      }
       return;
     }
+
+    // If switching to a DIFFERENT org, clear old credentials first
+    if (lastOrgIdRef.current && lastOrgIdRef.current !== organizationId) {
+      console.log(`[TTNCredentialsPanel] Org changed: ${lastOrgIdRef.current?.slice(0, 8)} → ${organizationId.slice(0, 8)}`);
+      setCredentials(null);
+    }
+    lastOrgIdRef.current = organizationId;
 
     // Always show loading state when starting a fetch
     setIsLoading(true);
@@ -110,6 +129,15 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+
+      // Log what we received for debugging
+      console.log(`[TTNCredentialsPanel] Fetched credentials for org ${organizationId.slice(0, 8)}:`, {
+        provisioning_status: data.provisioning_status,
+        has_app_secret: !!(data.app_api_secret || data.app_api_secret_last4),
+        has_webhook_secret: !!(data.webhook_secret || data.webhook_secret_last4),
+        app_api_secret_status: data.app_api_secret_status,
+        ttn_region: data.ttn_region,
+      });
 
       setCredentials(data);
     } catch (err) {
@@ -293,6 +321,24 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
     return "missing";
   };
 
+  // Helper to determine secret field status based on decryption result
+  const getSecretStatus = (
+    value: string | null | undefined,
+    last4: string | null | undefined,
+    decryptStatus?: 'empty' | 'decrypted' | 'failed'
+  ): SecretStatus => {
+    // If decryption explicitly failed but we have last4, show "decryption_failed"
+    if (decryptStatus === 'failed' && last4) {
+      return 'decryption_failed';
+    }
+    // If we have value or last4, it's provisioned
+    if (value || last4) {
+      return 'provisioned';
+    }
+    // Otherwise it's missing
+    return 'missing';
+  };
+
   const getStatusBadge = () => {
     const status = credentials?.provisioning_status;
     if (status === 'provisioning') {
@@ -458,7 +504,7 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                   label="Organization API Secret"
                   value={credentials?.org_api_secret ?? null}
                   last4={credentials?.org_api_secret_last4 ?? null}
-                  status={(credentials?.org_api_secret || credentials?.org_api_secret_last4) ? "provisioned" : "missing"}
+                  status={getSecretStatus(credentials?.org_api_secret, credentials?.org_api_secret_last4, credentials?.org_api_secret_status)}
                   description="Used for gateway registry and organization-level operations"
                 />
 
@@ -466,7 +512,7 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                   label="Application API Secret"
                   value={credentials?.app_api_secret ?? null}
                   last4={credentials?.app_api_secret_last4 ?? null}
-                  status={(credentials?.app_api_secret || credentials?.app_api_secret_last4) ? "provisioned" : "missing"}
+                  status={getSecretStatus(credentials?.app_api_secret, credentials?.app_api_secret_last4, credentials?.app_api_secret_status)}
                   description="Used for device provisioning and application operations"
                 />
 
@@ -474,7 +520,7 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                   label="Webhook Secret"
                   value={credentials?.webhook_secret ?? null}
                   last4={credentials?.webhook_secret_last4 ?? null}
-                  status={(credentials?.webhook_secret || credentials?.webhook_secret_last4) ? "provisioned" : "missing"}
+                  status={getSecretStatus(credentials?.webhook_secret, credentials?.webhook_secret_last4, credentials?.webhook_secret_status)}
                   description="Used to verify incoming webhook payloads from TTN"
                 />
 

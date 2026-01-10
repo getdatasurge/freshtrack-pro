@@ -21,18 +21,31 @@ interface TTNSettingsUpdate {
   api_key?: string; // Allow direct API key updates from FrostGuard UI
 }
 
-// Helper to safely get decrypted secret
-function safeDecrypt(encrypted: string | null, salt: string): string | null {
-  if (!encrypted) return null;
+// Decryption result with status for distinguishing empty vs failed
+interface DecryptResult {
+  value: string | null;
+  status: 'empty' | 'decrypted' | 'failed';
+}
+
+// Helper to safely get decrypted secret with status tracking
+function safeDecryptWithStatus(encrypted: string | null, salt: string): DecryptResult {
+  if (!encrypted) return { value: null, status: 'empty' };
   try {
-    return deobfuscateKey(encrypted, salt);
-  } catch {
-    return null;
+    const decrypted = deobfuscateKey(encrypted, salt);
+    return { value: decrypted, status: 'decrypted' };
+  } catch (err) {
+    console.error('[manage-ttn-settings] Decryption failed:', err);
+    return { value: null, status: 'failed' };
   }
 }
 
+// Legacy helper for backward compatibility
+function safeDecrypt(encrypted: string | null, salt: string): string | null {
+  return safeDecryptWithStatus(encrypted, salt).value;
+}
+
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v7.3-retry-provisioning-20260109";
+  const BUILD_VERSION = "manage-ttn-settings-v7.4-decryption-status-20260110";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[manage-ttn-settings] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
@@ -272,10 +285,10 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      // Decrypt secrets for display
-      const orgApiSecret = safeDecrypt(settings.ttn_org_api_key_encrypted, encryptionSalt);
-      const appApiSecret = safeDecrypt(settings.ttn_api_key_encrypted, encryptionSalt);
-      const webhookSecret = safeDecrypt(settings.ttn_webhook_secret_encrypted, encryptionSalt);
+      // Decrypt secrets for display with status tracking
+      const orgApiResult = safeDecryptWithStatus(settings.ttn_org_api_key_encrypted, encryptionSalt);
+      const appApiResult = safeDecryptWithStatus(settings.ttn_api_key_encrypted, encryptionSalt);
+      const webhookResult = safeDecryptWithStatus(settings.ttn_webhook_secret_encrypted, encryptionSalt);
 
       // Map legacy status values
       let provisioningStatus = settings.provisioning_status || "idle";
@@ -303,18 +316,30 @@ Deno.serve(async (req: Request) => {
           .eq("organization_id", organizationId);
       }
 
+      // Log credential fetch for debugging (never log actual values)
+      console.log(`[manage-ttn-settings] [${requestId}] GET_CREDENTIALS result:`, {
+        org_api_status: orgApiResult.status,
+        app_api_status: appApiResult.status,
+        webhook_status: webhookResult.status,
+        provisioning_status: provisioningStatus,
+        ttn_region: settings.ttn_region,
+      });
+
       return new Response(
         JSON.stringify({
           organization_name: org?.name || "Unknown",
           organization_id: organizationId,
           ttn_application_id: settings.ttn_application_id,
           ttn_region: settings.ttn_region,
-          org_api_secret: orgApiSecret,
+          org_api_secret: orgApiResult.value,
           org_api_secret_last4: settings.ttn_org_api_key_last4 || settings.ttn_gateway_api_key_last4,
-          app_api_secret: appApiSecret,
+          org_api_secret_status: orgApiResult.status, // NEW: 'empty' | 'decrypted' | 'failed'
+          app_api_secret: appApiResult.value,
           app_api_secret_last4: settings.ttn_api_key_last4,
-          webhook_secret: webhookSecret,
+          app_api_secret_status: appApiResult.status, // NEW: 'empty' | 'decrypted' | 'failed'
+          webhook_secret: webhookResult.value,
           webhook_secret_last4: settings.ttn_webhook_secret_last4,
+          webhook_secret_status: webhookResult.status, // NEW: 'empty' | 'decrypted' | 'failed'
           webhook_url: settings.ttn_webhook_url,
           // New state machine fields
           provisioning_status: provisioningStatus,

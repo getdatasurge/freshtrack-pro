@@ -1143,7 +1143,7 @@ const Settings = () => {
           {canViewDeveloperTools ? (
             <>
               {canManageTTN && <DebugModeToggle />}
-              <TTNCredentialsPanel organizationId={organization?.id || null} readOnly={!canManageTTN} />
+              <TTNCredentialsPanel key={organization?.id || 'no-org'} organizationId={organization?.id || null} readOnly={!canManageTTN} />
               <TTNConnectionSettings organizationId={organization?.id || null} readOnly={!canManageTTN} />
               {canManageTTN && (
                 <>
