@@ -9,7 +9,7 @@ interface SecretFieldProps {
   label: string;
   value: string | null;
   last4?: string | null;
-  status: "provisioned" | "missing" | "invalid";
+  status: "provisioned" | "missing" | "invalid" | "decryption_failed";
   isSecret?: boolean;
   description?: string;
   className?: string;
@@ -55,6 +55,8 @@ export function SecretField({
         return <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">Missing</Badge>;
       case "invalid":
         return <Badge variant="outline" className="bg-alarm/10 text-alarm border-alarm/30">Invalid</Badge>;
+      case "decryption_failed":
+        return <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">Stored (Unreadable)</Badge>;
     }
   };
 
