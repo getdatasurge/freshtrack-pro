@@ -284,7 +284,8 @@ serve(async (req) => {
     // Parse request
     const body: ProvisionOrgRequest = await req.json();
     const { action, organization_id, ttn_region } = body;
-    const region = (ttn_region || "nam1").toLowerCase();
+    // Default to eu1 - Identity Server is always on eu1, using nam1 caused split-cluster bugs
+    const region = (ttn_region || "eu1").toLowerCase();
 
     console.log(`[ttn-provision-org] [${requestId}] Action: ${action}, Org: ${organization_id}, Region: ${region}`);
 

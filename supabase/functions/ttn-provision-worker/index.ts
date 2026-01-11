@@ -129,8 +129,9 @@ serve(async (req) => {
             body: JSON.stringify({
               action: "provision",
               organization_id: job.organization_id,
-              // Use nam1 as default, ttn-provision-org will check ttn_connections for saved region
-              ttn_region: "nam1",
+              // Use eu1 as default - Identity Server is always on eu1
+              // Using nam1 caused split-cluster bugs where IS was on eu1 but JS/NS/AS went to nam1
+              ttn_region: "eu1",
             }),
           }
         );

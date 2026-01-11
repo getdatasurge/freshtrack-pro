@@ -292,7 +292,10 @@ export async function getTtnConfigForOrg(
     : undefined;
 
   // Normalize region (ensure lowercase)
-  const region = (settings.ttn_region || "nam1").toLowerCase();
+  // IMPORTANT: Default to eu1 since Identity Server is always on eu1
+  // Using nam1 as default caused split-cluster bug where IS records were on eu1
+  // but JS/NS/AS records went to nam1, causing "Other cluster" issues
+  const region = (settings.ttn_region || "eu1").toLowerCase();
 
   return {
     region,

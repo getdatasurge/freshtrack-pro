@@ -253,7 +253,8 @@ Deno.serve(async (req) => {
     }
 
     // Get TTN API configuration
-    const ttnCluster = ttnConfig.ttn_region || "nam1";
+    // Default to eu1 - Identity Server is always on eu1
+    const ttnCluster = ttnConfig.ttn_region || "eu1";
     const applicationId = ttnConfig.ttn_application_id;
 
     if (!applicationId) {

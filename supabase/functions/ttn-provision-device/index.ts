@@ -14,7 +14,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v6-perorg-20251231";
+  const BUILD_VERSION = "ttn-provision-device-v7-cluster-validation-20260111";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -368,6 +368,28 @@ serve(async (req) => {
         console.warn(`[ttn-provision-device] AS registration warning: ${errorText}`);
       }
 
+      // Step 5: POST-PROVISION CLUSTER VERIFICATION
+      // Verify the device exists on the AS of the target cluster (prevents split-cluster bugs)
+      console.log(`[ttn-provision-device] Step 5: Verifying device on AS cluster ${ttnConfig.region}`);
+
+      const verifyAsResponse = await ttnRegionalFetch(
+        `/api/v3/as/applications/${ttnAppId}/devices/${deviceId}`,
+        { method: "GET" }
+      );
+
+      let clusterVerified = false;
+      let clusterWarning: string | undefined;
+
+      if (verifyAsResponse.ok) {
+        clusterVerified = true;
+        console.log(`[ttn-provision-device] ✓ Device verified on AS cluster ${ttnConfig.region}`);
+      } else {
+        const verifyError = await verifyAsResponse.text();
+        clusterWarning = `Device may not be properly registered on ${ttnConfig.region} AS (${verifyAsResponse.status})`;
+        console.warn(`[ttn-provision-device] ⚠ Cluster verification warning: ${clusterWarning}`);
+        console.warn(`[ttn-provision-device] AS verification response: ${verifyError}`);
+      }
+
       // Update sensor with TTN info
       await supabase
         .from("lora_sensors")
@@ -386,6 +408,11 @@ serve(async (req) => {
           device_id: deviceId,
           application_id: ttnAppId,
           status: "joining",
+          cluster: ttnConfig.region,
+          cluster_verified: clusterVerified,
+          cluster_warning: clusterWarning,
+          identity_server: ttnConfig.identityBaseUrl,
+          regional_server: ttnConfig.regionalBaseUrl,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
