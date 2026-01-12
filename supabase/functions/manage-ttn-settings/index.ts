@@ -21,18 +21,31 @@ interface TTNSettingsUpdate {
   api_key?: string; // Allow direct API key updates from FrostGuard UI
 }
 
-// Helper to safely get decrypted secret
-function safeDecrypt(encrypted: string | null, salt: string): string | null {
-  if (!encrypted) return null;
+// Decryption result with status for distinguishing empty vs failed
+interface DecryptResult {
+  value: string | null;
+  status: 'empty' | 'decrypted' | 'failed';
+}
+
+// Helper to safely get decrypted secret with status tracking
+function safeDecryptWithStatus(encrypted: string | null, salt: string): DecryptResult {
+  if (!encrypted) return { value: null, status: 'empty' };
   try {
-    return deobfuscateKey(encrypted, salt);
-  } catch {
-    return null;
+    const decrypted = deobfuscateKey(encrypted, salt);
+    return { value: decrypted, status: 'decrypted' };
+  } catch (err) {
+    console.error('[manage-ttn-settings] Decryption failed:', err);
+    return { value: null, status: 'failed' };
   }
 }
 
+// Legacy helper for backward compatibility
+function safeDecrypt(encrypted: string | null, salt: string): string | null {
+  return safeDecryptWithStatus(encrypted, salt).value;
+}
+
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v6-identity-server-20260102";
+  const BUILD_VERSION = "manage-ttn-settings-v7.4-decryption-status-20260110";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[manage-ttn-settings] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
@@ -40,6 +53,20 @@ Deno.serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Health check endpoint (GET with no body)
+  if (req.method === "GET") {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        status: "healthy",
+        function: "manage-ttn-settings",
+        version: BUILD_VERSION,
+        timestamp: new Date().toISOString(),
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   try {
@@ -106,7 +133,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Verify user is admin/owner of this org
+    // Verify user has appropriate role for this org
     const { data: roleCheck } = await supabaseAdmin
       .from("user_roles")
       .select("role")
@@ -114,9 +141,16 @@ Deno.serve(async (req: Request) => {
       .eq("organization_id", organizationId)
       .maybeSingle();
 
-    if (!roleCheck || !["owner", "admin"].includes(roleCheck.role)) {
+    // Read-only actions (get, get_credentials) allow manager role
+    const isReadOnlyAction = ["get", "get_credentials"].includes(action);
+    const allowedRoles = isReadOnlyAction 
+      ? ["owner", "admin", "manager"] 
+      : ["owner", "admin"];
+
+    if (!roleCheck || !allowedRoles.includes(roleCheck.role)) {
+      const actionType = isReadOnlyAction ? "view" : "manage";
       return new Response(
-        JSON.stringify({ error: "Only admins and owners can manage TTN settings" }),
+        JSON.stringify({ error: `Only ${allowedRoles.join("/")} can ${actionType} TTN settings` }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -140,7 +174,7 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({
             exists: false,
             is_enabled: false,
-            ttn_region: "eu1",  // Default to eu1 - Identity Server is always on eu1
+            ttn_region: "eu1",
             ttn_application_id: null,
             provisioning_status: "not_started",
             has_api_key: false,
@@ -168,7 +202,7 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           exists: true,
           is_enabled: settings.is_enabled,
-          ttn_region: settings.ttn_region || "eu1",  // Default to eu1
+          ttn_region: settings.ttn_region || "eu1",
           ttn_application_id: settings.ttn_application_id,
           ttn_application_name: settings.ttn_application_name,
           // New state machine fields
@@ -251,15 +285,45 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      // Decrypt secrets for display
-      const orgApiSecret = safeDecrypt(settings.ttn_org_api_key_encrypted, encryptionSalt);
-      const appApiSecret = safeDecrypt(settings.ttn_api_key_encrypted, encryptionSalt);
-      const webhookSecret = safeDecrypt(settings.ttn_webhook_secret_encrypted, encryptionSalt);
+      // Decrypt secrets for display with status tracking
+      const orgApiResult = safeDecryptWithStatus(settings.ttn_org_api_key_encrypted, encryptionSalt);
+      const appApiResult = safeDecryptWithStatus(settings.ttn_api_key_encrypted, encryptionSalt);
+      const webhookResult = safeDecryptWithStatus(settings.ttn_webhook_secret_encrypted, encryptionSalt);
 
       // Map legacy status values
       let provisioningStatus = settings.provisioning_status || "idle";
       if (provisioningStatus === "not_started") provisioningStatus = "idle";
       if (provisioningStatus === "completed") provisioningStatus = "ready";
+
+      // Check if all steps are actually complete in step_details but status is stale
+      const stepDetails = (settings.provisioning_step_details || {}) as Record<string, unknown>;
+      const allStepsComplete = stepDetails.webhook_created === true &&
+        stepDetails.app_api_key_created === true &&
+        stepDetails.application_created === true;
+      
+      // Auto-correct stale provisioning_status if all steps are complete
+      if (allStepsComplete && provisioningStatus === 'failed') {
+        console.log(`[manage-ttn-settings] [${requestId}] Auto-correcting stale status: all steps complete but status was 'failed'`);
+        provisioningStatus = 'ready';
+        // Also update the database to fix the stale status
+        await supabaseAdmin
+          .from("ttn_connections")
+          .update({ 
+            provisioning_status: 'ready',
+            provisioning_step: null,
+            provisioning_error: null,
+          })
+          .eq("organization_id", organizationId);
+      }
+
+      // Log credential fetch for debugging (never log actual values)
+      console.log(`[manage-ttn-settings] [${requestId}] GET_CREDENTIALS result:`, {
+        org_api_status: orgApiResult.status,
+        app_api_status: appApiResult.status,
+        webhook_status: webhookResult.status,
+        provisioning_status: provisioningStatus,
+        ttn_region: settings.ttn_region,
+      });
 
       return new Response(
         JSON.stringify({
@@ -267,21 +331,111 @@ Deno.serve(async (req: Request) => {
           organization_id: organizationId,
           ttn_application_id: settings.ttn_application_id,
           ttn_region: settings.ttn_region,
-          org_api_secret: orgApiSecret,
+          org_api_secret: orgApiResult.value,
           org_api_secret_last4: settings.ttn_org_api_key_last4 || settings.ttn_gateway_api_key_last4,
-          app_api_secret: appApiSecret,
+          org_api_secret_status: orgApiResult.status, // NEW: 'empty' | 'decrypted' | 'failed'
+          app_api_secret: appApiResult.value,
           app_api_secret_last4: settings.ttn_api_key_last4,
-          webhook_secret: webhookSecret,
+          app_api_secret_status: appApiResult.status, // NEW: 'empty' | 'decrypted' | 'failed'
+          webhook_secret: webhookResult.value,
           webhook_secret_last4: settings.ttn_webhook_secret_last4,
+          webhook_secret_status: webhookResult.status, // NEW: 'empty' | 'decrypted' | 'failed'
           webhook_url: settings.ttn_webhook_url,
           // New state machine fields
           provisioning_status: provisioningStatus,
           provisioning_step: settings.provisioning_step || settings.provisioning_last_step || null,
+          provisioning_step_details: stepDetails,
           provisioning_error: settings.provisioning_error,
           provisioning_attempt_count: settings.provisioning_attempt_count || 0,
           last_http_status: settings.last_http_status || null,
           last_http_body: settings.last_http_body || null,
+          // Diagnostics fields for Start Fresh detection
+          app_rights_check_status: settings.app_rights_check_status || null,
+          last_ttn_http_status: settings.last_ttn_http_status || null,
+          last_ttn_error_namespace: settings.last_ttn_error_namespace || null,
+          last_ttn_error_name: settings.last_ttn_error_name || null,
+          last_ttn_correlation_id: settings.last_ttn_correlation_id || null,
           credentials_last_rotated_at: settings.credentials_last_rotated_at,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // RETRY_PROVISIONING action - Reset failed state and re-invoke ttn-provision-org
+    if (action === "retry_provisioning") {
+      console.log(`[manage-ttn-settings] [${requestId}] RETRY_PROVISIONING for org: ${organizationId}`);
+
+      // Get current provisioning state
+      const { data: current } = await supabaseAdmin
+        .from("ttn_connections")
+        .select("provisioning_status, provisioning_error, ttn_region")
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+
+      if (!current) {
+        return new Response(
+          JSON.stringify({ error: "TTN not configured for this organization" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      if (current.provisioning_status !== "failed") {
+        return new Response(
+          JSON.stringify({ 
+            error: "Retry only available for failed provisioning",
+            current_status: current.provisioning_status,
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Reset state to pending
+      await supabaseAdmin
+        .from("ttn_connections")
+        .update({
+          provisioning_status: "pending",
+          provisioning_error: null,
+          provisioning_can_retry: true,
+        })
+        .eq("organization_id", organizationId);
+
+      // Log the retry attempt
+      await supabaseAdmin.from("event_logs").insert({
+        organization_id: organizationId,
+        event_type: "ttn.provisioning.retry_requested",
+        category: "settings",
+        severity: "info",
+        title: "TTN Provisioning Retry Requested",
+        actor_id: user.id,
+        event_data: { 
+          request_id: requestId,
+          previous_error: current.provisioning_error,
+        },
+      });
+
+      // Invoke ttn-provision-org with retry action
+      const provisionResult = await fetch(
+        `${supabaseUrl}/functions/v1/ttn-provision-org`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": authHeader,
+          },
+          body: JSON.stringify({
+            action: "retry",
+            organization_id: organizationId,
+          }),
+        }
+      );
+
+      const provisionData = await provisionResult.json();
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: "Provisioning retry initiated",
+          result: provisionData,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -312,22 +466,30 @@ Deno.serve(async (req: Request) => {
       }
 
       // Check rate limiting (max 3 regenerations per hour)
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-      const { count: recentCount } = await supabaseAdmin
-        .from("event_logs")
-        .select("*", { count: "exact", head: true })
-        .eq("organization_id", organizationId)
-        .eq("event_type", "ttn.credentials.regenerate_all")
-        .gte("recorded_at", oneHourAgo);
+      // Bypass for development organizations
+      const DEV_ORG_IDS = ['c6a5a74b-a129-42bb-8f66-72646be3c7f3'];
+      const isDevOrg = DEV_ORG_IDS.includes(organizationId);
 
-      if ((recentCount || 0) >= 3) {
-        return new Response(
-          JSON.stringify({ 
-            error: "Rate limit exceeded", 
-            details: "Maximum 3 credential regenerations per hour. Please try again later." 
-          }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+      if (!isDevOrg) {
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { count: recentCount } = await supabaseAdmin
+          .from("event_logs")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", organizationId)
+          .eq("event_type", "ttn.credentials.regenerate_all")
+          .gte("recorded_at", oneHourAgo);
+
+        if ((recentCount || 0) >= 3) {
+          return new Response(
+            JSON.stringify({ 
+              error: "Rate limit exceeded", 
+              details: "Maximum 3 credential regenerations per hour. Please try again later." 
+            }),
+            { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        console.log(`[manage-ttn-settings] [${requestId}] Rate limit bypassed for dev org: ${organizationId}`);
       }
 
       // Generate new secrets
@@ -648,11 +810,15 @@ Deno.serve(async (req: Request) => {
           .eq("organization_id", organizationId)
           .maybeSingle();
 
-        if (!existingCheck?.ttn_application_id || existingCheck.provisioning_status !== "completed") {
+        // Accept both "completed" and "ready" as valid completed states
+        const validStatuses = ["completed", "ready"];
+        if (!existingCheck?.ttn_application_id || !validStatuses.includes(existingCheck.provisioning_status || "")) {
           return new Response(
             JSON.stringify({ 
               error: "TTN application required", 
-              details: "You must provision a TTN application before enabling TTN integration." 
+              details: "You must provision a TTN application before enabling TTN integration.",
+              requires_provisioning: true,
+              current_status: existingCheck?.provisioning_status || "not_started",
             }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
@@ -704,7 +870,7 @@ Deno.serve(async (req: Request) => {
           .insert({
             organization_id: organizationId,
             created_by: user.id,
-            ttn_region: "eu1",  // Default to eu1 - Identity Server is always on eu1
+            ttn_region: "eu1",
             ...dbUpdates,
           })
           .select()

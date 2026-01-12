@@ -117,6 +117,7 @@ interface TTNSettings {
 
 interface TTNConnectionSettingsProps {
   organizationId: string | null;
+  readOnly?: boolean;
 }
 
 const TTN_REGIONS = [
@@ -140,7 +141,7 @@ const InfoTooltip: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   </TooltipProvider>
 );
 
-export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsProps) {
+export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNConnectionSettingsProps) {
   const [settings, setSettings] = useState<TTNSettings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isProvisioning, setIsProvisioning] = useState(false);
@@ -211,7 +212,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
         if (status === 'not_started') status = 'idle';
         if (status === 'completed') status = 'ready';
         
-        setSettings({
+        const loadedSettings: TTNSettings = {
           exists: data.exists ?? false,
           is_enabled: data.is_enabled ?? false,
           ttn_region: data.ttn_region ?? null,
@@ -241,21 +242,41 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           last_connection_test_result: data.last_connection_test_result ?? null,
           last_updated_source: data.last_updated_source ?? null,
           last_test_source: data.last_test_source ?? null,
-        });
+        };
+        
+        setSettings(loadedSettings);
         setRegion(data.ttn_region || "nam1");
         setIsEnabled(data.is_enabled ?? false);
+        
         // Set application ID for the form
         if (data.ttn_application_id) {
           setNewApplicationId(data.ttn_application_id);
+        }
+        
+        // Mark context as canonical if we have valid settings from DB
+        if (data.exists && data.ttn_application_id) {
+          const hash = hashConfigValues({
+            cluster: data.ttn_region || 'nam1',
+            application_id: data.ttn_application_id,
+            api_key_last4: data.api_key_last4,
+            is_enabled: data.is_enabled,
+          });
+          console.log('[TTN Config] Loaded from DB, setting canonical', { 
+            org_id: organizationId, 
+            app_id: data.ttn_application_id,
+            hash 
+          });
+          setCanonical(hash);
         }
       }
     } catch (err) {
       console.error("Error loading TTN settings:", err);
       toast.error("Failed to load TTN settings");
+      setInvalid("Failed to load TTN settings");
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId]);
+  }, [organizationId, setCanonical, setInvalid]);
 
   // Check bootstrap service health on mount
   const checkBootstrapHealth = useCallback(async () => {
@@ -442,6 +463,16 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       if (data?.success) {
         toast.success("TTN Application provisioned successfully!");
+        
+        // Set canonical state after successful provisioning
+        const hash = hashConfigValues({
+          cluster: region,
+          application_id: data.application_id || settings?.ttn_application_id,
+          is_enabled: true,
+        });
+        console.log('[TTN Config] Provisioning complete, setting canonical', { hash });
+        setCanonical(hash);
+        
         await loadSettings();
       } else {
         // Show more helpful error messages
@@ -587,9 +618,20 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
 
       setIsEnabled(enabled);
       toast.success(enabled ? "TTN integration enabled" : "TTN integration disabled");
+      
+      // Update canonical state with new enabled value
+      const hash = hashConfigValues({
+        cluster: region,
+        application_id: settings?.ttn_application_id,
+        api_key_last4: settings?.api_key_last4,
+        is_enabled: enabled,
+      });
+      console.log('[TTN Config] Toggle enabled, setting canonical', { hash, enabled });
+      setCanonical(hash);
     } catch (err: any) {
       console.error("Toggle error:", err);
       toast.error(err.message || "Failed to update settings");
+      setInvalid(err.message || "Failed to update settings");
     } finally {
       setIsSaving(false);
     }
@@ -644,6 +686,18 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           ? "Webhook updated in TTN"
           : "Configuration saved";
         toast.success(`API key validated. ${actionMsg}!`);
+        
+        // Set canonical state after successful save
+        const effectiveAppId = newApplicationId.trim() || settings?.ttn_application_id;
+        const hash = hashConfigValues({
+          cluster: region,
+          application_id: effectiveAppId,
+          api_key_last4: result.config?.api_key_last4,
+          is_enabled: settings?.is_enabled,
+        });
+        console.log('[TTN Config] API key saved, setting canonical', { hash, app_id: effectiveAppId });
+        setCanonical(hash);
+        
         await loadSettings();
       } else {
         // Handle structured error from edge function
@@ -696,6 +750,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
       toast.error("Unexpected error", {
         description: err.message || "Failed to save and configure TTN",
       });
+      setInvalid(err.message || "Failed to save and configure TTN");
     } finally {
       setIsSavingApiKey(false);
     }
@@ -820,6 +875,17 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
           description: `${data.changes?.length || 0} field(s) changed`,
         });
         setIsEditingWebhook(false);
+        
+        // Set canonical state after successful webhook save
+        const hash = hashConfigValues({
+          cluster: region,
+          application_id: settings?.ttn_application_id,
+          api_key_last4: settings?.api_key_last4,
+          is_enabled: settings?.is_enabled,
+        });
+        console.log('[TTN Config] Webhook saved, setting canonical', { hash });
+        setCanonical(hash);
+        
         await loadSettings();
       } else {
         toast.error(data?.error?.message || "Failed to update webhook", {
@@ -829,6 +895,7 @@ export function TTNConnectionSettings({ organizationId }: TTNConnectionSettingsP
     } catch (err: any) {
       console.error("Webhook update error:", err);
       toast.error(err.message || "Failed to update webhook configuration");
+      setInvalid(err.message || "Failed to update webhook configuration");
     } finally {
       setIsSavingWebhook(false);
     }
@@ -948,6 +1015,14 @@ Cluster: ${region}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Read-only notice for managers */}
+        {readOnly && (
+          <div className="p-3 rounded-lg bg-muted border border-border/50 flex items-center gap-2">
+            <Info className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">View-only access. Contact an admin to make changes.</span>
+          </div>
+        )}
+
         {/* Bootstrap Service Health Warning */}
         {bootstrapHealthError && (
           <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
@@ -1018,7 +1093,7 @@ Cluster: ${region}
                 </Select>
               </div>
               
-              <Button onClick={() => handleProvision(false)} disabled={isProvisioning} size="lg">
+              <Button onClick={() => handleProvision(false)} disabled={isProvisioning || readOnly} size="lg">
                 {isProvisioning ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
@@ -1046,7 +1121,7 @@ Cluster: ${region}
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {settings?.provisioning_can_retry && settings?.provisioning_last_step && (
+                  {!readOnly && settings?.provisioning_can_retry && settings?.provisioning_last_step && (
                     <Button 
                       onClick={() => handleProvision(true, settings.provisioning_last_step!)} 
                       variant="outline" 
@@ -1061,14 +1136,16 @@ Cluster: ${region}
                       Retry from {settings.provisioning_last_step}
                     </Button>
                   )}
-                  <Button 
-                    onClick={() => handleProvision(false)} 
-                    variant="ghost" 
-                    size="sm" 
-                    disabled={isProvisioning}
-                  >
-                    Start Fresh
-                  </Button>
+                  {!readOnly && (
+                    <Button 
+                      onClick={() => handleProvision(false)} 
+                      variant="ghost" 
+                      size="sm" 
+                      disabled={isProvisioning}
+                    >
+                      Start Fresh
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1115,7 +1192,7 @@ Cluster: ${region}
               <Switch
                 checked={isEnabled}
                 onCheckedChange={handleToggleEnabled}
-                disabled={isSaving}
+                disabled={isSaving || readOnly}
               />
             </div>
 
@@ -1218,7 +1295,7 @@ Cluster: ${region}
                 {/* Cluster Selection */}
                 <div className="space-y-1.5">
                   <Label className="text-sm">TTN Cluster</Label>
-                  <Select value={region} onValueChange={setRegion}>
+                  <Select value={region} onValueChange={setRegion} disabled={readOnly}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder="Select cluster" />
                     </SelectTrigger>
@@ -1240,6 +1317,7 @@ Cluster: ${region}
                     value={newApplicationId}
                     onChange={(e) => setNewApplicationId(e.target.value)}
                     className="font-mono text-xs"
+                    disabled={readOnly}
                   />
                   <p className="text-xs text-muted-foreground">
                     Find this in TTN Console → Applications
@@ -1255,6 +1333,7 @@ Cluster: ${region}
                     value={newApiKey}
                     onChange={(e) => setNewApiKey(e.target.value)}
                     className="font-mono text-xs"
+                    disabled={readOnly}
                   />
                   <p className="text-xs text-muted-foreground">
                     Create a key with: Read/Write application settings, Read/Write devices, Read uplinks
@@ -1281,7 +1360,7 @@ Cluster: ${region}
                   <Button
                     variant="outline"
                     onClick={runPreflightValidation}
-                    disabled={isValidating || !newApplicationId.trim()}
+                    disabled={isValidating || !newApplicationId.trim() || readOnly}
                     className="flex-1"
                   >
                     {isValidating ? (
@@ -1306,7 +1385,8 @@ Cluster: ${region}
                               isSavingApiKey || 
                               !newApiKey.trim() || 
                               !newApplicationId.trim() ||
-                              (validationResult !== null && !validationResult.valid)
+                              (validationResult !== null && !validationResult.valid) ||
+                              readOnly
                             }
                             className="w-full"
                           >
@@ -1360,7 +1440,7 @@ Cluster: ${region}
                         <CheckCircle className="h-3 w-3 mr-1" />
                         Configured
                       </Badge>
-                      <Button variant="ghost" size="sm" onClick={startEditingWebhook}>
+                      <Button variant="ghost" size="sm" onClick={startEditingWebhook} disabled={readOnly}>
                         <Pencil className="h-4 w-4 mr-1" />
                         Edit
                       </Button>
@@ -1536,7 +1616,7 @@ Cluster: ${region}
                     variant="outline"
                     size="sm"
                     onClick={handleRegenerateWebhookSecret}
-                    disabled={isRegenerating || !settings.has_webhook_secret}
+                    disabled={isRegenerating || !settings.has_webhook_secret || readOnly}
                   >
                     <RefreshCw className={`h-4 w-4 mr-2 ${isRegenerating ? "animate-spin" : ""}`} />
                     Regenerate

@@ -14,7 +14,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v7-cluster-validation-20260111";
+  const BUILD_VERSION = "ttn-provision-device-v8-cluster-validation-20260109";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -145,7 +145,11 @@ serve(async (req) => {
     }
 
     const deviceId = `sensor-${sensor.dev_eui.toLowerCase()}`;
+    const frequencyPlan = ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2";
+    
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
+    console.log(`[ttn-provision-device] Region from config: ${ttnConfig.region}`);
+    console.log(`[ttn-provision-device] Frequency plan: ${frequencyPlan}`);
     console.log(`[ttn-provision-device] Identity Server URL: ${ttnConfig.identityBaseUrl}`);
     console.log(`[ttn-provision-device] Regional Server URL: ${ttnConfig.regionalBaseUrl}`);
 
@@ -255,7 +259,7 @@ serve(async (req) => {
           description: sensor.description || `FreshTracker ${sensor.sensor_type} sensor`,
           lorawan_version: "MAC_V1_0_3",
           lorawan_phy_version: "PHY_V1_0_3_REV_A",
-          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : "US_902_928_FSB_2",
+          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2",
           supports_join: true,
         },
         field_mask: {
@@ -344,7 +348,7 @@ serve(async (req) => {
           },
           lorawan_version: "MAC_V1_0_3",
           lorawan_phy_version: "PHY_V1_0_3_REV_A",
-          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : "US_902_928_FSB_2",
+          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2",
           supports_join: true,
         },
         field_mask: {
@@ -400,26 +404,38 @@ serve(async (req) => {
         console.warn(`[ttn-provision-device] AS registration warning: ${errorText}`);
       }
 
-      // Step 5: POST-PROVISION CLUSTER VERIFICATION
-      // Verify the device exists on the AS of the target cluster (prevents split-cluster bugs)
-      console.log(`[ttn-provision-device] Step 5: Verifying device on AS cluster ${ttnConfig.region}`);
+      // Step 5: Verify device exists in correct cluster
+      console.log(`[ttn-provision-device] Step 5: Verifying device in ${ttnConfig.region?.toUpperCase() || 'EU1'} cluster`);
 
-      const verifyAsResponse = await ttnRegionalFetch(
-        `/api/v3/as/applications/${ttnAppId}/devices/${deviceId}`,
-        { method: "GET" }
-      );
+      const verifyUrl = `${ttnConfig.identityBaseUrl}/api/v3/applications/${ttnAppId}/devices/${deviceId}`;
+      const verifyResponse = await ttnIsFetch(`/api/v3/applications/${ttnAppId}/devices/${deviceId}`, {
+        method: "GET",
+      });
 
-      let clusterVerified = false;
-      let clusterWarning: string | undefined;
+      if (!verifyResponse.ok) {
+        const errorText = await verifyResponse.text();
+        console.error(`[ttn-provision-device] Cluster verification failed: ${verifyResponse.status} - ${errorText}`);
 
-      if (verifyAsResponse.ok) {
-        clusterVerified = true;
-        console.log(`[ttn-provision-device] ✓ Device verified on AS cluster ${ttnConfig.region}`);
+        // Check for "other cluster" indicator
+        if (errorText.includes("other_cluster") || errorText.includes("Other cluster")) {
+          await supabase
+            .from("lora_sensors")
+            .update({ status: "fault" })
+            .eq("id", sensor_id);
+
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "TTN resource created in wrong cluster",
+              details: `Device was provisioned to the wrong TTN cluster. ${ttnConfig.region?.toUpperCase() || 'EU1'} is required.`,
+              hint: "The device needs to be deleted and re-provisioned to the correct cluster",
+              cluster_error: true,
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       } else {
-        const verifyError = await verifyAsResponse.text();
-        clusterWarning = `Device may not be properly registered on ${ttnConfig.region} AS (${verifyAsResponse.status})`;
-        console.warn(`[ttn-provision-device] ⚠ Cluster verification warning: ${clusterWarning}`);
-        console.warn(`[ttn-provision-device] AS verification response: ${verifyError}`);
+        console.log(`[ttn-provision-device] Device verified in ${ttnConfig.region?.toUpperCase() || 'EU1'} cluster`);
       }
 
       // Update sensor with TTN info

@@ -192,6 +192,17 @@ const ERROR_MAP: Record<string, TTNErrorGuidance> = {
     ],
     severity: 'error',
   },
+  NO_ORGANIZATION_RIGHTS: {
+    message: 'No rights to the TTN organization',
+    howToFix: 'The TTN organization exists but the current key has no access rights',
+    consoleSteps: [
+      '1. The organization may have been created under another account',
+      '2. Verify your TTN admin key has organization management rights',
+      '3. Use "Start Fresh" to create a new organization',
+      '4. Or contact TTN support if you believe you should have access',
+    ],
+    severity: 'error',
+  },
   MISSING_FIELDS: {
     message: 'Required configuration fields are missing',
     howToFix: 'Fill in all required fields',

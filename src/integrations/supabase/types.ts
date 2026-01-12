@@ -2265,6 +2265,7 @@ export type Database = {
       }
       ttn_connections: {
         Row: {
+          app_rights_check_status: string | null
           created_at: string | null
           created_by: string | null
           credentials_last_rotated_at: string | null
@@ -2276,6 +2277,10 @@ export type Database = {
           last_http_body: string | null
           last_http_status: number | null
           last_provisioning_attempt_at: string | null
+          last_ttn_correlation_id: string | null
+          last_ttn_error_name: string | null
+          last_ttn_error_namespace: string | null
+          last_ttn_http_status: number | null
           organization_id: string
           provisioning_attempt_count: number
           provisioning_attempts: number | null
@@ -2294,6 +2299,7 @@ export type Database = {
           ttn_application_id: string | null
           ttn_application_name: string | null
           ttn_application_provisioned_at: string | null
+          ttn_application_uid: string | null
           ttn_credential_type: string | null
           ttn_gateway_rights_checked_at: string | null
           ttn_gateway_rights_verified: boolean | null
@@ -2301,6 +2307,7 @@ export type Database = {
           ttn_last_test_source: string | null
           ttn_last_updated_source: string | null
           ttn_org_api_key_encrypted: string | null
+          ttn_org_api_key_id: string | null
           ttn_org_api_key_last4: string | null
           ttn_org_api_key_updated_at: string | null
           ttn_owner_scope: string | null
@@ -2323,6 +2330,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          app_rights_check_status?: string | null
           created_at?: string | null
           created_by?: string | null
           credentials_last_rotated_at?: string | null
@@ -2334,6 +2342,10 @@ export type Database = {
           last_http_body?: string | null
           last_http_status?: number | null
           last_provisioning_attempt_at?: string | null
+          last_ttn_correlation_id?: string | null
+          last_ttn_error_name?: string | null
+          last_ttn_error_namespace?: string | null
+          last_ttn_http_status?: number | null
           organization_id: string
           provisioning_attempt_count?: number
           provisioning_attempts?: number | null
@@ -2352,6 +2364,7 @@ export type Database = {
           ttn_application_id?: string | null
           ttn_application_name?: string | null
           ttn_application_provisioned_at?: string | null
+          ttn_application_uid?: string | null
           ttn_credential_type?: string | null
           ttn_gateway_rights_checked_at?: string | null
           ttn_gateway_rights_verified?: boolean | null
@@ -2359,6 +2372,7 @@ export type Database = {
           ttn_last_test_source?: string | null
           ttn_last_updated_source?: string | null
           ttn_org_api_key_encrypted?: string | null
+          ttn_org_api_key_id?: string | null
           ttn_org_api_key_last4?: string | null
           ttn_org_api_key_updated_at?: string | null
           ttn_owner_scope?: string | null
@@ -2381,6 +2395,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          app_rights_check_status?: string | null
           created_at?: string | null
           created_by?: string | null
           credentials_last_rotated_at?: string | null
@@ -2392,6 +2407,10 @@ export type Database = {
           last_http_body?: string | null
           last_http_status?: number | null
           last_provisioning_attempt_at?: string | null
+          last_ttn_correlation_id?: string | null
+          last_ttn_error_name?: string | null
+          last_ttn_error_namespace?: string | null
+          last_ttn_http_status?: number | null
           organization_id?: string
           provisioning_attempt_count?: number
           provisioning_attempts?: number | null
@@ -2410,6 +2429,7 @@ export type Database = {
           ttn_application_id?: string | null
           ttn_application_name?: string | null
           ttn_application_provisioned_at?: string | null
+          ttn_application_uid?: string | null
           ttn_credential_type?: string | null
           ttn_gateway_rights_checked_at?: string | null
           ttn_gateway_rights_verified?: boolean | null
@@ -2417,6 +2437,7 @@ export type Database = {
           ttn_last_test_source?: string | null
           ttn_last_updated_source?: string | null
           ttn_org_api_key_encrypted?: string | null
+          ttn_org_api_key_id?: string | null
           ttn_org_api_key_last4?: string | null
           ttn_org_api_key_updated_at?: string | null
           ttn_owner_scope?: string | null

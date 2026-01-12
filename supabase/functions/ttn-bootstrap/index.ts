@@ -25,8 +25,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // ============================================================================
 
 const TTN_BASE_URL = "https://eu1.cloud.thethings.network";
-const TTN_REGION = "eu1";
-const FUNCTION_VERSION = "ttn-bootstrap-v2.1-fix-split-cluster-20260111";
+const TTN_REGION = "eu1"; // Default region
+const FUNCTION_VERSION = "ttn-bootstrap-v2.9-region-param-20260108";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,8 +38,12 @@ const corsHeaders = {
 // ============================================================================
 
 interface ProvisioningRequest {
-  action: "preflight" | "provision" | "start_fresh" | "status";
+  action: "preflight" | "provision" | "start_fresh" | "status" | "validate_only";
   org_id: string;
+  organization_id?: string;
+  cluster?: string;
+  application_id?: string;
+  api_key?: string;
   customer_id?: string;
   site_id?: string;
   force_new_org?: boolean;
@@ -63,6 +67,7 @@ interface ProvisioningResult {
   ttn_app_api_key?: string;
   webhook_id?: string;
   webhook_secret?: string;
+  region?: string;
   version: string;
 }
 
@@ -513,12 +518,13 @@ async function verifyAppOwnership(
 async function createOrganization(
   orgId: string,
   apiKey: string,
-  _userId: string
+  userId: string
 ): Promise<StepResult> {
   const sanitizedOrgId = sanitizeTtnId(orgId);
-  console.log(`[Step1] Creating org: ${sanitizedOrgId} (original: ${orgId})`);
+  console.log(`[Step1] Creating org: ${sanitizedOrgId} (original: ${orgId}) under user: ${userId}`);
 
-  const createResult = await ttnRequest<Record<string, unknown>>("/api/v3/organizations", {
+  // TTN requires user-scoped endpoint for organization creation
+  const createResult = await ttnRequest<Record<string, unknown>>(`/api/v3/users/${userId}/organizations`, {
     method: "POST",
     apiKey,
     body: {
@@ -898,7 +904,7 @@ async function createWebhook(
 async function runProvisioning(
   request: ProvisioningRequest,
   adminApiKey: string,
-  supabaseClient: ReturnType<typeof createClient>,
+  supabaseClient: any,  // Type relaxed to avoid strict typing issues with dynamic tables
   webhookBaseUrl: string
 ): Promise<ProvisioningResult> {
   const steps: StepResult[] = [];
@@ -979,8 +985,12 @@ async function runProvisioning(
   //                                                                          
   // STEP 2: Create Application
   //                                                                          
+  // Use orgApiKey if available (has RIGHT_APPLICATION_ALL), fallback to adminApiKey
+  const appCreationKey = orgApiKey || adminApiKey;
+  console.log(`[Step2] Using credential: ${orgApiKey ? 'org_api_key' : 'admin_api_key'} (key_last4: ${appCreationKey.slice(-4)})`);
+  
   const appId = `${currentOrgId}-app`;
-  const step2 = await createApplication(currentOrgId, appId, adminApiKey);
+  const step2 = await createApplication(currentOrgId, appId, appCreationKey);
   steps.push(step2);
 
   if (!step2.success) {
@@ -998,7 +1008,11 @@ async function runProvisioning(
   //                                                                          
   // STEP 2B: Create Application API Key
   //                                                                          
-  const step2b = await createAppApiKey(sanitizedAppId, adminApiKey);
+  // CRITICAL: Use orgApiKey here - it has RIGHT_APPLICATION_ALL needed to create app keys
+  const appKeyCreationKey = orgApiKey || adminApiKey;
+  console.log(`[Step2B] Using credential: ${orgApiKey ? 'org_api_key' : 'admin_api_key'} (key_last4: ${appKeyCreationKey.slice(-4)})`);
+  
+  const step2b = await createAppApiKey(sanitizedAppId, appKeyCreationKey);
   steps.push(step2b);
 
   if (!step2b.success) {
@@ -1017,8 +1031,11 @@ async function runProvisioning(
   //                                                                          
   // STEP 3: Create Webhook
   //                                                                          
+  const webhookCreationKey = orgApiKey || adminApiKey;
+  console.log(`[Step3] Using credential: ${orgApiKey ? 'org_api_key' : 'admin_api_key'} (key_last4: ${webhookCreationKey.slice(-4)})`);
+  
   const webhookUrl = `${webhookBaseUrl}/functions/v1/ttn-webhook`;
-  const step3 = await createWebhook(sanitizedAppId, adminApiKey, webhookUrl);
+  const step3 = await createWebhook(sanitizedAppId, webhookCreationKey, webhookUrl);
   steps.push(step3);
 
   if (!step3.success) {
@@ -1039,13 +1056,19 @@ async function runProvisioning(
   //                                                                          
   // SUCCESS: Save to database
   //                                                                          
+  // Use region from request, fallback to default
+  const effectiveRegion = request.cluster || TTN_REGION;
+  console.log(`[DB] Saving with region: ${effectiveRegion}`);
+
   try {
-    const { error: dbError } = await supabaseClient.from("ttn_settings").upsert(
+    // Note: ttn_settings table may not exist - this is a legacy reference
+    // The primary storage is ttn_connections managed by manage-ttn-settings
+    const { error: dbError } = await (supabaseClient as any).from("ttn_settings").upsert(
       {
         org_id: request.customer_id || currentOrgId,
         site_id: request.site_id || null,
         enabled: true,
-        cluster: TTN_REGION,
+        cluster: effectiveRegion,
         application_id: sanitizedAppId,
         api_key: appApiKey, // Store app API key for webhook auth
         webhook_secret: webhookSecret,
@@ -1129,6 +1152,7 @@ async function runProvisioning(
     ttn_app_api_key: appApiKey,
     webhook_id: webhookId,
     webhook_secret: webhookSecret,
+    region: effectiveRegion,
     version: FUNCTION_VERSION,
   };
 }
@@ -1141,6 +1165,43 @@ serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
+  }
+
+  // Health check endpoint (GET request)
+  if (req.method === "GET") {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        status: "ok",
+        function: "ttn-bootstrap",
+        version: FUNCTION_VERSION,
+        capabilities: {
+          validate_only: true,
+          preflight: true,
+          provision: true,
+          start_fresh: true,
+          status: true,
+        },
+        timestamp: new Date().toISOString(),
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+
+  // Handle POST with empty body as health check (diagnostics tool may send POST)
+  const contentLength = req.headers.get("content-length");
+  if (req.method === "POST" && (!contentLength || contentLength === "0")) {
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        status: "healthy",
+        function: "ttn-bootstrap",
+        version: FUNCTION_VERSION,
+        hint: "POST with empty body treated as health check",
+        timestamp: new Date().toISOString(),
+      }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 
   try {
@@ -1266,6 +1327,52 @@ serve(async (req: Request) => {
             api_key_entity_type: validation.authInfo?.entityType,
             api_key_user_id: validation.authInfo?.userId,
             api_key_rights_count: validation.authInfo?.rights.length,
+          }),
+          {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      case "validate_only": {
+        // Validate API key and application access without provisioning
+        console.log(`[validate_only] Validating configuration for org: ${body.organization_id || body.org_id}`);
+        
+        const apiKeyToValidate = body.api_key || adminApiKey;
+        const validation = await validateApiKey(apiKeyToValidate);
+        
+        if (!validation.valid) {
+          return new Response(
+            JSON.stringify({
+              valid: false,
+              ok: false,
+              error: validation.error,
+              error_category: validation.errorCategory,
+              version: FUNCTION_VERSION,
+            }),
+            {
+              status: 200, // Return 200 with valid=false for application-level errors
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            }
+          );
+        }
+        
+        // Return successful validation with permissions info
+        return new Response(
+          JSON.stringify({
+            valid: true,
+            ok: true,
+            message: "Configuration validated successfully",
+            permissions: {
+              rights: validation.authInfo?.rights || [],
+              entity_type: validation.authInfo?.entityType,
+              user_id: validation.authInfo?.userId,
+            },
+            region: TTN_REGION,
+            base_url: TTN_BASE_URL,
+            request_id: crypto.randomUUID().slice(0, 8),
+            version: FUNCTION_VERSION,
           }),
           {
             status: 200,

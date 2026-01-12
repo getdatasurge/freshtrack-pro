@@ -11,9 +11,16 @@ const corsHeaders = {
 interface AuthInfo {
   is_admin?: boolean;
   universal_rights?: string[];
-  user_ids?: Array<{ user_id: string }>;
-  organization_ids?: Array<{ organization_id: string }>;
-  application_ids?: Array<{ application_id: string }>;
+  api_key?: {
+    api_key?: {
+      rights?: string[];
+    };
+    entity_ids?: {
+      user_ids?: { user_id: string };
+      organization_ids?: { organization_id: string };
+      application_ids?: { application_id: string };
+    };
+  };
 }
 
 interface PreflightRequest {
@@ -43,8 +50,11 @@ interface PreflightResult {
  * Validates TTN API key type and gateway permissions BEFORE any provisioning attempt.
  * Returns actionable errors with step-by-step fix instructions.
  */
+// EU1 is the ONLY identity server for Personal API keys
+const TTN_IDENTITY_BASE = "https://eu1.cloud.thethings.network";
+
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-gateway-preflight-v1-20250102";
+  const BUILD_VERSION = "ttn-gateway-preflight-v2.0-authinfo-fix-20260105";
   const requestId = crypto.randomUUID().slice(0, 8);
 
   console.log(`[ttn-gateway-preflight] Build: ${BUILD_VERSION}`);
@@ -199,9 +209,10 @@ serve(async (req) => {
     }
 
     // Check API key scope using auth_info endpoint
-    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info`);
+    // CRITICAL: Always use EU1 identity server for auth_info - Personal API keys are global
+    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${TTN_IDENTITY_BASE}`);
 
-    const authInfoResponse = await fetch(`${ttnConfig.identityBaseUrl}/api/v3/auth_info`, {
+    const authInfoResponse = await fetch(`${TTN_IDENTITY_BASE}/api/v3/auth_info`, {
       headers: {
         Authorization: `Bearer ${ttnConfig.apiKey}`,
         "Content-Type": "application/json",
@@ -209,7 +220,36 @@ serve(async (req) => {
     });
 
     if (!authInfoResponse.ok) {
-      console.error(`[ttn-gateway-preflight] [${requestId}] auth_info failed: ${authInfoResponse.status}`);
+      const errorText = await authInfoResponse.text();
+      console.error(`[ttn-gateway-preflight] [${requestId}] auth_info failed: ${authInfoResponse.status} ${errorText}`);
+      
+      // Check for route not found (wrong region/cluster)
+      if (authInfoResponse.status === 404 || errorText.includes('route_not_found')) {
+        const result: PreflightResult = {
+          ok: true,
+          request_id: requestId,
+          allowed: false,
+          key_type: "unknown",
+          owner_scope: null,
+          scope_id: null,
+          has_gateway_rights: false,
+          missing_rights: ["gateways:read", "gateways:write"],
+          error: {
+            code: "TTN_NOT_CONFIGURED" as const,
+            message: "TTN region/API base mismatch",
+            hint: "Verify TTN cluster setting matches your TTN Console region (e.g., eu1 vs nam1)",
+            fix_steps: [
+              "1. Check your TTN Console URL (e.g., eu1.cloud.thethings.network)",
+              "2. Update TTN cluster in FrostGuard Settings → Developer to match",
+              "3. Retry the preflight check",
+            ],
+          },
+        };
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       
       const result: PreflightResult = {
         ok: true,
@@ -238,49 +278,57 @@ serve(async (req) => {
     }
 
     const authInfo: AuthInfo = await authInfoResponse.json();
-    console.log(`[ttn-gateway-preflight] [${requestId}] Auth info received:`, JSON.stringify({
+    
+    // CRITICAL: TTN auth_info response structure for Personal API keys is DOUBLE-NESTED:
+    // { api_key: { api_key: { rights: [...] }, entity_ids: { user_ids: { user_id: "..." } } } }
+    const apiKeyWrapper = authInfo.api_key;
+    const entityIds = apiKeyWrapper?.entity_ids;
+    const innerApiKey = apiKeyWrapper?.api_key;
+    
+    console.log(`[ttn-gateway-preflight] [${requestId}] Auth info structure:`, JSON.stringify({
       is_admin: authInfo.is_admin,
-      user_ids: authInfo.user_ids?.map((u) => u.user_id),
-      organization_ids: authInfo.organization_ids?.map((o) => o.organization_id),
-      application_ids: authInfo.application_ids?.map((a) => a.application_id),
+      has_api_key_wrapper: !!apiKeyWrapper,
+      has_inner_api_key: !!innerApiKey,
+      entity_ids_keys: entityIds ? Object.keys(entityIds) : [],
+      inner_rights_count: innerApiKey?.rights?.length || 0,
       universal_rights_count: authInfo.universal_rights?.length || 0,
     }));
 
-    // Determine key type and scope
+    // Determine key type and scope from entity_ids
     let keyType: "personal" | "organization" | "application" | "unknown" = "unknown";
     let ownerScope: "user" | "organization" | null = null;
     let scopeId: string | null = null;
 
-    if (authInfo.user_ids && authInfo.user_ids.length > 0) {
+    if (entityIds?.user_ids?.user_id) {
       keyType = "personal";
       ownerScope = "user";
-      scopeId = authInfo.user_ids[0].user_id;
-    } else if (authInfo.organization_ids && authInfo.organization_ids.length > 0) {
+      scopeId = entityIds.user_ids.user_id;
+    } else if (entityIds?.organization_ids?.organization_id) {
       keyType = "organization";
       ownerScope = "organization";
-      scopeId = authInfo.organization_ids[0].organization_id;
-    } else if (authInfo.application_ids && authInfo.application_ids.length > 0) {
+      scopeId = entityIds.organization_ids.organization_id;
+    } else if (entityIds?.application_ids?.application_id) {
       keyType = "application";
       ownerScope = null; // Application keys can't provision gateways
-      scopeId = authInfo.application_ids[0].application_id;
+      scopeId = entityIds.application_ids.application_id;
     }
 
     console.log(`[ttn-gateway-preflight] [${requestId}] Key type: ${keyType}, scope: ${ownerScope}, id: ${scopeId}`);
 
-    // Check for gateway rights in universal_rights
-    const universalRights = authInfo.universal_rights || [];
-    const hasGatewayRead = universalRights.some(
+    // Rights: inner.rights → universal_rights fallback
+    const rights = innerApiKey?.rights ?? authInfo.universal_rights ?? [];
+    const hasGatewayRead = rights.some(
       (r) => r === "RIGHT_GATEWAY_ALL" || r === "RIGHT_GATEWAY_INFO" || r.includes("GATEWAY")
     );
-    const hasGatewayWrite = universalRights.some(
-      (r) => r === "RIGHT_GATEWAY_ALL" || r === "RIGHT_GATEWAY_SETTINGS_BASIC" || r === "RIGHT_GATEWAY_SETTINGS_API_KEYS"
+    const hasGatewayWrite = rights.some(
+      (r) => r === "RIGHT_GATEWAY_ALL" || r === "RIGHT_GATEWAY_SETTINGS_BASIC" || r === "RIGHT_GATEWAY_SETTINGS_API_KEYS" || r === "RIGHT_USER_GATEWAYS_CREATE"
     );
 
     const missingRights: string[] = [];
     if (!hasGatewayRead) missingRights.push("gateways:read");
     if (!hasGatewayWrite) missingRights.push("gateways:write");
 
-    console.log(`[ttn-gateway-preflight] [${requestId}] Gateway rights - read: ${hasGatewayRead}, write: ${hasGatewayWrite}`);
+    console.log(`[ttn-gateway-preflight] [${requestId}] Rights count: ${rights.length}, gateway read: ${hasGatewayRead}, write: ${hasGatewayWrite}`);
 
     // Update ttn_connections with detected type
     await supabase
