@@ -149,6 +149,38 @@ serve(async (req) => {
     console.log(`[ttn-provision-device] Identity Server URL: ${ttnConfig.identityBaseUrl}`);
     console.log(`[ttn-provision-device] Regional Server URL: ${ttnConfig.regionalBaseUrl}`);
 
+    // PRE-PROVISIONING CLUSTER VALIDATION (fail fast)
+    // All TTN operations must go to eu1 to prevent split-cluster bugs
+    const EU1_BASE = "https://eu1.cloud.thethings.network";
+    if (ttnConfig.region !== "eu1") {
+      console.error(`[ttn-provision-device] CLUSTER MISMATCH: Config region="${ttnConfig.region}" but EU1 required`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Cluster mismatch detected",
+          details: `TTN config region is "${ttnConfig.region}" but FrostGuard requires EU1. Update ttn_region in ttn_connections table.`,
+          cluster_mismatch: true,
+          fix: "UPDATE ttn_connections SET ttn_region = 'eu1' WHERE organization_id = '<your-org-id>'",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (ttnConfig.identityBaseUrl !== EU1_BASE || ttnConfig.regionalBaseUrl !== EU1_BASE) {
+      console.error(`[ttn-provision-device] URL MISMATCH: IS=${ttnConfig.identityBaseUrl}, Regional=${ttnConfig.regionalBaseUrl}, Expected=${EU1_BASE}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "TTN URL mismatch",
+          details: `Identity or Regional server URL is not EU1. IS=${ttnConfig.identityBaseUrl}, Regional=${ttnConfig.regionalBaseUrl}`,
+          cluster_mismatch: true,
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`[ttn-provision-device] ✓ Cluster validation passed: all URLs point to EU1`);
+
     // Helper for TTN Identity Server API calls
     const ttnIsFetch = async (endpoint: string, options: RequestInit = {}) => {
       const url = `${ttnConfig.identityBaseUrl}${endpoint}`;
