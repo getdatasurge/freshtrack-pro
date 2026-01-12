@@ -2,7 +2,7 @@
 
 > Terminology and definitions used throughout the documentation
 
-**Last Updated:** 2026-01-12 02:24:44 UTC
+**Last Updated:** 2026-01-12 02:48:40 UTC
 **Total Terms:** 198
 
 ---
