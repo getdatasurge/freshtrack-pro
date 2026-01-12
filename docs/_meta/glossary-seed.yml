@@ -18,7 +18,7 @@ Alert Rule: Configuration defining temperature thresholds and timing for generat
 Check-in Interval: The configured frequency at which a sensor should report temperature readings
 Confirm Time: Delay before a temperature excursion triggers an active alarm (prevents false positives)
 
-# IoT/Hardware Terms
+# IoT Hardware Terms
 LoRa: Long Range - low-power wireless protocol for IoT sensor communication
 TTN: The Things Network - community and enterprise LoRaWAN network infrastructure
 DevEUI: Device Extended Unique Identifier - globally unique 64-bit identifier for LoRa devices

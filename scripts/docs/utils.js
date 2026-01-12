@@ -12,9 +12,13 @@ export const BUILD_DIR = path.join(DOCS_ROOT, '_build');
 
 /**
  * Recursively find all markdown files in a directory
+ * Returns files sorted alphabetically for deterministic ordering across environments
  */
 export async function findMarkdownFiles(dir, files = []) {
   const entries = await fs.readdir(dir, { withFileTypes: true });
+
+  // Sort entries alphabetically for deterministic ordering
+  entries.sort((a, b) => a.name.localeCompare(b.name));
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
@@ -29,6 +33,11 @@ export async function findMarkdownFiles(dir, files = []) {
     } else if (entry.name.endsWith('.md')) {
       files.push(fullPath);
     }
+  }
+
+  // Sort the final results by path for consistent ordering
+  if (dir === DOCS_ROOT || files.length > 0) {
+    files.sort((a, b) => a.localeCompare(b));
   }
 
   return files;
@@ -235,9 +244,40 @@ export function validateMermaidSyntax(content) {
 
 /**
  * Format a timestamp for display
+ * In CI mode (CI=true) or when SOURCE_DATE_EPOCH is set, returns a deterministic value
  */
 export function formatTimestamp() {
+  // In CI mode, omit dynamic timestamps to ensure deterministic output
+  if (process.env.CI === 'true') {
+    return '(auto-generated)';
+  }
+
+  // If SOURCE_DATE_EPOCH is set, use it for reproducible builds
+  if (process.env.SOURCE_DATE_EPOCH) {
+    const epochSeconds = parseInt(process.env.SOURCE_DATE_EPOCH, 10);
+    return new Date(epochSeconds * 1000).toISOString().replace('T', ' ').split('.')[0] + ' UTC';
+  }
+
   return new Date().toISOString().replace('T', ' ').split('.')[0] + ' UTC';
+}
+
+/**
+ * Get a deterministic timestamp for JSON output
+ * Returns null in CI mode (field should be omitted), or ISO string otherwise
+ */
+export function getGeneratedTimestamp() {
+  // In CI mode, return null to signal the field should be omitted
+  if (process.env.CI === 'true') {
+    return null;
+  }
+
+  // If SOURCE_DATE_EPOCH is set, use it for reproducible builds
+  if (process.env.SOURCE_DATE_EPOCH) {
+    const epochSeconds = parseInt(process.env.SOURCE_DATE_EPOCH, 10);
+    return new Date(epochSeconds * 1000).toISOString();
+  }
+
+  return new Date().toISOString();
 }
 
 /**

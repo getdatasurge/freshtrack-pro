@@ -144,11 +144,11 @@ async function generateGlossary() {
 
 `);
 
-  // Category order
+  // Category order - use canonical names for consistent output
   const categoryOrder = [
     'Architecture',
     'Product',
-    'IoT/Hardware',
+    'IoT Hardware',
     'Alert System',
     'Monitoring',
     'Security',
@@ -157,6 +157,31 @@ async function generateGlossary() {
     'Development',
     'General'
   ];
+
+  // Normalize category names to canonical form (handles variations like IoT/Hardware -> IoT Hardware)
+  const categoryNormalization = {
+    'IoT/Hardware': 'IoT Hardware',
+    'IoT / Hardware': 'IoT Hardware',
+  };
+
+  // Apply category normalization
+  const normalizedCategories = {};
+  for (const [cat, terms] of Object.entries(categories)) {
+    const normalizedName = categoryNormalization[cat] || cat;
+    if (!normalizedCategories[normalizedName]) {
+      normalizedCategories[normalizedName] = [];
+    }
+    normalizedCategories[normalizedName].push(...terms);
+  }
+
+  // Re-sort terms in normalized categories
+  for (const cat of Object.keys(normalizedCategories)) {
+    normalizedCategories[cat].sort((a, b) => a.term.localeCompare(b.term));
+  }
+
+  // Replace categories with normalized version
+  Object.keys(categories).forEach(key => delete categories[key]);
+  Object.assign(categories, normalizedCategories);
 
   // Add navigation links
   for (const category of categoryOrder) {

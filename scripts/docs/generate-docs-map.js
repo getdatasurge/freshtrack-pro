@@ -15,6 +15,7 @@ import {
   getRelativePath,
   getCategory,
   CATEGORY_INFO,
+  getGeneratedTimestamp,
   logSuccess,
   logInfo,
   logHeader
@@ -24,8 +25,11 @@ async function generateDocsMap() {
   logHeader('Generating Documentation Map');
 
   const files = await findMarkdownFiles(DOCS_ROOT);
+
+  // Build docsMap - only include 'generated' field when not in CI mode
+  const generatedTimestamp = getGeneratedTimestamp();
   const docsMap = {
-    generated: new Date().toISOString(),
+    ...(generatedTimestamp ? { generated: generatedTimestamp } : {}),
     totalFiles: files.length,
     categories: {},
     files: []
@@ -63,14 +67,19 @@ async function generateDocsMap() {
     });
   }
 
-  // Sort categories by order
+  // Sort categories by order and sort files within each category
   const sortedCategories = {};
   Object.entries(docsMap.categories)
     .sort((a, b) => a[1].order - b[1].order)
     .forEach(([key, value]) => {
+      // Sort files within category alphabetically by path
+      value.files.sort((a, b) => a.path.localeCompare(b.path));
       sortedCategories[key] = value;
     });
   docsMap.categories = sortedCategories;
+
+  // Sort the files array by path for deterministic output
+  docsMap.files.sort((a, b) => a.path.localeCompare(b.path));
 
   // Ensure _meta directory exists
   await fs.mkdir(META_DIR, { recursive: true });

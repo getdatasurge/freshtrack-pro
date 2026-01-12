@@ -2,8 +2,8 @@
 
 > Complete navigation guide to all project documentation
 
-**Last Updated:** 2026-01-12 02:48:40 UTC
-**Total Documents:** 49
+**Last Updated:** (auto-generated)
+**Total Documents:** 51
 
 ---
 
@@ -140,13 +140,13 @@ General documentation and guides.
 
 | Document | Description |
 |----------|-------------|
+| [FrostGuard Deprecations](./deprecations.md) | Deprecated features |
 | [Emulator Quick Start - TTN Integration](./EMULATOR_QUICK_START.md) | Emulator quick start |
 | [Emulator TTN Integration Guide](./EMULATOR_TTN_INTEGRATION.md) | TTN emulator integration |
 | [FreshTrack Pro (FrostGuard)](./README.md) | Project overview |
+| [FrostGuard System Map](./system-map.md) | System component map |
 | [TTN Production Secrets Setup](./TTN_PRODUCTION_SETUP.md) | Production TTN setup |
 | [The Things Network (TTN) Setup Guide](./TTN_SETUP.md) | TTN configuration guide |
-| [FrostGuard Deprecations](./deprecations.md) | Deprecated features |
-| [FrostGuard System Map](./system-map.md) | System component map |
 
 ---
 

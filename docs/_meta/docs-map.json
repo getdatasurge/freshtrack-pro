@@ -1,6 +1,5 @@
 {
-  "generated": "2026-01-12T02:48:40.551Z",
-  "totalFiles": 49,
+  "totalFiles": 51,
   "categories": {
     "executive": {
       "name": "Executive Summary",
@@ -241,6 +240,10 @@
           "title": "Documentation CI Checklist"
         },
         {
+          "path": "deprecations.md",
+          "title": "FrostGuard Deprecations"
+        },
+        {
           "path": "EMULATOR_QUICK_START.md",
           "title": "Emulator Quick Start - TTN Integration"
         },
@@ -261,613 +264,21 @@
           "title": "FreshTrack Pro (FrostGuard)"
         },
         {
+          "path": "system-map.md",
+          "title": "FrostGuard System Map"
+        },
+        {
           "path": "TTN_PRODUCTION_SETUP.md",
           "title": "TTN Production Secrets Setup"
         },
         {
           "path": "TTN_SETUP.md",
           "title": "The Things Network (TTN) Setup Guide"
-        },
-        {
-          "path": "deprecations.md",
-          "title": "FrostGuard Deprecations"
-        },
-        {
-          "path": "system-map.md",
-          "title": "FrostGuard System Map"
         }
       ]
     }
   },
   "files": [
-    {
-      "path": "CI_CHECKLIST.md",
-      "title": "Documentation CI Checklist",
-      "category": "root",
-      "headings": [
-        {
-          "text": "Documentation CI Checklist",
-          "anchor": "documentation-ci-checklist"
-        },
-        {
-          "text": "Overview",
-          "anchor": "overview"
-        },
-        {
-          "text": "Automated Checks",
-          "anchor": "automated-checks"
-        },
-        {
-          "text": "CI Workflow",
-          "anchor": "ci-workflow"
-        },
-        {
-          "text": "Local Validation",
-          "anchor": "local-validation"
-        },
-        {
-          "text": "Full pipeline (generate + lint + build)",
-          "anchor": "full-pipeline-generate-lint-build"
-        },
-        {
-          "text": "Just validate",
-          "anchor": "just-validate"
-        },
-        {
-          "text": "Just regenerate index/glossary",
-          "anchor": "just-regenerate-indexglossary"
-        },
-        {
-          "text": "Check if docs changed",
-          "anchor": "check-if-docs-changed"
-        },
-        {
-          "text": "Fixing Common Issues",
-          "anchor": "fixing-common-issues"
-        },
-        {
-          "text": "Error: Broken link: ./missing.md",
-          "anchor": "error-broken-link-missingmd"
-        },
-        {
-          "text": "Fix: Update the link to correct path",
-          "anchor": "fix-update-the-link-to-correct-path"
-        },
-        {
-          "text": "Error: Document missing H1 title",
-          "anchor": "error-document-missing-h1-title"
-        },
-        {
-          "text": "Fix: Add title at top of document",
-          "anchor": "fix-add-title-at-top-of-document"
-        },
-        {
-          "text": "My Document Title",
-          "anchor": "my-document-title"
-        },
-        {
-          "text": "Warning: Heading level jumps from H2 to H4",
-          "anchor": "warning-heading-level-jumps-from-h2-to-h4"
-        },
-        {
-          "text": "Bad:",
-          "anchor": "bad"
-        },
-        {
-          "text": "Section",
-          "anchor": "section"
-        },
-        {
-          "text": "Good:",
-          "anchor": "good"
-        },
-        {
-          "text": "Section",
-          "anchor": "section"
-        },
-        {
-          "text": "Error: Contains placeholder text: [TBD]",
-          "anchor": "error-contains-placeholder-text-tbd"
-        },
-        {
-          "text": "Fix: Replace with actual content",
-          "anchor": "fix-replace-with-actual-content"
-        },
-        {
-          "text": "Error: Mermaid diagram: Missing diagram type",
-          "anchor": "error-mermaid-diagram-missing-diagram-type"
-        },
-        {
-          "text": "Bad:",
-          "anchor": "bad"
-        },
-        {
-          "text": "Good:",
-          "anchor": "good"
-        },
-        {
-          "text": "Severity Levels",
-          "anchor": "severity-levels"
-        },
-        {
-          "text": "Adding New Checks",
-          "anchor": "adding-new-checks"
-        },
-        {
-          "text": "Bypassing Checks",
-          "anchor": "bypassing-checks"
-        },
-        {
-          "text": "Document Without Related Section",
-          "anchor": "document-without-related-section"
-        },
-        {
-          "text": "Metrics",
-          "anchor": "metrics"
-        },
-        {
-          "text": "Related Documents",
-          "anchor": "related-documents"
-        }
-      ]
-    },
-    {
-      "path": "EMULATOR_QUICK_START.md",
-      "title": "Emulator Quick Start - TTN Integration",
-      "category": "root",
-      "headings": [
-        {
-          "text": "Emulator Quick Start - TTN Integration",
-          "anchor": "emulator-quick-start-ttn-integration"
-        },
-        {
-          "text": "1. Database Setup (Run in Emulator Supabase)",
-          "anchor": "1-database-setup-run-in-emulator-supabase"
-        },
-        {
-          "text": "2. Receive Sync Payload",
-          "anchor": "2-receive-sync-payload"
-        },
-        {
-          "text": "3. Simulate TTN Uplink",
-          "anchor": "3-simulate-ttn-uplink"
-        },
-        {
-          "text": "4. Test It",
-          "anchor": "4-test-it"
-        },
-        {
-          "text": "In emulator Supabase project secrets",
-          "anchor": "in-emulator-supabase-project-secrets"
-        },
-        {
-          "text": "5. Expected Sync Payload",
-          "anchor": "5-expected-sync-payload"
-        },
-        {
-          "text": "6. Troubleshooting",
-          "anchor": "6-troubleshooting"
-        },
-        {
-          "text": "Done! 🎉",
-          "anchor": "done-"
-        }
-      ]
-    },
-    {
-      "path": "EMULATOR_TTN_INTEGRATION.md",
-      "title": "Emulator TTN Integration Guide",
-      "category": "root",
-      "headings": [
-        {
-          "text": "Emulator TTN Integration Guide",
-          "anchor": "emulator-ttn-integration-guide"
-        },
-        {
-          "text": "Overview",
-          "anchor": "overview"
-        },
-        {
-          "text": "Incoming Sync Payload Structure",
-          "anchor": "incoming-sync-payload-structure"
-        },
-        {
-          "text": "Database Schema for Emulator",
-          "anchor": "database-schema-for-emulator"
-        },
-        {
-          "text": "Processing Sync Payload in Emulator",
-          "anchor": "processing-sync-payload-in-emulator"
-        },
-        {
-          "text": "Using TTN Data in Emulator",
-          "anchor": "using-ttn-data-in-emulator"
-        },
-        {
-          "text": "Security Best Practices",
-          "anchor": "security-best-practices"
-        },
-        {
-          "text": "Testing",
-          "anchor": "testing"
-        },
-        {
-          "text": "Test sync endpoint",
-          "anchor": "test-sync-endpoint"
-        },
-        {
-          "text": "Simulate uplink",
-          "anchor": "simulate-uplink"
-        },
-        {
-          "text": "Troubleshooting",
-          "anchor": "troubleshooting"
-        },
-        {
-          "text": "Summary",
-          "anchor": "summary"
-        }
-      ]
-    },
-    {
-      "path": "GLOSSARY.md",
-      "title": "FreshTrack Pro Glossary",
-      "category": "root",
-      "headings": [
-        {
-          "text": "FreshTrack Pro Glossary",
-          "anchor": "freshtrack-pro-glossary"
-        },
-        {
-          "text": "Quick Navigation",
-          "anchor": "quick-navigation"
-        },
-        {
-          "text": "Architecture",
-          "anchor": "architecture"
-        },
-        {
-          "text": "Product",
-          "anchor": "product"
-        },
-        {
-          "text": "IoT/Hardware",
-          "anchor": "iothardware"
-        },
-        {
-          "text": "Alert System",
-          "anchor": "alert-system"
-        },
-        {
-          "text": "Monitoring",
-          "anchor": "monitoring"
-        },
-        {
-          "text": "Security",
-          "anchor": "security"
-        },
-        {
-          "text": "Data",
-          "anchor": "data"
-        },
-        {
-          "text": "Integration",
-          "anchor": "integration"
-        },
-        {
-          "text": "Development",
-          "anchor": "development"
-        },
-        {
-          "text": "General",
-          "anchor": "general"
-        },
-        {
-          "text": "Adding Terms",
-          "anchor": "adding-terms"
-        },
-        {
-          "text": "Related Documents",
-          "anchor": "related-documents"
-        }
-      ]
-    },
-    {
-      "path": "INDEX.md",
-      "title": "FreshTrack Pro Documentation Index",
-      "category": "root",
-      "headings": [
-        {
-          "text": "FreshTrack Pro Documentation Index",
-          "anchor": "freshtrack-pro-documentation-index"
-        },
-        {
-          "text": "Quick Links",
-          "anchor": "quick-links"
-        },
-        {
-          "text": "Executive Summary",
-          "anchor": "executive-summary"
-        },
-        {
-          "text": "Architecture",
-          "anchor": "architecture"
-        },
-        {
-          "text": "Product",
-          "anchor": "product"
-        },
-        {
-          "text": "Engineering",
-          "anchor": "engineering"
-        },
-        {
-          "text": "Onboarding",
-          "anchor": "onboarding"
-        },
-        {
-          "text": "Quality Assurance",
-          "anchor": "quality-assurance"
-        },
-        {
-          "text": "Security",
-          "anchor": "security"
-        },
-        {
-          "text": "Operations",
-          "anchor": "operations"
-        },
-        {
-          "text": "Diagrams",
-          "anchor": "diagrams"
-        },
-        {
-          "text": "Charts",
-          "anchor": "charts"
-        },
-        {
-          "text": "General",
-          "anchor": "general"
-        },
-        {
-          "text": "Document Relationships",
-          "anchor": "document-relationships"
-        },
-        {
-          "text": "Documentation Pipeline",
-          "anchor": "documentation-pipeline"
-        }
-      ]
-    },
-    {
-      "path": "README.md",
-      "title": "FreshTrack Pro (FrostGuard)",
-      "category": "root",
-      "headings": [
-        {
-          "text": "FreshTrack Pro (FrostGuard)",
-          "anchor": "freshtrack-pro-frostguard"
-        },
-        {
-          "text": "Overview",
-          "anchor": "overview"
-        },
-        {
-          "text": "Goals & Use Cases",
-          "anchor": "goals-use-cases"
-        },
-        {
-          "text": "Tech Stack",
-          "anchor": "tech-stack"
-        },
-        {
-          "text": "Repository Structure",
-          "anchor": "repository-structure"
-        },
-        {
-          "text": "Running Locally",
-          "anchor": "running-locally"
-        },
-        {
-          "text": "Clone the repository",
-          "anchor": "clone-the-repository"
-        },
-        {
-          "text": "Install dependencies",
-          "anchor": "install-dependencies"
-        },
-        {
-          "text": "or: bun install",
-          "anchor": "or-bun-install"
-        },
-        {
-          "text": "Set up environment variables",
-          "anchor": "set-up-environment-variables"
-        },
-        {
-          "text": "Edit .env with your Supabase credentials",
-          "anchor": "edit-env-with-your-supabase-credentials"
-        },
-        {
-          "text": "Start development server",
-          "anchor": "start-development-server"
-        },
-        {
-          "text": "or: bun dev",
-          "anchor": "or-bun-dev"
-        },
-        {
-          "text": "Start local Supabase",
-          "anchor": "start-local-supabase"
-        },
-        {
-          "text": "Run migrations",
-          "anchor": "run-migrations"
-        },
-        {
-          "text": "Start edge functions",
-          "anchor": "start-edge-functions"
-        },
-        {
-          "text": "Build & Deployment",
-          "anchor": "build-deployment"
-        },
-        {
-          "text": "Build for production",
-          "anchor": "build-for-production"
-        },
-        {
-          "text": "or: bun run build",
-          "anchor": "or-bun-run-build"
-        },
-        {
-          "text": "Preview production build",
-          "anchor": "preview-production-build"
-        },
-        {
-          "text": "High-Level System Overview",
-          "anchor": "high-level-system-overview"
-        },
-        {
-          "text": "Documentation Index",
-          "anchor": "documentation-index"
-        },
-        {
-          "text": "Contributing",
-          "anchor": "contributing"
-        },
-        {
-          "text": "License",
-          "anchor": "license"
-        }
-      ]
-    },
-    {
-      "path": "TTN_PRODUCTION_SETUP.md",
-      "title": "TTN Production Secrets Setup",
-      "category": "root",
-      "headings": [
-        {
-          "text": "TTN Production Secrets Setup",
-          "anchor": "ttn-production-secrets-setup"
-        },
-        {
-          "text": "Your TTN Credentials",
-          "anchor": "your-ttn-credentials"
-        },
-        {
-          "text": "Option 1: Using the Setup Script (Recommended)",
-          "anchor": "option-1-using-the-setup-script-recommended"
-        },
-        {
-          "text": "Option 2: Using Supabase CLI Manually",
-          "anchor": "option-2-using-supabase-cli-manually"
-        },
-        {
-          "text": "Set TTN User ID",
-          "anchor": "set-ttn-user-id"
-        },
-        {
-          "text": "Set TTN Admin API Key",
-          "anchor": "set-ttn-admin-api-key"
-        },
-        {
-          "text": "Option 3: Using Supabase Dashboard (If CLI is not available)",
-          "anchor": "option-3-using-supabase-dashboard-if-cli-is-not-available"
-        },
-        {
-          "text": "Verify Configuration",
-          "anchor": "verify-configuration"
-        },
-        {
-          "text": "Security Note",
-          "anchor": "security-note"
-        },
-        {
-          "text": "Next Steps",
-          "anchor": "next-steps"
-        },
-        {
-          "text": "Troubleshooting",
-          "anchor": "troubleshooting"
-        },
-        {
-          "text": "or",
-          "anchor": "or"
-        },
-        {
-          "text": "Support",
-          "anchor": "support"
-        }
-      ]
-    },
-    {
-      "path": "TTN_SETUP.md",
-      "title": "The Things Network (TTN) Setup Guide",
-      "category": "root",
-      "headings": [
-        {
-          "text": "The Things Network (TTN) Setup Guide",
-          "anchor": "the-things-network-ttn-setup-guide"
-        },
-        {
-          "text": "Overview",
-          "anchor": "overview"
-        },
-        {
-          "text": "Prerequisites",
-          "anchor": "prerequisites"
-        },
-        {
-          "text": "Step 1: Create a TTN Admin API Key",
-          "anchor": "step-1-create-a-ttn-admin-api-key"
-        },
-        {
-          "text": "Step 2: Get Your TTN User ID",
-          "anchor": "step-2-get-your-ttn-user-id"
-        },
-        {
-          "text": "Step 3: Configure Supabase Secrets",
-          "anchor": "step-3-configure-supabase-secrets"
-        },
-        {
-          "text": "Set TTN Admin API Key",
-          "anchor": "set-ttn-admin-api-key"
-        },
-        {
-          "text": "Set TTN User ID",
-          "anchor": "set-ttn-user-id"
-        },
-        {
-          "text": "Step 4: Verify Configuration",
-          "anchor": "step-4-verify-configuration"
-        },
-        {
-          "text": "Step 5: Test Provisioning",
-          "anchor": "step-5-test-provisioning"
-        },
-        {
-          "text": "Troubleshooting",
-          "anchor": "troubleshooting"
-        },
-        {
-          "text": "TTN Architecture Details",
-          "anchor": "ttn-architecture-details"
-        },
-        {
-          "text": "Regional Servers",
-          "anchor": "regional-servers"
-        },
-        {
-          "text": "Next Steps",
-          "anchor": "next-steps"
-        },
-        {
-          "text": "Support",
-          "anchor": "support"
-        }
-      ]
-    },
     {
       "path": "adr/README.md",
       "title": "Architecture Decision Records (ADRs)",
@@ -1096,6 +507,137 @@
       ]
     },
     {
+      "path": "CI_CHECKLIST.md",
+      "title": "Documentation CI Checklist",
+      "category": "root",
+      "headings": [
+        {
+          "text": "Documentation CI Checklist",
+          "anchor": "documentation-ci-checklist"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Automated Checks",
+          "anchor": "automated-checks"
+        },
+        {
+          "text": "CI Workflow",
+          "anchor": "ci-workflow"
+        },
+        {
+          "text": "Local Validation",
+          "anchor": "local-validation"
+        },
+        {
+          "text": "Full pipeline (generate + lint + build)",
+          "anchor": "full-pipeline-generate-lint-build"
+        },
+        {
+          "text": "Just validate",
+          "anchor": "just-validate"
+        },
+        {
+          "text": "Just regenerate index/glossary",
+          "anchor": "just-regenerate-indexglossary"
+        },
+        {
+          "text": "Check if docs changed",
+          "anchor": "check-if-docs-changed"
+        },
+        {
+          "text": "Fixing Common Issues",
+          "anchor": "fixing-common-issues"
+        },
+        {
+          "text": "Error: Broken link: ./missing.md",
+          "anchor": "error-broken-link-missingmd"
+        },
+        {
+          "text": "Fix: Update the link to correct path",
+          "anchor": "fix-update-the-link-to-correct-path"
+        },
+        {
+          "text": "Error: Document missing H1 title",
+          "anchor": "error-document-missing-h1-title"
+        },
+        {
+          "text": "Fix: Add title at top of document",
+          "anchor": "fix-add-title-at-top-of-document"
+        },
+        {
+          "text": "My Document Title",
+          "anchor": "my-document-title"
+        },
+        {
+          "text": "Warning: Heading level jumps from H2 to H4",
+          "anchor": "warning-heading-level-jumps-from-h2-to-h4"
+        },
+        {
+          "text": "Bad:",
+          "anchor": "bad"
+        },
+        {
+          "text": "Section",
+          "anchor": "section"
+        },
+        {
+          "text": "Good:",
+          "anchor": "good"
+        },
+        {
+          "text": "Section",
+          "anchor": "section"
+        },
+        {
+          "text": "Error: Contains placeholder text: [TBD]",
+          "anchor": "error-contains-placeholder-text-tbd"
+        },
+        {
+          "text": "Fix: Replace with actual content",
+          "anchor": "fix-replace-with-actual-content"
+        },
+        {
+          "text": "Error: Mermaid diagram: Missing diagram type",
+          "anchor": "error-mermaid-diagram-missing-diagram-type"
+        },
+        {
+          "text": "Bad:",
+          "anchor": "bad"
+        },
+        {
+          "text": "Good:",
+          "anchor": "good"
+        },
+        {
+          "text": "Severity Levels",
+          "anchor": "severity-levels"
+        },
+        {
+          "text": "Adding New Checks",
+          "anchor": "adding-new-checks"
+        },
+        {
+          "text": "Bypassing Checks",
+          "anchor": "bypassing-checks"
+        },
+        {
+          "text": "Document Without Related Section",
+          "anchor": "document-without-related-section"
+        },
+        {
+          "text": "Metrics",
+          "anchor": "metrics"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
       "path": "deprecations.md",
       "title": "FrostGuard Deprecations",
       "category": "root",
@@ -1169,6 +711,22 @@
         {
           "text": "Table of Contents",
           "anchor": "table-of-contents"
+        },
+        {
+          "text": "Landing Page",
+          "anchor": "landing-page"
+        },
+        {
+          "text": "Organization Dashboard",
+          "anchor": "organization-dashboard"
+        },
+        {
+          "text": "Sites",
+          "anchor": "sites"
+        },
+        {
+          "text": "Event History",
+          "anchor": "event-history"
         },
         {
           "text": "Dashboard",
@@ -1274,6 +832,26 @@
           "anchor": "dashboard-monitoring"
         },
         {
+          "text": "Add Unit",
+          "anchor": "add-unit"
+        },
+        {
+          "text": "Configure Thresholds",
+          "anchor": "configure-thresholds"
+        },
+        {
+          "text": "Configure Notifications",
+          "anchor": "configure-notifications"
+        },
+        {
+          "text": "Generate Report",
+          "anchor": "generate-report"
+        },
+        {
+          "text": "Corrective Action",
+          "anchor": "corrective-action"
+        },
+        {
           "text": "Related Documentation",
           "anchor": "related-documentation"
         }
@@ -1354,6 +932,104 @@
         {
           "text": "Related Diagrams",
           "anchor": "related-diagrams"
+        }
+      ]
+    },
+    {
+      "path": "EMULATOR_QUICK_START.md",
+      "title": "Emulator Quick Start - TTN Integration",
+      "category": "root",
+      "headings": [
+        {
+          "text": "Emulator Quick Start - TTN Integration",
+          "anchor": "emulator-quick-start-ttn-integration"
+        },
+        {
+          "text": "1. Database Setup (Run in Emulator Supabase)",
+          "anchor": "1-database-setup-run-in-emulator-supabase"
+        },
+        {
+          "text": "2. Receive Sync Payload",
+          "anchor": "2-receive-sync-payload"
+        },
+        {
+          "text": "3. Simulate TTN Uplink",
+          "anchor": "3-simulate-ttn-uplink"
+        },
+        {
+          "text": "4. Test It",
+          "anchor": "4-test-it"
+        },
+        {
+          "text": "In emulator Supabase project secrets",
+          "anchor": "in-emulator-supabase-project-secrets"
+        },
+        {
+          "text": "5. Expected Sync Payload",
+          "anchor": "5-expected-sync-payload"
+        },
+        {
+          "text": "6. Troubleshooting",
+          "anchor": "6-troubleshooting"
+        },
+        {
+          "text": "Done! 🎉",
+          "anchor": "done-"
+        }
+      ]
+    },
+    {
+      "path": "EMULATOR_TTN_INTEGRATION.md",
+      "title": "Emulator TTN Integration Guide",
+      "category": "root",
+      "headings": [
+        {
+          "text": "Emulator TTN Integration Guide",
+          "anchor": "emulator-ttn-integration-guide"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Incoming Sync Payload Structure",
+          "anchor": "incoming-sync-payload-structure"
+        },
+        {
+          "text": "Database Schema for Emulator",
+          "anchor": "database-schema-for-emulator"
+        },
+        {
+          "text": "Processing Sync Payload in Emulator",
+          "anchor": "processing-sync-payload-in-emulator"
+        },
+        {
+          "text": "Using TTN Data in Emulator",
+          "anchor": "using-ttn-data-in-emulator"
+        },
+        {
+          "text": "Security Best Practices",
+          "anchor": "security-best-practices"
+        },
+        {
+          "text": "Testing",
+          "anchor": "testing"
+        },
+        {
+          "text": "Test sync endpoint",
+          "anchor": "test-sync-endpoint"
+        },
+        {
+          "text": "Simulate uplink",
+          "anchor": "simulate-uplink"
+        },
+        {
+          "text": "Troubleshooting",
+          "anchor": "troubleshooting"
+        },
+        {
+          "text": "Summary",
+          "anchor": "summary"
         }
       ]
     },
@@ -1817,6 +1493,140 @@
         {
           "text": "Related Documents",
           "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "GLOSSARY.md",
+      "title": "FreshTrack Pro Glossary",
+      "category": "root",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Glossary",
+          "anchor": "freshtrack-pro-glossary"
+        },
+        {
+          "text": "Quick Navigation",
+          "anchor": "quick-navigation"
+        },
+        {
+          "text": "Architecture",
+          "anchor": "architecture"
+        },
+        {
+          "text": "Product",
+          "anchor": "product"
+        },
+        {
+          "text": "IoT Hardware",
+          "anchor": "iot-hardware"
+        },
+        {
+          "text": "Alert System",
+          "anchor": "alert-system"
+        },
+        {
+          "text": "Monitoring",
+          "anchor": "monitoring"
+        },
+        {
+          "text": "Security",
+          "anchor": "security"
+        },
+        {
+          "text": "Data",
+          "anchor": "data"
+        },
+        {
+          "text": "Integration",
+          "anchor": "integration"
+        },
+        {
+          "text": "Development",
+          "anchor": "development"
+        },
+        {
+          "text": "General",
+          "anchor": "general"
+        },
+        {
+          "text": "Adding Terms",
+          "anchor": "adding-terms"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "INDEX.md",
+      "title": "FreshTrack Pro Documentation Index",
+      "category": "root",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Documentation Index",
+          "anchor": "freshtrack-pro-documentation-index"
+        },
+        {
+          "text": "Quick Links",
+          "anchor": "quick-links"
+        },
+        {
+          "text": "Executive Summary",
+          "anchor": "executive-summary"
+        },
+        {
+          "text": "Architecture",
+          "anchor": "architecture"
+        },
+        {
+          "text": "Product",
+          "anchor": "product"
+        },
+        {
+          "text": "Engineering",
+          "anchor": "engineering"
+        },
+        {
+          "text": "Onboarding",
+          "anchor": "onboarding"
+        },
+        {
+          "text": "Quality Assurance",
+          "anchor": "quality-assurance"
+        },
+        {
+          "text": "Security",
+          "anchor": "security"
+        },
+        {
+          "text": "Operations",
+          "anchor": "operations"
+        },
+        {
+          "text": "Diagrams",
+          "anchor": "diagrams"
+        },
+        {
+          "text": "Charts",
+          "anchor": "charts"
+        },
+        {
+          "text": "Architecture Decision Records",
+          "anchor": "architecture-decision-records"
+        },
+        {
+          "text": "General",
+          "anchor": "general"
+        },
+        {
+          "text": "Document Relationships",
+          "anchor": "document-relationships"
+        },
+        {
+          "text": "Documentation Pipeline",
+          "anchor": "documentation-pipeline"
         }
       ]
     },
@@ -3204,6 +3014,109 @@
       ]
     },
     {
+      "path": "README.md",
+      "title": "FreshTrack Pro (FrostGuard)",
+      "category": "root",
+      "headings": [
+        {
+          "text": "FreshTrack Pro (FrostGuard)",
+          "anchor": "freshtrack-pro-frostguard"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Goals & Use Cases",
+          "anchor": "goals-use-cases"
+        },
+        {
+          "text": "Tech Stack",
+          "anchor": "tech-stack"
+        },
+        {
+          "text": "Repository Structure",
+          "anchor": "repository-structure"
+        },
+        {
+          "text": "Running Locally",
+          "anchor": "running-locally"
+        },
+        {
+          "text": "Clone the repository",
+          "anchor": "clone-the-repository"
+        },
+        {
+          "text": "Install dependencies",
+          "anchor": "install-dependencies"
+        },
+        {
+          "text": "or: bun install",
+          "anchor": "or-bun-install"
+        },
+        {
+          "text": "Set up environment variables",
+          "anchor": "set-up-environment-variables"
+        },
+        {
+          "text": "Edit .env with your Supabase credentials",
+          "anchor": "edit-env-with-your-supabase-credentials"
+        },
+        {
+          "text": "Start development server",
+          "anchor": "start-development-server"
+        },
+        {
+          "text": "or: bun dev",
+          "anchor": "or-bun-dev"
+        },
+        {
+          "text": "Start local Supabase",
+          "anchor": "start-local-supabase"
+        },
+        {
+          "text": "Run migrations",
+          "anchor": "run-migrations"
+        },
+        {
+          "text": "Start edge functions",
+          "anchor": "start-edge-functions"
+        },
+        {
+          "text": "Build & Deployment",
+          "anchor": "build-deployment"
+        },
+        {
+          "text": "Build for production",
+          "anchor": "build-for-production"
+        },
+        {
+          "text": "or: bun run build",
+          "anchor": "or-bun-run-build"
+        },
+        {
+          "text": "Preview production build",
+          "anchor": "preview-production-build"
+        },
+        {
+          "text": "High-Level System Overview",
+          "anchor": "high-level-system-overview"
+        },
+        {
+          "text": "Documentation Index",
+          "anchor": "documentation-index"
+        },
+        {
+          "text": "Contributing",
+          "anchor": "contributing"
+        },
+        {
+          "text": "License",
+          "anchor": "license"
+        }
+      ]
+    },
+    {
       "path": "security/AUTH_MODEL.md",
       "title": "Authentication & Authorization Model",
       "category": "security",
@@ -3598,6 +3511,132 @@
         {
           "text": "Important Invariants",
           "anchor": "important-invariants"
+        }
+      ]
+    },
+    {
+      "path": "TTN_PRODUCTION_SETUP.md",
+      "title": "TTN Production Secrets Setup",
+      "category": "root",
+      "headings": [
+        {
+          "text": "TTN Production Secrets Setup",
+          "anchor": "ttn-production-secrets-setup"
+        },
+        {
+          "text": "Your TTN Credentials",
+          "anchor": "your-ttn-credentials"
+        },
+        {
+          "text": "Option 1: Using the Setup Script (Recommended)",
+          "anchor": "option-1-using-the-setup-script-recommended"
+        },
+        {
+          "text": "Option 2: Using Supabase CLI Manually",
+          "anchor": "option-2-using-supabase-cli-manually"
+        },
+        {
+          "text": "Set TTN User ID",
+          "anchor": "set-ttn-user-id"
+        },
+        {
+          "text": "Set TTN Admin API Key",
+          "anchor": "set-ttn-admin-api-key"
+        },
+        {
+          "text": "Option 3: Using Supabase Dashboard (If CLI is not available)",
+          "anchor": "option-3-using-supabase-dashboard-if-cli-is-not-available"
+        },
+        {
+          "text": "Verify Configuration",
+          "anchor": "verify-configuration"
+        },
+        {
+          "text": "Security Note",
+          "anchor": "security-note"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        },
+        {
+          "text": "Troubleshooting",
+          "anchor": "troubleshooting"
+        },
+        {
+          "text": "or",
+          "anchor": "or"
+        },
+        {
+          "text": "Support",
+          "anchor": "support"
+        }
+      ]
+    },
+    {
+      "path": "TTN_SETUP.md",
+      "title": "The Things Network (TTN) Setup Guide",
+      "category": "root",
+      "headings": [
+        {
+          "text": "The Things Network (TTN) Setup Guide",
+          "anchor": "the-things-network-ttn-setup-guide"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Prerequisites",
+          "anchor": "prerequisites"
+        },
+        {
+          "text": "Step 1: Create a TTN Admin API Key",
+          "anchor": "step-1-create-a-ttn-admin-api-key"
+        },
+        {
+          "text": "Step 2: Get Your TTN User ID",
+          "anchor": "step-2-get-your-ttn-user-id"
+        },
+        {
+          "text": "Step 3: Configure Supabase Secrets",
+          "anchor": "step-3-configure-supabase-secrets"
+        },
+        {
+          "text": "Set TTN Admin API Key",
+          "anchor": "set-ttn-admin-api-key"
+        },
+        {
+          "text": "Set TTN User ID",
+          "anchor": "set-ttn-user-id"
+        },
+        {
+          "text": "Step 4: Verify Configuration",
+          "anchor": "step-4-verify-configuration"
+        },
+        {
+          "text": "Step 5: Test Provisioning",
+          "anchor": "step-5-test-provisioning"
+        },
+        {
+          "text": "Troubleshooting",
+          "anchor": "troubleshooting"
+        },
+        {
+          "text": "TTN Architecture Details",
+          "anchor": "ttn-architecture-details"
+        },
+        {
+          "text": "Regional Servers",
+          "anchor": "regional-servers"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        },
+        {
+          "text": "Support",
+          "anchor": "support"
         }
       ]
     }

@@ -2,8 +2,8 @@
 
 > Terminology and definitions used throughout the documentation
 
-**Last Updated:** 2026-01-12 02:48:40 UTC
-**Total Terms:** 198
+**Last Updated:** (auto-generated)
+**Total Terms:** 213
 
 ---
 
@@ -131,7 +131,7 @@
 | **Architecture** | - Per-organization TTN Application |
 | **Audit Trail** | `event_logs` for significant changes |
 | **Auth** | Verify login/logout works |
-| **Authentication** | Unique webhook secret per organization |
+| **Authentication** | Per-organization webhook secret (`X-Webhook-Secret`) |
 | **Backend** | Zod validation in edge functions |
 | **Be Concise** | ADRs should be 1-2 pages maximum |
 | **Cause** | API key is invalid or expired |
@@ -172,7 +172,7 @@
 | **Export for Support** | Click "Support Snapshot" button |
 | **Failure Modes** | \| Failure \| Cause \| Recovery \| |
 | **Features** | - Route logging |
-| **File** | `supabase/functions/user-sync/index |
+| **File** | `src/pages/Index |
 | **Files** | `src/components/health/* |
 | **Files Involved** | - `src/pages/Auth |
 | **Filter Logs** | Use tabs: Events, CRUD, Network, Sync, TTN, Errors |
@@ -205,7 +205,7 @@
 | **Migrations** | 100+ files in `supabase/migrations/` |
 | **Minimal Permissions** | Application API keys only have rights needed for sensor management |
 | **Monitor** | Check FreshTrack's sensor data to see incoming readings |
-| **Name** | `FreshTrack Admin Key` |
+| **Name** | User Sign Up and Onboarding |
 | **Never log** | - Full phone numbers (mask: `+1555***4567`) |
 | **Notes** | - Returns 202 for unknown devices to prevent TTN retries |
 | **Notifications** | `process-unit-states` → `process-escalations` → email/SMS/push |
@@ -237,7 +237,7 @@
 | **Rights** | Select the following: |
 | **RLS Policy Bypass** | Customer reports seeing another org's data |
 | **ROI Example** | One prevented incident = 12–24 months of subscription cost avoided |
-| **Route** | `/dashboard` |
+| **Route** | `/organization` |
 | **Salt** | Unique per password (bcrypt built-in) |
 | **Savings** | 5–10 hours per week in staff time across a typical multi-unit operation |
 | **Secrets** | Managed via Supabase dashboard |
@@ -246,7 +246,7 @@
 | **Sequence Diagram** | [See SEQUENCES |
 | **Severity** | `warning` or `critical` |
 | **Shift Handoff** | Staff can acknowledge and hand off alerts with notes |
-| **Solution** | Install the Supabase CLI: |
+| **Solution** | Check `VITE_SUPABASE_URL` matches your running backend: |
 | **Source** | `src/lib/statusConfig |
 | **Staff training** | 15-30 minutes |
 | **State Processing** | `ingest-readings` → `process-unit-states` → creates/resolves alerts |

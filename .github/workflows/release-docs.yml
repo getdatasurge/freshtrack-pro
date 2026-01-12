@@ -103,8 +103,10 @@ jobs:
         env:
           CI: 'true'
 
-      - name: Generate documentation
+      - name: Generate documentation (deterministic mode)
         run: npm run docs:generate
+        env:
+          CI: 'true'  # Ensures deterministic output (no timestamps)
 
       - name: Run documentation linter
         run: npm run docs:lint
