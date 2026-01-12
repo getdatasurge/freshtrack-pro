@@ -176,10 +176,26 @@ const handler = async (req: Request): Promise<Response> => {
     const eventType = payload.data?.event_type;
     const eventId = payload.data?.id;
     const messageId = payload.data?.payload?.id;
+    const messagingProfileId = (payload.data?.payload as Record<string, unknown>)?.messaging_profile_id as string | undefined;
+    
+    // Structured logging for debugging and monitoring
+    console.log(JSON.stringify({
+      event: "telnyx_webhook_received",
+      event_type: eventType,
+      event_id: eventId,
+      message_id: messageId,
+      profile_id: messagingProfileId,
+      status: payload.data?.payload?.to?.[0]?.status,
+      error_code: payload.data?.payload?.errors?.[0]?.code,
+      timestamp: new Date().toISOString(),
+    }));
     
     console.log("telnyx-webhook: Event ID:", eventId);
     console.log("telnyx-webhook: Event type:", eventType);
     console.log("telnyx-webhook: Message ID:", messageId);
+    if (messagingProfileId) {
+      console.log("telnyx-webhook: Messaging Profile:", messagingProfileId.slice(0, 8) + "... (frost guard)");
+    }
 
     // Only process message status events
     if (!eventType?.startsWith("message.")) {

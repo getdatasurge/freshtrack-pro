@@ -47,6 +47,7 @@ import { NotificationSettingsCard } from "@/components/settings/NotificationSett
 import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
 import { WebhookStatusCard } from "@/components/settings/WebhookStatusCard";
 import { TollFreeVerificationCard } from "@/components/settings/TollFreeVerificationCard";
+import { TelnyxWebhookUrlsCard } from "@/components/settings/TelnyxWebhookUrlsCard";
 import { GatewayManager } from "@/components/settings/GatewayManager";
 import { SensorManager } from "@/components/settings/SensorManager";
 import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
@@ -943,6 +944,7 @@ const Settings = () => {
           {canManageUsers && organization && (
             <div className="mt-6 space-y-6">
               <TollFreeVerificationCard />
+              <TelnyxWebhookUrlsCard />
               <WebhookStatusCard organizationId={organization.id} canEdit={canEditOrg} />
               <SmsAlertHistory organizationId={organization.id} />
             </div>
