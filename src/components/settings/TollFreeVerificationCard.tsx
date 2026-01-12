@@ -12,9 +12,17 @@ import {
   RefreshCw, 
   Loader2,
   HelpCircle,
-  ExternalLink
+  Copy,
+  Check
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { toast } from "sonner";
+
+// Messaging Profile configuration - source of truth
+const MESSAGING_PROFILE = {
+  name: "frost guard",
+  id: "40019baa-aa62-463c-b254-463c66f4b2d3",
+} as const;
 
 interface VerificationStatus {
   status: "approved" | "pending" | "rejected" | "unknown";
@@ -63,6 +71,18 @@ const statusConfig: Record<VerificationStatus["status"], {
 
 export function TollFreeVerificationCard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [copiedProfileId, setCopiedProfileId] = useState(false);
+
+  const handleCopyProfileId = async () => {
+    try {
+      await navigator.clipboard.writeText(MESSAGING_PROFILE.id);
+      setCopiedProfileId(true);
+      toast.success("Profile ID copied to clipboard");
+      setTimeout(() => setCopiedProfileId(false), 2000);
+    } catch {
+      toast.error("Failed to copy");
+    }
+  };
 
   const { data: verification, isLoading, error, refetch } = useQuery({
     queryKey: ["telnyx-verification-status"],
@@ -142,6 +162,28 @@ export function TollFreeVerificationCard() {
           </div>
         ) : (
           <>
+            {/* Messaging Profile Row */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Messaging Profile</span>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="font-normal">
+                  {MESSAGING_PROFILE.name}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={handleCopyProfileId}
+                >
+                  {copiedProfileId ? (
+                    <Check className="h-3 w-3 text-safe" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                </Button>
+              </div>
+            </div>
+
             {/* Status Row */}
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Status</span>

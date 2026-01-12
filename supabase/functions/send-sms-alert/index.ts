@@ -75,11 +75,15 @@ const handler = async (req: Request): Promise<Response> => {
     // Get Telnyx credentials from environment
     const TELNYX_API_KEY = Deno.env.get("TELNYX_API_KEY");
     const TELNYX_PHONE_NUMBER = Deno.env.get("TELNYX_PHONE_NUMBER");
+    const TELNYX_MESSAGING_PROFILE_ID = Deno.env.get("TELNYX_MESSAGING_PROFILE_ID");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 
     // Log credential existence (not values!)
     console.log("send-sms-alert: Credentials check:", {
       hasApiKey: !!TELNYX_API_KEY,
       hasPhoneNumber: !!TELNYX_PHONE_NUMBER,
+      hasMessagingProfileId: !!TELNYX_MESSAGING_PROFILE_ID,
+      messagingProfileId: TELNYX_MESSAGING_PROFILE_ID ? `${TELNYX_MESSAGING_PROFILE_ID.slice(0, 8)}...` : "MISSING",
       fromNumber: TELNYX_PHONE_NUMBER ? `${TELNYX_PHONE_NUMBER.slice(0, 5)}***` : "MISSING",
     });
 
@@ -201,8 +205,31 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Send SMS via Telnyx Messaging API
     console.log(`send-sms-alert: Sending SMS via Telnyx from ${TELNYX_PHONE_NUMBER} to ${to}`);
+    if (TELNYX_MESSAGING_PROFILE_ID) {
+      console.log(`send-sms-alert: Using messaging profile: ${TELNYX_MESSAGING_PROFILE_ID.slice(0, 8)}... (frost guard)`);
+    }
     
     const telnyxUrl = "https://api.telnyx.com/v2/messages";
+    
+    // Build webhook URL for delivery status callbacks
+    const webhookUrl = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/telnyx-webhook` : undefined;
+    
+    const telnyxPayload: Record<string, unknown> = {
+      from: TELNYX_PHONE_NUMBER,
+      to: to,
+      text: message,
+    };
+    
+    // Add messaging profile ID if configured (frost guard profile)
+    if (TELNYX_MESSAGING_PROFILE_ID) {
+      telnyxPayload.messaging_profile_id = TELNYX_MESSAGING_PROFILE_ID;
+    }
+    
+    // Add webhook URLs for delivery status callbacks
+    if (webhookUrl) {
+      telnyxPayload.webhook_url = webhookUrl;
+      telnyxPayload.webhook_failover_url = webhookUrl;
+    }
     
     const telnyxResponse = await fetch(telnyxUrl, {
       method: "POST",
@@ -210,11 +237,7 @@ const handler = async (req: Request): Promise<Response> => {
         "Authorization": `Bearer ${TELNYX_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: TELNYX_PHONE_NUMBER,
-        to: to,
-        text: message,
-      }),
+      body: JSON.stringify(telnyxPayload),
     });
 
     const telnyxData: TelnyxResponse = await telnyxResponse.json();
