@@ -363,7 +363,7 @@ Access via: https://supabase.com/dashboard/project/{project-id}
 ├──────────────────────────────────────────────────────────────┤
 │ Notifications                                                │
 │ ├── Email (Resend): ● Online | Sent today: 89                │
-│ ├── SMS (Twilio): ● Online | Sent today: 12                  │
+│ ├── SMS (Telnyx): ● Online | Sent today: 12                  │
 │ └── Push: ● Online | Sent today: 234                         │
 └──────────────────────────────────────────────────────────────┘
 ```

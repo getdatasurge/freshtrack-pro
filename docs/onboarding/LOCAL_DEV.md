@@ -183,7 +183,7 @@ touch supabase/.env.local
 # Add function-specific secrets
 TTN_API_KEY="your-ttn-key"
 STRIPE_SECRET_KEY="sk_test_..."
-TWILIO_ACCOUNT_SID="..."
+TELNYX_API_KEY="KEY..."
 ```
 
 ---

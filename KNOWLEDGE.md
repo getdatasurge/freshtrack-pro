@@ -522,7 +522,7 @@ try {
 
 - **Supabase Project:** Access via environment variables
 - **TTN Console:** https://console.thethingsnetwork.org/
-- **Twilio (SMS):** https://www.twilio.com/docs/sms
+- **Telnyx (SMS):** https://developers.telnyx.com/docs/messaging/sms
 
 ---
 
@@ -670,7 +670,7 @@ Use these terms consistently throughout the application:
 | `process-unit-states` | Creates/resolves alerts (SSOT) |
 | `process-escalations` | Sends notifications |
 | `ingest-readings` | Receives sensor data |
-| `send-sms-alert` | Sends SMS via Twilio |
+| `send-sms-alert` | Sends SMS via Telnyx |
 | `ttn-webhook` | Receives TTN uplinks |
 | `ttn-provision-device` | Provisions LoRa devices |
 

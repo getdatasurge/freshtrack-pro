@@ -433,9 +433,9 @@ AND escalation_level = 1;
 3. Verify API key is valid
 4. Check for sending limits
 
-#### Step 4: Check SMS Service (Twilio)
+#### Step 4: Check SMS Service (Telnyx)
 
-1. Login to Twilio console
+1. Login to Telnyx Mission Control portal
 2. Check message logs
 3. Verify account balance
 4. Check for carrier blocks

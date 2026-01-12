@@ -65,7 +65,7 @@ graph TB
     subgraph "External Services"
         TTN[The Things Network]
         STRIPE[Stripe]
-        TWILIO[Twilio]
+        TELNYX[Telnyx]
     end
 
     U -->|"HTTPS"| SPA
@@ -80,7 +80,7 @@ graph TB
     PROC --> DB
     PROC --> ESC
     ESC --> SMS
-    SMS --> TWILIO
+    SMS --> TELNYX
 
     TTN_PROV --> TTN
     STR_CO --> STRIPE
@@ -219,7 +219,7 @@ sequenceDiagram
 | TTN | ttn-webhook | HTTPS | Webhook Secret |
 | Stripe | stripe-webhook | HTTPS | Signature |
 | Edge → Database | TCP | Service Role Key |
-| Edge → Twilio | HTTPS | API Credentials |
+| Edge → Telnyx | HTTPS | API Credentials |
 | Edge → TTN | HTTPS | Org API Key |
 
 ### Internal Communication

@@ -754,7 +754,7 @@ if (!apiKeyResult.valid) {
 
 ### `send-sms-alert`
 
-**Purpose**: Send SMS via Twilio
+**Purpose**: Send SMS via Telnyx
 
 **File**: `supabase/functions/send-sms-alert/index.ts`
 

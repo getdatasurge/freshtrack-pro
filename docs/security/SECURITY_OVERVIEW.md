@@ -195,7 +195,7 @@ graph TB
 | The Things Network | Per-org webhook secret | Inbound only |
 | Stripe | HMAC signature | Bidirectional |
 | Resend (Email) | API key | Outbound only |
-| Twilio (SMS) | API key | Outbound only |
+| Telnyx (SMS) | API key | Outbound only |
 
 ---
 
