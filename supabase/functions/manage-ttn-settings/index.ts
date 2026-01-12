@@ -691,6 +691,106 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // VALIDATE_CLUSTER action - Verify all TTN resources are on EU1 cluster
+    if (action === "validate_cluster") {
+      console.log(`[manage-ttn-settings] [${requestId}] VALIDATE_CLUSTER for org: ${organizationId}`);
+
+      const { data: settings } = await supabaseAdmin
+        .from("ttn_connections")
+        .select("ttn_application_id, ttn_api_key_encrypted, ttn_region")
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+
+      if (!settings?.ttn_application_id || !settings?.ttn_api_key_encrypted) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "TTN not provisioned",
+            checks: { application_on_eu1: false, devices_on_eu1: false, webhook_on_eu1: false },
+          }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") ||
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.slice(0, 32) || "";
+
+      // Deobfuscate API key
+      const deobfuscateKey = (encoded: string, salt: string): string => {
+        try {
+          const decoded = atob(encoded);
+          const result: number[] = [];
+          for (let i = 0; i < decoded.length; i++) {
+            result.push(decoded.charCodeAt(i) ^ salt.charCodeAt(i % salt.length));
+          }
+          return String.fromCharCode(...result);
+        } catch { return ""; }
+      };
+
+      const apiKey = deobfuscateKey(settings.ttn_api_key_encrypted, encryptionSalt);
+      const EU1_BASE = "https://eu1.cloud.thethings.network";
+      const appId = settings.ttn_application_id;
+
+      const checks = {
+        region_config: settings.ttn_region === "eu1",
+        application_on_eu1: false,
+        as_accessible: false,
+        webhook_on_eu1: false,
+      };
+
+      // Check 1: Application exists on EU1 Identity Server
+      try {
+        const appResponse = await fetch(
+          `${EU1_BASE}/api/v3/applications/${appId}`,
+          { headers: { Authorization: `Bearer ${apiKey}` } }
+        );
+        checks.application_on_eu1 = appResponse.ok;
+        console.log(`[manage-ttn-settings] [${requestId}] App check: ${appResponse.status}`);
+      } catch (err) {
+        console.error(`[manage-ttn-settings] [${requestId}] App check error:`, err);
+      }
+
+      // Check 2: Application Server on EU1 is accessible
+      try {
+        const asResponse = await fetch(
+          `${EU1_BASE}/api/v3/as/applications/${appId}/devices?limit=1`,
+          { headers: { Authorization: `Bearer ${apiKey}` } }
+        );
+        // 200 = accessible, 404 = no devices but AS is correct cluster
+        checks.as_accessible = asResponse.ok || asResponse.status === 404;
+        console.log(`[manage-ttn-settings] [${requestId}] AS check: ${asResponse.status}`);
+      } catch (err) {
+        console.error(`[manage-ttn-settings] [${requestId}] AS check error:`, err);
+      }
+
+      // Check 3: Webhook exists on EU1
+      try {
+        const webhookResponse = await fetch(
+          `${EU1_BASE}/api/v3/as/webhooks/${appId}`,
+          { headers: { Authorization: `Bearer ${apiKey}` } }
+        );
+        checks.webhook_on_eu1 = webhookResponse.ok;
+        console.log(`[manage-ttn-settings] [${requestId}] Webhook check: ${webhookResponse.status}`);
+      } catch (err) {
+        console.error(`[manage-ttn-settings] [${requestId}] Webhook check error:`, err);
+      }
+
+      const allPassed = Object.values(checks).every(v => v);
+
+      return new Response(
+        JSON.stringify({
+          success: allPassed,
+          cluster: "eu1",
+          checks,
+          request_id: requestId,
+          message: allPassed
+            ? "All TTN resources verified on EU1 cluster"
+            : "Some TTN resources may not be on EU1 cluster",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // UPDATE action - Update settings (enabled, region, and API key)
     if (action === "update") {
       console.log(`[manage-ttn-settings] [${requestId}] Updating settings for org: ${organizationId}`);

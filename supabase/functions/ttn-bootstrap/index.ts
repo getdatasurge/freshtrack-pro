@@ -1080,17 +1080,63 @@ async function runProvisioning(
     );
 
     if (dbError) {
-      console.error(`[DB] Failed to save settings:`, dbError);
-      steps.push({
-        step: "4_save_settings",
-        success: false,
-        message: `TTN provisioning succeeded but failed to save settings: ${dbError.message}`,
-      });
+      console.error(`[DB] Failed to save ttn_settings:`, dbError);
+    }
+
+    // CRITICAL: Also update ttn_connections table with the region
+    // This is what ttn-provision-device reads from. Without this update,
+    // device provisioning will use the wrong cluster (default) causing
+    // split-cluster bugs where IS records are on eu1 but JS/NS/AS go elsewhere.
+    if (request.customer_id) {
+      const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") ||
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.slice(0, 32) || "";
+
+      // Simple XOR obfuscation for API key storage
+      const obfuscateKey = (key: string, salt: string): string => {
+        const result: number[] = [];
+        for (let i = 0; i < key.length; i++) {
+          result.push(key.charCodeAt(i) ^ salt.charCodeAt(i % salt.length));
+        }
+        return btoa(String.fromCharCode(...result));
+      };
+
+      const { error: connError } = await supabaseClient
+        .from("ttn_connections")
+        .update({
+          ttn_region: TTN_REGION,  // CRITICAL: Set region to eu1
+          ttn_organization_id: currentOrgId,
+          ttn_application_id: sanitizedAppId,
+          ttn_api_key_encrypted: appApiKey ? obfuscateKey(appApiKey, encryptionSalt) : null,
+          ttn_api_key_last4: appApiKey ? appApiKey.slice(-4) : null,
+          ttn_webhook_secret_encrypted: webhookSecret ? obfuscateKey(webhookSecret, encryptionSalt) : null,
+          ttn_webhook_secret_last4: webhookSecret ? webhookSecret.slice(-4) : null,
+          provisioning_status: "ready",
+          provisioning_error: null,
+          is_enabled: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("organization_id", request.customer_id);
+
+      if (connError) {
+        console.error(`[DB] Failed to update ttn_connections:`, connError);
+        steps.push({
+          step: "4_save_settings",
+          success: false,
+          message: `TTN provisioning succeeded but failed to save ttn_connections: ${connError.message}`,
+        });
+      } else {
+        console.log(`[DB] Updated ttn_connections for org ${request.customer_id} with region=${TTN_REGION}`);
+        steps.push({
+          step: "4_save_settings",
+          success: true,
+          message: `Settings saved to database (region=${TTN_REGION})`,
+        });
+      }
     } else {
       steps.push({
         step: "4_save_settings",
-        success: true,
-        message: "Settings saved to database",
+        success: !dbError,
+        message: dbError ? `Failed: ${dbError.message}` : "Settings saved to ttn_settings",
       });
     }
   } catch (err) {
