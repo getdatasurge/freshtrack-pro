@@ -31,6 +31,13 @@ interface TtnConfig {
   application_id: string | null;
   api_key: string | null;
   api_key_last4: string | null;
+  gateway_api_key: string | null;
+  gateway_api_key_last4: string | null;
+  gateway_owner_type: 'organization' | null;
+  gateway_owner_id: string | null;
+  webhook_id: string | null;
+  webhook_url: string | null;
+  webhook_secret_last4: string | null;
 }
 
 interface Project2Payload {
@@ -82,6 +89,13 @@ serve(async (req) => {
       application_id: null,
       api_key: null,
       api_key_last4: null,
+      gateway_api_key: null,
+      gateway_api_key_last4: null,
+      gateway_owner_type: null,
+      gateway_owner_id: null,
+      webhook_id: null,
+      webhook_url: null,
+      webhook_secret_last4: null,
     };
 
     if (triggerPayload.organization_id) {
@@ -89,7 +103,19 @@ serve(async (req) => {
 
       const { data: ttnConnection } = await supabase
         .from("ttn_connections")
-        .select("is_enabled, ttn_region, ttn_application_id, ttn_api_key_encrypted, ttn_api_key_last4")
+        .select(`
+          is_enabled, 
+          ttn_region, 
+          ttn_application_id, 
+          ttn_api_key_encrypted, 
+          ttn_api_key_last4,
+          ttn_org_api_key_encrypted,
+          ttn_org_api_key_last4,
+          tts_organization_id,
+          ttn_webhook_id,
+          ttn_webhook_url,
+          ttn_webhook_secret_last4
+        `)
         .eq("organization_id", triggerPayload.organization_id)
         .maybeSingle();
 
@@ -100,8 +126,14 @@ serve(async (req) => {
         const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") ||
           supabaseServiceKey?.slice(0, 32) || "";
 
+        // Decrypt the Application API key
         const fullApiKey = ttnConnection.ttn_api_key_encrypted
           ? deobfuscateKey(ttnConnection.ttn_api_key_encrypted, encryptionSalt)
+          : null;
+
+        // Decrypt the Gateway/Organization API key
+        const fullGatewayApiKey = ttnConnection.ttn_org_api_key_encrypted
+          ? deobfuscateKey(ttnConnection.ttn_org_api_key_encrypted, encryptionSalt)
           : null;
 
         ttnConfig = {
@@ -110,9 +142,16 @@ serve(async (req) => {
           application_id: ttnConnection.ttn_application_id || null,
           api_key: fullApiKey,
           api_key_last4: ttnConnection.ttn_api_key_last4 || null,
+          gateway_api_key: fullGatewayApiKey,
+          gateway_api_key_last4: ttnConnection.ttn_org_api_key_last4 || null,
+          gateway_owner_type: ttnConnection.tts_organization_id ? 'organization' : null,
+          gateway_owner_id: ttnConnection.tts_organization_id || null,
+          webhook_id: ttnConnection.ttn_webhook_id || null,
+          webhook_url: ttnConnection.ttn_webhook_url || null,
+          webhook_secret_last4: ttnConnection.ttn_webhook_secret_last4 || null,
         };
 
-        console.log(`[user-sync-emitter] TTN config prepared: cluster=${ttnConfig.cluster}, app=${ttnConfig.application_id}, api_key_present=${!!ttnConfig.api_key}`);
+        console.log(`[user-sync-emitter] TTN config prepared: cluster=${ttnConfig.cluster}, app=${ttnConfig.application_id}, api_key_present=${!!ttnConfig.api_key}, gateway_api_key_present=${!!ttnConfig.gateway_api_key}`);
       } else {
         console.log(`[user-sync-emitter] No TTN config found for org: ${triggerPayload.organization_id}`);
       }
