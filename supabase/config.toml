@@ -122,3 +122,7 @@ verify_jwt = false
 # Upload public assets - internal function for compliance assets
 [functions.upload-public-asset]
 verify_jwt = false
+
+# Telnyx toll-free verification status - handles CORS preflight and custom JWT verification
+[functions.telnyx-verification-status]
+verify_jwt = false
