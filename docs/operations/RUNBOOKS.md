@@ -803,8 +803,8 @@ May need to:
 
 | Role | Contact | When to Use |
 |------|---------|-------------|
-| On-Call Engineer | [TBD] | P1-P2 incidents |
-| Engineering Lead | [TBD] | Escalation |
+| On-Call Engineer | See PagerDuty/Opsgenie | P1-P2 incidents |
+| Engineering Lead | See team directory | Escalation |
 | Supabase Support | support@supabase.io | Platform issues |
 | TTN Support | support@thethings.network | TTN issues |
 | Stripe Support | Stripe Dashboard | Payment issues |
