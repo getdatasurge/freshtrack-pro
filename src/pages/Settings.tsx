@@ -45,6 +45,7 @@ import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
 import { EdgeFunctionDiagnostics, DebugModeToggle } from "@/components/debug";
 import { NotificationSettingsCard } from "@/components/settings/NotificationSettingsCard";
 import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
+import { WebhookStatusCard } from "@/components/settings/WebhookStatusCard";
 import { GatewayManager } from "@/components/settings/GatewayManager";
 import { SensorManager } from "@/components/settings/SensorManager";
 import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
@@ -932,9 +933,10 @@ const Settings = () => {
             </CardContent>
           </Card>
 
-          {/* SMS Alert History */}
+          {/* Webhook Status + SMS Alert History */}
           {canManageUsers && organization && (
-            <div className="mt-6">
+            <div className="mt-6 space-y-6">
+              <WebhookStatusCard organizationId={organization.id} canEdit={canEditOrg} />
               <SmsAlertHistory organizationId={organization.id} />
             </div>
           )}

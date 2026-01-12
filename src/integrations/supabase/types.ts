@@ -2152,7 +2152,9 @@ export type Database = {
           alert_id: string | null
           alert_type: string
           created_at: string
+          delivery_updated_at: string | null
           error_message: string | null
+          from_number: string | null
           id: string
           message: string
           organization_id: string
@@ -2165,7 +2167,9 @@ export type Database = {
           alert_id?: string | null
           alert_type: string
           created_at?: string
+          delivery_updated_at?: string | null
           error_message?: string | null
+          from_number?: string | null
           id?: string
           message: string
           organization_id: string
@@ -2178,7 +2182,9 @@ export type Database = {
           alert_id?: string | null
           alert_type?: string
           created_at?: string
+          delivery_updated_at?: string | null
           error_message?: string | null
+          from_number?: string | null
           id?: string
           message?: string
           organization_id?: string
@@ -2262,6 +2268,80 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      telnyx_webhook_config: {
+        Row: {
+          created_at: string
+          id: string
+          last_error: string | null
+          last_event_at: string | null
+          organization_id: string | null
+          status: string
+          updated_at: string
+          webhook_id: string | null
+          webhook_url: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          last_event_at?: string | null
+          organization_id?: string | null
+          status?: string
+          updated_at?: string
+          webhook_id?: string | null
+          webhook_url: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          last_event_at?: string | null
+          organization_id?: string | null
+          status?: string
+          updated_at?: string
+          webhook_id?: string | null
+          webhook_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telnyx_webhook_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      telnyx_webhook_events: {
+        Row: {
+          created_at: string
+          event_id: string
+          event_type: string
+          id: string
+          message_id: string | null
+          payload: Json
+          processed: boolean
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          event_type: string
+          id?: string
+          message_id?: string | null
+          payload?: Json
+          processed?: boolean
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          event_type?: string
+          id?: string
+          message_id?: string | null
+          payload?: Json
+          processed?: boolean
+        }
+        Relationships: []
       }
       ttn_connections: {
         Row: {
