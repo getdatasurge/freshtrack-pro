@@ -217,7 +217,7 @@ flowchart TD
     B --> C{Valid format?}
 
     C -->|No| D[Log error]
-    C -->|Yes| E[Call Twilio API]
+    C -->|Yes| E[Call Telnyx API]
 
     E --> F{Delivery success?}
     F -->|Yes| G[Log success]

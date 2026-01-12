@@ -78,7 +78,7 @@ FreshTrack Pro (internally codenamed **FrostGuard**) is a comprehensive IoT-base
 |---------|---------|
 | The Things Network (TTN) | LoRa sensor network |
 | Stripe | Payment processing |
-| Twilio | SMS alert delivery |
+| Telnyx | SMS alert delivery |
 
 ### Development Tools
 
@@ -237,7 +237,7 @@ The application is configured for deployment via the Lovable platform. Productio
           ┌──────────────────────┼──────────────────────┐
           ▼                      ▼                      ▼
    ┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-   │     TTN     │       │   Stripe    │       │   Twilio    │
+   │     TTN     │       │   Stripe    │       │   Telnyx    │
    │  (Sensors)  │       │ (Payments)  │       │   (SMS)     │
    └─────────────┘       └─────────────┘       └─────────────┘
 ```

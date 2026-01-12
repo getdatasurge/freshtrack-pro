@@ -225,7 +225,7 @@ This document maps every major feature and component to its test coverage status
 | Supabase Database | :red_circle: | Local instance for integration |
 | The Things Network (TTN) | :red_circle: | Test TTN application |
 | Stripe | :red_circle: | Test mode + webhooks |
-| Twilio (SMS) | :red_circle: | Manual testing |
+| Telnyx (SMS) | :red_circle: | Manual testing |
 | Resend (Email) | :red_circle: | Manual testing |
 
 ---

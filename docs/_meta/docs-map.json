@@ -1185,8 +1185,8 @@
           "anchor": "stripe"
         },
         {
-          "text": "Twilio",
-          "anchor": "twilio"
+          "text": "Telnyx",
+          "anchor": "telnyx"
         },
         {
           "text": "Supabase Auth",

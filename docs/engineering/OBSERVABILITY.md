@@ -304,7 +304,7 @@ Displays:
 
 | Scenario | Symptoms | Resolution |
 |----------|----------|------------|
-| SMS delivery failed | `notification_events.status = 'failed'` | Check Twilio console |
+| SMS delivery failed | `notification_events.status = 'failed'` | Check Telnyx portal |
 | Email bounced | Delivery log shows bounce | Verify email address |
 | Rate limited | Notifications delayed | Check escalation timing |
 
@@ -361,7 +361,7 @@ Displays:
 2. Verify `escalation_contacts` exist
 3. Check `notification_events` for delivery status
 4. Review `process-escalations` logs
-5. Verify Twilio/email credentials
+5. Verify Telnyx/email credentials
 
 **Resolution**:
 - If policy disabled: Enable notification policy

@@ -173,7 +173,7 @@ The backend consists of 33 Deno-based edge functions organized by purpose:
 |----------|---------|
 | `health-check` | System health monitoring |
 | `check-slug-available` | Org slug validation |
-| `send-sms-alert` | Twilio SMS delivery |
+| `send-sms-alert` | Telnyx SMS delivery |
 | `org-state-api` | Pull-based state API |
 | `fetch-org-state` | Org TTN state |
 | `emulator-sync` | Emulator integration |
@@ -355,7 +355,7 @@ Sensor → LoRa Gateway → TTN → ttn-webhook → Database
 | HACCP | $199/mo | 100 | Compliance reports |
 | Enterprise | Custom | Unlimited | Custom features |
 
-### Twilio
+### Telnyx
 
 **Purpose**: SMS alert delivery
 
@@ -390,8 +390,8 @@ INTERNAL_API_KEY=<secret>
 TTN_API_KEY=<per-org in database>
 STRIPE_SECRET_KEY=<secret>
 STRIPE_WEBHOOK_SECRET=<secret>
-TWILIO_ACCOUNT_SID=<secret>
-TWILIO_AUTH_TOKEN=<secret>
+TELNYX_API_KEY=<secret>
+TELNYX_PHONE_NUMBER=<secret>
 ```
 
 ### Configuration Management
@@ -482,14 +482,14 @@ C4Context
 
     System_Ext(ttn, "The Things Network", "LoRa network infrastructure")
     System_Ext(stripe, "Stripe", "Payment processing")
-    System_Ext(twilio, "Twilio", "SMS delivery")
+    System_Ext(telnyx, "Telnyx", "SMS delivery")
     System_Ext(email, "Email Service", "Supabase built-in")
 
     Rel(user, freshtrack, "Uses", "HTTPS")
     Rel(admin, freshtrack, "Configures", "HTTPS")
     Rel(freshtrack, ttn, "Receives sensor data", "Webhook")
     Rel(freshtrack, stripe, "Processes payments", "API")
-    Rel(freshtrack, twilio, "Sends SMS", "API")
+    Rel(freshtrack, telnyx, "Sends SMS", "API")
     Rel(freshtrack, email, "Sends email", "SMTP")
 ```
 
@@ -508,7 +508,7 @@ C4Container
 
     System_Ext(ttn, "TTN", "")
     System_Ext(stripe, "Stripe", "")
-    System_Ext(twilio, "Twilio", "")
+    System_Ext(telnyx, "Telnyx", "")
 
     Rel(user, spa, "Uses", "HTTPS")
     Rel(spa, edge, "API calls", "HTTPS")
@@ -517,7 +517,7 @@ C4Container
     Rel(edge, db, "Queries", "Service Role")
     Rel(ttn, edge, "Webhooks", "HTTPS")
     Rel(stripe, edge, "Webhooks", "HTTPS")
-    Rel(edge, twilio, "SMS", "API")
+    Rel(edge, telnyx, "SMS", "API")
 ```
 
 ---

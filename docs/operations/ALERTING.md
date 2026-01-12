@@ -221,7 +221,7 @@ Stored in `notification_policies` table:
 
 ### SMS Notifications
 
-- **Provider:** Twilio
+- **Provider:** Telnyx
 - **Trigger:** Critical alerts, escalations
 - **Content:** Brief alert summary, call to action
 - **Retry:** 3 attempts

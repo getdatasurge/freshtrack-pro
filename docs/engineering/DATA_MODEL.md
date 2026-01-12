@@ -480,7 +480,7 @@ organizations (tenant)
 | `alert_id` | UUID | FK to alerts |
 | `phone_number` | TEXT | Recipient (masked) |
 | `message` | TEXT | Message content |
-| `twilio_sid` | TEXT | Twilio message SID |
+| `provider_message_id` | TEXT | SMS provider message ID |
 | `status` | TEXT | Delivery status |
 | `created_at` | TIMESTAMP | |
 

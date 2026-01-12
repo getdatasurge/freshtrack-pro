@@ -268,7 +268,7 @@
 | **Trace Operations** | Click correlation ID link to filter related |
 | **Trigger** | Scheduled (cron) or manual |
 | **TTN User ID** | `frostguard` |
-| **Twilio** | Check SMS delivery in Settings → Notification History |
+| **Telnyx** | Check SMS delivery in Settings → Notification History |
 | **Types** | `temp_excursion`, `monitoring_interrupted`, `door_open`, `low_battery`, etc |
 | **Unique** | `(user_id, organization_id)` |
 | **Unique Constraints** | Scoped to organization (e |

@@ -22,7 +22,7 @@ graph TB
     subgraph "External Systems"
         TTN[The Things Network<br/>LoRaWAN Infrastructure]
         STRIPE[Stripe<br/>Payment Processing]
-        TWILIO[Twilio<br/>SMS Delivery]
+        TELNYX[Telnyx<br/>SMS Delivery]
         EMAIL[Email Service<br/>Supabase SMTP]
     end
 
@@ -44,7 +44,7 @@ graph TB
     FT -->|"Checkout,<br/>subscriptions"| STRIPE
     STRIPE -->|"Webhook<br/>events"| FT
 
-    FT -->|"SMS alerts"| TWILIO
+    FT -->|"SMS alerts"| TELNYX
     FT -->|"Email alerts"| EMAIL
 ```
 
@@ -67,7 +67,7 @@ graph TB
 |--------|---------|------------------|
 | The Things Network | LoRaWAN sensor network | Bidirectional API + Webhook |
 | Stripe | Subscription billing | API + Webhook |
-| Twilio | SMS alert delivery | Outbound API |
+| Telnyx | SMS alert delivery | Outbound API |
 | Email (Supabase) | Email notifications | SMTP |
 
 ---
@@ -90,7 +90,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     F[FreshTrack Pro] -->|Device Provisioning| T[TTN]
-    F -->|SMS Alerts| TW[Twilio]
+    F -->|SMS Alerts| TW[Telnyx]
     F -->|Email Alerts| E[Email]
     F -->|Checkout| ST[Stripe]
 ```
