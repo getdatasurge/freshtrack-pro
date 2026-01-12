@@ -2266,6 +2266,7 @@ export type Database = {
       ttn_connections: {
         Row: {
           app_rights_check_status: string | null
+          cluster_lock: string | null
           created_at: string | null
           created_by: string | null
           credentials_last_rotated_at: string | null
@@ -2331,6 +2332,7 @@ export type Database = {
         }
         Insert: {
           app_rights_check_status?: string | null
+          cluster_lock?: string | null
           created_at?: string | null
           created_by?: string | null
           credentials_last_rotated_at?: string | null
@@ -2396,6 +2398,7 @@ export type Database = {
         }
         Update: {
           app_rights_check_status?: string | null
+          cluster_lock?: string | null
           created_at?: string | null
           created_by?: string | null
           credentials_last_rotated_at?: string | null
