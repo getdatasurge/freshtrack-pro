@@ -12,6 +12,9 @@ const E164_REGEX = /^\+[1-9]\d{1,14}$/;
 // Rate limit window in milliseconds (15 minutes)
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 
+// Toll-free verification ID for checking status
+const TOLL_FREE_VERIFICATION_ID = "99ac127c-6dae-57ee-afc4-32949ac9124e";
+
 // Telnyx error code mappings for user-friendly messages
 const TELNYX_ERROR_CODES: Record<string, string> = {
   "10001": "Invalid API key format",
@@ -165,6 +168,37 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
+    // Check toll-free verification status (live check as per requirements)
+    let verificationWarning: string | null = null;
+    try {
+      const verificationUrl = `https://api.telnyx.com/v2/toll_free_verifications/${TOLL_FREE_VERIFICATION_ID}`;
+      const verificationResponse = await fetch(verificationUrl, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${TELNYX_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (verificationResponse.ok) {
+        const verificationData = await verificationResponse.json();
+        const status = verificationData.data?.status?.toLowerCase();
+        console.log(`send-sms-alert: Toll-free verification status: ${status}`);
+        
+        if (status !== "verified" && status !== "approved") {
+          // Allow with warning (as per user requirements)
+          verificationWarning = `Toll-free verification is ${status}. Delivery may be affected.`;
+          console.warn(`send-sms-alert: ${verificationWarning}`);
+        }
+      } else {
+        console.warn(`send-sms-alert: Could not check verification status: ${verificationResponse.status}`);
+        verificationWarning = "Could not verify toll-free status. Proceeding with send.";
+      }
+    } catch (verifyError) {
+      console.warn("send-sms-alert: Error checking verification status:", verifyError);
+      verificationWarning = "Could not check toll-free verification status.";
+    }
+
     // Send SMS via Telnyx Messaging API
     console.log(`send-sms-alert: Sending SMS via Telnyx from ${TELNYX_PHONE_NUMBER} to ${to}`);
     
@@ -253,12 +287,20 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log("send-sms-alert: ============ Request Complete ============");
     
+    // Build response with optional verification warning
+    const responseData: Record<string, unknown> = { 
+      status: "sent", 
+      provider_message_id: messageId,
+      message: "SMS sent successfully",
+      from_number: TELNYX_PHONE_NUMBER,
+    };
+    
+    if (verificationWarning) {
+      responseData.warning = verificationWarning;
+    }
+    
     return new Response(
-      JSON.stringify({ 
-        status: "sent", 
-        provider_message_id: messageId,
-        message: "SMS sent successfully" 
-      }),
+      JSON.stringify(responseData),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

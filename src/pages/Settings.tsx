@@ -46,6 +46,7 @@ import { EdgeFunctionDiagnostics, DebugModeToggle } from "@/components/debug";
 import { NotificationSettingsCard } from "@/components/settings/NotificationSettingsCard";
 import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
 import { WebhookStatusCard } from "@/components/settings/WebhookStatusCard";
+import { TollFreeVerificationCard } from "@/components/settings/TollFreeVerificationCard";
 import { GatewayManager } from "@/components/settings/GatewayManager";
 import { SensorManager } from "@/components/settings/SensorManager";
 import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
@@ -482,7 +483,12 @@ const Settings = () => {
       if (error) throw error;
       
       if (data?.status === "sent") {
-        toast.success(`Test SMS sent! (ID: ${data.provider_message_id?.slice(-8) || 'confirmed'})`, { id: "test-sms" });
+        // Check for verification warning
+        if (data.warning) {
+          toast.warning(`SMS sent with warning: ${data.warning}`, { id: "test-sms", duration: 8000 });
+        } else {
+          toast.success(`Test SMS sent! (ID: ${data.provider_message_id?.slice(-8) || 'confirmed'})`, { id: "test-sms" });
+        }
         setSmsVerified(true);
         // Refresh SMS history
         queryClient.invalidateQueries({ queryKey: ["sms-alert-history", organization.id] });
@@ -933,9 +939,10 @@ const Settings = () => {
             </CardContent>
           </Card>
 
-          {/* Webhook Status + SMS Alert History */}
+          {/* Webhook Status + Toll-Free Verification + SMS Alert History */}
           {canManageUsers && organization && (
             <div className="mt-6 space-y-6">
+              <TollFreeVerificationCard />
               <WebhookStatusCard organizationId={organization.id} canEdit={canEditOrg} />
               <SmsAlertHistory organizationId={organization.id} />
             </div>
