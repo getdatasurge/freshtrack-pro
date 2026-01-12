@@ -67,7 +67,19 @@ const STATUS_MAP: Record<string, string> = {
 };
 
 /**
+ * Decode hex string to Uint8Array
+ */
+function decodeHex(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
+  }
+  return bytes;
+}
+
+/**
  * Verify Telnyx Ed25519 signature
+ * Supports both hex and base64 encoded public keys
  * @see https://developers.telnyx.com/docs/development/api-guide/webhooks#webhook-signature-validation
  */
 async function verifyTelnyxSignature(
@@ -86,11 +98,29 @@ async function verifyTelnyxSignature(
     const signedPayload = `${timestampHeader}|${rawBody}`;
     const signedPayloadBytes = new TextEncoder().encode(signedPayload);
     
-    // Decode the base64 signature
+    // Decode the base64 signature (Telnyx always sends base64 signatures)
     const signatureBytes = new Uint8Array(decodeBase64(signatureHeader));
     
-    // Decode the base64 public key
-    const publicKeyBytes = new Uint8Array(decodeBase64(publicKey));
+    // Detect and decode public key format (hex or base64)
+    let publicKeyBytes: Uint8Array;
+    const isHexKey = /^[0-9a-fA-F]+$/.test(publicKey) && publicKey.length === 64;
+    
+    if (isHexKey) {
+      // Hex-encoded key (32 bytes = 64 hex chars for Ed25519)
+      console.log("telnyx-webhook: Detected hex-encoded public key");
+      publicKeyBytes = decodeHex(publicKey);
+    } else {
+      // Base64-encoded key
+      console.log("telnyx-webhook: Detected base64-encoded public key");
+      publicKeyBytes = new Uint8Array(decodeBase64(publicKey));
+    }
+    
+    // Validate key length (Ed25519 public keys are 32 bytes)
+    if (publicKeyBytes.length !== 32) {
+      console.error(`telnyx-webhook: Invalid public key length: ${publicKeyBytes.length} bytes (expected 32)`);
+      console.error("telnyx-webhook: Ensure TELNYX_PUBLIC_KEY is the Ed25519 public key from Telnyx API settings");
+      return false;
+    }
     
     // Import the public key for Ed25519 verification
     const cryptoKey = await crypto.subtle.importKey(
@@ -112,6 +142,7 @@ async function verifyTelnyxSignature(
     return isValid;
   } catch (error) {
     console.error("telnyx-webhook: Signature verification error:", error);
+    console.error("telnyx-webhook: Key format hint - ensure TELNYX_PUBLIC_KEY is the hex or base64 Ed25519 public key from Telnyx API settings");
     return false;
   }
 }
@@ -148,6 +179,7 @@ const handler = async (req: Request): Promise<Response> => {
     
     // Get public key for signature verification
     const TELNYX_PUBLIC_KEY = Deno.env.get("TELNYX_PUBLIC_KEY");
+    const ALLOW_UNSIGNED_WEBHOOKS = Deno.env.get("ALLOW_UNSIGNED_WEBHOOKS") === "true";
     
     // Verify signature if public key is configured
     if (TELNYX_PUBLIC_KEY) {
@@ -159,15 +191,25 @@ const handler = async (req: Request): Promise<Response> => {
       );
       
       if (!isValid) {
-        console.error("telnyx-webhook: Invalid signature");
-        return new Response(
-          JSON.stringify({ error: "Invalid signature" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        if (ALLOW_UNSIGNED_WEBHOOKS) {
+          console.warn("telnyx-webhook: Signature invalid but ALLOW_UNSIGNED_WEBHOOKS=true, proceeding");
+        } else {
+          console.error("telnyx-webhook: Invalid signature - rejecting webhook");
+          console.error("telnyx-webhook: To debug, temporarily set ALLOW_UNSIGNED_WEBHOOKS=true or verify TELNYX_PUBLIC_KEY");
+          return new Response(
+            JSON.stringify({ error: "Invalid signature" }),
+            { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        console.log("telnyx-webhook: Signature verified successfully");
       }
-      console.log("telnyx-webhook: Signature verified successfully");
     } else {
-      console.log("telnyx-webhook: Signature verification skipped (no public key configured)");
+      if (ALLOW_UNSIGNED_WEBHOOKS) {
+        console.warn("telnyx-webhook: No public key configured, ALLOW_UNSIGNED_WEBHOOKS=true, proceeding");
+      } else {
+        console.log("telnyx-webhook: Signature verification skipped (no public key configured)");
+      }
     }
     
     // Parse the webhook payload
