@@ -48,6 +48,7 @@ import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
 import { WebhookStatusCard } from "@/components/settings/WebhookStatusCard";
 import { TollFreeVerificationCard } from "@/components/settings/TollFreeVerificationCard";
 import { TelnyxWebhookUrlsCard } from "@/components/settings/TelnyxWebhookUrlsCard";
+import { OptInImageStatusCard } from "@/components/settings/OptInImageStatusCard";
 import { GatewayManager } from "@/components/settings/GatewayManager";
 import { SensorManager } from "@/components/settings/SensorManager";
 import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
@@ -940,10 +941,11 @@ const Settings = () => {
             </CardContent>
           </Card>
 
-          {/* Webhook Status + Toll-Free Verification + SMS Alert History */}
+          {/* Webhook Status + Toll-Free Verification + Opt-In Image + SMS Alert History */}
           {canManageUsers && organization && (
             <div className="mt-6 space-y-6">
               <TollFreeVerificationCard />
+              <OptInImageStatusCard />
               <TelnyxWebhookUrlsCard />
               <WebhookStatusCard organizationId={organization.id} canEdit={canEditOrg} />
               <SmsAlertHistory organizationId={organization.id} />
