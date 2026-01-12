@@ -25,11 +25,6 @@ on:
         default: 'false'
         type: boolean
 
-# Allow only one concurrent deployment to GitHub Pages
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
-
 # Sets permissions of the GITHUB_TOKEN
 permissions:
   contents: read
@@ -37,16 +32,22 @@ permissions:
   id-token: write
 
 jobs:
-  # Build job - runs on all triggers
+  # Build job - runs on all triggers (PRs and pushes)
+  # Uses per-ref concurrency so PR builds don't cancel main builds
   build:
     name: Build Docs Site
     runs-on: ubuntu-latest
+    concurrency:
+      group: docs-build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for mike versioning
+          fetch-depth: 1
+          submodules: false
+          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -97,6 +98,7 @@ jobs:
 
   # Deploy job - only on push to main or manual trigger
   # Uses GitHub Pages Actions deployment (not gh-pages branch push)
+  # Has its own "pages" concurrency to prevent simultaneous deployments
   deploy:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
@@ -104,6 +106,9 @@ jobs:
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.deploy == 'true')
+    concurrency:
+      group: "pages"
+      cancel-in-progress: false
 
     environment:
       name: github-pages
