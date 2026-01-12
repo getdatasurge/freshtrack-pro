@@ -179,15 +179,23 @@ const Index = () => {
       {/* Footer */}
       <footer className="py-12 bg-sidebar border-t border-sidebar-border">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-sidebar-primary flex items-center justify-center">
                 <Thermometer className="w-5 h-5 text-white" />
               </div>
               <span className="text-lg font-bold text-sidebar-foreground">FrostGuard</span>
             </div>
+            <div className="flex items-center gap-6 text-sm">
+              <Link to="/privacy" className="text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors">
+                Privacy Policy
+              </Link>
+              <Link to="/terms" className="text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors">
+                Terms & Conditions
+              </Link>
+            </div>
             <p className="text-sm text-sidebar-foreground/60">
-              © {new Date().getFullYear()} FrostGuard. All rights reserved.
+              © {new Date().getFullYear()} OEM Auto Marine Inc. All rights reserved.
             </p>
           </div>
         </div>
