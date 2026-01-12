@@ -438,6 +438,12 @@ serve(async (req) => {
         console.log(`[ttn-provision-device] Device verified in ${ttnConfig.region?.toUpperCase() || 'EU1'} cluster`);
       }
 
+      // Define cluster verification status for response
+      const clusterVerified = verifyResponse.ok;
+      const clusterWarning = !verifyResponse.ok 
+        ? `Device verification returned ${verifyResponse.status}` 
+        : null;
+
       // Update sensor with TTN info
       await supabase
         .from("lora_sensors")
