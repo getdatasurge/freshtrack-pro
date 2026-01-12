@@ -1,0 +1,13 @@
+# MkDocs Material and plugins for FreshTrack Pro documentation site
+# Install: pip install -r docs-site/requirements.txt
+
+# Core
+mkdocs>=1.6.0
+mkdocs-material>=9.5.0
+
+# Versioning
+mike>=2.1.0
+
+# Extensions and plugins
+pymdown-extensions>=10.7.0
+pygments>=2.17.0

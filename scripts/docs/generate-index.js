@@ -57,6 +57,7 @@ async function generateIndex() {
     'operations',
     'diagrams',
     'charts',
+    'adr',
     'root'
   ];
 
@@ -81,6 +82,7 @@ async function generateIndex() {
       'operations': 'Monitoring, alerting, and operational procedures.',
       'diagrams': 'Visual representations and flowcharts.',
       'charts': 'Data models and entity relationships.',
+      'adr': 'Architecture Decision Records documenting key technical decisions.',
       'root': 'General documentation and guides.'
     };
 
@@ -231,6 +233,10 @@ function getDocDescription(filePath, title) {
     // Charts
     'charts/ER_DIAGRAM.md': 'Entity relationship diagram',
     'charts/FLOWCHARTS.md': 'Process flowcharts',
+
+    // ADR
+    'adr/README.md': 'How ADRs work and how to create them',
+    'adr/template.md': 'Template for new ADRs',
 
     // Root
     'README.md': 'Project overview',

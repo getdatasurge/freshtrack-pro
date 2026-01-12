@@ -2,8 +2,8 @@
 
 > Complete navigation guide to all project documentation
 
-**Last Updated:** 2026-01-12 02:24:44 UTC
-**Total Documents:** 49
+**Last Updated:** 2026-01-12 02:39:14 UTC
+**Total Documents:** 51
 
 ---
 
@@ -124,6 +124,15 @@ Data models and entity relationships.
 |----------|-------------|
 | [Entity-Relationship Diagram](./charts/ER_DIAGRAM.md) | Entity relationship diagram |
 | [Flowcharts](./charts/FLOWCHARTS.md) | Process flowcharts |
+
+## Architecture Decision Records
+
+Architecture Decision Records documenting key technical decisions.
+
+| Document | Description |
+|----------|-------------|
+| [Architecture Decision Records (ADRs)](./adr/README.md) | How ADRs work and how to create them |
+| [ADR-NNNN: [Title]](./adr/template.md) | Template for new ADRs |
 
 ## General
 

@@ -1,6 +1,6 @@
 {
-  "generated": "2026-01-12T02:24:44.696Z",
-  "totalFiles": 49,
+  "generated": "2026-01-12T02:39:14.913Z",
+  "totalFiles": 51,
   "categories": {
     "executive": {
       "name": "Executive Summary",
@@ -218,9 +218,23 @@
         }
       ]
     },
+    "adr": {
+      "name": "Architecture Decision Records",
+      "order": 11,
+      "files": [
+        {
+          "path": "adr/README.md",
+          "title": "Architecture Decision Records (ADRs)"
+        },
+        {
+          "path": "adr/template.md",
+          "title": "ADR-NNNN: [Title]"
+        }
+      ]
+    },
     "root": {
       "name": "General",
-      "order": 11,
+      "order": 12,
       "files": [
         {
           "path": "CI_CHECKLIST.md",
@@ -851,6 +865,92 @@
         {
           "text": "Support",
           "anchor": "support"
+        }
+      ]
+    },
+    {
+      "path": "adr/README.md",
+      "title": "Architecture Decision Records (ADRs)",
+      "category": "adr",
+      "headings": [
+        {
+          "text": "Architecture Decision Records (ADRs)",
+          "anchor": "architecture-decision-records-adrs"
+        },
+        {
+          "text": "What are ADRs?",
+          "anchor": "what-are-adrs"
+        },
+        {
+          "text": "Why Use ADRs?",
+          "anchor": "why-use-adrs"
+        },
+        {
+          "text": "ADR Lifecycle",
+          "anchor": "adr-lifecycle"
+        },
+        {
+          "text": "How to Create an ADR",
+          "anchor": "how-to-create-an-adr"
+        },
+        {
+          "text": "Naming Convention",
+          "anchor": "naming-convention"
+        },
+        {
+          "text": "ADR Template Structure",
+          "anchor": "adr-template-structure"
+        },
+        {
+          "text": "Best Practices",
+          "anchor": "best-practices"
+        },
+        {
+          "text": "Current ADRs",
+          "anchor": "current-adrs"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ]
+    },
+    {
+      "path": "adr/template.md",
+      "title": "ADR-NNNN: [Title]",
+      "category": "adr",
+      "headings": [
+        {
+          "text": "ADR-NNNN: [Title]",
+          "anchor": "adr-nnnn-title"
+        },
+        {
+          "text": "Context",
+          "anchor": "context"
+        },
+        {
+          "text": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "text": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "text": "Alternatives Considered",
+          "anchor": "alternatives-considered"
+        },
+        {
+          "text": "Implementation Notes",
+          "anchor": "implementation-notes"
+        },
+        {
+          "text": "Related",
+          "anchor": "related"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
         }
       ]
     },

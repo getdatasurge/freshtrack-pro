@@ -118,7 +118,8 @@ export const CATEGORY_INFO = {
   'operations': { name: 'Operations', order: 8 },
   'diagrams': { name: 'Diagrams', order: 9 },
   'charts': { name: 'Charts', order: 10 },
-  'root': { name: 'General', order: 11 }
+  'adr': { name: 'Architecture Decision Records', order: 11 },
+  'root': { name: 'General', order: 12 }
 };
 
 /**
