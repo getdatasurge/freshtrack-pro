@@ -76,8 +76,10 @@ jobs:
       - name: Update version metadata (dev)
         run: node scripts/docs/update-version.js --dev
 
-      - name: Generate documentation
+      - name: Generate documentation (deterministic mode)
         run: npm run docs:generate
+        env:
+          CI: 'true'  # Ensures deterministic output (no timestamps)
 
       - name: Build MkDocs site
         run: |
@@ -140,8 +142,10 @@ jobs:
       - name: Update version metadata (dev/latest)
         run: node scripts/docs/update-version.js --dev
 
-      - name: Generate documentation
+      - name: Generate documentation (deterministic mode)
         run: npm run docs:generate
+        env:
+          CI: 'true'  # Ensures deterministic output (no timestamps)
 
       - name: Configure Git
         run: |
