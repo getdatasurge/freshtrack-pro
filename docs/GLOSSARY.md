@@ -11,7 +11,7 @@
 
 - [Architecture](#architecture)
 - [Product](#product)
-- [IoT/Hardware](#iot-hardware)
+- [IoT Hardware](#iot-hardware)
 - [Alert System](#alert-system)
 - [Monitoring](#monitoring)
 - [Security](#security)
@@ -44,7 +44,7 @@
 | **Site** | A physical location containing one or more units under an organization |
 | **Unit** | A refrigeration unit (cooler, freezer, walk-in) being monitored for temperature compliance |
 
-## IoT/Hardware
+## IoT Hardware
 
 | Term | Definition |
 |------|------------|
