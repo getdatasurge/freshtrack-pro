@@ -485,7 +485,7 @@ interface SendSmsParams {
 
 interface SendSmsResponse {
   status: "sent" | "failed" | "rate_limited";
-  twilio_sid?: string;
+  provider_message_id?: string;
   error?: string;
 }
 
@@ -507,7 +507,7 @@ async function sendSmsAlert(params: SendSmsParams): Promise<SendSmsResponse> {
     const data = await response.json();
     return {
       status: data.status || (response.ok ? "sent" : "failed"),
-      twilio_sid: data.twilio_sid,
+      provider_message_id: data.provider_message_id,
       error: data.error,
     };
   } catch (error) {

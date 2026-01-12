@@ -2157,8 +2157,8 @@ export type Database = {
           message: string
           organization_id: string
           phone_number: string
+          provider_message_id: string | null
           status: string
-          twilio_sid: string | null
           user_id: string | null
         }
         Insert: {
@@ -2170,8 +2170,8 @@ export type Database = {
           message: string
           organization_id: string
           phone_number: string
+          provider_message_id?: string | null
           status?: string
-          twilio_sid?: string | null
           user_id?: string | null
         }
         Update: {
@@ -2183,8 +2183,8 @@ export type Database = {
           message?: string
           organization_id?: string
           phone_number?: string
+          provider_message_id?: string | null
           status?: string
-          twilio_sid?: string | null
           user_id?: string | null
         }
         Relationships: [

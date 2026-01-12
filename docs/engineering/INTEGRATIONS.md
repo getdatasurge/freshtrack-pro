@@ -8,7 +8,7 @@
 
 1. [The Things Network (TTN)](#the-things-network-ttn)
 2. [Stripe](#stripe)
-3. [Twilio](#twilio)
+3. [Telnyx](#telnyx)
 4. [Supabase Auth](#supabase-auth)
 5. [Environment Variables](#environment-variables)
 
@@ -231,15 +231,25 @@ STRIPE_PUBLISHABLE_KEY=pk_live_xxx (frontend)
 
 ---
 
-## Twilio
+## Telnyx
 
 ### Overview
 
-Twilio provides SMS delivery for critical alerts.
+Telnyx provides SMS delivery for critical alerts via the Messaging API.
 
 ### Integration
 
 SMS sent via `process-escalations` → `send-sms-alert`
+
+Delivery status updates via `telnyx-webhook`
+
+### API Endpoint
+
+| Property | Value |
+|----------|-------|
+| URL | `https://api.telnyx.com/v2/messages` |
+| Auth | Bearer token via `TELNYX_API_KEY` |
+| Method | POST with JSON body |
 
 ### Phone Number Format
 
@@ -257,35 +267,63 @@ const phoneSchema = z.string().regex(/^\+[1-9]\d{1,14}$/);
 ```
 FreshTrack Alert: [Unit Name]
 Temperature at [XX]°F - exceeds [High/Low] limit of [XX]°F
-Acknowledge: [Link]
 ```
 
 ### Rate Limiting
 
-- Max 1 SMS per alert per contact per hour
+- Max 1 SMS per alert per contact per 15 minutes
 - Escalation respects quiet hours
 
 ### Setup
 
-#### Environment Variables
+#### 1. Telnyx Account Setup
 
-```env
-TWILIO_ACCOUNT_SID=ACxxx
-TWILIO_AUTH_TOKEN=xxx
-TWILIO_PHONE_NUMBER=+15551234567
+1. Create account at [telnyx.com](https://telnyx.com)
+2. Purchase an SMS-enabled phone number
+3. Get API key from Portal → API Keys
+
+#### 2. Environment Variables (Supabase Secrets)
+
+| Secret | Description |
+|--------|-------------|
+| `TELNYX_API_KEY` | API key starting with `KEY...` |
+| `TELNYX_PHONE_NUMBER` | SMS-enabled number in E.164 format |
+
+```bash
+supabase secrets set TELNYX_API_KEY=KEYxxx
+supabase secrets set TELNYX_PHONE_NUMBER=+15551234567
 ```
+
+#### 3. Webhook Configuration (Optional - for delivery tracking)
+
+Configure webhook URL in Telnyx Portal → Messaging → Webhooks:
+- URL: `https://<project>.supabase.co/functions/v1/telnyx-webhook`
+- Events: `message.finalized`
+
+### Error Codes
+
+| Code | Meaning | User Action |
+|------|---------|-------------|
+| 10009 | Auth failed | Check API key |
+| 40001 | Landline | Use mobile number |
+| 40300 | Opted out | Reply START |
+| 40310 | Invalid number | Check format |
+| 40311 | Not SMS-capable | Use different number |
+| 40002/40003 | Blocked | Check message content |
 
 ### Troubleshooting
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
 | SMS not delivered | Invalid phone format | Ensure E.164 format |
-| Delivery failed | Twilio account issue | Check Twilio console |
+| Delivery failed | Number opted out | User replies START |
+| Auth error | Invalid API key | Regenerate key in portal |
 | Rate limited | Too many SMS | Check escalation policy |
 
 ### Related Files
 
 - `supabase/functions/send-sms-alert/index.ts`
+- `supabase/functions/telnyx-webhook/index.ts`
 - `supabase/functions/process-escalations/index.ts`
 - `src/components/settings/SmsAlertHistory.tsx`
 
@@ -366,9 +404,8 @@ CREATE TRIGGER on_auth_user_created
 | `INTERNAL_API_KEY` | Internal | Edge Functions |
 | `STRIPE_SECRET_KEY` | Stripe | Edge Functions |
 | `STRIPE_WEBHOOK_SECRET` | Stripe | Edge Functions |
-| `TWILIO_ACCOUNT_SID` | Twilio | Edge Functions |
-| `TWILIO_AUTH_TOKEN` | Twilio | Edge Functions |
-| `TWILIO_PHONE_NUMBER` | Twilio | Edge Functions |
+| `TELNYX_API_KEY` | Telnyx | Edge Functions |
+| `TELNYX_PHONE_NUMBER` | Telnyx | Edge Functions |
 
 ### Per-Organization (Database)
 
@@ -384,8 +421,8 @@ CREATE TRIGGER on_auth_user_created
 # Via Supabase CLI
 supabase secrets set INTERNAL_API_KEY=xxx
 supabase secrets set STRIPE_SECRET_KEY=sk_live_xxx
-supabase secrets set TWILIO_ACCOUNT_SID=ACxxx
-supabase secrets set TWILIO_AUTH_TOKEN=xxx
+supabase secrets set TELNYX_API_KEY=KEYxxx
+supabase secrets set TELNYX_PHONE_NUMBER=+15551234567
 
 # List secrets
 supabase secrets list
@@ -395,7 +432,7 @@ supabase secrets list
 
 1. **TTN**: Check Settings → TTN tab for "Connected" status
 2. **Stripe**: Check Settings → Billing tab loads plans
-3. **Twilio**: Check SMS delivery in Settings → Notification History
+3. **Telnyx**: Check SMS delivery in Settings → Notification History
 4. **Auth**: Verify login/logout works
 
 ---
@@ -406,4 +443,4 @@ supabase secrets list
 |-------------|-----|----------------|
 | TTN | Cluster configuration options | `supabase/functions/_shared/ttnConfig.ts` |
 | Stripe | Enterprise plan setup | `src/lib/stripe.ts` |
-| Twilio | Rate limit configuration | `supabase/functions/process-escalations/index.ts` |
+| Telnyx | Rate limit configuration | `supabase/functions/process-escalations/index.ts` |

@@ -18,7 +18,7 @@ interface SmsLogEntry {
   status: string;
   created_at: string;
   error_message: string | null;
-  twilio_sid: string | null;
+  provider_message_id: string | null;
 }
 
 const alertTypeLabels: Record<string, string> = {
@@ -36,6 +36,7 @@ const alertTypeLabels: Record<string, string> = {
 
 const statusConfig: Record<string, { icon: React.ReactNode; variant: "default" | "secondary" | "destructive" | "outline"; label: string; className: string }> = {
   sent: { icon: <CheckCircle className="h-3 w-3" />, variant: "default", label: "Sent", className: "bg-safe/15 text-safe border-safe/30" },
+  delivered: { icon: <CheckCircle className="h-3 w-3" />, variant: "default", label: "Delivered", className: "bg-safe/15 text-safe border-safe/30" },
   failed: { icon: <XCircle className="h-3 w-3" />, variant: "destructive", label: "Failed", className: "bg-destructive/15 text-destructive border-destructive/30" },
   pending: { icon: <Clock className="h-3 w-3" />, variant: "secondary", label: "Pending", className: "bg-muted text-muted-foreground border-border" },
   rate_limited: { icon: <AlertTriangle className="h-3 w-3" />, variant: "outline", label: "Rate Limited", className: "bg-warning/15 text-warning border-warning/30" },
@@ -51,20 +52,68 @@ const formatPhoneDisplay = (phone: string): string => {
   return phone;
 };
 
-// Helper to get user-friendly error message
-const getFriendlyErrorMessage = (error: string): string => {
-  if (error.includes("unverified") || error.includes("21608") || error.includes("21211")) {
-    return "Phone not verified in Twilio (trial account)";
+// Telnyx error code mappings for user-friendly messages
+const getTelnyxErrorMessage = (error: string): string => {
+  // Authentication errors
+  if (error.includes("10009") || error.includes("Authentication")) {
+    return "SMS authentication failed. Contact support.";
   }
-  if (error.includes("21614") || error.includes("not a valid phone")) {
-    return "Invalid phone number format";
+  if (error.includes("10014") || error.includes("permission")) {
+    return "API key lacks required permissions.";
   }
-  if (error.includes("21610") || error.includes("blacklist")) {
-    return "Number blocked or opted out";
+  
+  // Number validity errors
+  if (error.includes("40310") || error.includes("40311") || error.includes("Invalid destination")) {
+    return "Invalid phone number or not SMS-capable";
   }
+  if (error.includes("40312") || error.includes("40313") || error.includes("Invalid source")) {
+    return "Sender number configuration issue";
+  }
+  
+  // Opt-out errors
+  if (error.includes("40300") || error.includes("40301") || error.includes("opted out")) {
+    return "Number opted out. Reply START to re-enable.";
+  }
+  
+  // Routing errors
+  if (error.includes("40001") || error.includes("landline") || error.includes("not routable")) {
+    return "Cannot send SMS to this number (landline?)";
+  }
+  if (error.includes("40004") || error.includes("country not enabled")) {
+    return "Destination country not enabled for SMS";
+  }
+  
+  // Carrier/blocking errors
+  if (error.includes("40002") || error.includes("40003") || error.includes("blocked") || error.includes("spam")) {
+    return "Message blocked by carrier";
+  }
+  if (error.includes("40005") || error.includes("policy violation")) {
+    return "Message content rejected";
+  }
+  
+  // Delivery errors
+  if (error.includes("40400") || error.includes("unreachable")) {
+    return "Number temporarily unreachable";
+  }
+  if (error.includes("40401") || error.includes("40402") || error.includes("delivery")) {
+    return "Delivery failed - carrier error";
+  }
+  
+  // Account errors
+  if (error.includes("20100") || error.includes("funds") || error.includes("balance")) {
+    return "SMS service unavailable. Contact support.";
+  }
+  
+  // Rate limiting
   if (error.includes("rate") || error.includes("limit")) {
-    return "Rate limited";
+    return "Rate limited. Wait before retrying.";
   }
+  
+  // Service errors
+  if (error.includes("50000") || error.includes("50001") || error.includes("Internal")) {
+    return "SMS service temporarily unavailable";
+  }
+  
   // Truncate long error messages
   if (error.length > 60) {
     return error.substring(0, 57) + "...";
@@ -87,7 +136,7 @@ export function SmsAlertHistory({ organizationId }: SmsAlertHistoryProps) {
       
       const { data, error } = await supabase
         .from("sms_alert_log")
-        .select("id, phone_number, alert_type, message, status, created_at, error_message, twilio_sid")
+        .select("id, phone_number, alert_type, message, status, created_at, error_message, provider_message_id")
         .eq("organization_id", organizationId)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -114,9 +163,9 @@ export function SmsAlertHistory({ organizationId }: SmsAlertHistoryProps) {
     queryClient.invalidateQueries({ queryKey: ["sms-alert-history", organizationId] });
   };
 
-  const copySid = (sid: string) => {
-    navigator.clipboard.writeText(sid);
-    toast.success("Copied SID to clipboard");
+  const copyMessageId = (id: string) => {
+    navigator.clipboard.writeText(id);
+    toast.success("Copied Message ID to clipboard");
   };
 
   if (isLoading) {
@@ -199,7 +248,7 @@ export function SmsAlertHistory({ organizationId }: SmsAlertHistoryProps) {
                             </div>
                             {log.status === 'failed' && log.error_message && (
                               <p className="text-xs text-destructive mt-1">
-                                {getFriendlyErrorMessage(log.error_message)}
+                                {getTelnyxErrorMessage(log.error_message)}
                               </p>
                             )}
                             <p className="text-sm text-muted-foreground truncate mt-1" title={log.message}>
@@ -225,17 +274,17 @@ export function SmsAlertHistory({ organizationId }: SmsAlertHistoryProps) {
                             </p>
                           </div>
                           
-                          {log.twilio_sid && (
+                          {log.provider_message_id && (
                             <div className="flex items-center gap-2">
-                              <span className="text-muted-foreground">Twilio SID:</span>
-                              <code className="text-xs bg-muted px-2 py-1 rounded">{log.twilio_sid}</code>
+                              <span className="text-muted-foreground">Message ID:</span>
+                              <code className="text-xs bg-muted px-2 py-1 rounded">{log.provider_message_id}</code>
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-6 w-6"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  copySid(log.twilio_sid!);
+                                  copyMessageId(log.provider_message_id!);
                                 }}
                               >
                                 <Copy className="h-3 w-3" />
