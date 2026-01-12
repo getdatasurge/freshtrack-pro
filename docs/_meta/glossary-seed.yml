@@ -52,10 +52,14 @@ Soft Delete: Marking records as deleted without physical removal (preserves audi
 Cascade: Automatic propagation of database operations to related records
 
 # Integration Terms
-Webhook: HTTP callback triggered by external events (TTN data, Stripe payments)
+Webhook: HTTP callback triggered by external events (TTN data, Stripe payments, Telnyx delivery status)
 API Endpoint: URL path that accepts requests and returns responses
 Idempotency: Property where repeated operations produce the same result
 Rate Limiting: Restricting the number of requests within a time window
+Messaging Profile: Telnyx configuration grouping phone numbers, webhooks, and message settings under a named profile
+Toll-Free Verification: Regulatory process requiring business verification before sending SMS from toll-free numbers
+Ed25519 Signature: Cryptographic signature algorithm used by Telnyx to verify webhook authenticity
+Opt-In Asset: Image or document proving customer consent for SMS communications
 
 # Development Terms
 Supabase: Backend-as-a-service platform providing PostgreSQL, Auth, and Edge Functions

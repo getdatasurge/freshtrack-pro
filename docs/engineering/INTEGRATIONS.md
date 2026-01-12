@@ -235,13 +235,36 @@ STRIPE_PUBLISHABLE_KEY=pk_live_xxx (frontend)
 
 ### Overview
 
-Telnyx provides SMS delivery for critical alerts via the Messaging API.
+Telnyx provides SMS delivery for critical alerts via the Messaging API using a toll-free number and dedicated messaging profile.
 
-### Integration
+### Configuration
 
-SMS sent via `process-escalations` → `send-sms-alert`
+| Property | Value |
+|----------|-------|
+| **Messaging Profile** | `frost guard` |
+| **Profile ID** | `40019baa-aa62-463c-b254-463c66f4b2d3` |
+| **Phone Number** | `+18889890560` (Toll-Free) |
+| **Verification ID** | `99ac127c-6dae-57ee-afc4-32949ac9124e` |
 
-Delivery status updates via `telnyx-webhook`
+### Integration Architecture
+
+```
+┌─────────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│ process-escalations │────▶│  send-sms-alert  │────▶│   Telnyx API    │
+└─────────────────────┘     └──────────────────┘     └─────────────────┘
+                                                              │
+                                                         Webhook
+                                                              │
+                                                              ▼
+                                                     ┌─────────────────┐
+                                                     │  telnyx-webhook │
+                                                     └─────────────────┘
+                                                              │
+                                                              ▼
+                                                     ┌─────────────────┐
+                                                     │  sms_alert_log  │
+                                                     └─────────────────┘
+```
 
 ### API Endpoint
 
@@ -250,6 +273,7 @@ Delivery status updates via `telnyx-webhook`
 | URL | `https://api.telnyx.com/v2/messages` |
 | Auth | Bearer token via `TELNYX_API_KEY` |
 | Method | POST with JSON body |
+| Messaging Profile ID | Included in payload for routing |
 
 ### Phone Number Format
 
@@ -279,26 +303,67 @@ Temperature at [XX]°F - exceeds [High/Low] limit of [XX]°F
 #### 1. Telnyx Account Setup
 
 1. Create account at [telnyx.com](https://telnyx.com)
-2. Purchase an SMS-enabled phone number
-3. Get API key from Portal → API Keys
+2. Create a Messaging Profile (e.g., "frost guard")
+3. Purchase a toll-free number and assign to the profile
+4. Get API key from Portal → API Keys
+5. Get the messaging profile ID from Messaging → Messaging Profiles
 
 #### 2. Environment Variables (Supabase Secrets)
 
 | Secret | Description |
 |--------|-------------|
 | `TELNYX_API_KEY` | API key starting with `KEY...` |
-| `TELNYX_PHONE_NUMBER` | SMS-enabled number in E.164 format |
+| `TELNYX_PHONE_NUMBER` | Toll-free number: `+18889890560` |
+| `TELNYX_MESSAGING_PROFILE_ID` | Profile ID: `40019baa-aa62-463c-b254-463c66f4b2d3` |
+| `TELNYX_PUBLIC_KEY` | Ed25519 public key for webhook signature verification |
 
 ```bash
 supabase secrets set TELNYX_API_KEY=KEYxxx
-supabase secrets set TELNYX_PHONE_NUMBER=+15551234567
+supabase secrets set TELNYX_PHONE_NUMBER=+18889890560
+supabase secrets set TELNYX_MESSAGING_PROFILE_ID=40019baa-aa62-463c-b254-463c66f4b2d3
+supabase secrets set TELNYX_PUBLIC_KEY=your-ed25519-public-key
 ```
 
-#### 3. Webhook Configuration (Optional - for delivery tracking)
+#### 3. Webhook Configuration (Required)
 
-Configure webhook URL in Telnyx Portal → Messaging → Webhooks:
-- URL: `https://<project>.supabase.co/functions/v1/telnyx-webhook`
-- Events: `message.finalized`
+Configure webhook in Telnyx Portal → Messaging → Messaging Profiles → "frost guard" → Edit:
+
+| Setting | Value |
+|---------|-------|
+| **Webhook URL** | `https://mfwyiifehsvwnjwqoxht.supabase.co/functions/v1/telnyx-webhook` |
+| **Failover URL** | `https://mfwyiifehsvwnjwqoxht.supabase.co/functions/v1/telnyx-webhook` |
+
+**Required Event Types:**
+- `message.sent` - Message accepted by carrier
+- `message.delivered` - Message delivered to handset
+- `message.failed` - Delivery failed
+- `message.received` - Inbound message (for STOP/HELP)
+
+#### 4. Webhook Signature Verification
+
+Telnyx uses Ed25519 signatures for webhook authentication. The `telnyx-webhook` function validates:
+1. Extracts signature from `telnyx-signature-ed25519` header
+2. Extracts timestamp from `telnyx-timestamp` header
+3. Verifies signature using `TELNYX_PUBLIC_KEY`
+
+#### 5. Toll-Free Verification
+
+Toll-free numbers require verification before sending SMS. Check status:
+- Use `telnyx-verification-status` edge function
+- Or view in Settings → Notifications in the FreshTrack UI
+
+**Verification Requirements:**
+- Business name and contact information
+- Use case description (food safety alerts)
+- Sample message content
+- Opt-in mechanism (consent collection)
+
+### Opt-In and Compliance
+
+FreshTrack collects SMS consent during user/contact setup:
+- Opt-in asset stored in `src/assets/telnyx-opt-in-verification.png`
+- STOP/HELP messages handled automatically by Telnyx
+- Opted-out users tracked via `message.received` webhooks
 
 ### Error Codes
 
@@ -310,6 +375,7 @@ Configure webhook URL in Telnyx Portal → Messaging → Webhooks:
 | 40310 | Invalid number | Check format |
 | 40311 | Not SMS-capable | Use different number |
 | 40002/40003 | Blocked | Check message content |
+| 40008 | Unverified toll-free | Complete verification |
 
 ### Troubleshooting
 
@@ -319,13 +385,19 @@ Configure webhook URL in Telnyx Portal → Messaging → Webhooks:
 | Delivery failed | Number opted out | User replies START |
 | Auth error | Invalid API key | Regenerate key in portal |
 | Rate limited | Too many SMS | Check escalation policy |
+| Webhook not receiving | Wrong URL or signature | Verify webhook config and public key |
+| Toll-free rejected | Unverified number | Complete toll-free verification |
 
 ### Related Files
 
-- `supabase/functions/send-sms-alert/index.ts`
-- `supabase/functions/telnyx-webhook/index.ts`
-- `supabase/functions/process-escalations/index.ts`
-- `src/components/settings/SmsAlertHistory.tsx`
+- `supabase/functions/send-sms-alert/index.ts` - SMS sending logic
+- `supabase/functions/telnyx-webhook/index.ts` - Delivery status webhooks
+- `supabase/functions/telnyx-verification-status/index.ts` - Check verification status
+- `supabase/functions/telnyx-configure-webhook/index.ts` - Automate webhook setup
+- `supabase/functions/process-escalations/index.ts` - Escalation orchestration
+- `src/components/settings/SmsAlertHistory.tsx` - SMS history UI
+- `src/components/settings/TelnyxWebhookUrlsCard.tsx` - Webhook URL display
+- `src/components/settings/TollFreeVerificationCard.tsx` - Verification status UI
 
 ---
 
