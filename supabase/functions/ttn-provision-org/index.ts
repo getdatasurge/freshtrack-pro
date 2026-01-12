@@ -53,7 +53,7 @@ const corsHeaders = {
 const TOKEN_SOURCE = "main_user_api_key";
 
 interface ProvisionOrgRequest {
-  action: "provision" | "status" | "delete" | "regenerate_webhook_secret" | "retry" | "start_fresh";
+  action: "provision" | "status" | "delete" | "regenerate_webhook_secret" | "retry" | "start_fresh" | "deep_clean";
   organization_id: string;
   ttn_region?: string;
 }
@@ -384,6 +384,7 @@ serve(async (req) => {
           "3: Create App API Key [output artifact] (using Main User API Key)",
           "3B: Create Gateway Key [optional output artifact] (using Main User API Key)",
           "4: Create Webhook (using Main User API Key)",
+          "deep_clean: Delete TTN org/app/devices and reset all credentials (nuclear option)",
         ],
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -512,6 +513,197 @@ serve(async (req) => {
         has_webhook_secret: !!ttnConn?.ttn_webhook_secret_encrypted,
         webhook_url: ttnConn?.ttn_webhook_url || null,
         provisioned_at: ttnConn?.ttn_application_provisioned_at || null,
+      });
+    }
+
+    // ========================================
+    // ACTION: DEEP_CLEAN
+    // ========================================
+    if (action === "deep_clean") {
+      console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Starting complete TTN resource cleanup`);
+      
+      await logProvisioningStep(supabase, organization_id, "deep_clean", "started", 
+        "Starting deep clean - will delete TTN org/app and reset all credentials");
+
+      // 1. Get current TTN identifiers from database
+      const currentAppId = ttnConn?.ttn_application_id;
+      const currentOrgId = ttnConn?.tts_organization_id;
+      
+      let deletedDevices = 0;
+      let deletedApp = false;
+      let deletedOrg = false;
+
+      // 2. Delete all devices from TTN application (if exists)
+      if (currentAppId) {
+        try {
+          // List all devices in the application
+          const listDevicesUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${currentAppId}/devices`;
+          console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Listing devices from ${listDevicesUrl}`);
+          const listResponse = await fetchWithTimeout(listDevicesUrl, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${ttnAdminKey}` },
+          });
+          
+          if (listResponse.ok) {
+            const devicesData = await listResponse.json();
+            const devices = devicesData.end_devices || [];
+            console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Found ${devices.length} devices to delete`);
+            
+            // Delete each device
+            for (const device of devices) {
+              const deviceId = device.ids?.device_id;
+              if (deviceId) {
+                const deleteDeviceUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${currentAppId}/devices/${deviceId}`;
+                const deleteResponse = await fetchWithTimeout(deleteDeviceUrl, {
+                  method: "DELETE",
+                  headers: { Authorization: `Bearer ${ttnAdminKey}` },
+                });
+                if (deleteResponse.ok || deleteResponse.status === 404) {
+                  deletedDevices++;
+                  console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Deleted device ${deviceId}`);
+                } else {
+                  console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Failed to delete device ${deviceId}: ${deleteResponse.status}`);
+                }
+              }
+            }
+            console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Deleted ${deletedDevices} devices from ${currentAppId}`);
+          } else {
+            console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Could not list devices (${listResponse.status}) - continuing`);
+          }
+        } catch (err) {
+          console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Device deletion error (continuing): ${err}`);
+        }
+      }
+
+      // 3. Delete TTN Application (if exists)
+      if (currentAppId) {
+        try {
+          const deleteAppUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${currentAppId}`;
+          console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Deleting application at ${deleteAppUrl}`);
+          const deleteAppResponse = await fetchWithTimeout(deleteAppUrl, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${ttnAdminKey}` },
+          });
+          
+          if (deleteAppResponse.ok || deleteAppResponse.status === 404) {
+            deletedApp = true;
+            console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Deleted application ${currentAppId}`);
+          } else {
+            const errorText = await deleteAppResponse.text();
+            console.log(`[ttn-provision-org] [${requestId}] Deep Clean: App deletion failed (${deleteAppResponse.status}): ${errorText}`);
+          }
+        } catch (err) {
+          console.log(`[ttn-provision-org] [${requestId}] Deep Clean: App deletion error (continuing): ${err}`);
+        }
+      }
+
+      // 4. Delete TTN Organization (if exists and empty)
+      if (currentOrgId) {
+        try {
+          const deleteOrgUrl = `${IDENTITY_SERVER_URL}/api/v3/organizations/${currentOrgId}`;
+          console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Deleting organization at ${deleteOrgUrl}`);
+          const deleteOrgResponse = await fetchWithTimeout(deleteOrgUrl, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${ttnAdminKey}` },
+          });
+          
+          if (deleteOrgResponse.ok || deleteOrgResponse.status === 404) {
+            deletedOrg = true;
+            console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Deleted organization ${currentOrgId}`);
+          } else {
+            const errorText = await deleteOrgResponse.text();
+            console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Org deletion failed (${deleteOrgResponse.status}): ${errorText}`);
+          }
+        } catch (err) {
+          console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Org deletion error (continuing): ${err}`);
+        }
+      }
+
+      // 5. Clear ALL database credentials (more aggressive than start_fresh)
+      const { error: clearError } = await supabase
+        .from("ttn_connections")
+        .update({
+          // Clear TTN identity fields
+          tts_organization_id: null,
+          ttn_application_id: null,
+          ttn_application_name: null,
+          ttn_application_uid: null,
+          ttn_application_provisioned_at: null,
+          tts_org_provisioned_at: null,
+          tts_org_provisioning_status: null,
+          tts_org_admin_added: null,
+          // Clear all API keys
+          ttn_org_api_key_encrypted: null,
+          ttn_org_api_key_last4: null,
+          ttn_org_api_key_id: null,
+          ttn_org_api_key_updated_at: null,
+          ttn_api_key_encrypted: null,
+          ttn_api_key_last4: null,
+          ttn_api_key_id: null,
+          ttn_api_key_updated_at: null,
+          // Clear webhook
+          ttn_webhook_secret_encrypted: null,
+          ttn_webhook_secret_last4: null,
+          ttn_webhook_url: null,
+          ttn_webhook_id: null,
+          ttn_webhook_last_updated_at: null,
+          ttn_webhook_last_updated_by: null,
+          ttn_webhook_events: null,
+          // Reset provisioning state
+          provisioning_status: 'idle',
+          provisioning_step: null,
+          provisioning_last_step: null,
+          provisioning_can_retry: null,
+          provisioning_step_details: null,
+          provisioning_error: null,
+          provisioning_started_at: null,
+          provisioning_last_heartbeat_at: null,
+          provisioning_attempt_count: 0,
+          provisioning_attempts: null,
+          last_provisioning_attempt_at: null,
+          // Reset diagnostics
+          app_rights_check_status: null,
+          last_http_status: null,
+          last_http_body: null,
+          last_ttn_http_status: null,
+          last_ttn_correlation_id: null,
+          last_ttn_error_namespace: null,
+          last_ttn_error_name: null,
+        })
+        .eq("organization_id", organization_id);
+
+      if (clearError) {
+        console.error(`[ttn-provision-org] [${requestId}] Deep Clean: DB clear error: ${clearError.message}`);
+      }
+
+      // 6. Clear lora_sensors TTN fields for this organization
+      const { error: sensorClearError } = await supabase
+        .from("lora_sensors")
+        .update({
+          ttn_device_id: null,
+          ttn_application_id: null,
+          status: 'pending',
+        })
+        .eq("organization_id", organization_id);
+
+      if (sensorClearError) {
+        console.log(`[ttn-provision-org] [${requestId}] Deep Clean: Sensor clear warning: ${sensorClearError.message}`);
+      }
+
+      await logProvisioningStep(supabase, organization_id, "deep_clean", "success", 
+        `Deep clean completed: ${deletedDevices} devices, app=${deletedApp}, org=${deletedOrg}`,
+        { deleted_devices: deletedDevices, deleted_app: deletedApp, deleted_org: deletedOrg });
+
+      return buildResponse({
+        success: true,
+        message: "Deep clean completed - TTN resources deleted and credentials cleared",
+        deleted_devices: deletedDevices,
+        deleted_app: deletedApp,
+        deleted_org: deletedOrg,
+        previous_app_id: currentAppId,
+        previous_org_id: currentOrgId,
+        request_id: requestId,
+        next_step: "Use 'Start Provisioning' to create new TTN organization and application on EU1",
       });
     }
 
