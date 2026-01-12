@@ -431,19 +431,25 @@ const Settings = () => {
   const [smsVerified, setSmsVerified] = useState<boolean | null>(null);
   const queryClient = useQueryClient();
 
-  // Helper to parse Twilio-specific errors into user-friendly messages
-  const getTwilioErrorMessage = (error: string): string => {
-    if (error.includes("unverified") || error.includes("21608") || error.includes("21211")) {
-      return "This phone number needs to be verified in your Twilio console (trial account limitation). Add it at: twilio.com/console/phone-numbers/verified";
+  // Helper to parse Telnyx-specific errors into user-friendly messages
+  const getTelnyxErrorMessage = (error: string): string => {
+    if (error.includes("10009") || error.includes("Authentication")) {
+      return "SMS authentication failed. Please contact support.";
     }
-    if (error.includes("21614") || error.includes("not a valid phone number")) {
-      return "Invalid phone number format. Please check the number and try again.";
+    if (error.includes("40310") || error.includes("40311") || error.includes("invalid")) {
+      return "Invalid phone number format or number not SMS-capable.";
     }
-    if (error.includes("21610") || error.includes("blacklist")) {
-      return "This number has been blocked from receiving SMS. The recipient may have opted out.";
+    if (error.includes("40300") || error.includes("opted out")) {
+      return "This number has opted out of SMS. Reply START to re-enable.";
     }
-    if (error.includes("21408") || error.includes("permission")) {
-      return "Permission denied. Check your Twilio account geographic permissions.";
+    if (error.includes("40001") || error.includes("landline")) {
+      return "Cannot send SMS to landline numbers.";
+    }
+    if (error.includes("40002") || error.includes("40003") || error.includes("blocked")) {
+      return "Message blocked by carrier. Try a different message.";
+    }
+    if (error.includes("20100") || error.includes("funds")) {
+      return "SMS service temporarily unavailable. Contact support.";
     }
     if (error.includes("rate") || error.includes("limit")) {
       return "Rate limited. Please wait a few minutes before trying again.";
@@ -475,21 +481,21 @@ const Settings = () => {
       if (error) throw error;
       
       if (data?.status === "sent") {
-        toast.success(`Test SMS sent! (SID: ${data.twilio_sid?.slice(-8) || 'confirmed'})`, { id: "test-sms" });
+        toast.success(`Test SMS sent! (ID: ${data.provider_message_id?.slice(-8) || 'confirmed'})`, { id: "test-sms" });
         setSmsVerified(true);
         // Refresh SMS history
         queryClient.invalidateQueries({ queryKey: ["sms-alert-history", organization.id] });
       } else if (data?.status === "rate_limited") {
         toast.info("SMS rate limited. Please wait 15 minutes before trying again.", { id: "test-sms" });
       } else {
-        const friendlyError = getTwilioErrorMessage(data?.error || "Unknown error");
+        const friendlyError = getTelnyxErrorMessage(data?.error || "Unknown error");
         toast.error(friendlyError, { id: "test-sms", duration: 8000 });
         setSmsVerified(false);
       }
     } catch (error) {
       console.error("Error sending test SMS:", error);
       const message = error instanceof Error ? error.message : "Failed to send test SMS";
-      toast.error(getTwilioErrorMessage(message), { id: "test-sms" });
+      toast.error(getTelnyxErrorMessage(message), { id: "test-sms" });
       setSmsVerified(false);
     } finally {
       setIsSendingSms(false);
