@@ -1,0 +1,128 @@
+# PDF Generation Manifest
+# Defines the structure and order of documents for PDF compilation
+
+title: "FreshTrack Pro Documentation"
+subtitle: "Complete System Documentation"
+version: "1.0"
+date: auto  # Uses current date
+
+# PDF metadata
+metadata:
+  author: "FreshTrack Pro Team"
+  subject: "Technical Documentation"
+  keywords:
+    - FreshTrack Pro
+    - Temperature Monitoring
+    - Food Safety
+    - IoT
+    - Documentation
+
+# Document sections in order of appearance
+sections:
+  - name: "Cover & Overview"
+    files:
+      - README.md
+      - INDEX.md
+
+  - name: "Executive Summary"
+    prefix: "executive"
+    files:
+      - executive/OVERVIEW.md
+      - executive/VALUE_PROPOSITION.md
+      - executive/SYSTEM_AT_A_GLANCE.md
+      - executive/USER_JOURNEYS.md
+      - executive/FAQ.md
+
+  - name: "Architecture"
+    prefix: "architecture"
+    files:
+      - architecture/ARCHITECTURE.md
+
+  - name: "Product"
+    prefix: "product"
+    files:
+      - product/PAGES.md
+      - product/USER_FLOWS.md
+
+  - name: "Engineering"
+    prefix: "engineering"
+    files:
+      - engineering/API.md
+      - engineering/DATA_MODEL.md
+      - engineering/INTEGRATIONS.md
+      - engineering/OBSERVABILITY.md
+
+  - name: "Onboarding"
+    prefix: "onboarding"
+    files:
+      - onboarding/GETTING_STARTED.md
+      - onboarding/REPO_TOUR.md
+      - onboarding/LOCAL_DEV.md
+      - onboarding/COMMON_TASKS.md
+      - onboarding/DEBUGGING_GUIDE.md
+
+  - name: "Quality Assurance"
+    prefix: "qa"
+    files:
+      - qa/TEST_STRATEGY.md
+      - qa/COVERAGE_MAP.md
+      - qa/MANUAL_TESTING.md
+      - qa/E2E_SCENARIOS.md
+      - qa/KNOWN_GAPS.md
+
+  - name: "Security"
+    prefix: "security"
+    files:
+      - security/SECURITY_OVERVIEW.md
+      - security/AUTH_MODEL.md
+      - security/DATA_PROTECTION.md
+      - security/THREAT_MODEL.md
+      - security/INCIDENT_RESPONSE.md
+
+  - name: "Operations"
+    prefix: "operations"
+    files:
+      - operations/METRICS_OVERVIEW.md
+      - operations/DASHBOARDS.md
+      - operations/ALERTING.md
+      - operations/LOGGING.md
+      - operations/RUNBOOKS.md
+
+  - name: "Diagrams"
+    prefix: "diagrams"
+    files:
+      - diagrams/SYSTEM_CONTEXT.md
+      - diagrams/CONTAINER_DIAGRAM.md
+      - diagrams/PAGE_DIAGRAMS.md
+      - diagrams/SEQUENCES.md
+      - diagrams/STATE_MACHINES.md
+
+  - name: "Charts"
+    prefix: "charts"
+    files:
+      - charts/ER_DIAGRAM.md
+      - charts/FLOWCHARTS.md
+
+  - name: "Appendix"
+    files:
+      - GLOSSARY.md
+      - CI_CHECKLIST.md
+
+# PDF styling options
+style:
+  page_size: "letter"
+  margin: "1in"
+  font_family: "Helvetica"
+  font_size: 11
+  heading_font: "Helvetica-Bold"
+  code_font: "Courier"
+  toc: true
+  toc_depth: 3
+  page_numbers: true
+  header: "FreshTrack Pro Documentation"
+  footer: "Page {page} of {pages}"
+
+# Output configuration
+output:
+  filename: "FreshTrackPro-Documentation.pdf"
+  directory: "_build"

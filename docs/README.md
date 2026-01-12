@@ -269,7 +269,7 @@ See [INDEX.md](./INDEX.md) for a complete navigation guide to all documentation.
 
 ## Contributing
 
-1. Read the [KNOWLEDGE.md](/KNOWLEDGE.md) file for coding conventions and guidelines
+1. Read the [KNOWLEDGE.md](../KNOWLEDGE.md) file for coding conventions and guidelines
 2. Follow the existing patterns for components, hooks, and edge functions
 3. Ensure all significant state changes are logged to `event_logs`
 4. Never duplicate alert creation logic - use `process-unit-states` as the single source of truth

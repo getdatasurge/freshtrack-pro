@@ -8,7 +8,11 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "docs:generate": "node scripts/docs/index.js generate",
+    "docs:lint": "node scripts/docs/index.js lint",
+    "docs:build": "node scripts/docs/index.js build",
+    "docs:all": "node scripts/docs/index.js all"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

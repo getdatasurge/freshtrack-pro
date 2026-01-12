@@ -1,522 +1,286 @@
 # FreshTrack Pro Glossary
 
-> Alphabetical reference for domain terms, acronyms, and internal concepts
+> Terminology and definitions used throughout the documentation
+
+**Last Updated:** 2026-01-12 02:24:44 UTC
+**Total Terms:** 198
 
 ---
 
-## A
+## Quick Navigation
 
-### Acknowledge (Alert)
-The action of confirming receipt of an alert without resolving it. Acknowledged alerts remain active but indicate a user has seen them.
-
-**References**: `src/integrations/supabase/types.ts` (alert_status enum), `src/components/alerts/AlertRow.tsx`
-
-### Alarm Active
-Unit status indicating a confirmed temperature excursion that has persisted beyond the confirmation threshold. This is the most severe temperature-related status.
-
-**References**: `src/lib/statusConfig.ts`, `supabase/functions/process-unit-states/index.ts:301`
-
-### Alert
-A notification generated when a monitored condition exceeds defined thresholds. Alerts have types, severities, and statuses.
-
-**References**: `src/integrations/supabase/types.ts` (alerts table), `src/lib/alertConfig.ts`
-
-### Alert Rule
-Configurable thresholds that define when alerts are triggered. Rules cascade from Organization → Site → Unit, with lower levels overriding higher levels.
-
-**References**: `src/integrations/supabase/types.ts` (alert_rules table), `src/hooks/useAlertRules.ts`
-
-### Alert Severity
-The urgency level of an alert. Values: `warning` (attention needed) or `critical` (immediate action required).
-
-**References**: `src/integrations/supabase/types.ts` (alert_severity enum)
-
-### Alert Status
-The lifecycle state of an alert. Values: `triggered` (active), `acknowledged` (seen), `resolved` (cleared).
-
-**References**: `src/integrations/supabase/types.ts` (alert_status enum)
-
-### Alert Type
-The category of condition being monitored. Values include:
-- `temp_excursion` - Temperature out of range
-- `monitoring_interrupted` - Sensor offline
-- `door_open` - Door open too long
-- `low_battery` - Sensor battery low
-- `sensor_fault` - Sensor malfunction
-- `suspected_cooling_failure` - Possible equipment failure
-- `calibration_due` - Calibration reminder
-- `missed_manual_entry` - Manual log overdue
-
-**References**: `src/integrations/supabase/types.ts` (alert_type enum), `src/lib/alertConfig.ts`
-
-### API Key (TTN)
-Authentication credential for The Things Network. Types:
-- **Personal API Key**: User-level access
-- **Application API Key**: Application-scoped access
-- **Organization API Key**: Organization-wide access
-
-**References**: `supabase/functions/_shared/ttnPermissions.ts`
-
-### Area
-A logical grouping within a Site, such as a kitchen, walk-in cooler, or storage room. Contains Units.
-
-**References**: `src/integrations/supabase/types.ts` (areas table), `src/pages/AreaDetail.tsx`
+- [Architecture](#architecture)
+- [Product](#product)
+- [IoT/Hardware](#iot-hardware)
+- [Alert System](#alert-system)
+- [Monitoring](#monitoring)
+- [Security](#security)
+- [Data](#data)
+- [Integration](#integration)
+- [Development](#development)
+- [General](#general)
 
 ---
 
-## B
+## Architecture
 
-### Battery Forecast
-Prediction of when a sensor's battery will need replacement based on voltage trends.
+| Term | Definition |
+|------|------------|
+| **Anon Key** | Public API key with restricted access, safe for client-side use |
+| **Edge Function** | Serverless function deployed on Supabase's edge network for low-latency API endpoints |
+| **JWT** | JSON Web Token - compact, URL-safe token format used for authentication and authorization |
+| **Multi-tenant** | Architecture where a single application instance serves multiple isolated organizations |
+| **RLS** | Row Level Security - PostgreSQL feature that restricts data access at the row level based on user context |
+| **Service Role Key** | Privileged API key that bypasses RLS policies, used only in server-side contexts |
 
-**References**: `src/hooks/useBatteryForecast.ts`
+## Product
+
+| Term | Definition |
+|------|------------|
+| **Alert Rule** | Configuration defining temperature thresholds and timing for generating alerts |
+| **Check-in Interval** | The configured frequency at which a sensor should report temperature readings |
+| **Confirm Time** | Delay before a temperature excursion triggers an active alarm (prevents false positives) |
+| **Excursion** | A temperature reading outside the configured safe range for a unit |
+| **Site** | A physical location containing one or more units under an organization |
+| **Unit** | A refrigeration unit (cooler, freezer, walk-in) being monitored for temperature compliance |
+
+## IoT/Hardware
+
+| Term | Definition |
+|------|------------|
+| **DevEUI** | Device Extended Unique Identifier - globally unique 64-bit identifier for LoRa devices |
+| **Downlink** | Data transmission from network to sensor (configuration, commands) |
+| **Gateway** | LoRaWAN gateway that receives sensor transmissions and forwards to TTN |
+| **Join Request** | LoRaWAN procedure where a device authenticates and joins the network |
+| **LoRa** | Long Range - low-power wireless protocol for IoT sensor communication |
+| **TTN** | The Things Network - community and enterprise LoRaWAN network infrastructure |
+| **Uplink** | Data transmission from sensor to network (readings, status) |
+
+## Alert System
+
+| Term | Definition |
+|------|------------|
+| **Escalation** | Process of notifying additional contacts when an alert is not acknowledged |
+| **MTTR** | Mean Time To Resolution - average time from alert creation to resolution |
+| **Notification Policy** | Configuration for how and when to send alert notifications |
+| **Quiet Hours** | Time periods when non-critical notifications are suppressed |
+
+## Monitoring
+
+| Term | Definition |
+|------|------------|
+| **Debug Terminal** | Developer tool displaying real-time application logs and events |
+| **Degraded** | System state where functionality is impaired but not completely failed |
+| **Event Log** | Timestamped record of system and business events for auditing |
+| **Health Check** | Automated system status verification across all components |
+
+## Security
+
+| Term | Definition |
+|------|------------|
+| **MFA** | Multi-Factor Authentication - requiring multiple verification methods for login |
+| **Organization Context** | The tenant boundary that determines data access scope |
+| **RBAC** | Role-Based Access Control - permission system based on user roles within organizations |
+| **Session Token** | Time-limited authentication credential stored after user login |
+
+## Data
+
+| Term | Definition |
+|------|------------|
+| **Cascade** | Automatic propagation of database operations to related records |
+| **Reading Buffer** | Temporary storage for sensor readings before database persistence |
+| **Sensor Reading** | Individual temperature measurement with timestamp and metadata |
+| **Soft Delete** | Marking records as deleted without physical removal (preserves audit trail) |
+
+## Integration
+
+| Term | Definition |
+|------|------------|
+| **API Endpoint** | URL path that accepts requests and returns responses |
+| **Idempotency** | Property where repeated operations produce the same result |
+| **Rate Limiting** | Restricting the number of requests within a time window |
+| **Webhook** | HTTP callback triggered by external events (TTN data, Stripe payments) |
+
+## Development
+
+| Term | Definition |
+|------|------------|
+| **React Query** | Data fetching and caching library for React applications |
+| **Supabase** | Backend-as-a-service platform providing PostgreSQL, Auth, and Edge Functions |
+| **Vite** | Modern frontend build tool for development and production bundling |
+| **Zustand** | Lightweight state management library for React |
+
+## General
+
+| Term | Definition |
+|------|------------|
+| **Actions** | \| Action \| Description \| Side Effects \| |
+| **Actors** | - Primary: New User (Food Safety Manager) |
+| **Add Sensors** | Register your LoRaWAN sensors in the TTN Console |
+| **Alert Creation** | Only `process-unit-states` creates alerts in the database |
+| **Alert Resolution** | Only `process-unit-states` resolves alerts automatically |
+| **Alert Types Created** | - `temp_excursion` - Temperature out of range |
+| **API Calls** | - `supabase |
+| **API key rotation UI** | Manual process currently |
+| **APIs and Data Touched** | - `supabase |
+| **Application ID** | `freshtracker-{org-slug}` |
+| **Application Name** | `FreshTracker - {Org Name}` |
+| **Architecture** | - Per-organization TTN Application |
+| **Audit Trail** | `event_logs` for significant changes |
+| **Auth** | Verify login/logout works |
+| **Authentication** | Unique webhook secret per organization |
+| **Backend** | Zod validation in edge functions |
+| **Cause** | API key is invalid or expired |
+| **Causes** | - Secrets may take a few seconds to propagate |
+| **Check** | API key is valid |
+| **Compliance Documentation** | Immutable audit trails for health inspections |
+| **Component** | `AlertRulesEditor |
+| **Component Composition** | Use shadcn components as building blocks |
+| **Components** | - `HealthCheckList |
+| **Config Objects** | Centralized status/alert configuration in `lib/` |
+| **Configuration** | Stored in `ttn_connections` table per organization |
+| **Configure Devices** | Add device EUIs and keys |
+| **Continuous Monitoring** | Automated temperature readings every 5 minutes (configurable) |
+| **Copy the generated API key** | you won't be able to see it again! |
+| **Credential Stuffing Attack** | Large volume of failed logins detected |
+| **Data Dependencies** | - None (creates new session) |
+| **Database** | Organization-specific settings (TTN credentials) |
+| **Dedicated API Key** | Application-scoped with minimal required permissions |
+| **Dedicated Webhook** | Points to FreshTrack with unique secret for authentication |
+| **Diagram Reference** | [Landing Page Diagram]( |
+| **Enable** | Settings → Debug toggle (or `localStorage |
+| **Enable Debug Mode** | Press `Ctrl+Shift+D` or toggle in settings |
+| **Enabled Messages** | - Uplink message |
+| **Encrypted Storage** | All API keys and secrets are encrypted in the database |
+| **Endpoint** | `https://<project> |
+| **Engine** | PostgreSQL 14 |
+| **Equipment Health** | Battery forecasting, calibration tracking, and connectivity monitoring |
+| **Error States** | - Invalid credentials |
+| **Event Logging** | All significant state changes logged via `logEvent()` or edge function logging |
+| **Event logs** | All significant actions logged with actor, timestamp, IP |
+| **Events** | Uplink messages, join accepts |
+| **Events Handled** | - `checkout |
+| **Excursion Detection** | Immediate alerts when temperatures exceed safe thresholds |
+| **Export for Support** | Click "Support Snapshot" button |
+| **Failure Modes** | \| Failure \| Cause \| Recovery \| |
+| **Features** | - Route logging |
+| **File** | `supabase/functions/user-sync/index |
+| **Files** | `src/components/health/* |
+| **Files Involved** | - `src/pages/Auth |
+| **Filter Logs** | Use tabs: Events, CRUD, Network, Sync, TTN, Errors |
+| **Filters** | - Event type (alert, temperature, configuration, user) |
+| **Fix** | Ensure user is synced and `ttn |
+| **Foreign Key Constraints** | Data relationships maintain org scope |
+| **FreshTrack Pro subscription** | A few hundred dollars per month |
+| **Frontend** | Zod schemas in `lib/validation |
+| **Function** | `health-check` |
+| **Goal** | New user creates account and sets up their organization |
+| **HACCP Compliance** | Audit trails, corrective action tracking, and compliance reporting |
+| **Hash chaining** | Events include `previous_hash` for tamper detection |
+| **Hashing** | bcrypt with cost factor (Supabase managed) |
+| **Headers** | \| Header \| Value \| |
+| **Hierarchical Configuration** | Settings cascade: Organization → Site → Area → Unit |
+| **Immutable design** | Append-only logging tables |
+| **Implication** | Always consider failure modes |
+| **Important** | `ready` must be `true`! |
+| **Indexes** | - `organizations_slug_key` (unique) |
+| **Key Features** | - RLS policies for multi-tenancy |
+| **Layout** | - Hero section with value proposition |
+| **Location configuration** | 15-30 minutes per site |
+| **Manual Logging** | UI → Supabase direct → `manual_temperature_logs` table |
+| **Manual Temperature Logging** | Offline-capable manual entry with automatic sync |
+| **Masking pattern** | ```typescript |
+| **MFA not implemented** | Planned for future release |
+| **Migrations** | 100+ files in `supabase/migrations/` |
+| **Minimal Permissions** | Application API keys only have rights needed for sensor management |
+| **Monitor** | Check FreshTrack's sensor data to see incoming readings |
+| **Name** | `FreshTrack Admin Key` |
+| **Never log** | - Full phone numbers (mask: `+1555***4567`) |
+| **Notes** | - Returns 202 for unknown devices to prevent TTN retries |
+| **Notifications** | `process-unit-states` → `process-escalations` → email/SMS/push |
+| **Offline Behavior** | - Logs stored in IndexedDB |
+| **Outcome** | In less than an hour, FreshTrack Pro is monitoring all refrigeration units and the whole team has access |
+| **Plans** | \| Plan \| Price \| Sensors \| Features \| |
+| **Preconditions** | User is not authenticated |
+| **Predictive Maintenance** | Battery forecasts and calibration reminders |
+| **Provisioning** | Registered in both our DB and TTN |
+| **Purpose** | LoRa sensor network connectivity |
+| **Query Keys** | Structured for cache invalidation |
+| **Query Parameters** | - `organization_id` (required) |
+| **Quick Setup** | If your credentials are already configured, see [TTN_PRODUCTION_SETUP |
+| **Ransomware Scenario** | Supabase account access compromised |
+| **Rate limiting visibility** | Platform-level, not application-configurable |
+| **Recovery** | - Retry button for failed queries |
+| **Relationships** | - `organization_id` → `organizations |
+| **Report Types** | \| Report \| Description \| |
+| **Request Body** | None (processes all active units) |
+| **Resolution** | - If webhook issue: Regenerate secret, update TTN |
+| **Response** | CSV or JSON data |
+| **Responsibilities** | - User interface rendering |
+| **Result** | Faster inspections |
+| **Retention** | Configurable per compliance requirements |
+| **Returns** | Merged alert rules with cascade priority (Unit > Site > Org) |
+| **Rights** | Select the following: |
+| **RLS Policy Bypass** | Customer reports seeing another org's data |
+| **ROI Example** | One prevented incident = 12–24 months of subscription cost avoided |
+| **Route** | `/dashboard` |
+| **Salt** | Unique per password (bcrypt built-in) |
+| **Savings** | 5–10 hours per week in staff time across a typical multi-unit operation |
+| **Secrets** | Managed via Supabase dashboard |
+| **Sensor Data Ingestion** | TTN → `ttn-webhook` → `sensor_readings` table |
+| **Sensor installation** | 5-10 minutes per unit (just stick to wall) |
+| **Sequence Diagram** | [See SEQUENCES |
+| **Severity** | `warning` or `critical` |
+| **Shift Handoff** | Staff can acknowledge and hand off alerts with notes |
+| **Solution** | Install the Supabase CLI: |
+| **Source** | `src/lib/statusConfig |
+| **Staff training** | 15-30 minutes |
+| **State Processing** | `ingest-readings` → `process-unit-states` → creates/resolves alerts |
+| **Status** | `triggered` → `acknowledged` → `resolved` |
+| **Status Codes** | \| Code \| Meaning \| |
+| **Status Computation** | Frontend uses `computeUnitStatus()` for consistency with backend logic |
+| **Steps** | \| Step \| Actor \| Action \| System Response \| |
+| **Stripe** | Check Settings → Billing tab loads plans |
+| **Supabase Dashboard** | Go to Project Settings → API |
+| **Symptoms** | All sensors in an organization show offline status |
+| **System automatically** | - Validates API key permissions (`ttn-gateway-preflight`) |
+| **Table** | `event_logs` |
+| **TBD** | Configure Supabase cron jobs for: |
+| **Tenant Isolation** | Each org's TTN traffic is isolated via unique webhook secrets |
+| **Test Data Flow** | Send test uplinks to verify webhook delivery |
+| **Timeline of events** | Detection time |
+| **Timestamps** | `created_at`, `updated_at` on most tables |
+| **Trace Operations** | Click correlation ID link to filter related |
+| **Trigger** | Scheduled (cron) or manual |
+| **TTN User ID** | `frostguard` |
+| **Twilio** | Check SMS delivery in Settings → Notification History |
+| **Types** | `temp_excursion`, `monitoring_interrupted`, `door_open`, `low_battery`, etc |
+| **Unique** | `(user_id, organization_id)` |
+| **Unique Constraints** | Scoped to organization (e |
+| **URL** | `https://YOUR_PROJECT |
+| **URL Parameters** | `siteId` (UUID) |
+| **Usage** | Called by `process-escalations` for critical alerts |
+| **Use appropriate levels** | `debug`: Verbose, development only |
+| **UUID Primary Keys** | All tables use UUID `id` columns |
+| **Value** | (paste your TTN admin API key from Step 1) |
+| **Verify webhook** | - TTN Application → Webhooks → Should show `freshtrack-webhook` |
+| **Webhook Secret Exposure** | TTN webhook secret found in public log |
+| **Webhook secret rotation** | No automated rotation |
+| **What happened** | Freezer door was propped open for cleaning |
+| **Who responded** | Kitchen manager acknowledged within 8 minutes |
+| **Write first critical path tests** | `process-unit-states` alert logic |
 
 ---
 
-## C
+## Adding Terms
 
-### Calibration
-The process of verifying and adjusting sensor accuracy against a reference thermometer. Tracked in `calibration_records` table.
+To add new terms to this glossary:
 
-**References**: `src/integrations/supabase/types.ts` (calibration_records table)
+1. Edit `/docs/_meta/glossary-seed.yml`
+2. Run `npm run docs:build`
+3. Terms are automatically extracted from bold definitions in documentation
 
-### Cascade (Alert Rules)
-The inheritance pattern where settings flow from Organization → Site → Area → Unit. Lower-level settings override higher-level defaults.
+## Related Documents
 
-**References**: `supabase/functions/_shared/` (RPC: `get_effective_alert_rules`)
-
-### Check-in
-A sensor reporting data to the system. Used to detect offline conditions.
-
-**References**: `supabase/functions/process-unit-states/index.ts:71-78`
-
-### Compliance Mode
-The regulatory framework an organization follows. Values: `HACCP`, `FDA`, `GENERAL`.
-
-**References**: `src/integrations/supabase/types.ts` (compliance_mode enum), `src/pages/Reports.tsx`
-
-### Confirm Time
-The duration a temperature must remain out of range before escalating from excursion to alarm. Door state affects confirm time:
-- Door closed: default 600 seconds (10 minutes)
-- Door open: default 1200 seconds (20 minutes)
-
-**References**: `supabase/functions/process-unit-states/index.ts:201-203`
-
-### Corrective Action
-Documentation of steps taken to address a temperature excursion or other compliance issue. Required for HACCP compliance.
-
-**References**: `src/integrations/supabase/types.ts` (corrective_actions table)
-
----
-
-## D
-
-### DevEUI
-Device Extended Unique Identifier. A 16-character hexadecimal identifier for LoRa devices. Can be formatted with or without colons/dashes.
-
-**References**: `supabase/functions/_shared/ttnConfig.ts`
-
-### Door Event
-A record of door state change (open/close) with timestamp. Used for door-open duration tracking.
-
-**References**: `src/integrations/supabase/types.ts` (door_events table)
-
-### Door Grace Period
-Time allowed for a door to be open before triggering a door-open alert. Default: 20 minutes.
-
-**References**: `supabase/functions/process-unit-states/index.ts:193-198`
-
----
-
-## E
-
-### Edge Function
-Serverless function running on Supabase's Deno runtime. Used for data processing, webhooks, and integrations.
-
-**References**: `supabase/functions/*/index.ts`
-
-### Emulator
-A testing tool that simulates sensor data and TTN integration for development purposes.
-
-**References**: `src/components/settings/EmulatorSyncHistory.tsx`, `supabase/functions/emulator-sync/`
-
-### Escalation
-The process of notifying additional contacts when an alert remains unacknowledged. Configured via escalation policies.
-
-**References**: `src/integrations/supabase/types.ts` (escalation_contacts, escalation_policies tables)
-
-### Escalation Contact
-A person designated to receive alert notifications at a specific escalation level.
-
-**References**: `src/integrations/supabase/types.ts` (escalation_contacts table)
-
-### Escalation Level
-The tier of notification escalation (1, 2, 3, etc.). Higher levels are reached when lower levels don't acknowledge alerts.
-
-**References**: `src/integrations/supabase/types.ts` (alerts.escalation_level)
-
-### Excursion
-A temperature reading outside the defined safe range. Short for "temperature excursion."
-
-**References**: `src/lib/alertConfig.ts`, `src/lib/statusConfig.ts`
-
-### Event Log
-Audit trail entry recording significant system events. Immutable for compliance purposes.
-
-**References**: `src/integrations/supabase/types.ts` (event_logs table), `src/lib/eventLogger.ts`
-
----
-
-## F
-
-### FDA
-Food and Drug Administration. One of the compliance mode options for organizations.
-
-**References**: `src/integrations/supabase/types.ts` (compliance_mode enum)
-
-### FrostGuard
-Internal codename for the FreshTrack Pro application.
-
-**References**: `KNOWLEDGE.md`, `vite.config.ts` (PWA name)
-
----
-
-## G
-
-### Gateway
-LoRa network gateway that receives signals from sensors and forwards them to TTN. Required for LoRa sensor connectivity.
-
-**References**: `src/integrations/supabase/types.ts` (gateways table), `src/components/settings/GatewayManager.tsx`
-
-### Gateway Status
-State of a LoRa gateway. Values: `pending`, `online`, `offline`, `maintenance`.
-
-**References**: `src/integrations/supabase/types.ts` (gateway_status enum)
-
----
-
-## H
-
-### HACCP
-Hazard Analysis Critical Control Point. A systematic approach to food safety that identifies and controls potential hazards.
-
-**References**: `src/integrations/supabase/types.ts` (compliance_mode enum), `KNOWLEDGE.md`
-
-### Hysteresis
-The temperature buffer applied when transitioning back to normal status. Prevents flapping between states.
-
-**References**: `supabase/functions/process-unit-states/index.ts:439-441`
-
----
-
-## I
-
-### Ingest (Data)
-The process of receiving and storing sensor readings from external sources (TTN, simulators, manual entry).
-
-**References**: `supabase/functions/ingest-readings/index.ts`, `supabase/functions/ttn-webhook/index.ts`
-
-### Inspector
-Debug tool for examining organization data, sensor states, and system configuration.
-
-**References**: `src/pages/Inspector.tsx`
-
-### Internal API Key
-Secret key used for edge function authentication. Required for scheduled/internal function calls.
-
-**References**: `supabase/functions/_shared/validation.ts`
-
----
-
-## L
-
-### Last Known Good
-The most recent valid temperature reading from any source (sensor or manual).
-
-**References**: `src/components/unit/LastKnownGoodCard.tsx`
-
-### LoRa
-Long Range radio technology used for low-power, long-distance IoT communication.
-
-**References**: `src/integrations/supabase/types.ts` (lora_sensors table)
-
-### LoRa Sensor
-A temperature/humidity/door sensor using LoRa radio technology connected via TTN.
-
-**References**: `src/integrations/supabase/types.ts` (lora_sensors table), `src/components/settings/SensorManager.tsx`
-
-### LoRa Sensor Status
-State of a LoRa sensor. Values: `pending` (registered), `joining` (connecting to TTN), `active` (receiving data), `offline` (no recent data), `fault` (error state).
-
-**References**: `src/integrations/supabase/types.ts` (lora_sensor_status enum)
-
-### LoRa Sensor Type
-The type of data a sensor can provide. Values: `temperature`, `temperature_humidity`, `door`, `combo`, `contact`.
-
-**References**: `src/integrations/supabase/types.ts` (lora_sensor_type enum)
-
----
-
-## M
-
-### Manual Log
-A user-entered temperature reading, typically used when automated sensors are unavailable or as a backup.
-
-**References**: `src/integrations/supabase/types.ts` (manual_temperature_logs table), `src/pages/ManualLog.tsx`
-
-### Manual Required
-Unit status indicating sensor data is unavailable and manual temperature logging is needed.
-
-**References**: `src/lib/statusConfig.ts`, `supabase/functions/process-unit-states/index.ts:97-120`
-
-### Missed Check-in
-A sensor failing to report data within its expected interval. Tracked for offline detection.
-
-**References**: `supabase/functions/process-unit-states/index.ts:71-78`
-
-### Monitoring Interrupted
-Alert type indicating a sensor has stopped reporting data.
-
-**References**: `src/lib/alertConfig.ts`, `supabase/functions/process-unit-states/index.ts`
-
----
-
-## N
-
-### Notification Event
-A record of a notification attempt (email, SMS, push) including delivery status.
-
-**References**: `src/integrations/supabase/types.ts` (notification_events table)
-
-### Notification Policy
-Configuration for how alerts of specific types should trigger notifications.
-
-**References**: `src/integrations/supabase/types.ts` (notification_policies table), `src/hooks/useNotificationPolicies.ts`
-
----
-
-## O
-
-### Offline
-Unit status indicating no sensor data has been received within the expected interval.
-
-**References**: `src/lib/statusConfig.ts`
-
-### Organization
-Top-level tenant entity. Contains Sites, manages subscriptions, and owns sensor/gateway inventory.
-
-**References**: `src/integrations/supabase/types.ts` (organizations table)
-
----
-
-## P
-
-### Primary Sensor
-The designated sensor whose readings are used for unit status display when multiple sensors are assigned.
-
-**References**: `src/integrations/supabase/types.ts` (lora_sensors.is_primary), `src/hooks/useSetPrimarySensor.ts`
-
-### Process Escalations
-Edge function responsible for sending notifications based on escalation policies. Single source of truth for notification dispatch.
-
-**References**: `supabase/functions/process-escalations/index.ts`
-
-### Process Unit States
-Edge function responsible for evaluating unit states and creating/resolving alerts. Single source of truth for alert management.
-
-**References**: `supabase/functions/process-unit-states/index.ts`
-
-### Provisioning
-The process of registering a sensor or gateway with TTN.
-
-**References**: `supabase/functions/ttn-provision-device/`, `src/types/ttn.ts`
-
-### Provisioning Queue
-Database table tracking pending sensor/gateway provisioning jobs.
-
-**References**: `src/integrations/supabase/types.ts` (ttn_provisioning_queue table)
-
----
-
-## Q
-
-### Quiet Hours
-Time periods during which notifications are suppressed or reduced.
-
-**References**: `supabase/functions/process-escalations/index.ts`
-
----
-
-## R
-
-### Reading
-A single temperature measurement from a sensor or manual entry.
-
-**References**: `src/integrations/supabase/types.ts` (sensor_readings table)
-
-### Resolve (Alert)
-The action of closing an alert, either automatically (condition cleared) or manually.
-
-**References**: `src/integrations/supabase/types.ts` (alert_status enum)
-
-### Restoring
-Unit status indicating temperature is returning to normal after an excursion. Requires multiple consecutive good readings.
-
-**References**: `src/lib/statusConfig.ts`, `supabase/functions/process-unit-states/index.ts:471-490`
-
-### RLS
-Row-Level Security. PostgreSQL feature enforcing data access control at the database level.
-
-**References**: `supabase/migrations/*`
-
-### RSSI
-Received Signal Strength Indicator. Measure of LoRa signal quality.
-
-**References**: `supabase/functions/ttn-webhook/index.ts:199`
-
----
-
-## S
-
-### Sensor Readings
-Table storing all temperature/humidity data from sensors.
-
-**References**: `src/integrations/supabase/types.ts` (sensor_readings table)
-
-### Service Role Key
-Supabase administrative key with full database access. Only used in edge functions.
-
-**References**: `supabase/functions/*/index.ts`
-
-### Site
-A physical location within an organization (e.g., restaurant, warehouse). Contains Areas.
-
-**References**: `src/integrations/supabase/types.ts` (sites table), `src/pages/Sites.tsx`
-
-### Soft Delete
-Marking a record as deleted (via `deleted_at` timestamp) rather than physically removing it. Preserves audit trail.
-
-**References**: `src/hooks/useSoftDelete.ts`
-
-### SSOT
-Single Source of Truth. Design principle where one module is authoritative for a specific operation.
-
-**References**: `KNOWLEDGE.md`, `docs/system-map.md`
-
-### Suspected Cooling Failure
-Alert type indicating temperature is not recovering despite door being closed, suggesting equipment malfunction.
-
-**References**: `supabase/functions/process-unit-states/index.ts:378-435`
-
----
-
-## T
-
-### TTN
-The Things Network. Open-source LoRaWAN network infrastructure used for sensor connectivity.
-
-**References**: `supabase/functions/ttn-*/`, `src/types/ttn.ts`
-
-### TTN Application
-A container in TTN that groups devices and manages their data routing.
-
-**References**: `supabase/functions/ttn-manage-application/index.ts`
-
-### TTN Connection
-Per-organization TTN credentials stored in the database.
-
-**References**: `src/integrations/supabase/types.ts` (ttn_connections table)
-
-### TTN Webhook
-HTTP endpoint that receives sensor data from TTN when devices transmit.
-
-**References**: `supabase/functions/ttn-webhook/index.ts`
-
-### TTN Webhook Secret
-Shared secret used to authenticate incoming TTN webhooks.
-
-**References**: `supabase/functions/ttn-webhook/index.ts:145-168`
-
-### TTS
-The Things Stack. Enterprise version of The Things Network.
-
-**References**: `supabase/functions/ttn-provision-worker/index.ts`
-
----
-
-## U
-
-### Unit
-A monitored refrigeration unit (freezer, cooler, display case). The primary entity for temperature monitoring.
-
-**References**: `src/integrations/supabase/types.ts` (units table), `src/pages/UnitDetail.tsx`
-
-### Unit Status
-The operational state of a unit. Values:
-- `ok` - Normal operation
-- `excursion` - Temperature out of range (unconfirmed)
-- `alarm_active` - Confirmed temperature alarm
-- `monitoring_interrupted` - No sensor data
-- `manual_required` - Manual logging needed
-- `restoring` - Recovering from excursion
-- `offline` - Sensor offline
-
-**References**: `src/lib/statusConfig.ts`, `supabase/functions/process-unit-states/index.ts:60`
-
-### Uplink
-A transmission from a LoRa device to TTN.
-
-**References**: `supabase/functions/ttn-webhook/index.ts`
-
-### User Role
-Permission level for a user within an organization. Values: `owner`, `manager`, `operator`, `viewer`.
-
-**References**: `src/integrations/supabase/types.ts` (app_role enum), `src/hooks/useUserRole.ts`
-
----
-
-## W
-
-### Webhook
-HTTP callback endpoint that receives data from external services.
-
-**References**: `supabase/functions/ttn-webhook/index.ts`, `supabase/functions/stripe-webhook/index.ts`
-
----
-
-## Numeric / Symbols
-
-### 202 Response
-HTTP status returned for accepted-but-not-processed webhooks. Used to prevent TTN retry loops for unknown devices.
-
-**References**: `supabase/functions/ttn-webhook/index.ts:302-311`
-
-### E.164
-International phone number format required for SMS delivery (e.g., +15551234567).
-
-**References**: `src/lib/validation.ts`
-
----
-
-## Acronym Quick Reference
-
-| Acronym | Full Form |
-|---------|-----------|
-| API | Application Programming Interface |
-| CORS | Cross-Origin Resource Sharing |
-| DevEUI | Device Extended Unique Identifier |
-| FDA | Food and Drug Administration |
-| HACCP | Hazard Analysis Critical Control Point |
-| IoT | Internet of Things |
-| JWT | JSON Web Token |
-| LoRa | Long Range (radio technology) |
-| LoRaWAN | Long Range Wide Area Network |
-| PWA | Progressive Web App |
-| RLS | Row-Level Security |
-| RPC | Remote Procedure Call |
-| RSSI | Received Signal Strength Indicator |
-| SNR | Signal-to-Noise Ratio |
-| SSOT | Single Source of Truth |
-| TTN | The Things Network |
-| TTS | The Things Stack |
-| UUID | Universally Unique Identifier |
+- [INDEX.md](./INDEX.md) — Complete documentation index
+- [GETTING_STARTED.md](./onboarding/GETTING_STARTED.md) — Onboarding guide

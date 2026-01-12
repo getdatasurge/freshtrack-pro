@@ -1,160 +1,189 @@
 # FreshTrack Pro Documentation Index
 
-> Complete navigation guide for all project documentation
+> Complete navigation guide to all project documentation
+
+**Last Updated:** 2026-01-12 02:24:44 UTC
+**Total Documents:** 49
 
 ---
 
-## Getting Started
+## Quick Links
 
 | Document | Description |
 |----------|-------------|
-| [README.md](./README.md) | Project overview, tech stack, quick start guide |
-| [GLOSSARY.md](./GLOSSARY.md) | Domain terminology, acronyms, and definitions |
+| [README](./README.md) | Project overview and quick start |
+| [GLOSSARY](./GLOSSARY.md) | Terminology and definitions |
+| [CI Checklist](./CI_CHECKLIST.md) | Documentation CI validation rules |
 
 ---
+## Executive Summary
+
+High-level overviews for stakeholders and decision-makers.
+
+| Document | Description |
+|----------|-------------|
+| [FreshTrack Pro: Frequently Asked Questions](./executive/FAQ.md) | Frequently asked questions |
+| [FreshTrack Pro Overview](./executive/OVERVIEW.md) | What FreshTrack Pro is and does |
+| [FreshTrack Pro: System at a Glance](./executive/SYSTEM_AT_A_GLANCE.md) | High-level system overview |
+| [FreshTrack Pro User Journeys](./executive/USER_JOURNEYS.md) | Day-in-the-life scenarios |
+| [FreshTrack Pro Value Proposition](./executive/VALUE_PROPOSITION.md) | Business value and benefits |
 
 ## Architecture
 
-| Document | Description | Key Diagrams |
-|----------|-------------|--------------|
-| [ARCHITECTURE.md](./architecture/ARCHITECTURE.md) | Full system architecture, security boundaries, environment separation | [System Context](./diagrams/SYSTEM_CONTEXT.md), [Container Diagram](./diagrams/CONTAINER_DIAGRAM.md) |
+System design, components, and technical decisions.
 
----
+| Document | Description |
+|----------|-------------|
+| [FreshTrack Pro System Architecture](./architecture/ARCHITECTURE.md) | System architecture and design |
 
-## Product Documentation
+## Product
 
-| Document | Description | Related Diagrams |
-|----------|-------------|------------------|
-| [PAGES.md](./product/PAGES.md) | All routes, pages, UI layouts, state management | [Page Diagrams](./diagrams/PAGE_DIAGRAMS.md) |
-| [USER_FLOWS.md](./product/USER_FLOWS.md) | Major user workflows end-to-end | [Sequence Diagrams](./diagrams/SEQUENCES.md) |
+Pages, user flows, and product functionality.
 
----
+| Document | Description |
+|----------|-------------|
+| [FreshTrack Pro Pages Documentation](./product/PAGES.md) | All application pages and routes |
+| [FreshTrack Pro User Flows](./product/USER_FLOWS.md) | User interaction workflows |
 
-## Engineering Documentation
+## Engineering
 
-| Document | Description | Related Diagrams |
-|----------|-------------|------------------|
-| [API.md](./engineering/API.md) | All edge functions, inputs/outputs, auth requirements | [Flowcharts](./charts/FLOWCHARTS.md) |
-| [DATA_MODEL.md](./engineering/DATA_MODEL.md) | Database schema, tables, relationships, RLS | [ER Diagram](./charts/ER_DIAGRAM.md) |
-| [INTEGRATIONS.md](./engineering/INTEGRATIONS.md) | TTN, Stripe, Twilio configuration | - |
-| [OBSERVABILITY.md](./engineering/OBSERVABILITY.md) | Logging, debugging, incident playbooks | - |
+API, data model, integrations, and technical details.
 
----
+| Document | Description |
+|----------|-------------|
+| [FreshTrack Pro API Documentation](./engineering/API.md) | Edge functions and API endpoints |
+| [FreshTrack Pro Data Model](./engineering/DATA_MODEL.md) | Database schema and relationships |
+| [FreshTrack Pro Integrations](./engineering/INTEGRATIONS.md) | External service integrations |
+| [FreshTrack Pro Observability](./engineering/OBSERVABILITY.md) | Logging and monitoring |
 
-## Diagrams (Mermaid)
+## Onboarding
 
-### System Diagrams
+Getting started guides for new team members.
 
-| Diagram | Description |
-|---------|-------------|
-| [SYSTEM_CONTEXT.md](./diagrams/SYSTEM_CONTEXT.md) | High-level system context showing external actors |
-| [CONTAINER_DIAGRAM.md](./diagrams/CONTAINER_DIAGRAM.md) | Container-level architecture (C4 model) |
+| Document | Description |
+|----------|-------------|
+| [Common Development Tasks](./onboarding/COMMON_TASKS.md) | How to do common tasks |
+| [Debugging Guide](./onboarding/DEBUGGING_GUIDE.md) | Troubleshooting and debugging |
+| [Getting Started with FreshTrack Pro](./onboarding/GETTING_STARTED.md) | Mental model for new developers |
+| [Local Development Setup](./onboarding/LOCAL_DEV.md) | Development environment setup |
+| [Repository Tour](./onboarding/REPO_TOUR.md) | Codebase walkthrough |
 
-### Application Diagrams
+## Quality Assurance
 
-| Diagram | Description |
-|---------|-------------|
-| [PAGE_DIAGRAMS.md](./diagrams/PAGE_DIAGRAMS.md) | Per-page component and data flow diagrams |
-| [SEQUENCES.md](./diagrams/SEQUENCES.md) | Sequence diagrams for user flows |
-| [STATE_MACHINES.md](./diagrams/STATE_MACHINES.md) | State machines for units, alerts, sensors |
+Testing strategy, coverage, and quality assurance.
 
----
+| Document | Description |
+|----------|-------------|
+| [Coverage Map](./qa/COVERAGE_MAP.md) | Test coverage by feature |
+| [End-to-End Test Scenarios](./qa/E2E_SCENARIOS.md) | End-to-end test scenarios |
+| [Known Test Coverage Gaps](./qa/KNOWN_GAPS.md) | Coverage gaps and risks |
+| [Manual Testing Guide](./qa/MANUAL_TESTING.md) | Manual QA checklists |
+| [Test Strategy](./qa/TEST_STRATEGY.md) | Testing philosophy and approach |
+
+## Security
+
+Security model, threats, and incident response.
+
+| Document | Description |
+|----------|-------------|
+| [Authentication & Authorization Model](./security/AUTH_MODEL.md) | Authentication and authorization |
+| [Data Protection](./security/DATA_PROTECTION.md) | Encryption and data handling |
+| [Incident Response](./security/INCIDENT_RESPONSE.md) | Security incident procedures |
+| [Security Overview](./security/SECURITY_OVERVIEW.md) | Security principles and controls |
+| [Threat Model](./security/THREAT_MODEL.md) | Threats and mitigations |
+
+## Operations
+
+Monitoring, alerting, and operational procedures.
+
+| Document | Description |
+|----------|-------------|
+| [Alerting](./operations/ALERTING.md) | Alert conditions and escalation |
+| [Dashboards](./operations/DASHBOARDS.md) | Monitoring dashboards |
+| [Logging](./operations/LOGGING.md) | Log sources and debugging |
+| [Metrics Overview](./operations/METRICS_OVERVIEW.md) | System metrics and thresholds |
+| [Runbooks](./operations/RUNBOOKS.md) | Operational procedures |
+
+## Diagrams
+
+Visual representations and flowcharts.
+
+| Document | Description |
+|----------|-------------|
+| [Container Diagram](./diagrams/CONTAINER_DIAGRAM.md) | Container architecture |
+| [Page Diagrams](./diagrams/PAGE_DIAGRAMS.md) | Page component diagrams |
+| [Sequence Diagrams](./diagrams/SEQUENCES.md) | Sequence diagrams |
+| [State Machines](./diagrams/STATE_MACHINES.md) | State machine diagrams |
+| [System Context Diagram](./diagrams/SYSTEM_CONTEXT.md) | System context diagram |
 
 ## Charts
 
-| Chart | Description |
-|-------|-------------|
-| [ER_DIAGRAM.md](./charts/ER_DIAGRAM.md) | Entity-Relationship diagram for database |
-| [FLOWCHARTS.md](./charts/FLOWCHARTS.md) | Process flowcharts for data ingestion, alerts |
+Data models and entity relationships.
+
+| Document | Description |
+|----------|-------------|
+| [Entity-Relationship Diagram](./charts/ER_DIAGRAM.md) | Entity relationship diagram |
+| [Flowcharts](./charts/FLOWCHARTS.md) | Process flowcharts |
+
+## General
+
+General documentation and guides.
+
+| Document | Description |
+|----------|-------------|
+| [Emulator Quick Start - TTN Integration](./EMULATOR_QUICK_START.md) | Emulator quick start |
+| [Emulator TTN Integration Guide](./EMULATOR_TTN_INTEGRATION.md) | TTN emulator integration |
+| [FreshTrack Pro (FrostGuard)](./README.md) | Project overview |
+| [TTN Production Secrets Setup](./TTN_PRODUCTION_SETUP.md) | Production TTN setup |
+| [The Things Network (TTN) Setup Guide](./TTN_SETUP.md) | TTN configuration guide |
+| [FrostGuard Deprecations](./deprecations.md) | Deprecated features |
+| [FrostGuard System Map](./system-map.md) | System component map |
 
 ---
 
-## Cross-Reference: Pages → Diagrams
+## Document Relationships
 
-| Page | Route | Diagrams |
-|------|-------|----------|
-| Dashboard | `/dashboard` | [Page Diagram](./diagrams/PAGE_DIAGRAMS.md#dashboard), [Unit Status State Machine](./diagrams/STATE_MACHINES.md#unit-status) |
-| Site Detail | `/sites/:siteId` | [Page Diagram](./diagrams/PAGE_DIAGRAMS.md#site-detail) |
-| Area Detail | `/sites/:siteId/areas/:areaId` | [Page Diagram](./diagrams/PAGE_DIAGRAMS.md#area-detail) |
-| Unit Detail | `/units/:unitId` | [Page Diagram](./diagrams/PAGE_DIAGRAMS.md#unit-detail), [Temperature Flow](./diagrams/SEQUENCES.md#temperature-reading-flow) |
-| Alerts | `/alerts` | [Page Diagram](./diagrams/PAGE_DIAGRAMS.md#alerts), [Alert State Machine](./diagrams/STATE_MACHINES.md#alert-status) |
-| Settings | `/settings` | [Page Diagram](./diagrams/PAGE_DIAGRAMS.md#settings), [TTN Setup Flow](./diagrams/SEQUENCES.md#ttn-setup-flow) |
-| Manual Log | `/manual-log` | [Page Diagram](./diagrams/PAGE_DIAGRAMS.md#manual-log), [Manual Log Flow](./diagrams/SEQUENCES.md#manual-logging-flow) |
-| Reports | `/reports` | [Page Diagram](./diagrams/PAGE_DIAGRAMS.md#reports) |
-| Health Dashboard | `/admin/health` | [Page Diagram](./diagrams/PAGE_DIAGRAMS.md#health-dashboard) |
+### Core Documentation Flow
 
----
+```
+Executive Overview     →  Architecture  →  Engineering Details
+        ↓                      ↓                   ↓
+   Value Prop           System Design        API & Data Model
+        ↓                      ↓                   ↓
+   User Journeys         Diagrams            Integrations
+```
 
-## Cross-Reference: Features → Files
+### Key Cross-References
 
-| Feature | Key Files |
-|---------|-----------|
-| Alert Processing | `supabase/functions/process-unit-states/index.ts`, `src/hooks/useUnitStatus.ts` |
-| TTN Integration | `supabase/functions/ttn-*/`, `src/components/settings/TTNConnectionSettings.tsx` |
-| Notification Dispatch | `supabase/functions/process-escalations/index.ts`, `src/hooks/useNotificationPolicies.ts` |
-| Sensor Management | `src/components/settings/SensorManager.tsx`, `supabase/functions/ttn-provision-device/` |
-| Gateway Management | `src/components/settings/GatewayManager.tsx`, `supabase/functions/ttn-provision-gateway/` |
-| Manual Logging | `src/pages/ManualLog.tsx`, `src/lib/offlineStorage.ts` |
-| Compliance Reports | `src/pages/Reports.tsx`, `supabase/functions/export-temperature-logs/` |
-| User Authentication | `src/pages/Auth.tsx`, `src/hooks/useAuthAndOnboarding.ts` |
-| Billing/Subscriptions | `src/components/billing/BillingTab.tsx`, `supabase/functions/stripe-*/` |
+| If you need... | Start with... | Then see... |
+|----------------|---------------|-------------|
+| System understanding | [Architecture](./architecture/ARCHITECTURE.md) | [System Context](./diagrams/SYSTEM_CONTEXT.md) |
+| User flows | [User Flows](./product/USER_FLOWS.md) | [Sequences](./diagrams/SEQUENCES.md) |
+| Data structures | [Data Model](./engineering/DATA_MODEL.md) | [ER Diagram](./charts/ER_DIAGRAM.md) |
+| Getting started | [Getting Started](./onboarding/GETTING_STARTED.md) | [Local Dev](./onboarding/LOCAL_DEV.md) |
+| Security review | [Security Overview](./security/SECURITY_OVERVIEW.md) | [Threat Model](./security/THREAT_MODEL.md) |
+| Operations | [Metrics](./operations/METRICS_OVERVIEW.md) | [Runbooks](./operations/RUNBOOKS.md) |
 
 ---
 
-## Cross-Reference: Database Tables → Documentation
+## Documentation Pipeline
 
-| Table Category | Tables | Documentation |
-|----------------|--------|---------------|
-| Hierarchy | `organizations`, `sites`, `areas`, `units` | [DATA_MODEL.md#hierarchy](./engineering/DATA_MODEL.md#hierarchy-tables) |
-| Sensors | `lora_sensors`, `gateways`, `sensor_readings` | [DATA_MODEL.md#sensors](./engineering/DATA_MODEL.md#sensor-tables) |
-| Alerts | `alerts`, `alert_rules`, `escalation_contacts` | [DATA_MODEL.md#alerts](./engineering/DATA_MODEL.md#alert-tables) |
-| Notifications | `notification_policies`, `notification_events` | [DATA_MODEL.md#notifications](./engineering/DATA_MODEL.md#notification-tables) |
-| TTN | `ttn_connections`, `ttn_provisioning_queue` | [INTEGRATIONS.md#ttn](./engineering/INTEGRATIONS.md#ttn-integration) |
-| Audit | `event_logs`, `alert_rules_history` | [OBSERVABILITY.md#audit](./engineering/OBSERVABILITY.md#audit-trail) |
+This index is automatically generated. To regenerate:
 
----
+```bash
+npm run docs:build
+```
 
-## Navigation by Role
+To validate documentation:
 
-### For New Engineers
+```bash
+npm run docs:lint
+```
 
-1. Start with [README.md](./README.md) for project overview
-2. Read [GLOSSARY.md](./GLOSSARY.md) for domain terminology
-3. Review [ARCHITECTURE.md](./architecture/ARCHITECTURE.md) for system design
-4. Explore [DATA_MODEL.md](./engineering/DATA_MODEL.md) for database understanding
-5. Check [API.md](./engineering/API.md) for backend functions
+To run the complete pipeline:
 
-### For Product/Design
+```bash
+npm run docs:all
+```
 
-1. Start with [README.md](./README.md) for product overview
-2. Review [USER_FLOWS.md](./product/USER_FLOWS.md) for user journeys
-3. Browse [PAGES.md](./product/PAGES.md) for UI documentation
-4. Check [SEQUENCES.md](./diagrams/SEQUENCES.md) for interaction flows
-
-### For DevOps/SRE
-
-1. Start with [ARCHITECTURE.md](./architecture/ARCHITECTURE.md) for infrastructure
-2. Review [INTEGRATIONS.md](./engineering/INTEGRATIONS.md) for external services
-3. Check [OBSERVABILITY.md](./engineering/OBSERVABILITY.md) for monitoring
-4. Browse [API.md](./engineering/API.md) for edge function details
-
-### For Stakeholders
-
-1. Start with [README.md](./README.md) for executive overview
-2. Review [USER_FLOWS.md](./product/USER_FLOWS.md) for feature understanding
-3. Check [SYSTEM_CONTEXT.md](./diagrams/SYSTEM_CONTEXT.md) for high-level view
-
----
-
-## Document Maintenance
-
-| Document | Last Updated | Owner |
-|----------|--------------|-------|
-| All documentation | 2026-01-12 | Engineering Team |
-
-### TBD Items
-
-For a list of all TBD items requiring verification, see individual documents:
-- [API.md](./engineering/API.md) - Edge function documentation
-- [INTEGRATIONS.md](./engineering/INTEGRATIONS.md) - Environment variable requirements
-- [OBSERVABILITY.md](./engineering/OBSERVABILITY.md) - Production monitoring setup
+See [CI_CHECKLIST.md](./CI_CHECKLIST.md) for documentation standards and validation rules.
