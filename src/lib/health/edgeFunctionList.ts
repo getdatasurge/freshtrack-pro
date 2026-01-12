@@ -133,7 +133,7 @@ export const EDGE_FUNCTIONS: EdgeFunctionInfo[] = [
   // Notification Functions
   {
     name: 'send-sms-alert',
-    description: 'Sends SMS alerts via Twilio',
+    description: 'Sends SMS alerts via Telnyx',
     checkMethod: 'skip',
     critical: true,
     skipReason: 'Would send actual SMS',
