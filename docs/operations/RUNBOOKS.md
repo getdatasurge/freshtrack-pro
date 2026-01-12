@@ -395,14 +395,26 @@ P2 - High
 ```bash
 # Check escalation function logs
 supabase functions logs process-escalations --limit 50
+
+# Check SMS sending logs
+supabase functions logs send-sms-alert --limit 50
+
+# Check webhook logs for delivery status
+supabase functions logs telnyx-webhook --limit 50
 ```
 
 ```sql
 -- Check notification records
 SELECT *
-FROM notification_logs
+FROM notification_events
 WHERE alert_id = 'alert-uuid'
 ORDER BY created_at DESC;
+
+-- Check SMS alert log
+SELECT *
+FROM sms_alert_log
+WHERE alert_id = 'alert-uuid'
+ORDER BY sent_at DESC;
 ```
 
 ### Resolution Steps
@@ -423,7 +435,7 @@ WHERE organization_id = 'org-uuid';
 SELECT *
 FROM escalation_contacts
 WHERE organization_id = 'org-uuid'
-AND escalation_level = 1;
+AND is_active = true;
 ```
 
 #### Step 3: Check Email Service (Resend)
@@ -435,14 +447,61 @@ AND escalation_level = 1;
 
 #### Step 4: Check SMS Service (Telnyx)
 
-1. Login to Telnyx Mission Control portal
-2. Check message logs
-3. Verify account balance
-4. Check for carrier blocks
+**Telnyx Configuration:**
+- Messaging Profile: `frost guard`
+- Profile ID: `40019baa-aa62-463c-b254-463c66f4b2d3`
+- Toll-Free Number: `+18889890560`
+
+**Portal Steps:**
+1. Login to Telnyx Mission Control portal (telnyx.com)
+2. Navigate to Messaging → Messaging Profiles → "frost guard"
+3. Check message logs for delivery status
+4. Verify toll-free number is verified and active
+5. Check account balance if applicable
+
+**Verify Secrets:**
+```sql
+-- Secrets should be set (check via Supabase dashboard)
+-- TELNYX_API_KEY
+-- TELNYX_PHONE_NUMBER (+18889890560)
+-- TELNYX_MESSAGING_PROFILE_ID (40019baa-aa62-463c-b254-463c66f4b2d3)
+-- TELNYX_PUBLIC_KEY (for webhook verification)
+```
+
+**Check Webhook Configuration:**
+- Webhook URL: `https://mfwyiifehsvwnjwqoxht.supabase.co/functions/v1/telnyx-webhook`
+- Event types: `message.sent`, `message.delivered`, `message.failed`, `message.received`
+
+#### Step 5: Check for Opt-Out
+
+```sql
+-- Check if recipient has opted out
+SELECT * FROM sms_alert_log
+WHERE recipient_phone = '+15551234567'
+  AND (error_message LIKE '%opted out%' OR error_code = '40300');
+```
+
+If opted out, user must reply START to re-enable.
+
+#### Step 6: Verify Toll-Free Verification
+
+Check Settings → Notifications in FreshTrack UI for toll-free verification status.
+Unverified toll-free numbers have sending restrictions.
 
 ### Manual Notification (If Urgent)
 
 ```bash
+# Send manual SMS via Telnyx API
+curl -X POST https://api.telnyx.com/v2/messages \
+  -H "Authorization: Bearer $TELNYX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "+18889890560",
+    "to": "+15551234567",
+    "text": "URGENT FreshTrack Alert: Unit X has exceeded temperature threshold",
+    "messaging_profile_id": "40019baa-aa62-463c-b254-463c66f4b2d3"
+  }'
+
 # Send manual email via Resend API
 curl -X POST https://api.resend.com/emails \
   -H "Authorization: Bearer RESEND_API_KEY" \
@@ -454,6 +513,16 @@ curl -X POST https://api.resend.com/emails \
     "text": "Unit X has exceeded temperature threshold..."
   }'
 ```
+
+### Common Telnyx Error Codes
+
+| Code | Meaning | Resolution |
+|------|---------|------------|
+| 10009 | Auth failed | Check `TELNYX_API_KEY` |
+| 40001 | Landline | Use mobile number |
+| 40300 | Opted out | User replies START |
+| 40310 | Invalid number | Check E.164 format |
+| 40008 | Toll-free unverified | Complete verification |
 
 ---
 

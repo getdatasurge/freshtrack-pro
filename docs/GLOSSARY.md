@@ -97,9 +97,13 @@
 | Term | Definition |
 |------|------------|
 | **API Endpoint** | URL path that accepts requests and returns responses |
+| **Ed25519 Signature** | Cryptographic signature algorithm used by Telnyx to verify webhook authenticity |
 | **Idempotency** | Property where repeated operations produce the same result |
+| **Messaging Profile** | Telnyx configuration grouping phone numbers, webhooks, and message settings under a named profile |
+| **Opt-In Asset** | Image or document proving customer consent for SMS communications |
 | **Rate Limiting** | Restricting the number of requests within a time window |
-| **Webhook** | HTTP callback triggered by external events (TTN data, Stripe payments) |
+| **Toll-Free Verification** | Regulatory process requiring business verification before sending SMS from toll-free numbers |
+| **Webhook** | HTTP callback triggered by external events (TTN data, Stripe payments, Telnyx delivery status) |
 
 ## Development
 

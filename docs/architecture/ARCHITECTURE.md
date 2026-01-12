@@ -357,9 +357,25 @@ Sensor → LoRa Gateway → TTN → ttn-webhook → Database
 
 ### Telnyx
 
-**Purpose**: SMS alert delivery
+**Purpose**: SMS alert delivery via toll-free number
 
-**Usage**: Called by `process-escalations` for critical alerts
+**Configuration**:
+| Property | Value |
+|----------|-------|
+| Messaging Profile | `frost guard` |
+| Profile ID | `40019baa-aa62-463c-b254-463c66f4b2d3` |
+| Phone Number | `+18889890560` (Toll-Free) |
+| Webhook | Ed25519 signature verification |
+
+**Usage**: Called by `process-escalations` → `send-sms-alert` for critical alerts
+
+**Secrets Required**:
+| Secret | Purpose |
+|--------|---------|
+| `TELNYX_API_KEY` | API authentication |
+| `TELNYX_PHONE_NUMBER` | Sender phone number |
+| `TELNYX_MESSAGING_PROFILE_ID` | Message routing |
+| `TELNYX_PUBLIC_KEY` | Webhook signature verification |
 
 ---
 
