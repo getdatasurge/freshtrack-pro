@@ -118,3 +118,7 @@ verify_jwt = false
 # TTN provisioning worker - scheduled job, uses service role key
 [functions.ttn-provision-worker]
 verify_jwt = false
+
+# Upload public assets - internal function for compliance assets
+[functions.upload-public-asset]
+verify_jwt = false

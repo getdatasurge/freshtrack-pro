@@ -28,6 +28,7 @@ import TTNCleanup from "./pages/TTNCleanup";
 import DataMaintenance from "./pages/DataMaintenance";
 import AccountDeleted from "./pages/AccountDeleted";
 import HealthDashboard from "./pages/HealthDashboard";
+import UploadTelnyxImage from "./pages/UploadTelnyxImage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -63,6 +64,7 @@ const App = () => (
             <Route path="/admin/ttn-cleanup" element={<TTNCleanup />} />
             <Route path="/admin/data-maintenance" element={<DataMaintenance />} />
             <Route path="/admin/health" element={<HealthDashboard />} />
+            <Route path="/admin/upload-telnyx-image" element={<UploadTelnyxImage />} />
             <Route path="/account-deleted" element={<AccountDeleted />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
