@@ -13,6 +13,8 @@ on:
     paths:
       - 'docs/**'
       - 'scripts/docs/**'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
 
 jobs:
