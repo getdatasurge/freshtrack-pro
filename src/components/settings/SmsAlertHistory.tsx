@@ -262,7 +262,12 @@ export function SmsAlertHistory({ organizationId }: SmsAlertHistoryProps) {
                           <div title={format(new Date(log.created_at), "PPpp")}>
                             {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
                           </div>
-                          <div className="font-mono mt-1">{formatPhoneDisplay(log.phone_number)}</div>
+                          <div className="font-mono mt-1">To: {formatPhoneDisplay(log.phone_number)}</div>
+                          {log.from_number && (
+                            <div className="font-mono text-muted-foreground/70">
+                              From: {formatPhoneDisplay(log.from_number)}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </CollapsibleTrigger>

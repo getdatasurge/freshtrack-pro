@@ -78,6 +78,10 @@ const handler = async (req: Request): Promise<Response> => {
     const TELNYX_MESSAGING_PROFILE_ID = Deno.env.get("TELNYX_MESSAGING_PROFILE_ID");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 
+    // Canonical toll-free number and old long code for validation
+    const TOLL_FREE_NUMBER = "+18889890560";
+    const OLD_LONG_CODE = "+14079920647";
+
     // Log credential existence (not values!)
     console.log("send-sms-alert: Credentials check:", {
       hasApiKey: !!TELNYX_API_KEY,
@@ -85,6 +89,34 @@ const handler = async (req: Request): Promise<Response> => {
       hasMessagingProfileId: !!TELNYX_MESSAGING_PROFILE_ID,
       messagingProfileId: TELNYX_MESSAGING_PROFILE_ID ? `${TELNYX_MESSAGING_PROFILE_ID.slice(0, 8)}...` : "MISSING",
       fromNumber: TELNYX_PHONE_NUMBER ? `${TELNYX_PHONE_NUMBER.slice(0, 5)}***` : "MISSING",
+    });
+
+    // CRITICAL GUARD: Block old long code number
+    if (TELNYX_PHONE_NUMBER === OLD_LONG_CODE) {
+      console.error(JSON.stringify({
+        event: "sms_blocked_old_number",
+        severity: "critical",
+        configured: OLD_LONG_CODE,
+        required: TOLL_FREE_NUMBER,
+        action: "Update TELNYX_PHONE_NUMBER secret to toll-free number +18889890560",
+        timestamp: new Date().toISOString(),
+      }));
+      return new Response(
+        JSON.stringify({ 
+          error: "SMS configuration error: Old long code detected. Update TELNYX_PHONE_NUMBER to toll-free number.", 
+          status: "failed",
+          configured: OLD_LONG_CODE.slice(0, 5) + "***",
+          required: TOLL_FREE_NUMBER.slice(0, 5) + "***",
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate toll-free sender
+    console.log("send-sms-alert: Sender validation:", {
+      configured: TELNYX_PHONE_NUMBER?.slice(0, 5) + "***",
+      isTollFree: TELNYX_PHONE_NUMBER === TOLL_FREE_NUMBER,
+      expected: TOLL_FREE_NUMBER.slice(0, 5) + "***",
     });
 
     if (!TELNYX_API_KEY || !TELNYX_PHONE_NUMBER) {
@@ -284,6 +316,21 @@ const handler = async (req: Request): Promise<Response> => {
 
     const messageId = telnyxData.data?.id;
     const messageStatus = telnyxData.data?.to?.[0]?.status || "queued";
+
+    // Structured success logging
+    console.log(JSON.stringify({
+      event: "sms_send_success",
+      message_id: messageId,
+      profile_id: TELNYX_MESSAGING_PROFILE_ID?.slice(0, 8),
+      profile_name: "frost guard",
+      from: TELNYX_PHONE_NUMBER,
+      to: to.replace(/\d(?=\d{4})/g, "*"),
+      is_toll_free: TELNYX_PHONE_NUMBER === TOLL_FREE_NUMBER,
+      status: messageStatus,
+      org_id: organizationId?.slice(0, 8),
+      alert_type: alertType,
+      timestamp: new Date().toISOString(),
+    }));
 
     console.log(`send-sms-alert: SMS sent successfully!`);
     console.log(`send-sms-alert: Telnyx Message ID: ${messageId}`);
