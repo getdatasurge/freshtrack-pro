@@ -12,7 +12,12 @@
     "docs:generate": "node scripts/docs/index.js generate",
     "docs:lint": "node scripts/docs/index.js lint",
     "docs:build": "node scripts/docs/index.js build",
-    "docs:all": "node scripts/docs/index.js all"
+    "docs:all": "node scripts/docs/index.js all",
+    "docs:version": "node scripts/docs/update-version.js",
+    "docs:tag": "node scripts/docs/create-docs-tag.js",
+    "docs:site:dev": "cd docs-site && mkdocs serve",
+    "docs:site:build": "cd docs-site && mkdocs build --strict",
+    "adr:new": "node scripts/docs/adr-new.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

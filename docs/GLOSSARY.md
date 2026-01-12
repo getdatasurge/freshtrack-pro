@@ -114,12 +114,15 @@
 
 | Term | Definition |
 |------|------------|
+| **Accept Uncertainty** | It's OK to note unknowns |
+| **Accountability** | Document who made decisions and when |
 | **Actions** | \| Action \| Description \| Side Effects \| |
 | **Actors** | - Primary: New User (Food Safety Manager) |
 | **Add Sensors** | Register your LoRaWAN sensors in the TTN Console |
 | **Alert Creation** | Only `process-unit-states` creates alerts in the database |
 | **Alert Resolution** | Only `process-unit-states` resolves alerts automatically |
 | **Alert Types Created** | - `temp_excursion` - Temperature out of range |
+| **Alternatives** | Options that were considered |
 | **API Calls** | - `supabase |
 | **API key rotation UI** | Manual process currently |
 | **APIs and Data Touched** | - `supabase |
@@ -130,9 +133,11 @@
 | **Auth** | Verify login/logout works |
 | **Authentication** | Unique webhook secret per organization |
 | **Backend** | Zod validation in edge functions |
+| **Be Concise** | ADRs should be 1-2 pages maximum |
 | **Cause** | API key is invalid or expired |
 | **Causes** | - Secrets may take a few seconds to propagate |
 | **Check** | API key is valid |
+| **Communication** | Share architectural knowledge across the team |
 | **Compliance Documentation** | Immutable audit trails for health inspections |
 | **Component** | `AlertRulesEditor |
 | **Component Composition** | Use shadcn components as building blocks |
@@ -140,11 +145,14 @@
 | **Config Objects** | Centralized status/alert configuration in `lib/` |
 | **Configuration** | Stored in `ttn_connections` table per organization |
 | **Configure Devices** | Add device EUIs and keys |
+| **Consequences** | Positive and negative impacts |
+| **Context** | Problem or situation driving the decision |
 | **Continuous Monitoring** | Automated temperature readings every 5 minutes (configurable) |
 | **Copy the generated API key** | you won't be able to see it again! |
 | **Credential Stuffing Attack** | Large volume of failed logins detected |
 | **Data Dependencies** | - None (creates new session) |
 | **Database** | Organization-specific settings (TTN credentials) |
+| **Decision** | What was decided |
 | **Dedicated API Key** | Application-scoped with minimal required permissions |
 | **Dedicated Webhook** | Points to FreshTrack with unique secret for authentication |
 | **Diagram Reference** | [Landing Page Diagram]( |
@@ -170,6 +178,7 @@
 | **Filter Logs** | Use tabs: Events, CRUD, Network, Sync, TTN, Errors |
 | **Filters** | - Event type (alert, temperature, configuration, user) |
 | **Fix** | Ensure user is synced and `ttn |
+| **Focus on Why** | The rationale is more important than the what |
 | **Foreign Key Constraints** | Data relationships maintain org scope |
 | **FreshTrack Pro subscription** | A few hundred dollars per month |
 | **Frontend** | Zod schemas in `lib/validation |
@@ -180,9 +189,11 @@
 | **Hashing** | bcrypt with cost factor (Supabase managed) |
 | **Headers** | \| Header \| Value \| |
 | **Hierarchical Configuration** | Settings cascade: Organization → Site → Area → Unit |
+| **Historical Context** | Understand why past decisions were made |
 | **Immutable design** | Append-only logging tables |
 | **Implication** | Always consider failure modes |
 | **Important** | `ready` must be `true`! |
+| **Include Alternatives** | Show what else was considered |
 | **Indexes** | - `organizations_slug_key` (unique) |
 | **Key Features** | - RLS policies for multi-tenancy |
 | **Layout** | - Hero section with value proposition |
@@ -199,6 +210,7 @@
 | **Notes** | - Returns 202 for unknown devices to prevent TTN retries |
 | **Notifications** | `process-unit-states` → `process-escalations` → email/SMS/push |
 | **Offline Behavior** | - Logs stored in IndexedDB |
+| **Onboarding** | Help new team members understand the codebase quickly |
 | **Outcome** | In less than an hour, FreshTrack Pro is monitoring all refrigeration units and the whole team has access |
 | **Plans** | \| Plan \| Price \| Sensors \| Features \| |
 | **Preconditions** | User is not authenticated |
@@ -211,6 +223,7 @@
 | **Ransomware Scenario** | Supabase account access compromised |
 | **Rate limiting visibility** | Platform-level, not application-configurable |
 | **Recovery** | - Retry button for failed queries |
+| **Related** | Links to related ADRs, issues, or docs |
 | **Relationships** | - `organization_id` → `organizations |
 | **Report Types** | \| Report \| Description \| |
 | **Request Body** | None (processes all active units) |
@@ -220,6 +233,7 @@
 | **Result** | Faster inspections |
 | **Retention** | Configurable per compliance requirements |
 | **Returns** | Merged alert rules with cascade priority (Unit > Site > Org) |
+| **Reversibility** | Know when and why to revisit decisions |
 | **Rights** | Select the following: |
 | **RLS Policy Bypass** | Customer reports seeing another org's data |
 | **ROI Example** | One prevented incident = 12–24 months of subscription cost avoided |
@@ -236,7 +250,7 @@
 | **Source** | `src/lib/statusConfig |
 | **Staff training** | 15-30 minutes |
 | **State Processing** | `ingest-readings` → `process-unit-states` → creates/resolves alerts |
-| **Status** | `triggered` → `acknowledged` → `resolved` |
+| **Status** | Current lifecycle state |
 | **Status Codes** | \| Code \| Meaning \| |
 | **Status Computation** | Frontend uses `computeUnitStatus()` for consistency with backend logic |
 | **Steps** | \| Step \| Actor \| Action \| System Response \| |
@@ -250,6 +264,7 @@
 | **Test Data Flow** | Send test uplinks to verify webhook delivery |
 | **Timeline of events** | Detection time |
 | **Timestamps** | `created_at`, `updated_at` on most tables |
+| **Title** | Clear, descriptive name |
 | **Trace Operations** | Click correlation ID link to filter related |
 | **Trigger** | Scheduled (cron) or manual |
 | **TTN User ID** | `frostguard` |
