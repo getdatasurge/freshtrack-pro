@@ -20,6 +20,214 @@
 
 ---
 
+## Landing Page
+
+**Route**: `/`
+**File**: `src/pages/Index.tsx`
+
+### Component Diagram
+
+```mermaid
+graph TB
+    subgraph "Landing Page"
+        LP[Index Page]
+
+        subgraph "Header"
+            LG[Logo]
+            NV[Navigation]
+            SA[Sign In / Sign Up]
+        end
+
+        subgraph "Hero Section"
+            HL[Headline]
+            VP[Value Proposition]
+            CTA[Call to Action]
+        end
+
+        subgraph "Features"
+            F1[Feature Cards]
+        end
+
+        subgraph "Footer"
+            LK[Links]
+            CP[Copyright]
+        end
+    end
+
+    LP --> LG
+    LP --> NV
+    LP --> SA
+    LP --> HL
+    LP --> VP
+    LP --> CTA
+    LP --> F1
+    LP --> LK
+    LP --> CP
+```
+
+### State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Loading
+    Loading --> Authenticated: Has session
+    Loading --> Unauthenticated: No session
+
+    Authenticated --> [*]: Redirect to /dashboard
+    Unauthenticated --> Rendering: Show landing
+    Rendering --> [*]
+```
+
+---
+
+## Organization Dashboard
+
+**Route**: `/organization`
+**File**: `src/pages/OrganizationDashboard.tsx`
+
+### Component Diagram
+
+```mermaid
+graph TB
+    subgraph "Organization Dashboard"
+        OD[OrganizationDashboard]
+
+        subgraph "Header"
+            OB[Organization Branding]
+            ON[Organization Name]
+        end
+
+        subgraph "Summary Cards"
+            TU[Total Units Card]
+            AA[Active Alerts Card]
+            CS[Compliance Score Card]
+        end
+
+        subgraph "Site Overview"
+            SOL[Site Overview List]
+            SOC[Site Overview Card]
+        end
+
+        subgraph "Quick Actions"
+            QA[Quick Action Buttons]
+        end
+    end
+
+    OD --> OB
+    OD --> ON
+    OD --> TU
+    OD --> AA
+    OD --> CS
+    OD --> SOL
+    SOL --> SOC
+    OD --> QA
+```
+
+---
+
+## Sites
+
+**Route**: `/sites`
+**File**: `src/pages/Sites.tsx`
+
+### Component Diagram
+
+```mermaid
+graph TB
+    subgraph "Sites Page"
+        SP[Sites]
+
+        subgraph "Header"
+            TL[Title]
+            ASB[Add Site Button]
+        end
+
+        subgraph "Site List"
+            SCL[Site Card List]
+            SC[Site Card]
+        end
+
+        subgraph "Site Card Content"
+            SN[Site Name]
+            SA[Site Address]
+            UC[Unit Count]
+            AC[Alert Count]
+        end
+    end
+
+    SP --> TL
+    SP --> ASB
+    SP --> SCL
+    SCL --> SC
+    SC --> SN
+    SC --> SA
+    SC --> UC
+    SC --> AC
+```
+
+---
+
+## Event History
+
+**Route**: `/events`
+**File**: `src/pages/EventHistory.tsx`
+
+### Component Diagram
+
+```mermaid
+graph TB
+    subgraph "Event History Page"
+        EH[EventHistory]
+
+        subgraph "Filters"
+            ETF[Event Type Filter]
+            SEF[Severity Filter]
+            DRF[Date Range Filter]
+            AF[Actor Filter]
+        end
+
+        subgraph "Event List"
+            EL[Event List]
+            ER[Event Row]
+        end
+
+        subgraph "Event Row Content"
+            EI[Event Icon]
+            ET[Event Type]
+            ED[Event Description]
+            TS[Timestamp]
+        end
+    end
+
+    EH --> ETF
+    EH --> SEF
+    EH --> DRF
+    EH --> AF
+    EH --> EL
+    EL --> ER
+    ER --> EI
+    ER --> ET
+    ER --> ED
+    ER --> TS
+```
+
+### State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Loading
+    Loading --> Ready: Events loaded
+    Loading --> Empty: No events
+
+    Ready --> Filtering: Apply filter
+    Filtering --> Ready: Results
+
+    Ready --> Expanding: Click event
+    Expanding --> Ready: Collapse
+```
+
+---
+
 ## Dashboard
 
 **Route**: `/dashboard`

@@ -424,6 +424,170 @@ sequenceDiagram
 
 ---
 
+## Add Unit
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant AD as Area Detail Page
+    participant DB as Database
+    participant EL as event_logs
+
+    U->>AD: Click "Add Unit"
+    AD->>AD: Open unit creation dialog
+
+    U->>AD: Enter unit name
+    U->>AD: Set temperature thresholds
+    U->>AD: Configure check-in interval
+    U->>AD: Click "Create"
+
+    AD->>AD: Validate input
+    AD->>DB: create_unit_for_area() RPC
+    DB->>DB: INSERT units
+    DB->>DB: Create default alert rules
+    DB-->>AD: Unit created
+
+    AD->>EL: INSERT event_log (unit_created)
+    EL-->>AD: Logged
+
+    AD-->>U: Success toast
+    AD->>AD: Redirect to unit page
+```
+
+---
+
+## Configure Thresholds
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant UD as Unit Detail Page
+    participant DB as Database
+    participant EL as event_logs
+    participant ARH as alert_rules_history
+
+    U->>UD: Navigate to unit detail
+    UD->>DB: Fetch unit data
+    DB-->>UD: Unit with current thresholds
+
+    U->>UD: Open settings section
+    U->>UD: Modify high/low limits
+    U->>UD: Click "Save"
+
+    UD->>UD: Validate input
+    UD->>DB: UPDATE units (thresholds)
+    DB-->>UD: Updated
+
+    UD->>ARH: INSERT history record
+    ARH-->>UD: History recorded
+
+    UD->>EL: INSERT event_log (thresholds_changed)
+    EL-->>UD: Logged
+
+    UD-->>U: Success toast
+```
+
+---
+
+## Configure Notifications
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant SP as Settings Page
+    participant DB as Database
+    participant NP as notification_policies
+
+    U->>SP: Navigate to Settings → Notifications
+    SP->>DB: Fetch current policies
+    DB-->>SP: Notification policies
+
+    U->>SP: Select alert type
+    SP->>SP: Show current policy
+
+    U->>SP: Toggle notification channels
+    U->>SP: Set escalation timing
+    U->>SP: Configure quiet hours
+    U->>SP: Click "Save"
+
+    SP->>NP: UPDATE notification_policies
+    NP-->>SP: Updated
+
+    SP-->>U: Success toast
+```
+
+---
+
+## Generate Report
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant RP as Reports Page
+    participant DB as Database
+    participant EF as export-temperature-logs
+
+    U->>RP: Navigate to /reports
+    RP->>RP: Display report options
+
+    U->>RP: Select report type
+    U->>RP: Set date range
+    U->>RP: Select units/sites
+    U->>RP: Click "Generate"
+
+    RP->>DB: Query sensor_readings
+    RP->>DB: Query manual_temperature_logs
+    RP->>DB: Query alerts
+    RP->>DB: Query corrective_actions
+    DB-->>RP: Aggregated data
+
+    RP->>RP: Display preview
+
+    U->>RP: Click "Export PDF"
+    RP->>EF: POST /export-temperature-logs
+    EF->>EF: Generate PDF
+    EF-->>RP: PDF binary
+
+    RP-->>U: Download file
+```
+
+---
+
+## Corrective Action
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant AL as Alert Detail
+    participant DB as Database
+    participant CA as corrective_actions
+    participant EL as event_logs
+
+    U->>AL: View alert detail
+    AL->>DB: Fetch alert info
+    DB-->>AL: Alert data
+
+    U->>AL: Click "Add Corrective Action"
+    AL->>AL: Open form
+
+    U->>AL: Describe root cause
+    U->>AL: Describe action taken
+    U->>AL: Describe preventive measures
+    U->>AL: Upload photos (optional)
+    U->>AL: Click "Save"
+
+    AL->>CA: INSERT corrective_actions
+    CA-->>AL: Record created
+
+    AL->>EL: INSERT event_log (corrective_action_added)
+    EL-->>AL: Logged
+
+    AL-->>U: Success toast
+    AL->>AL: Refresh alert detail
+```
+
+---
+
 ## Related Documentation
 
 - [USER_FLOWS.md](../product/USER_FLOWS.md) - Detailed flow descriptions

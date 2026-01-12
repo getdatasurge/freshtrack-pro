@@ -86,10 +86,10 @@ Optional section for implementation details:
 
 ## Related
 
-- **Supersedes:** [ADR-NNNN](./NNNN-...) (if applicable)
-- **Related ADRs:** [ADR-NNNN](./NNNN-...)
-- **Related Issues:** [#123](link-to-issue)
-- **Related Docs:** [Document Name](../path/to/doc.md)
+- **Supersedes:** ADR-NNNN (if applicable)
+- **Related ADRs:** ADR-NNNN
+- **Related Issues:** Issue #NNN
+- **Related Docs:** Document Name (path/to/doc.md)
 
 ## References
 

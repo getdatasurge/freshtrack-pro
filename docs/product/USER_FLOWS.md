@@ -7,7 +7,7 @@
 ## Table of Contents
 
 1. [Authentication Flows](#authentication-flows)
-2. [Setup & Onboarding Flows](#setup--onboarding-flows)
+2. [Setup & Onboarding Flows](#setup-onboarding-flows)
 3. [Monitoring Flows](#monitoring-flows)
 4. [Alert Management Flows](#alert-management-flows)
 5. [Configuration Flows](#configuration-flows)

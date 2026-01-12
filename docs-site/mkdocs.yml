@@ -76,6 +76,18 @@ theme:
       example: octicons/beaker-16
       quote: octicons/quote-16
 
+# Validation settings - allow generated files in _build/ and _meta/ to not be in nav
+validation:
+  nav:
+    omitted_files: ignore
+  links:
+    not_found: warn
+
+# Exclude generated output directories from docs source
+exclude_docs: |
+  _build/
+  _meta/
+
 # Plugins
 plugins:
   - search:

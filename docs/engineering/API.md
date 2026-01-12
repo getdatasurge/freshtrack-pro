@@ -11,7 +11,7 @@
 3. [Data Ingestion Functions](#data-ingestion-functions)
 4. [Alert Processing Functions](#alert-processing-functions)
 5. [TTN Management Functions](#ttn-management-functions)
-6. [User & Data Management Functions](#user--data-management-functions)
+6. [User & Data Management Functions](#user-data-management-functions)
 7. [Billing Functions](#billing-functions)
 8. [Utility Functions](#utility-functions)
 9. [Database RPC Functions](#database-rpc-functions)

@@ -10,7 +10,7 @@
 2. [Frontend Architecture](#frontend-architecture)
 3. [Backend Architecture](#backend-architecture)
 4. [Database Architecture](#database-architecture)
-5. [Authentication & Authorization](#authentication--authorization)
+5. [Authentication & Authorization](#authentication-authorization)
 6. [Third-Party Integrations](#third-party-integrations)
 7. [Environment Separation](#environment-separation)
 8. [Security Boundaries](#security-boundaries)
