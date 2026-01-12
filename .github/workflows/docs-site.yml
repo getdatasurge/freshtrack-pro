@@ -25,9 +25,9 @@ on:
         default: 'false'
         type: boolean
 
-# Allow only one concurrent deployment
+# Allow only one concurrent deployment to GitHub Pages
 concurrency:
-  group: docs-site-${{ github.ref }}
+  group: "pages"
   cancel-in-progress: true
 
 # Sets permissions of the GITHUB_TOKEN
@@ -96,6 +96,7 @@ jobs:
           retention-days: 7
 
   # Deploy job - only on push to main or manual trigger
+  # Uses GitHub Pages Actions deployment (not gh-pages branch push)
   deploy:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
@@ -109,55 +110,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('docs-site/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install MkDocs dependencies
-        run: pip install -r docs-site/requirements.txt
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Update version metadata (dev/latest)
-        run: node scripts/docs/update-version.js --dev
-
-      - name: Generate documentation (deterministic mode)
-        run: npm run docs:generate
-        env:
-          CI: 'true'  # Ensures deterministic output (no timestamps)
-
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Deploy with mike (latest)
-        run: |
-          cd docs-site
-          mike deploy --push --update-aliases dev latest
-          mike set-default --push latest
-
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
