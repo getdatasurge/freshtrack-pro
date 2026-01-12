@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decode as decodeBase64 } from "https://deno.land/std@0.190.0/encoding/base64.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,7 +11,10 @@ const corsHeaders = {
  * Telnyx Webhook Handler
  * 
  * Receives delivery status reports (DLR) from Telnyx for message tracking.
- * Updates sms_alert_log.status based on final delivery status.
+ * Features:
+ * - Ed25519 signature validation for security
+ * - Idempotent event processing (stores event_id to prevent duplicates)
+ * - Updates sms_alert_log.status based on final delivery status
  * 
  * Webhook events: https://developers.telnyx.com/docs/messaging/receiving-webhooks
  */
@@ -62,6 +66,56 @@ const STATUS_MAP: Record<string, string> = {
   sending: "sent",
 };
 
+/**
+ * Verify Telnyx Ed25519 signature
+ * @see https://developers.telnyx.com/docs/development/api-guide/webhooks#webhook-signature-validation
+ */
+async function verifyTelnyxSignature(
+  rawBody: string,
+  signatureHeader: string | null,
+  timestampHeader: string | null,
+  publicKey: string
+): Promise<boolean> {
+  if (!signatureHeader || !timestampHeader) {
+    console.log("telnyx-webhook: Missing signature headers");
+    return false;
+  }
+
+  try {
+    // The signed content is timestamp|payload
+    const signedPayload = `${timestampHeader}|${rawBody}`;
+    const signedPayloadBytes = new TextEncoder().encode(signedPayload);
+    
+    // Decode the base64 signature
+    const signatureBytes = new Uint8Array(decodeBase64(signatureHeader));
+    
+    // Decode the base64 public key
+    const publicKeyBytes = new Uint8Array(decodeBase64(publicKey));
+    
+    // Import the public key for Ed25519 verification
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      publicKeyBytes.buffer as ArrayBuffer,
+      { name: "Ed25519" },
+      false,
+      ["verify"]
+    );
+    
+    // Verify the signature
+    const isValid = await crypto.subtle.verify(
+      "Ed25519",
+      cryptoKey,
+      signatureBytes.buffer as ArrayBuffer,
+      signedPayloadBytes
+    );
+    
+    return isValid;
+  } catch (error) {
+    console.error("telnyx-webhook: Signature verification error:", error);
+    return false;
+  }
+}
+
 const handler = async (req: Request): Promise<Response> => {
   console.log("telnyx-webhook: ============ Request Start ============");
   console.log("telnyx-webhook: Method:", req.method);
@@ -79,13 +133,51 @@ const handler = async (req: Request): Promise<Response> => {
     );
   }
 
+  // Initialize Supabase client early for logging
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
   try {
-    // Parse webhook payload
-    const payload: TelnyxWebhookPayload = await req.json();
+    // Read raw body for signature verification
+    const rawBody = await req.text();
+    
+    // Get signature headers
+    const signatureHeader = req.headers.get("telnyx-signature-ed25519");
+    const timestampHeader = req.headers.get("telnyx-timestamp");
+    
+    // Get public key for signature verification
+    const TELNYX_PUBLIC_KEY = Deno.env.get("TELNYX_PUBLIC_KEY");
+    
+    // Verify signature if public key is configured
+    if (TELNYX_PUBLIC_KEY) {
+      const isValid = await verifyTelnyxSignature(
+        rawBody,
+        signatureHeader,
+        timestampHeader,
+        TELNYX_PUBLIC_KEY
+      );
+      
+      if (!isValid) {
+        console.error("telnyx-webhook: Invalid signature");
+        return new Response(
+          JSON.stringify({ error: "Invalid signature" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.log("telnyx-webhook: Signature verified successfully");
+    } else {
+      console.log("telnyx-webhook: Signature verification skipped (no public key configured)");
+    }
+    
+    // Parse the webhook payload
+    const payload: TelnyxWebhookPayload = JSON.parse(rawBody);
     
     const eventType = payload.data?.event_type;
+    const eventId = payload.data?.id;
     const messageId = payload.data?.payload?.id;
     
+    console.log("telnyx-webhook: Event ID:", eventId);
     console.log("telnyx-webhook: Event type:", eventType);
     console.log("telnyx-webhook: Message ID:", messageId);
 
@@ -98,18 +190,51 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    if (!messageId) {
-      console.error("telnyx-webhook: Missing message ID");
+    if (!eventId) {
+      console.error("telnyx-webhook: Missing event ID");
       return new Response(
-        JSON.stringify({ error: "Missing message ID" }),
+        JSON.stringify({ error: "Missing event ID" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Idempotency check: Have we already processed this event?
+    const { data: existingEvent } = await supabase
+      .from("telnyx_webhook_events")
+      .select("id, processed")
+      .eq("event_id", eventId)
+      .maybeSingle();
+
+    if (existingEvent) {
+      console.log("telnyx-webhook: Event already processed:", eventId);
+      return new Response(
+        JSON.stringify({ status: "duplicate", event_id: eventId }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Store the event for audit trail
+    const { error: insertEventError } = await supabase
+      .from("telnyx_webhook_events")
+      .insert({
+        event_id: eventId,
+        event_type: eventType,
+        message_id: messageId,
+        payload: payload,
+        processed: false,
+      });
+
+    if (insertEventError) {
+      // Could be a race condition - check if it's a duplicate
+      if (insertEventError.code === "23505") {
+        console.log("telnyx-webhook: Event already exists (race condition):", eventId);
+        return new Response(
+          JSON.stringify({ status: "duplicate", event_id: eventId }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.error("telnyx-webhook: Failed to store event:", insertEventError);
+    }
 
     // Determine the delivery status
     const toStatus = payload.data?.payload?.to?.[0]?.status;
@@ -119,7 +244,7 @@ const handler = async (req: Request): Promise<Response> => {
     console.log("telnyx-webhook: Mapped status:", mappedStatus);
 
     // If we have a final status (delivered or failed), update the log
-    if (mappedStatus && (mappedStatus === "delivered" || mappedStatus === "failed")) {
+    if (messageId && mappedStatus && (mappedStatus === "delivered" || mappedStatus === "failed")) {
       // Build error message if failed
       let errorMessage: string | null = null;
       if (mappedStatus === "failed") {
@@ -131,11 +256,12 @@ const handler = async (req: Request): Promise<Response> => {
         }
       }
 
-      // Update the SMS log record
+      // Update the SMS log record with delivery timestamp
       const { data: updateData, error: updateError } = await supabase
         .from("sms_alert_log")
         .update({
           status: mappedStatus,
+          delivery_updated_at: new Date().toISOString(),
           ...(errorMessage && { error_message: errorMessage }),
         })
         .eq("provider_message_id", messageId)
@@ -159,10 +285,24 @@ const handler = async (req: Request): Promise<Response> => {
       console.log("telnyx-webhook: Status not actionable:", toStatus);
     }
 
+    // Mark event as processed
+    if (eventId) {
+      await supabase
+        .from("telnyx_webhook_events")
+        .update({ processed: true })
+        .eq("event_id", eventId);
+    }
+
+    // Update webhook config last_event_at
+    await supabase
+      .from("telnyx_webhook_config")
+      .update({ last_event_at: new Date().toISOString(), status: "active" })
+      .or("organization_id.is.null");
+
     console.log("telnyx-webhook: ============ Request Complete ============");
 
     return new Response(
-      JSON.stringify({ status: "ok", processed: true }),
+      JSON.stringify({ status: "ok", processed: true, event_id: eventId }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 

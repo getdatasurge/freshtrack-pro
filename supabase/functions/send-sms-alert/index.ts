@@ -232,12 +232,13 @@ const handler = async (req: Request): Promise<Response> => {
     console.log(`send-sms-alert: Telnyx Message ID: ${messageId}`);
     console.log(`send-sms-alert: Message status: ${messageStatus}`);
 
-    // Log successful SMS
+    // Log successful SMS with from_number
     const { error: insertError } = await supabase.from("sms_alert_log").insert({
       organization_id: organizationId,
       user_id: userId,
       alert_id: alertId,
       phone_number: to,
+      from_number: TELNYX_PHONE_NUMBER,
       alert_type: alertType,
       message: message,
       status: "sent",

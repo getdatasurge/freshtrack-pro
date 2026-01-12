@@ -13,12 +13,14 @@ import { toast } from "sonner";
 interface SmsLogEntry {
   id: string;
   phone_number: string;
+  from_number: string | null;
   alert_type: string;
   message: string;
   status: string;
   created_at: string;
   error_message: string | null;
   provider_message_id: string | null;
+  delivery_updated_at: string | null;
 }
 
 const alertTypeLabels: Record<string, string> = {
@@ -35,7 +37,7 @@ const alertTypeLabels: Record<string, string> = {
 };
 
 const statusConfig: Record<string, { icon: React.ReactNode; variant: "default" | "secondary" | "destructive" | "outline"; label: string; className: string }> = {
-  sent: { icon: <CheckCircle className="h-3 w-3" />, variant: "default", label: "Sent", className: "bg-safe/15 text-safe border-safe/30" },
+  sent: { icon: <Clock className="h-3 w-3" />, variant: "secondary", label: "Sent", className: "bg-muted text-muted-foreground border-border" },
   delivered: { icon: <CheckCircle className="h-3 w-3" />, variant: "default", label: "Delivered", className: "bg-safe/15 text-safe border-safe/30" },
   failed: { icon: <XCircle className="h-3 w-3" />, variant: "destructive", label: "Failed", className: "bg-destructive/15 text-destructive border-destructive/30" },
   pending: { icon: <Clock className="h-3 w-3" />, variant: "secondary", label: "Pending", className: "bg-muted text-muted-foreground border-border" },
@@ -136,7 +138,7 @@ export function SmsAlertHistory({ organizationId }: SmsAlertHistoryProps) {
       
       const { data, error } = await supabase
         .from("sms_alert_log")
-        .select("id, phone_number, alert_type, message, status, created_at, error_message, provider_message_id")
+        .select("id, phone_number, from_number, alert_type, message, status, created_at, error_message, provider_message_id, delivery_updated_at")
         .eq("organization_id", organizationId)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -301,8 +303,22 @@ export function SmsAlertHistory({ organizationId }: SmsAlertHistoryProps) {
                             </div>
                           )}
                           
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                             <span>Sent: {format(new Date(log.created_at), "MMM d, yyyy 'at' h:mm:ss a")}</span>
+                            {log.delivery_updated_at && (
+                              <span className="text-safe">
+                                Delivered: {format(new Date(log.delivery_updated_at), "MMM d, yyyy 'at' h:mm:ss a")}
+                              </span>
+                            )}
+                            {log.status === 'sent' && !log.delivery_updated_at && (
+                              <span className="text-muted-foreground italic flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                Awaiting delivery confirmation...
+                              </span>
+                            )}
+                            {log.from_number && (
+                              <span>From: {formatPhoneDisplay(log.from_number)}</span>
+                            )}
                           </div>
                         </div>
                       </div>
