@@ -890,7 +890,7 @@ const Settings = () => {
                       {smsVerified === false && (
                         <p className="text-xs text-warning flex items-center gap-1">
                           <AlertTriangle className="h-3 w-3" />
-                          SMS verification failed. If using a Twilio trial account, verify this number in your Twilio console first.
+                          SMS verification failed. Check the error message and try again.
                         </p>
                       )}
                     </div>
