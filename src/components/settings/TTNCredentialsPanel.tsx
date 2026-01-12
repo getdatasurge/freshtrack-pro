@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, RefreshCw, Key, Building2, ExternalLink, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, PlayCircle, Info } from "lucide-react";
+import { AlertTriangle, RefreshCw, Key, Building2, ExternalLink, CheckCircle2, XCircle, Clock, ChevronDown, ChevronUp, PlayCircle, Info, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SecretField } from "./SecretField";
@@ -81,8 +81,11 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
   const [isLoading, setIsLoading] = useState(true);
   const [isRetrying, setIsRetrying] = useState(false);
   const [isStartingFresh, setIsStartingFresh] = useState(false);
+  const [isDeepCleaning, setIsDeepCleaning] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showDeepCleanDialog, setShowDeepCleanDialog] = useState(false);
   const [confirmChecked, setConfirmChecked] = useState(false);
+  const [deepCleanConfirmChecked, setDeepCleanConfirmChecked] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -267,6 +270,54 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
       toast.error(err.message || "Failed to start fresh");
     } finally {
       setIsStartingFresh(false);
+    }
+  };
+
+  const handleDeepClean = async () => {
+    if (!organizationId) return;
+
+    setIsDeepCleaning(true);
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        toast.error("Session expired - please sign in again");
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
+        body: { 
+          action: "deep_clean",
+          organization_id: organizationId,
+        },
+      });
+
+      if (error) {
+        console.error("Transport error:", error);
+        toast.error(error.message || "Failed to connect");
+        return;
+      }
+
+      if (data && !data.success) {
+        toast.error(data.error || "Deep clean failed", {
+          description: data.message,
+        });
+        await fetchCredentials();
+        return;
+      }
+
+      toast.success("Deep clean completed", {
+        description: `Deleted ${data.deleted_devices || 0} devices. ${data.deleted_org ? 'Organization deleted.' : ''} Ready for fresh provisioning.`,
+      });
+      
+      // Close dialog and refresh
+      setShowDeepCleanDialog(false);
+      setDeepCleanConfirmChecked(false);
+      setTimeout(fetchCredentials, 2000);
+    } catch (err: any) {
+      console.error("Failed to deep clean:", err);
+      toast.error(err.message || "Failed to deep clean");
+    } finally {
+      setIsDeepCleaning(false);
     }
   };
 
@@ -602,6 +653,20 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                   </Button>
                 )}
 
+                {/* Deep Clean - nuclear option for cluster issues */}
+                {!readOnly && credentials?.ttn_application_id && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setShowDeepCleanDialog(true)}
+                    disabled={isDeepCleaning || isLoading}
+                    className="gap-2"
+                  >
+                    <Trash2 className={`h-4 w-4 ${isDeepCleaning ? "animate-spin" : ""}`} />
+                    Deep Clean
+                  </Button>
+                )}
+
                 {credentials?.ttn_application_id && credentials?.ttn_region && (
                   <Button
                     variant="ghost"
@@ -787,6 +852,75 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                 </>
               ) : (
                 "Start Fresh"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Deep Clean Confirmation Dialog */}
+      <AlertDialog open={showDeepCleanDialog} onOpenChange={setShowDeepCleanDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-alarm">
+              <Trash2 className="h-5 w-5" />
+              Deep Clean TTN Resources?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p className="text-alarm font-medium">
+                This is a destructive action that will permanently delete ALL TTN resources.
+              </p>
+              <p>This will:</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>Delete ALL devices from the TTN application</li>
+                <li>Delete the TTN Application itself</li>
+                <li>Delete the TTN Organization</li>
+                <li>Reset ALL sensors to 'pending' status</li>
+                <li>Clear ALL stored credentials</li>
+              </ul>
+              <p className="text-sm mt-2">
+                After this, you will need to:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                <li>Click "Start Provisioning" to create new TTN resources on EU1</li>
+                <li>Re-provision all your sensors</li>
+              </ul>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="flex items-start gap-3 py-4 border-y border-alarm/30 bg-alarm/5 -mx-6 px-6">
+            <Checkbox
+              id="confirm-deep-clean"
+              checked={deepCleanConfirmChecked}
+              onCheckedChange={(checked) => setDeepCleanConfirmChecked(checked === true)}
+            />
+            <label
+              htmlFor="confirm-deep-clean"
+              className="text-sm cursor-pointer"
+            >
+              I understand this will <strong>permanently delete</strong> all TTN resources and I will need to re-provision all sensors
+            </label>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeepCleanConfirmChecked(false)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeepClean}
+              disabled={!deepCleanConfirmChecked || isDeepCleaning}
+              className="bg-alarm text-alarm-foreground hover:bg-alarm/90"
+            >
+              {isDeepCleaning ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Deep Cleaning...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Deep Clean & Reset
+                </>
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
