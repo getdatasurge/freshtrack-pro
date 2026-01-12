@@ -29,6 +29,8 @@ import DataMaintenance from "./pages/DataMaintenance";
 import AccountDeleted from "./pages/AccountDeleted";
 import HealthDashboard from "./pages/HealthDashboard";
 import UploadTelnyxImage from "./pages/UploadTelnyxImage";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsConditions from "./pages/TermsConditions";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +46,8 @@ const App = () => (
             <RouteLogger />
             <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsConditions />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/dashboard" element={<Dashboard />} />
