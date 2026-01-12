@@ -2,8 +2,8 @@
 
 > Terminology and definitions used throughout the documentation
 
-**Last Updated:** 2026-01-12 02:39:15 UTC
-**Total Terms:** 213
+**Last Updated:** 2026-01-12 02:48:40 UTC
+**Total Terms:** 198
 
 ---
 
