@@ -1,14 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Check, Upload, ExternalLink, Copy, RefreshCw, CheckCircle2, XCircle, Loader2 } from "lucide-react";
-import telnyxOptInImage from "@/assets/telnyx-opt-in-verification.png";
-
-// Expected public URL for the opt-in image
-const EXPECTED_PUBLIC_URL = "https://mfwyiifehsvwnjwqoxht.supabase.co/storage/v1/object/public/public-assets/telnyx/opt-in-verification.png";
+import { ExternalLink, Copy, RefreshCw, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
 interface VerificationResult {
   accessible: boolean;
@@ -19,64 +15,28 @@ interface VerificationResult {
 }
 
 /**
- * One-time utility to upload the Telnyx opt-in verification image
- * to Supabase Storage and get the public URL.
+ * Utility page to view and verify the Telnyx opt-in verification image.
+ * The image is hosted in the public folder and auto-deployed with the app.
  */
 export default function UploadTelnyxImage() {
-  const [isUploading, setIsUploading] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [publicUrl, setPublicUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [verificationResult, setVerificationResult] = useState<VerificationResult | null>(null);
+  const [publicUrl, setPublicUrl] = useState<string>("");
 
-  const handleUpload = async () => {
-    setIsUploading(true);
-    setError(null);
+  useEffect(() => {
+    // Set the URL based on current origin
+    setPublicUrl(`${window.location.origin}/telnyx/opt-in-verification.png`);
+  }, []);
+
+  const verifyUrl = async () => {
+    if (!publicUrl) return;
     
-    try {
-      // Fetch the image from the imported asset
-      const response = await fetch(telnyxOptInImage);
-      const blob = await response.blob();
-      
-      // Upload to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from("public-assets")
-        .upload("telnyx/opt-in-verification.png", blob, {
-          contentType: "image/png",
-          upsert: true,
-        });
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("public-assets")
-        .getPublicUrl("telnyx/opt-in-verification.png");
-
-      setPublicUrl(urlData.publicUrl);
-      toast.success("Image uploaded successfully!");
-      
-      // Auto-verify after upload
-      await verifyUrl(urlData.publicUrl);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Upload failed";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const verifyUrl = async (urlToVerify?: string) => {
-    const url = urlToVerify || publicUrl || EXPECTED_PUBLIC_URL;
     setIsVerifying(true);
     setVerificationResult(null);
     
     try {
       const { data, error: fnError } = await supabase.functions.invoke("verify-public-asset", {
-        body: { url }
+        body: { url: publicUrl }
       });
 
       if (fnError) {
@@ -104,8 +64,8 @@ export default function UploadTelnyxImage() {
     }
   };
 
-  const copyToClipboard = (url: string) => {
-    navigator.clipboard.writeText(url);
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(publicUrl);
     toast.success("URL copied to clipboard!");
   };
 
@@ -113,39 +73,54 @@ export default function UploadTelnyxImage() {
     <div className="min-h-screen bg-background p-8 flex items-center justify-center">
       <Card className="w-full max-w-2xl">
         <CardHeader>
-          <CardTitle>Telnyx Opt-In Image Upload</CardTitle>
+          <CardTitle>Telnyx Opt-In Verification Image</CardTitle>
           <CardDescription>
-            Upload the FrostGuard opt-in verification image for Telnyx compliance verification.
+            The opt-in verification image is automatically hosted with your app.
+            Copy the URL below and paste it into your Telnyx toll-free verification form.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Expected URL Display */}
+          {/* Public URL Display */}
           <div className="p-4 bg-muted rounded-lg space-y-2">
-            <p className="text-sm font-medium">Expected Public URL:</p>
+            <div className="flex items-center gap-2">
+              <Badge className="bg-green-500">Auto-Hosted</Badge>
+              <p className="text-sm font-medium">Public URL:</p>
+            </div>
             <code className="block p-2 bg-background rounded border text-xs break-all">
-              {EXPECTED_PUBLIC_URL}
+              {publicUrl || "Loading..."}
             </code>
             <div className="flex gap-2 mt-2">
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={() => copyToClipboard(EXPECTED_PUBLIC_URL)}
+                onClick={copyToClipboard}
+                disabled={!publicUrl}
               >
                 <Copy className="mr-2 h-3 w-3" />
-                Copy
+                Copy URL
               </Button>
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={() => verifyUrl(EXPECTED_PUBLIC_URL)}
-                disabled={isVerifying}
+                onClick={verifyUrl}
+                disabled={isVerifying || !publicUrl}
               >
                 {isVerifying ? (
                   <Loader2 className="mr-2 h-3 w-3 animate-spin" />
                 ) : (
                   <RefreshCw className="mr-2 h-3 w-3" />
                 )}
-                Verify
+                Verify Accessibility
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                asChild
+              >
+                <a href={publicUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-2 h-3 w-3" />
+                  Open
+                </a>
               </Button>
             </div>
           </div>
@@ -187,77 +162,22 @@ export default function UploadTelnyxImage() {
 
           {/* Image Preview */}
           <div className="border rounded-lg p-4 bg-muted/50">
-            <p className="text-sm text-muted-foreground mb-2">Image Preview (from local assets):</p>
+            <p className="text-sm text-muted-foreground mb-2">Image Preview:</p>
             <img 
-              src={telnyxOptInImage} 
+              src="/telnyx/opt-in-verification.png" 
               alt="FrostGuard Opt-In Verification" 
               className="w-full max-w-md mx-auto rounded-md shadow-sm"
             />
           </div>
 
-          {/* Upload Button */}
-          <Button 
-            onClick={handleUpload} 
-            disabled={isUploading}
-            className="w-full"
-            size="lg"
-          >
-            {isUploading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Uploading...
-              </>
-            ) : (
-              <>
-                <Upload className="mr-2 h-4 w-4" />
-                {publicUrl ? "Re-upload to Storage" : "Upload to Storage"}
-              </>
-            )}
-          </Button>
-
-          {/* Error Display */}
-          {error && (
-            <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-destructive">
-              {error}
-            </div>
-          )}
-
-          {/* Success State */}
-          {publicUrl && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-green-600">
-                <Check className="h-5 w-5" />
-                <span className="font-medium">Upload Complete!</span>
-              </div>
-
-              <div className="p-4 bg-muted rounded-lg space-y-2">
-                <p className="text-sm text-muted-foreground">Uploaded to:</p>
-                <code className="block p-2 bg-background rounded border text-xs break-all">
-                  {publicUrl}
-                </code>
-              </div>
-
-              <div className="flex gap-2">
-                <Button onClick={() => copyToClipboard(publicUrl)} variant="outline" className="flex-1">
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy URL
-                </Button>
-                <Button asChild variant="outline" className="flex-1">
-                  <a href={publicUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    Open in New Tab
-                  </a>
-                </Button>
-              </div>
-
-              <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  <strong>Next Step:</strong> Copy the URL above and paste it into your Telnyx 
-                  toll-free verification form.
-                </p>
-              </div>
-            </div>
-          )}
+          {/* Instructions */}
+          <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              <strong>Next Step:</strong> Copy the URL above and paste it into your Telnyx 
+              toll-free verification form. The image is automatically deployed with your app,
+              so no manual upload is needed.
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

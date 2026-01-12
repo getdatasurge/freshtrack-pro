@@ -16,8 +16,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-// Expected public URL for the opt-in image
-const EXPECTED_IMAGE_URL = "https://mfwyiifehsvwnjwqoxht.supabase.co/storage/v1/object/public/public-assets/telnyx/opt-in-verification.png";
+// Expected public URL for the opt-in image (hosted in public folder, auto-deployed with app)
+const getExpectedImageUrl = () => {
+  // Use the app's origin for the public folder path
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/telnyx/opt-in-verification.png`;
+  }
+  return "/telnyx/opt-in-verification.png";
+};
 
 interface VerificationResult {
   accessible: boolean;
@@ -32,12 +38,13 @@ interface VerificationResult {
 
 export function OptInImageStatusCard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const expectedImageUrl = getExpectedImageUrl();
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["opt-in-image-status"],
+    queryKey: ["opt-in-image-status", expectedImageUrl],
     queryFn: async (): Promise<VerificationResult> => {
       const { data, error } = await supabase.functions.invoke("verify-public-asset", {
-        body: { url: EXPECTED_IMAGE_URL }
+        body: { url: expectedImageUrl }
       });
 
       if (error) {
@@ -57,7 +64,7 @@ export function OptInImageStatusCard() {
   };
 
   const handleCopyUrl = () => {
-    navigator.clipboard.writeText(EXPECTED_IMAGE_URL);
+    navigator.clipboard.writeText(expectedImageUrl);
     toast.success("URL copied to clipboard");
   };
 
@@ -120,7 +127,7 @@ export function OptInImageStatusCard() {
           <div className="flex items-start gap-2">
             {getStatusIcon()}
             <code className="flex-1 text-xs bg-muted p-2 rounded break-all">
-              {EXPECTED_IMAGE_URL}
+              {expectedImageUrl}
             </code>
           </div>
         </div>
@@ -204,7 +211,7 @@ export function OptInImageStatusCard() {
             size="sm"
             asChild
           >
-            <a href={EXPECTED_IMAGE_URL} target="_blank" rel="noopener noreferrer">
+            <a href={expectedImageUrl} target="_blank" rel="noopener noreferrer">
               <ExternalLink className="mr-2 h-4 w-4" />
               Preview
             </a>
