@@ -41,3 +41,18 @@ export {
   createNewLayoutFromDefault,
   type ValidationResult,
 } from "./utils/layoutTransforms";
+
+// Hooks
+export { useLayoutStorage } from "./hooks/useLayoutStorage";
+export { useLayoutManager } from "./hooks/useLayoutManager";
+export { useTimelineState } from "./hooks/useTimelineState";
+
+// Components
+export { LayoutSelector } from "./components/LayoutSelector";
+export { LayoutManager } from "./components/LayoutManager";
+export { CustomizeToggle } from "./components/CustomizeToggle";
+export { GridCanvas } from "./components/GridCanvas";
+export { WidgetWrapper } from "./components/WidgetWrapper";
+export { WidgetRenderer } from "./components/WidgetRenderer";
+export { HiddenWidgetsPanel } from "./components/HiddenWidgetsPanel";
+export { TimelineControls } from "./components/TimelineControls";
