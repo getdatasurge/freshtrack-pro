@@ -71,10 +71,11 @@ export function useQuickCreateEntityLayout() {
         slotNumber: data.slot_number as 1 | 2 | 3,
       };
     },
-    onSuccess: (data) => {
-      // Invalidate navigation tree and entity layouts
+    onSuccess: (data, variables) => {
+      // Invalidate navigation tree and entity layouts with correct scope
       queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"] });
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts", variables.organizationId] });
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-units", variables.organizationId] });
       queryClient.invalidateQueries({ queryKey: ["entity-layouts", data.entityType, data.entityId] });
       toast.success(`Created "${data.name}"`);
     },

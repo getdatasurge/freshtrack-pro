@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
-import { useLocation, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { ChevronDown, Boxes, Search, Loader2, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { useNavTree } from "@/hooks/useNavTree";
 import { useSidebarExpandState } from "@/hooks/useSidebarExpandState";
+import { useQuickCreateEntityLayout } from "@/hooks/useQuickCreateEntityLayout";
 import { UnitAccordionItem } from "./UnitAccordionItem";
 import { SiteAccordionItem } from "./SiteAccordionItem";
+import { LayoutLinksGroup } from "./LayoutLinksGroup";
 
 interface SidebarUnitsAccordionProps {
   organizationId: string | null;
@@ -16,21 +19,37 @@ interface SidebarUnitsAccordionProps {
 }
 
 export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnitsAccordionProps) {
-  const location = useLocation();
-  const params = useParams<{ unitId?: string; siteId?: string }>();
+  const params = useParams<{ unitId?: string; siteId?: string; layoutKey?: string }>();
   const [searchQuery, setSearchQuery] = useState("");
 
   const { sites, hasSingleSite, isLoading, error } = useNavTree(organizationId);
   const expandState = useSidebarExpandState();
+  const createLayoutMutation = useQuickCreateEntityLayout();
 
-  // Auto-expand to active unit when navigating
+  // Auto-expand to active entity when navigating
   useEffect(() => {
+    // Handle unit routes - expand parent site and unit
     if (params.unitId && sites.length > 0) {
-      // Find the site containing this unit to expand both site and unit
       const siteWithUnit = sites.find(s => s.units.some(u => u.unitId === params.unitId));
       expandState.expandToActive(params.unitId, siteWithUnit?.siteId);
     }
-  }, [params.unitId, sites.length]);
+    
+    // Handle site routes - expand the site accordion
+    if (params.siteId && sites.length > 0) {
+      expandState.expandToActiveSite(params.siteId);
+    }
+  }, [params.unitId, params.siteId, sites.length]);
+
+  // Handler for creating site layouts
+  const handleCreateSiteLayout = (siteId: string, slot: 1 | 2 | 3) => {
+    if (!organizationId) return;
+    createLayoutMutation.mutate({
+      entityType: 'site',
+      entityId: siteId,
+      organizationId,
+      slotNumber: slot,
+    });
+  };
 
   // Filter sites/units based on search
   const filteredSites = sites.map((site) => ({
@@ -45,7 +64,7 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
   })).filter((site) => site.units.length > 0 || site.siteName.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const totalUnits = sites.reduce((sum, s) => sum + s.units.length, 0);
-  const isOnUnitsSection = location.pathname.startsWith("/units") || location.pathname.startsWith("/sites");
+  const isOnEquipmentSection = params.unitId || params.siteId;
 
   return (
     <Collapsible
@@ -56,7 +75,7 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
       <CollapsibleTrigger className="w-full">
         <div className={cn(
           "flex items-center gap-3 px-3 py-2 rounded-md text-sm hover:bg-muted/50 transition-colors w-full text-left",
-          isOnUnitsSection && "bg-accent/10 text-accent"
+          isOnEquipmentSection && "bg-accent/10 text-accent"
         )}>
           <Boxes className="h-5 w-5 shrink-0" />
           <span className="font-medium flex-1">Equipment</span>
@@ -99,18 +118,43 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
             <ScrollArea className="max-h-[45vh]">
               <div className="px-2 space-y-0.5">
                 {hasSingleSite ? (
-                  // Single site: show units directly
-                  filteredSites[0].units.map((unit) => (
-                    <UnitAccordionItem
-                      key={unit.unitId}
-                      unit={unit}
-                      organizationId={organizationId || ""}
-                      isExpanded={expandState.isUnitExpanded(unit.unitId)}
-                      onToggle={() => expandState.toggleUnit(unit.unitId)}
-                    />
-                  ))
+                  // Single site: show site layouts THEN units
+                  <>
+                    {/* Site Layouts for single-site org */}
+                    <div className="mb-2">
+                      <div className="flex items-center gap-2 px-3 py-1 text-xs text-muted-foreground uppercase tracking-wider">
+                        <MapPin className="w-3 h-3" />
+                        <span className="truncate">{filteredSites[0].siteName}</span>
+                      </div>
+                      <LayoutLinksGroup
+                        entityType="site"
+                        entityId={filteredSites[0].siteId}
+                        layouts={filteredSites[0].layouts}
+                        onCreateLayout={(slot) => handleCreateSiteLayout(filteredSites[0].siteId, slot)}
+                        isCreating={createLayoutMutation.isPending}
+                      />
+                    </div>
+                    
+                    <Separator className="my-2" />
+                    
+                    {/* Units header */}
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider px-3 py-1 mb-1">
+                      Units
+                    </div>
+                    
+                    {/* Units list */}
+                    {filteredSites[0].units.map((unit) => (
+                      <UnitAccordionItem
+                        key={unit.unitId}
+                        unit={unit}
+                        organizationId={organizationId || ""}
+                        isExpanded={expandState.isUnitExpanded(unit.unitId)}
+                        onToggle={() => expandState.toggleUnit(unit.unitId)}
+                      />
+                    ))}
+                  </>
                 ) : (
-                  // Multiple sites: show site accordion
+                  // Multiple sites: show site accordion with nested units
                   filteredSites.map((site) => (
                     <SiteAccordionItem
                       key={site.siteId}
