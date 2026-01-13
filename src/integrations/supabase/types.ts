@@ -683,6 +683,65 @@ export type Database = {
           },
         ]
       }
+      entity_dashboard_layouts: {
+        Row: {
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          is_user_default: boolean | null
+          layout_json: Json
+          layout_version: number | null
+          name: string
+          organization_id: string
+          slot_number: number
+          timeline_state_json: Json | null
+          updated_at: string
+          user_id: string
+          widget_prefs_json: Json | null
+        }
+        Insert: {
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          layout_version?: number | null
+          name: string
+          organization_id: string
+          slot_number: number
+          timeline_state_json?: Json | null
+          updated_at?: string
+          user_id: string
+          widget_prefs_json?: Json | null
+        }
+        Update: {
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          layout_version?: number | null
+          name?: string
+          organization_id?: string
+          slot_number?: number
+          timeline_state_json?: Json | null
+          updated_at?: string
+          user_id?: string
+          widget_prefs_json?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entity_dashboard_layouts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       escalation_contacts: {
         Row: {
           created_at: string
@@ -1900,7 +1959,7 @@ export type Database = {
         }
         Relationships: []
       }
-      sensor_dashboard_layouts: {
+      sensor_dashboard_layouts_archived: {
         Row: {
           created_at: string
           id: string

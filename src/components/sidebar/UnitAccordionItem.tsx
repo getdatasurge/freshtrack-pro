@@ -1,22 +1,26 @@
-import { Link, useParams } from "react-router-dom";
-import { ChevronRight, Box, AlertCircle } from "lucide-react";
+import { ChevronRight, Thermometer, Snowflake, Sun, Box } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { SensorAccordionItem } from "./SensorAccordionItem";
-import type { UnitNavItem } from "@/hooks/useUnitsNavTree";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { LayoutLinksGroup } from "./LayoutLinksGroup";
+import type { UnitNavItem } from "@/hooks/useNavTree";
+import { useQuickCreateEntityLayout } from "@/hooks/useQuickCreateEntityLayout";
+import { useParams } from "react-router-dom";
 
 interface UnitAccordionItemProps {
   unit: UnitNavItem;
   organizationId: string;
   isExpanded: boolean;
   onToggle: () => void;
-  isSensorExpanded: (sensorId: string) => boolean;
-  onToggleSensor: (sensorId: string) => void;
+}
+
+function getUnitIcon(unitType: string) {
+  switch (unitType) {
+    case "freezer": return Snowflake;
+    case "cooler":
+    case "refrigerator": return Thermometer;
+    case "hot_holding": return Sun;
+    default: return Box;
+  }
 }
 
 export function UnitAccordionItem({
@@ -24,67 +28,48 @@ export function UnitAccordionItem({
   organizationId,
   isExpanded,
   onToggle,
-  isSensorExpanded,
-  onToggleSensor,
 }: UnitAccordionItemProps) {
-  const params = useParams<{ unitId: string }>();
-  const isActiveUnit = params.unitId === unit.unitId;
+  const { unitId: activeUnitId } = useParams<{ unitId?: string }>();
+  const createLayoutMutation = useQuickCreateEntityLayout();
+  const UnitIcon = getUnitIcon(unit.unitType);
+  const isActive = activeUnitId === unit.unitId;
 
-  const statusColor =
-    unit.status === "online"
-      ? "text-emerald-500"
-      : unit.status === "warning"
-      ? "text-yellow-500"
-      : unit.status === "critical"
-      ? "text-red-500"
-      : "text-muted-foreground";
+  const handleCreateLayout = (slot: 1 | 2 | 3) => {
+    createLayoutMutation.mutate({
+      entityType: 'unit',
+      entityId: unit.unitId,
+      organizationId,
+      slotNumber: slot,
+    });
+  };
 
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <CollapsibleTrigger className="w-full">
-        <div
-          className={cn(
-            "flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-muted/50 transition-colors w-full text-left",
-            isActiveUnit && "bg-accent/10"
-          )}
-        >
-          <ChevronRight
-            className={cn(
-              "h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0",
-              isExpanded && "rotate-90"
-            )}
-          />
-          <Box className={cn("h-4 w-4 shrink-0", statusColor)} />
-          <span className={cn("truncate flex-1", isActiveUnit && "font-medium text-accent")}>
-            {unit.unitName}
-          </span>
-          {unit.sensors.length > 0 && (
-            <Badge variant="outline" className="text-xs px-1.5 py-0 h-5">
-              {unit.sensors.length}
-            </Badge>
+        <div className={cn(
+          "flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent/50 transition-colors group",
+          isActive && "bg-accent"
+        )}>
+          <ChevronRight className={cn(
+            "w-4 h-4 text-muted-foreground transition-transform shrink-0",
+            isExpanded && "rotate-90"
+          )} />
+          <UnitIcon className="w-4 h-4 text-muted-foreground shrink-0" />
+          <span className="text-sm font-medium truncate flex-1 text-left">{unit.unitName}</span>
+          {unit.sensorCount > 0 && (
+            <span className="text-xs text-muted-foreground">{unit.sensorCount}</span>
           )}
         </div>
       </CollapsibleTrigger>
-
       <CollapsibleContent>
-        <div className="ml-3 pl-2 border-l border-border/50 space-y-0.5 py-1">
-          {unit.sensors.length === 0 ? (
-            <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
-              <AlertCircle className="h-3 w-3" />
-              <span>No sensors</span>
-            </div>
-          ) : (
-            unit.sensors.map((sensor) => (
-              <SensorAccordionItem
-                key={sensor.sensorId}
-                sensor={sensor}
-                unitId={unit.unitId}
-                organizationId={organizationId}
-                isExpanded={isSensorExpanded(sensor.sensorId)}
-                onToggle={() => onToggleSensor(sensor.sensorId)}
-              />
-            ))
-          )}
+        <div className="ml-4 border-l border-border/50 pl-2 py-1">
+          <LayoutLinksGroup
+            entityType="unit"
+            entityId={unit.unitId}
+            layouts={unit.layouts}
+            onCreateLayout={handleCreateLayout}
+            isCreating={createLayoutMutation.isPending}
+          />
         </div>
       </CollapsibleContent>
     </Collapsible>
