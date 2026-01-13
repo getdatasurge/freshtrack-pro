@@ -216,6 +216,74 @@ const UnitDetail = () => {
   // Query client for cache invalidation
   const queryClient = useQueryClient();
 
+  // Silent background refresh - updates data WITHOUT showing loading state
+  // This prevents full page remounts when realtime updates arrive
+  const refreshUnitData = async () => {
+    if (!unit || !unitId) return; // Only refresh if we already have data
+    
+    try {
+      // Fetch latest reading and merge into state
+      const { data: latestReading } = await supabase
+        .from("sensor_readings")
+        .select("id, temperature, humidity, recorded_at")
+        .eq("unit_id", unitId)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestReading) {
+        // Merge new reading into existing state (avoid duplicates)
+        setReadings(prev => {
+          if (prev.some(r => r.id === latestReading.id)) return prev;
+          // Append and keep within time range
+          const fromDate = getTimeRangeDate();
+          const updated = [...prev, latestReading]
+            .filter(r => new Date(r.recorded_at) >= fromDate)
+            .slice(-500);
+          return updated;
+        });
+
+        // Update unit's last reading display
+        setUnit(prev => prev ? {
+          ...prev,
+          last_temp_reading: latestReading.temperature,
+          last_reading_at: latestReading.recorded_at,
+        } : null);
+
+        // Update last known good if this is newer
+        setLastKnownGood(prev => {
+          const newTime = new Date(latestReading.recorded_at).getTime();
+          const prevTime = prev.at ? new Date(prev.at).getTime() : 0;
+          if (newTime > prevTime) {
+            return { temp: latestReading.temperature, at: latestReading.recorded_at, source: "sensor" };
+          }
+          return prev;
+        });
+      }
+
+      // Update door state if we have a door sensor
+      if (doorSensor?.id) {
+        const { data: doorReading } = await supabase
+          .from("sensor_readings")
+          .select("door_open, recorded_at")
+          .eq("lora_sensor_id", doorSensor.id)
+          .order("recorded_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (doorReading) {
+          setDerivedDoorState({
+            doorOpen: doorReading.door_open,
+            recordedAt: doorReading.recorded_at,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Background refresh failed:", error);
+      // Silently fail - don't toast on background refresh failures
+    }
+  };
+
   // Realtime subscription for sensor_readings - auto-refresh when new readings arrive
   useEffect(() => {
     if (!unitId) return;
@@ -231,7 +299,7 @@ const UnitDetail = () => {
           filter: `unit_id=eq.${unitId}`,
         },
         () => {
-          loadUnitData(); // Refresh all data when new reading arrives
+          refreshUnitData(); // Silent refresh - no loading state
           // Invalidate LoRa sensors cache so last_seen_at is fresh
           queryClient.invalidateQueries({ 
             queryKey: ['lora-sensors-by-unit', unitId] 
@@ -243,7 +311,7 @@ const UnitDetail = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [unitId, queryClient]);
+  }, [unitId, queryClient, unit, doorSensor?.id]);
 
   // Realtime subscription for lora_sensors - refresh when sensor status updates
   useEffect(() => {
@@ -530,7 +598,9 @@ const UnitDetail = () => {
     return `${temp.toFixed(1)}°F`;
   };
 
-  if (isLoading) {
+  // Only show loading spinner on initial load when we have NO data yet
+  // This prevents full page remount during background refreshes
+  if (isLoading && !unit) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center py-12">
