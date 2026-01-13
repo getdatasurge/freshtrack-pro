@@ -14,7 +14,7 @@ import {
   ChevronLeft,
   Trash2,
 } from "lucide-react";
-import { SidebarUnitsAccordion } from "@/components/sidebar";
+import { SidebarUnitsAccordion, SidebarSitesAccordion } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
@@ -33,25 +33,17 @@ interface DashboardLayoutProps {
 
 import { ClipboardList, AlertCircle, FileBarChart, Boxes } from "lucide-react";
 
-// Nav items - Units is handled separately via SidebarUnitsAccordion
-const navItemsBeforeUnits = [
+// Nav items - Sites and Units handled separately via accordions
+const navItemsBeforeAccordions = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
   { href: "/organization", label: "Organization", icon: Building2 },
-  { href: "/sites", label: "Sites", icon: MapPin },
 ];
 
-const navItemsAfterUnits = [
+const navItemsAfterAccordions = [
   { href: "/manual-log", label: "Log Temps", icon: ClipboardList },
   { href: "/alerts", label: "Alerts", icon: AlertCircle },
   { href: "/reports", label: "Reports", icon: FileBarChart },
   { href: "/settings", label: "Settings", icon: Settings },
-];
-
-// Fallback nav for when accordion can't load (missing orgId)
-const navItemsWithUnitsLink = [
-  ...navItemsBeforeUnits,
-  { href: "/units", label: "Units", icon: Boxes },
-  ...navItemsAfterUnits,
 ];
 
 const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayoutProps) => {
@@ -213,8 +205,8 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
         {/* Desktop Sidebar */}
         <aside className="hidden lg:flex w-64 flex-col fixed left-0 top-16 bottom-0 border-r border-border/50 bg-card/50">
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-            {/* Nav items before Units */}
-            {navItemsBeforeUnits.map((item) => {
+            {/* Nav items before accordions */}
+            {navItemsBeforeAccordions.map((item) => {
               const isActive = location.pathname === item.href || 
                 (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
               return (
@@ -233,11 +225,14 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
               );
             })}
 
+            {/* Sites Accordion */}
+            <SidebarSitesAccordion organizationId={orgId} />
+
             {/* Units Accordion */}
             <SidebarUnitsAccordion organizationId={orgId} />
 
-            {/* Nav items after Units */}
-            {navItemsAfterUnits.map((item) => {
+            {/* Nav items after accordions */}
+            {navItemsAfterAccordions.map((item) => {
               const isActive = location.pathname === item.href || 
                 (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
               return (
@@ -282,8 +277,8 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
             />
             <aside className="absolute left-0 top-16 bottom-0 w-64 bg-card border-r border-border/50 p-4 overflow-y-auto">
               <nav className="space-y-1">
-                {/* Nav items before Units */}
-                {navItemsBeforeUnits.map((item) => {
+                {/* Nav items before accordions */}
+                {navItemsBeforeAccordions.map((item) => {
                   const isActive = location.pathname === item.href || 
                     (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
                   return (
@@ -306,11 +301,14 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                   );
                 })}
 
+                {/* Sites Accordion (Mobile) */}
+                <SidebarSitesAccordion organizationId={orgId} />
+
                 {/* Units Accordion (Mobile) */}
                 <SidebarUnitsAccordion organizationId={orgId} />
 
-                {/* Nav items after Units */}
-                {navItemsAfterUnits.map((item) => {
+                {/* Nav items after accordions */}
+                {navItemsAfterAccordions.map((item) => {
                   const isActive = location.pathname === item.href || 
                     (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
                   return (

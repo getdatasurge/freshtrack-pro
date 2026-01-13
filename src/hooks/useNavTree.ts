@@ -159,18 +159,16 @@ export function useNavTree(organizationId: string | null): NavTree {
     staleTime: 1000 * 30,
   });
 
-  // Fetch user's layouts for all entities
+  // Fetch ALL org layouts for all entities (org-wide sharing)
   const { data: layouts = [], isLoading: layoutsLoading } = useQuery({
     queryKey: ["nav-tree-layouts", organizationId],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !organizationId) return [];
+      if (!organizationId) return [];
 
       const { data, error } = await supabase
         .from("entity_dashboard_layouts")
         .select("id, entity_type, entity_id, slot_number, name, is_user_default")
         .eq("organization_id", organizationId)
-        .eq("user_id", user.id)
         .order("slot_number", { ascending: true });
 
       if (error) throw error;
