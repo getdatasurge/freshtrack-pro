@@ -1,7 +1,7 @@
 /**
  * Dashboard Layout Feature Module
  * 
- * Provides customizable drag-and-drop layouts for the unit dashboard.
+ * Provides customizable drag-and-drop layouts for unit/site dashboards.
  */
 
 // Types
@@ -43,7 +43,7 @@ export {
 } from "./utils/layoutTransforms";
 
 // Hooks
-export { useLayoutStorage } from "./hooks/useLayoutStorage";
+export { useEntityLayoutStorage } from "./hooks/useEntityLayoutStorage";
 export { useLayoutManager } from "./hooks/useLayoutManager";
 export { useTimelineState } from "./hooks/useTimelineState";
 export { useAutoSave } from "./hooks/useAutoSave";

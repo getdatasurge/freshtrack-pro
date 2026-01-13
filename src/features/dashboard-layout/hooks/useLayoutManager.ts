@@ -6,41 +6,36 @@ import type {
   TimelineState,
   LayoutManagerState,
   LayoutManagerActions,
-  SavedLayout,
 } from "../types";
 import { DEFAULT_LAYOUT_ID } from "../types";
-import { useLayoutStorage } from "./useLayoutStorage";
+import { useEntityLayoutStorage, EntityType } from "./useEntityLayoutStorage";
 import {
   getDefaultLayout,
   dbRowToActiveLayout,
   areLayoutConfigsEqual,
-  createNewLayoutFromDefault,
   cloneLayoutConfig,
 } from "../utils/layoutTransforms";
 
 /**
- * Hook for managing sensor dashboard layouts.
- * Layouts are now scoped per sensor.
+ * Hook for managing entity (unit/site) dashboard layouts.
  */
 export function useLayoutManager(
-  sensorId: string | undefined,
+  entityType: EntityType,
+  entityId: string | undefined,
   organizationId: string | undefined
 ): { state: LayoutManagerState; actions: LayoutManagerActions } {
-  const storage = useLayoutStorage(sensorId, organizationId);
+  const storage = useEntityLayoutStorage(entityType, entityId, organizationId);
 
-  // Active layout state
   const [activeLayout, setActiveLayout] = useState<ActiveLayout>(() => getDefaultLayout());
   const [originalConfig, setOriginalConfig] = useState<LayoutConfig | null>(null);
   const [isCustomizing, setIsCustomizing] = useState(false);
 
-  // Compute dirty state
   const isDirty = useMemo(() => {
     if (activeLayout.isDefault) return false;
     if (!originalConfig) return false;
     return !areLayoutConfigsEqual(activeLayout.config, originalConfig);
   }, [activeLayout, originalConfig]);
 
-  // Initialize with user's default layout or fallback
   useEffect(() => {
     if (!storage.isLoading && storage.savedLayouts) {
       const userDefault = storage.savedLayouts.find((l) => l.isUserDefault);
@@ -55,54 +50,36 @@ export function useLayoutManager(
     }
   }, [storage.isLoading, storage.savedLayouts]);
 
-  // Available layouts for selector
   const availableLayouts = useMemo(() => {
     const layouts: Array<{ id: string; name: string; isDefault: boolean; isUserDefault: boolean }> = [
-      { id: DEFAULT_LAYOUT_ID, name: "Default (Recommended)", isDefault: true, isUserDefault: false },
+      { id: DEFAULT_LAYOUT_ID, name: "Default", isDefault: true, isUserDefault: false },
     ];
     storage.savedLayouts.forEach((l) => {
-      layouts.push({
-        id: l.id,
-        name: l.name,
-        isDefault: false,
-        isUserDefault: l.isUserDefault,
-      });
+      layouts.push({ id: l.id, name: l.name, isDefault: false, isUserDefault: l.isUserDefault });
     });
     return layouts;
   }, [storage.savedLayouts]);
 
-  // Select a layout by ID
-  const selectLayout = useCallback(
-    (layoutId: string) => {
-      if (layoutId === DEFAULT_LAYOUT_ID) {
-        setActiveLayout(getDefaultLayout());
-        setOriginalConfig(null);
+  const selectLayout = useCallback((layoutId: string) => {
+    if (layoutId === DEFAULT_LAYOUT_ID) {
+      setActiveLayout(getDefaultLayout());
+      setOriginalConfig(null);
+      setIsCustomizing(false);
+    } else {
+      const saved = storage.savedLayouts.find((l) => l.id === layoutId);
+      if (saved) {
+        const active = dbRowToActiveLayout(saved);
+        setActiveLayout(active);
+        setOriginalConfig(cloneLayoutConfig(active.config));
         setIsCustomizing(false);
-      } else {
-        const saved = storage.savedLayouts.find((l) => l.id === layoutId);
-        if (saved) {
-          const active = dbRowToActiveLayout(saved);
-          setActiveLayout(active);
-          setOriginalConfig(cloneLayoutConfig(active.config));
-          setIsCustomizing(false);
-        }
       }
-    },
-    [storage.savedLayouts]
-  );
+    }
+  }, [storage.savedLayouts]);
 
-  // Update widget positions
   const updatePositions = useCallback((positions: WidgetPosition[]) => {
-    setActiveLayout((prev) => ({
-      ...prev,
-      config: {
-        ...prev.config,
-        widgets: positions,
-      },
-    }));
+    setActiveLayout((prev) => ({ ...prev, config: { ...prev.config, widgets: positions } }));
   }, []);
 
-  // Toggle widget visibility
   const toggleWidgetVisibility = useCallback((widgetId: string) => {
     setActiveLayout((prev) => {
       const hiddenWidgets = prev.config.hiddenWidgets || [];
@@ -111,109 +88,22 @@ export function useLayoutManager(
         ...prev,
         config: {
           ...prev.config,
-          hiddenWidgets: isHidden
-            ? hiddenWidgets.filter((id) => id !== widgetId)
-            : [...hiddenWidgets, widgetId],
+          hiddenWidgets: isHidden ? hiddenWidgets.filter((id) => id !== widgetId) : [...hiddenWidgets, widgetId],
         },
       };
     });
   }, []);
 
-  // Update timeline state
   const updateTimelineState = useCallback((timelineState: TimelineState) => {
-    setActiveLayout((prev) => ({
-      ...prev,
-      timelineState,
-    }));
+    setActiveLayout((prev) => ({ ...prev, timelineState }));
   }, []);
 
-  // Save current layout (create new or update existing)
-  const saveLayout = useCallback(
-    async (name?: string) => {
-      if (activeLayout.isDefault) {
-        // Create new from default
-        const newName = name || "My Layout";
-        const saved = await storage.saveLayout({
-          name: newName,
-          layoutJson: activeLayout.config,
-          timelineStateJson: activeLayout.timelineState,
-          widgetPrefsJson: activeLayout.widgetPrefs,
-        });
-        const active = dbRowToActiveLayout(saved);
-        setActiveLayout(active);
-        setOriginalConfig(cloneLayoutConfig(active.config));
-        return saved;
-      } else if (activeLayout.id) {
-        // Update existing
-        const saved = await storage.updateLayout({
-          id: activeLayout.id,
-          name: name || activeLayout.name,
-          layoutJson: activeLayout.config,
-          timelineStateJson: activeLayout.timelineState,
-          widgetPrefsJson: activeLayout.widgetPrefs,
-        });
-        setOriginalConfig(cloneLayoutConfig(activeLayout.config));
-        return saved;
-      }
-      return null;
-    },
-    [activeLayout, storage]
-  );
-
-  // Rename current layout
-  const renameLayout = useCallback(
-    async (newName: string) => {
-      if (!activeLayout.id || activeLayout.isDefault) return;
-      await storage.updateLayout({
-        id: activeLayout.id,
-        name: newName,
-      });
-      setActiveLayout((prev) => ({ ...prev, name: newName }));
-    },
-    [activeLayout, storage]
-  );
-
-  // Delete current layout
-  const deleteLayout = useCallback(async () => {
-    if (!activeLayout.id || activeLayout.isDefault) return;
-    await storage.deleteLayout(activeLayout.id);
-    setActiveLayout(getDefaultLayout());
-    setOriginalConfig(null);
-    setIsCustomizing(false);
-  }, [activeLayout, storage]);
-
-  // Set current layout as user default
-  const setAsUserDefault = useCallback(async () => {
-    if (!activeLayout.id || activeLayout.isDefault) return;
-    await storage.setAsUserDefault(activeLayout.id);
-    setActiveLayout((prev) => ({ ...prev, isUserDefault: true }));
-  }, [activeLayout, storage]);
-
-  // Revert to default layout config
-  const revertToDefault = useCallback(() => {
-    const defaultLayout = getDefaultLayout();
-    setActiveLayout((prev) => ({
-      ...prev,
-      config: cloneLayoutConfig(defaultLayout.config),
-    }));
-  }, []);
-
-  // Discard unsaved changes
-  const discardChanges = useCallback(() => {
-    if (originalConfig) {
-      setActiveLayout((prev) => ({
-        ...prev,
-        config: cloneLayoutConfig(originalConfig),
-      }));
-    }
-    setIsCustomizing(false);
-  }, [originalConfig]);
-
-  // Create new layout from current
-  const createNewLayout = useCallback(
-    async (name: string) => {
+  const saveLayout = useCallback(async (name?: string) => {
+    const nextSlot = storage.nextAvailableSlot();
+    if (activeLayout.isDefault && nextSlot) {
       const saved = await storage.saveLayout({
-        name,
+        slotNumber: nextSlot,
+        name: name || `Layout ${nextSlot}`,
         layoutJson: activeLayout.config,
         timelineStateJson: activeLayout.timelineState,
         widgetPrefsJson: activeLayout.widgetPrefs,
@@ -222,35 +112,91 @@ export function useLayoutManager(
       setActiveLayout(active);
       setOriginalConfig(cloneLayoutConfig(active.config));
       return saved;
+    } else if (activeLayout.id) {
+      const saved = await storage.updateLayout({
+        layoutId: activeLayout.id,
+        name: name || activeLayout.name,
+        layoutJson: activeLayout.config,
+        timelineStateJson: activeLayout.timelineState,
+        widgetPrefsJson: activeLayout.widgetPrefs,
+      });
+      setOriginalConfig(cloneLayoutConfig(activeLayout.config));
+      return saved;
+    }
+    return null;
+  }, [activeLayout, storage]);
+
+  const renameLayout = useCallback(async (newName: string) => {
+    if (!activeLayout.id || activeLayout.isDefault) return;
+    await storage.updateLayout({ layoutId: activeLayout.id, name: newName });
+    setActiveLayout((prev) => ({ ...prev, name: newName }));
+  }, [activeLayout, storage]);
+
+  const deleteLayout = useCallback(async () => {
+    if (!activeLayout.id || activeLayout.isDefault) return;
+    await storage.deleteLayout(activeLayout.id);
+    setActiveLayout(getDefaultLayout());
+    setOriginalConfig(null);
+    setIsCustomizing(false);
+  }, [activeLayout, storage]);
+
+  const setAsUserDefault = useCallback(async () => {
+    if (!activeLayout.id || activeLayout.isDefault) return;
+    await storage.setAsUserDefault(activeLayout.id);
+  }, [activeLayout, storage]);
+
+  const revertToDefault = useCallback(() => {
+    const defaultLayout = getDefaultLayout();
+    setActiveLayout((prev) => ({ ...prev, config: cloneLayoutConfig(defaultLayout.config) }));
+  }, []);
+
+  const discardChanges = useCallback(() => {
+    if (originalConfig) {
+      setActiveLayout((prev) => ({ ...prev, config: cloneLayoutConfig(originalConfig) }));
+    }
+    setIsCustomizing(false);
+  }, [originalConfig]);
+
+  const createNewLayout = useCallback(async (name: string) => {
+    const nextSlot = storage.nextAvailableSlot();
+    if (!nextSlot) throw new Error("Maximum layouts reached");
+    const saved = await storage.saveLayout({
+      slotNumber: nextSlot,
+      name,
+      layoutJson: activeLayout.config,
+      timelineStateJson: activeLayout.timelineState,
+      widgetPrefsJson: activeLayout.widgetPrefs,
+    });
+    const active = dbRowToActiveLayout(saved);
+    setActiveLayout(active);
+    setOriginalConfig(cloneLayoutConfig(active.config));
+    return saved;
+  }, [activeLayout, storage]);
+
+  return {
+    state: {
+      activeLayout,
+      availableLayouts,
+      isLoading: storage.isLoading,
+      isSaving: storage.isSaving || storage.isUpdating,
+      isDirty,
+      isCustomizing,
+      canCreateNew: storage.canCreateNew,
+      layoutCount: storage.layoutCount,
     },
-    [activeLayout, storage]
-  );
-
-  const state: LayoutManagerState = {
-    activeLayout,
-    availableLayouts,
-    isLoading: storage.isLoading,
-    isSaving: storage.isSaving || storage.isUpdating,
-    isDirty,
-    isCustomizing,
-    canCreateNew: storage.canCreateNew,
-    layoutCount: storage.layoutCount,
+    actions: {
+      selectLayout,
+      updatePositions,
+      toggleWidgetVisibility,
+      updateTimelineState,
+      saveLayout,
+      renameLayout,
+      deleteLayout,
+      setAsUserDefault,
+      revertToDefault,
+      discardChanges,
+      createNewLayout,
+      setIsCustomizing,
+    },
   };
-
-  const actions: LayoutManagerActions = {
-    selectLayout,
-    updatePositions,
-    toggleWidgetVisibility,
-    updateTimelineState,
-    saveLayout,
-    renameLayout,
-    deleteLayout,
-    setAsUserDefault,
-    revertToDefault,
-    discardChanges,
-    createNewLayout,
-    setIsCustomizing,
-  };
-
-  return { state, actions };
 }
