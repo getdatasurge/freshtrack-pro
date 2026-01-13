@@ -602,55 +602,37 @@ const UnitDetail = () => {
     if (temp === null) return "--";
     return `${temp.toFixed(1)}°F`;
   };
-
-  // Only show loading spinner on initial load when we have NO data yet
-  // This prevents full page remount during background refreshes
-  if (isLoading && !unit) {
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-accent" />
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  if (!unit) {
-    return (
-      <DashboardLayout>
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">Unit not found</p>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
   // Use alert rules (fetched at top level to follow hooks rules)
   const effectiveRules: AlertRules = alertRules || DEFAULT_ALERT_RULES;
 
   // Build UnitStatusInfo from current data for computed status
-  const unitStatusInfo: UnitStatusInfo | null = unit ? {
-    id: unit.id,
-    name: unit.name,
-    unit_type: unit.unit_type,
-    status: unit.status,
-    temp_limit_high: unit.temp_limit_high,
-    temp_limit_low: unit.temp_limit_low,
-    manual_log_cadence: unit.manual_log_cadence,
-    last_manual_log_at: unit.last_manual_log_at,
-    last_reading_at: unit.last_reading_at,
-    last_temp_reading: unit.last_temp_reading,
-    // Use primary sensor's last_seen_at for accurate check-in tracking
-    last_checkin_at: primaryLoraSensor?.last_seen_at || unit.last_reading_at,
-    // Convert expected_reading_interval_seconds to minutes
-    checkin_interval_minutes: effectiveRules.expected_reading_interval_seconds / 60,
-    area: { name: unit.area.name, site: { name: unit.area.site.name } },
-  } : null;
+  // Must be a useMemo to ensure stable hook call order before early returns
+  const unitStatusInfo: UnitStatusInfo | null = useMemo(() => {
+    if (!unit) return null;
+    return {
+      id: unit.id,
+      name: unit.name,
+      unit_type: unit.unit_type,
+      status: unit.status,
+      temp_limit_high: unit.temp_limit_high,
+      temp_limit_low: unit.temp_limit_low,
+      manual_log_cadence: unit.manual_log_cadence,
+      last_manual_log_at: unit.last_manual_log_at,
+      last_reading_at: unit.last_reading_at,
+      last_temp_reading: unit.last_temp_reading,
+      // Use primary sensor's last_seen_at for accurate check-in tracking
+      last_checkin_at: primaryLoraSensor?.last_seen_at || unit.last_reading_at,
+      // Convert expected_reading_interval_seconds to minutes
+      checkin_interval_minutes: effectiveRules.expected_reading_interval_seconds / 60,
+      area: { name: unit.area.name, site: { name: unit.area.site.name } },
+    };
+  }, [unit, primaryLoraSensor?.last_seen_at, effectiveRules.expected_reading_interval_seconds]);
 
   // Compute device status using alert rules thresholds (respects user-configured offline thresholds)
-  const computedStatus: ComputedUnitStatus | null = unitStatusInfo 
-    ? computeUnitStatus(unitStatusInfo, effectiveRules) 
-    : null;
+  const computedStatus: ComputedUnitStatus | null = useMemo(() => {
+    if (!unitStatusInfo) return null;
+    return computeUnitStatus(unitStatusInfo, effectiveRules);
+  }, [unitStatusInfo, effectiveRules]);
 
   // ========== SINGLE SOURCE OF TRUTH ==========
   // This derivedStatus object is the ONLY source of truth for online/offline status.
@@ -729,6 +711,28 @@ const UnitDetail = () => {
     computedStatus,
     effectiveRules.expected_reading_interval_seconds,
   ]);
+
+  // Only show loading spinner on initial load when we have NO data yet
+  // This prevents full page remount during background refreshes
+  if (isLoading && !unit) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-accent" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (!unit) {
+    return (
+      <DashboardLayout>
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">Unit not found</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
