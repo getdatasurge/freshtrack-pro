@@ -78,7 +78,14 @@ export function useDraftLayout(
 
   // Cleanup expired drafts on mount (once per app session)
   useEffect(() => {
-    cleanupExpiredDrafts();
+    try {
+      cleanupExpiredDrafts();
+    } catch (error) {
+      // localStorage might be disabled or full - fail silently
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[useDraftLayout] Failed to cleanup expired drafts:", error);
+      }
+    }
   }, []);
 
   // Load draft on mount or when params change

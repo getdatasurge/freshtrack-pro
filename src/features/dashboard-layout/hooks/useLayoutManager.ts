@@ -43,7 +43,24 @@ export function useLayoutManager(
 ): { state: ExtendedLayoutManagerState; actions: ExtendedLayoutManagerActions } {
   const storage = useEntityLayoutStorage(entityType, entityId, organizationId);
 
-  const [activeLayout, setActiveLayout] = useState<ActiveLayout>(() => getDefaultLayout());
+  const [activeLayout, setActiveLayout] = useState<ActiveLayout>(() => {
+    try {
+      return getDefaultLayout();
+    } catch (error) {
+      console.error("[useLayoutManager] Failed to get default layout:", error);
+      // Return a minimal safe default that matches ActiveLayout interface
+      return {
+        id: DEFAULT_LAYOUT_ID,
+        name: "Default",
+        isDefault: true,
+        isImmutable: true,
+        isDirty: false,
+        config: { version: 1, widgets: [], hiddenWidgets: [] },
+        timelineState: { range: "24h", compare: null, zoomLevel: 1 },
+        widgetPrefs: {},
+      };
+    }
+  });
   const [originalConfig, setOriginalConfig] = useState<LayoutConfig | null>(null);
   const [originalTimelineState, setOriginalTimelineState] = useState<TimelineState | null>(null);
   const [isCustomizing, setIsCustomizing] = useState(false);
