@@ -61,6 +61,8 @@ export default defineConfig(({ mode }) => ({
       workbox: {
         // Exclude large PNGs from precaching (Telnyx opt-in image is 2.2MB)
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
+        // Increase limit to 3MB to accommodate large JS bundles
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
