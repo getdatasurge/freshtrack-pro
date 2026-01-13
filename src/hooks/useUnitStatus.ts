@@ -144,11 +144,13 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
     unit.status === "monitoring_interrupted" ||
     unit.status === "offline";
   
-  // Status display - now considers offline severity
+  // Status display - computed offlineSeverity takes precedence over stale DB status
+  // This ensures fresh sensor heartbeats are reflected immediately, even before DB updates
   let statusLabel = "OK";
   let statusColor = "text-safe";
   let statusBgColor = "bg-safe/10";
   
+  // 1. Check alarm/excursion FIRST (temperature-based alerts, not connectivity-based)
   if (unit.status === "alarm_active") {
     statusLabel = "ALARM";
     statusColor = "text-alarm";
@@ -157,7 +159,9 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
     statusLabel = "Excursion";
     statusColor = "text-excursion";
     statusBgColor = "bg-excursion/10";
-  } else if (offlineSeverity === "critical" || unit.status === "offline" || unit.status === "monitoring_interrupted") {
+  // 2. Check computed offlineSeverity (NOT unit.status for offline!)
+  // This is the key fix: use computed status, not stale DB value
+  } else if (offlineSeverity === "critical") {
     statusLabel = "Offline";
     statusColor = "text-alarm";
     statusBgColor = "bg-alarm/10";
@@ -165,18 +169,30 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
     statusLabel = "Offline";
     statusColor = "text-warning";
     statusBgColor = "bg-warning/10";
-  } else if (manualRequired || unit.status === "manual_required") {
+  // 3. Manual required (only when online but needs action)
+  } else if (manualRequired) {
     statusLabel = "Log Required";
     statusColor = "text-warning";
     statusBgColor = "bg-warning/10";
+  // 4. Restoring state
   } else if (unit.status === "restoring") {
     statusLabel = "Restoring";
     statusColor = "text-accent";
     statusBgColor = "bg-accent/10";
-  } else if (unit.status === "ok") {
+  // 5. Default: Online/OK (offlineSeverity is "none")
+  } else {
     statusLabel = "OK";
     statusColor = "text-safe";
     statusBgColor = "bg-safe/10";
+  }
+  
+  // Dev assertion: verify label matches computed status
+  if (process.env.NODE_ENV === 'development') {
+    if (offlineSeverity === "none" && statusLabel === "Offline") {
+      console.error('[STATUS BUG] offlineSeverity is "none" but statusLabel is "Offline"', {
+        offlineSeverity, statusLabel, unitStatus: unit.status, missedCheckins, sensorOnline
+      });
+    }
   }
   
   return {
