@@ -14,6 +14,7 @@ import BatteryHealthCard from "@/components/unit/BatteryHealthCard";
 import UnitSensorsCard from "@/components/unit/UnitSensorsCard";
 import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
+import { LayoutHeaderDropdown } from "@/components/LayoutHeaderDropdown";
 import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteUnit, getActiveChildrenCount } from "@/hooks/useSoftDelete";
 import { useLoraSensorsByUnit } from "@/hooks/useLoraSensors";
@@ -724,7 +725,14 @@ const UnitDetail = () => {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button 
+            {/* Layout Selector Dropdown */}
+            <LayoutHeaderDropdown
+              entityType="unit"
+              entityId={unitId!}
+              organizationId={unit.area.site.organization_id}
+              currentLayoutKey={layoutKey}
+            />
+            <Button
               variant="default"
               className="bg-accent hover:bg-accent/90"
               onClick={() => setModalOpen(true)}

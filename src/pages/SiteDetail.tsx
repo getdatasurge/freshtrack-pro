@@ -9,6 +9,7 @@ import { SiteGatewaysCard } from "@/components/site/SiteGatewaysCard";
 import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
 import { AlertRulesHistoryModal } from "@/components/settings/AlertRulesHistoryModal";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
+import { LayoutHeaderDropdown } from "@/components/LayoutHeaderDropdown";
 import { useSiteAlertRules, useOrgAlertRules } from "@/hooks/useAlertRules";
 import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteSite } from "@/hooks/useSoftDelete";
@@ -331,6 +332,13 @@ const SiteDetail = () => {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            {/* Layout Selector Dropdown */}
+            <LayoutHeaderDropdown
+              entityType="site"
+              entityId={siteId!}
+              organizationId={site.organization_id}
+              currentLayoutKey={layoutKey}
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" disabled={isExporting}>

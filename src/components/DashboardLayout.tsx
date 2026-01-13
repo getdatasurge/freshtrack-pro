@@ -14,7 +14,7 @@ import {
   ChevronLeft,
   Trash2,
 } from "lucide-react";
-import { SidebarUnitsAccordion, SidebarSitesAccordion } from "@/components/sidebar";
+import { SidebarSitesAccordion } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
@@ -225,11 +225,8 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
               );
             })}
 
-            {/* Sites Accordion */}
+            {/* Sites Accordion (includes units nested under each site) */}
             <SidebarSitesAccordion organizationId={orgId} />
-
-            {/* Units Accordion */}
-            <SidebarUnitsAccordion organizationId={orgId} />
 
             {/* Nav items after accordions */}
             {navItemsAfterAccordions.map((item) => {
@@ -301,11 +298,8 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                   );
                 })}
 
-                {/* Sites Accordion (Mobile) */}
+                {/* Sites Accordion (Mobile) - includes units nested under each site */}
                 <SidebarSitesAccordion organizationId={orgId} />
-
-                {/* Units Accordion (Mobile) */}
-                <SidebarUnitsAccordion organizationId={orgId} />
 
                 {/* Nav items after accordions */}
                 {navItemsAfterAccordions.map((item) => {
