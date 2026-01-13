@@ -10,10 +10,16 @@ export * from "./types";
 // Constants
 export { 
   DEFAULT_UNIT_DASHBOARD_LAYOUT,
+  DEFAULT_SITE_DASHBOARD_LAYOUT,
+  DEFAULT_UNIT_LAYOUT_CONFIG,
+  DEFAULT_SITE_LAYOUT_CONFIG,
+  EMPTY_UNIT_LAYOUT_CONFIG,
+  EMPTY_SITE_LAYOUT_CONFIG,
   DEFAULT_LAYOUT_CONFIG,
   DEFAULT_TIMELINE_STATE,
   DEFAULT_WIDGET_PREFS,
   getDefaultLayout,
+  getEmptyLayout,
   getDefaultWidgetPositions,
 } from "./constants/defaultLayout";
 
@@ -21,6 +27,7 @@ export {
 export {
   WIDGET_REGISTRY,
   getAllWidgets,
+  getWidgetsForEntity,
   getMandatoryWidgets,
   getOptionalWidgets,
   getWidgetsByCategory,
@@ -57,4 +64,8 @@ export { WidgetWrapper } from "./components/WidgetWrapper";
 export { WidgetRenderer } from "./components/WidgetRenderer";
 export { HiddenWidgetsPanel } from "./components/HiddenWidgetsPanel";
 export { TimelineControls } from "./components/TimelineControls";
-export { SensorDashboard } from "./components/SensorDashboard";
+export { EntityDashboard } from "./components/EntityDashboard";
+export { AddWidgetModal } from "./components/AddWidgetModal";
+
+// Widgets
+export * from "./widgets";
