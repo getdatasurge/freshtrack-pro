@@ -1,7 +1,7 @@
 /**
  * Dashboard Layout Types
  * 
- * Types for customizable unit dashboard layouts with drag-and-drop widgets.
+ * Types for customizable unit/site dashboard layouts with drag-and-drop widgets.
  */
 
 import type { LucideIcon } from "lucide-react";
@@ -90,20 +90,30 @@ export interface TimelineState {
 }
 
 /**
+ * Entity type for dashboard scoping
+ */
+export type EntityType = 'unit' | 'site';
+
+/**
  * Saved layout record from the database.
+ * Note: sensorId is deprecated - use entityType + entityId instead.
  */
 export interface SavedLayout {
   /** Database ID */
   id: string;
   /** Organization ID */
   organizationId: string;
-  /** Sensor ID (layouts are sensor-scoped) */
+  /** @deprecated Use entityType + entityId instead */
   sensorId: string;
+  /** Entity type (unit or site) */
+  entityType?: EntityType;
+  /** Entity ID (unit ID or site ID) */
+  entityId?: string;
   /** Owner user ID */
   userId: string;
   /** Layout name */
   name: string;
-  /** Whether this is the user's default for this sensor */
+  /** Whether this is the user's default for this entity */
   isUserDefault: boolean;
   /** Layout configuration */
   layoutJson: LayoutConfig;
@@ -193,6 +203,8 @@ export interface WidgetDefinition {
   icon: LucideIcon;
   /** Whether this widget supports timeline controls */
   supportsTimeline: boolean;
+  /** Entity types this widget is available for (undefined = all) */
+  entityTypes?: EntityType[];
 }
 
 // ============================================================================
@@ -258,7 +270,7 @@ export interface LayoutManagerActions {
 /** Default layout ID (not stored in database) */
 export const DEFAULT_LAYOUT_ID = "__default__";
 
-/** Maximum number of custom layouts per user per unit */
+/** Maximum number of custom layouts per user per entity */
 export const MAX_CUSTOM_LAYOUTS = 3;
 
 /** Current layout config version */
