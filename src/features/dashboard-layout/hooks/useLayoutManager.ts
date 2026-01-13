@@ -18,11 +18,15 @@ import {
   cloneLayoutConfig,
 } from "../utils/layoutTransforms";
 
+/**
+ * Hook for managing sensor dashboard layouts.
+ * Layouts are now scoped per sensor.
+ */
 export function useLayoutManager(
-  unitId: string | undefined,
+  sensorId: string | undefined,
   organizationId: string | undefined
 ): { state: LayoutManagerState; actions: LayoutManagerActions } {
-  const storage = useLayoutStorage(unitId, organizationId);
+  const storage = useLayoutStorage(sensorId, organizationId);
 
   // Active layout state
   const [activeLayout, setActiveLayout] = useState<ActiveLayout>(() => getDefaultLayout());

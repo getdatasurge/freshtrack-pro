@@ -46,6 +46,7 @@ export {
 export { useLayoutStorage } from "./hooks/useLayoutStorage";
 export { useLayoutManager } from "./hooks/useLayoutManager";
 export { useTimelineState } from "./hooks/useTimelineState";
+export { useAutoSave } from "./hooks/useAutoSave";
 
 // Components
 export { LayoutSelector } from "./components/LayoutSelector";
@@ -56,3 +57,4 @@ export { WidgetWrapper } from "./components/WidgetWrapper";
 export { WidgetRenderer } from "./components/WidgetRenderer";
 export { HiddenWidgetsPanel } from "./components/HiddenWidgetsPanel";
 export { TimelineControls } from "./components/TimelineControls";
+export { SensorDashboard } from "./components/SensorDashboard";

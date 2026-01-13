@@ -97,24 +97,22 @@ export interface SavedLayout {
   id: string;
   /** Organization ID */
   organizationId: string;
-  /** Unit ID */
-  unitId: string;
+  /** Sensor ID (layouts are sensor-scoped) */
+  sensorId: string;
   /** Owner user ID */
   userId: string;
   /** Layout name */
   name: string;
-  /** Whether this is the user's default for this unit */
+  /** Whether this is the user's default for this sensor */
   isUserDefault: boolean;
-  /** Visibility level (for future sharing) */
-  visibility: "private" | "org" | "public";
-  /** Roles this layout is shared with */
-  sharedWithRoles: string[];
   /** Layout configuration */
   layoutJson: LayoutConfig;
   /** Widget preferences */
   widgetPrefsJson: WidgetPreferences;
   /** Timeline state */
   timelineStateJson: TimelineState;
+  /** Layout version for migrations */
+  layoutVersion: number;
   /** Created timestamp */
   createdAt: string;
   /** Updated timestamp */

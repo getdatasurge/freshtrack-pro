@@ -1900,6 +1900,66 @@ export type Database = {
         }
         Relationships: []
       }
+      sensor_dashboard_layouts: {
+        Row: {
+          created_at: string
+          id: string
+          is_user_default: boolean | null
+          layout_json: Json
+          layout_version: number | null
+          name: string
+          organization_id: string
+          sensor_id: string
+          timeline_state_json: Json | null
+          updated_at: string
+          user_id: string
+          widget_prefs_json: Json | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          layout_version?: number | null
+          name: string
+          organization_id: string
+          sensor_id: string
+          timeline_state_json?: Json | null
+          updated_at?: string
+          user_id: string
+          widget_prefs_json?: Json | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          layout_version?: number | null
+          name?: string
+          organization_id?: string
+          sensor_id?: string
+          timeline_state_json?: Json | null
+          updated_at?: string
+          user_id?: string
+          widget_prefs_json?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sensor_dashboard_layouts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sensor_dashboard_layouts_sensor_id_fkey"
+            columns: ["sensor_id"]
+            isOneToOne: false
+            referencedRelation: "lora_sensors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sensor_readings: {
         Row: {
           battery_level: number | null
