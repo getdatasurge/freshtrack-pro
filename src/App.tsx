@@ -18,6 +18,7 @@ import AreaDetail from "./pages/AreaDetail";
 import ManualLog from "./pages/ManualLog";
 import Alerts from "./pages/Alerts";
 import UnitDetail from "./pages/UnitDetail";
+import Units from "./pages/Units";
 import Settings from "./pages/Settings";
 import Reports from "./pages/Reports";
 import Inspector from "./pages/Inspector";
@@ -56,6 +57,7 @@ const App = () => (
             <Route path="/sites" element={<Sites />} />
             <Route path="/sites/:siteId" element={<SiteDetail />} />
             <Route path="/sites/:siteId/areas/:areaId" element={<AreaDetail />} />
+            <Route path="/units" element={<Units />} />
             <Route path="/units/:unitId" element={<UnitDetail />} />
             <Route path="/manual-log" element={<ManualLog />} />
             <Route path="/alerts" element={<Alerts />} />

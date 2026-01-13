@@ -39,6 +39,7 @@ import {
   Activity,
   ClipboardEdit,
   Trash2,
+  Copy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -213,6 +214,13 @@ const UnitDetail = () => {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
   }, []);
+
+  // Persist last viewed unit for quick access from Units page
+  useEffect(() => {
+    if (unitId) {
+      localStorage.setItem("lastViewedUnitId", unitId);
+    }
+  }, [unitId]);
 
   useEffect(() => {
     if (unitId) loadUnitData();
@@ -734,11 +742,28 @@ const UnitDetail = () => {
     );
   }
 
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    toast({ title: "Link copied to clipboard" });
+  };
+
   return (
     <DashboardLayout>
+      {/* Route indicator for debugging/verification */}
+      <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+        <span className="font-mono bg-muted px-2 py-0.5 rounded">/units/{unitId}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-5 px-1.5"
+          onClick={handleCopyLink}
+        >
+          <Copy className="w-3 h-3" />
+        </Button>
+      </div>
       <HierarchyBreadcrumb
         items={[
-          { label: "All Equipment", href: "/sites" },
+          { label: "All Equipment", href: "/units" },
           { label: unit.area.site.name, href: `/sites/${unit.area.site.id}` },
           { label: unit.area.name, href: `/sites/${unit.area.site.id}/areas/${unit.area.id}` },
           { label: unit.name, isCurrentPage: true, siblings: siblingUnits },
