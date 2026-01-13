@@ -26,7 +26,9 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
   // Auto-expand to active unit when navigating
   useEffect(() => {
     if (params.unitId && sites.length > 0) {
-      expandState.expandToActive(params.unitId);
+      // Find the site containing this unit to expand both site and unit
+      const siteWithUnit = sites.find(s => s.units.some(u => u.unitId === params.unitId));
+      expandState.expandToActive(params.unitId, siteWithUnit?.siteId);
     }
   }, [params.unitId, sites.length]);
 
@@ -114,9 +116,9 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
                       key={site.siteId}
                       site={site}
                       organizationId={organizationId || ""}
-                      isExpanded={expandState.isUnitExpanded(site.siteId)}
+                      isExpanded={expandState.isSiteExpanded(site.siteId)}
                       expandedUnits={new Set(site.units.filter(u => expandState.isUnitExpanded(u.unitId)).map(u => u.unitId))}
-                      onToggle={() => expandState.toggleUnit(site.siteId)}
+                      onToggle={() => expandState.toggleSite(site.siteId)}
                       onToggleUnit={(unitId) => expandState.toggleUnit(unitId)}
                     />
                   ))

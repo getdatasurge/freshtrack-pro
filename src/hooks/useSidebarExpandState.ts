@@ -3,14 +3,14 @@ import { useState, useCallback, useEffect } from "react";
 const STORAGE_KEY = "frostguard-sidebar-expand-state";
 
 interface ExpandState {
+  expandedSites: string[];
   expandedUnits: string[];
-  expandedSensors: string[];
   unitsCollapsed: boolean;
 }
 
 const DEFAULT_STATE: ExpandState = {
+  expandedSites: [],
   expandedUnits: [],
-  expandedSensors: [],
   unitsCollapsed: false,
 };
 
@@ -18,7 +18,13 @@ function loadFromStorage(): ExpandState {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      return { ...DEFAULT_STATE, ...JSON.parse(stored) };
+      const parsed = JSON.parse(stored);
+      // Migrate old state: remove sensor keys, ensure site keys exist
+      return {
+        expandedSites: parsed.expandedSites || [],
+        expandedUnits: parsed.expandedUnits || [],
+        unitsCollapsed: parsed.unitsCollapsed ?? false,
+      };
     }
   } catch (e) {
     console.warn("[useSidebarExpandState] Failed to load from localStorage:", e);
@@ -37,6 +43,8 @@ function saveToStorage(state: ExpandState): void {
 /**
  * Hook for managing sidebar expand/collapse state.
  * Persists state in localStorage across sessions.
+ * 
+ * Scopes: Sites and Units (no sensor-level expand state)
  */
 export function useSidebarExpandState() {
   const [state, setState] = useState<ExpandState>(loadFromStorage);
@@ -46,15 +54,27 @@ export function useSidebarExpandState() {
     saveToStorage(state);
   }, [state]);
 
+  const isSiteExpanded = useCallback(
+    (siteId: string) => state.expandedSites.includes(siteId),
+    [state.expandedSites]
+  );
+
   const isUnitExpanded = useCallback(
     (unitId: string) => state.expandedUnits.includes(unitId),
     [state.expandedUnits]
   );
 
-  const isSensorExpanded = useCallback(
-    (sensorId: string) => state.expandedSensors.includes(sensorId),
-    [state.expandedSensors]
-  );
+  const toggleSite = useCallback((siteId: string) => {
+    setState((prev) => {
+      const isExpanded = prev.expandedSites.includes(siteId);
+      return {
+        ...prev,
+        expandedSites: isExpanded
+          ? prev.expandedSites.filter((id) => id !== siteId)
+          : [...prev.expandedSites, siteId],
+      };
+    });
+  }, []);
 
   const toggleUnit = useCallback((unitId: string) => {
     setState((prev) => {
@@ -68,14 +88,12 @@ export function useSidebarExpandState() {
     });
   }, []);
 
-  const toggleSensor = useCallback((sensorId: string) => {
+  const expandSite = useCallback((siteId: string) => {
     setState((prev) => {
-      const isExpanded = prev.expandedSensors.includes(sensorId);
+      if (prev.expandedSites.includes(siteId)) return prev;
       return {
         ...prev,
-        expandedSensors: isExpanded
-          ? prev.expandedSensors.filter((id) => id !== sensorId)
-          : [...prev.expandedSensors, sensorId],
+        expandedSites: [...prev.expandedSites, siteId],
       };
     });
   }, []);
@@ -90,34 +108,25 @@ export function useSidebarExpandState() {
     });
   }, []);
 
-  const expandSensor = useCallback((sensorId: string) => {
-    setState((prev) => {
-      if (prev.expandedSensors.includes(sensorId)) return prev;
-      return {
-        ...prev,
-        expandedSensors: [...prev.expandedSensors, sensorId],
-      };
-    });
-  }, []);
-
   /**
-   * Auto-expand the path to show a specific unit and sensor
+   * Auto-expand the path to show a specific unit.
+   * If siteId is provided, also expands the site.
    */
-  const expandToActive = useCallback((unitId: string, sensorId?: string) => {
+  const expandToActive = useCallback((unitId: string, siteId?: string) => {
     setState((prev) => {
       const newState = { ...prev };
       
       // Expand units section
       newState.unitsCollapsed = false;
       
+      // Expand the site if provided
+      if (siteId && !newState.expandedSites.includes(siteId)) {
+        newState.expandedSites = [...newState.expandedSites, siteId];
+      }
+      
       // Expand the unit
       if (!newState.expandedUnits.includes(unitId)) {
         newState.expandedUnits = [...newState.expandedUnits, unitId];
-      }
-      
-      // Expand the sensor if specified
-      if (sensorId && !newState.expandedSensors.includes(sensorId)) {
-        newState.expandedSensors = [...newState.expandedSensors, sensorId];
       }
       
       return newState;
@@ -134,12 +143,12 @@ export function useSidebarExpandState() {
   const isUnitsSectionCollapsed = state.unitsCollapsed;
 
   return {
+    isSiteExpanded,
     isUnitExpanded,
-    isSensorExpanded,
+    toggleSite,
     toggleUnit,
-    toggleSensor,
+    expandSite,
     expandUnit,
-    expandSensor,
     expandToActive,
     isUnitsSectionCollapsed,
     toggleUnitsSection,

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { useEntityDashboardUrl } from "@/hooks/useEntityDashboardUrl";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
@@ -113,6 +114,7 @@ const UnitDetail = () => {
   const { unitId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { layoutKey } = useEntityDashboardUrl(); // Read layout from route (defaults to "default")
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
   const [isLoading, setIsLoading] = useState(true);
   const [unit, setUnit] = useState<UnitData | null>(null);
@@ -751,7 +753,7 @@ const UnitDetail = () => {
     <DashboardLayout>
       {/* Route indicator for debugging/verification */}
       <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-        <span className="font-mono bg-muted px-2 py-0.5 rounded">/units/{unitId}</span>
+        <span className="font-mono bg-muted px-2 py-0.5 rounded">/units/{unitId}{layoutKey !== 'default' ? `/layout/${layoutKey}` : ''}</span>
         <Button
           variant="ghost"
           size="sm"

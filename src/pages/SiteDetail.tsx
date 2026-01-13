@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useEntityDashboardUrl } from "@/hooks/useEntityDashboardUrl";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import { SiteComplianceSettings } from "@/components/site/SiteComplianceSettings";
@@ -72,6 +73,7 @@ const SiteDetail = () => {
   const { siteId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { layoutKey } = useEntityDashboardUrl(); // Read layout from route (defaults to "default")
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
   const [session, setSession] = useState<Session | null>(null);
   const [site, setSite] = useState<SiteData | null>(null);
