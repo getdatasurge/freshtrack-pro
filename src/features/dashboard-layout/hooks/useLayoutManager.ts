@@ -136,26 +136,57 @@ export function useLayoutManager(
   }, [storage.savedLayouts]);
 
   const updatePositions = useCallback((positions: WidgetPosition[]) => {
-    setActiveLayout((prev) => ({ ...prev, config: { ...prev.config, widgets: positions } }));
-  }, []);
+    setActiveLayout((prev) => {
+      const newLayout = { ...prev, config: { ...prev.config, widgets: positions } };
+      // Save draft to localStorage for non-default layouts
+      if (!prev.isDefault && userId) {
+        draft.actions.saveDraftLocally(
+          newLayout.config,
+          newLayout.timelineState,
+          newLayout.widgetPrefs
+        );
+      }
+      return newLayout;
+    });
+  }, [userId, draft.actions]);
 
   const toggleWidgetVisibility = useCallback((widgetId: string) => {
     setActiveLayout((prev) => {
       const hiddenWidgets = prev.config.hiddenWidgets || [];
       const isHidden = hiddenWidgets.includes(widgetId);
-      return {
+      const newLayout = {
         ...prev,
         config: {
           ...prev.config,
           hiddenWidgets: isHidden ? hiddenWidgets.filter((id) => id !== widgetId) : [...hiddenWidgets, widgetId],
         },
       };
+      // Save draft to localStorage for non-default layouts
+      if (!prev.isDefault && userId) {
+        draft.actions.saveDraftLocally(
+          newLayout.config,
+          newLayout.timelineState,
+          newLayout.widgetPrefs
+        );
+      }
+      return newLayout;
     });
-  }, []);
+  }, [userId, draft.actions]);
 
   const updateTimelineState = useCallback((timelineState: TimelineState) => {
-    setActiveLayout((prev) => ({ ...prev, timelineState }));
-  }, []);
+    setActiveLayout((prev) => {
+      const newLayout = { ...prev, timelineState };
+      // Save draft to localStorage for non-default layouts
+      if (!prev.isDefault && userId) {
+        draft.actions.saveDraftLocally(
+          newLayout.config,
+          newLayout.timelineState,
+          newLayout.widgetPrefs
+        );
+      }
+      return newLayout;
+    });
+  }, [userId, draft.actions]);
 
   // Save draft locally (called on edits)
   const saveDraftLocally = useCallback(() => {
