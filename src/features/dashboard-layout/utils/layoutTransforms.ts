@@ -272,20 +272,19 @@ export function dbRowToActiveLayout(row: SavedLayout): ActiveLayout {
 export function activeLayoutToDbRow(
   layout: ActiveLayout,
   organizationId: string,
-  unitId: string,
+  sensorId: string,
   userId: string
 ): Omit<SavedLayout, "id" | "createdAt" | "updatedAt"> {
   return {
     organizationId,
-    unitId,
+    sensorId,
     userId,
     name: layout.name,
     isUserDefault: false,
-    visibility: "private",
-    sharedWithRoles: [],
     layoutJson: layout.config,
     widgetPrefsJson: layout.widgetPrefs,
     timelineStateJson: layout.timelineState,
+    layoutVersion: 1,
   };
 }
 

@@ -1,22 +1,20 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import type { Database } from "@/integrations/supabase/types";
 import type { SavedLayout, LayoutConfig, TimelineState, WidgetPreferences } from "../types";
 import { MAX_CUSTOM_LAYOUTS } from "../types";
 
 interface LayoutRow {
   id: string;
   organization_id: string;
-  unit_id: string;
+  sensor_id: string;
   user_id: string;
   name: string;
   is_user_default: boolean;
-  visibility: string;
-  shared_with_roles: string[];
   layout_json: LayoutConfig;
   widget_prefs_json: WidgetPreferences;
   timeline_state_json: TimelineState;
+  layout_version: number;
   created_at: string;
   updated_at: string;
 }
@@ -25,37 +23,40 @@ function rowToSavedLayout(row: LayoutRow): SavedLayout {
   return {
     id: row.id,
     organizationId: row.organization_id,
-    unitId: row.unit_id,
+    sensorId: row.sensor_id,
     userId: row.user_id,
     name: row.name,
     isUserDefault: row.is_user_default,
-    visibility: row.visibility as "private" | "org" | "public",
-    sharedWithRoles: row.shared_with_roles,
     layoutJson: row.layout_json,
     widgetPrefsJson: row.widget_prefs_json,
     timelineStateJson: row.timeline_state_json,
+    layoutVersion: row.layout_version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-export function useLayoutStorage(unitId: string | undefined, organizationId: string | undefined) {
+/**
+ * Hook for persisting sensor dashboard layouts.
+ * Layouts are scoped per sensor (not per unit).
+ */
+export function useLayoutStorage(sensorId: string | undefined, organizationId: string | undefined) {
   const queryClient = useQueryClient();
-  const queryKey = ["unit-dashboard-layouts", unitId];
+  const queryKey = ["sensor-dashboard-layouts", sensorId];
 
-  // Fetch saved layouts for this unit
+  // Fetch saved layouts for this sensor
   const { data: savedLayouts, isLoading, error } = useQuery({
     queryKey,
     queryFn: async () => {
-      if (!unitId) return [];
+      if (!sensorId) return [];
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
 
       const { data, error } = await supabase
-        .from("unit_dashboard_layouts")
+        .from("sensor_dashboard_layouts")
         .select("*")
-        .eq("unit_id", unitId)
+        .eq("sensor_id", sensorId)
         .eq("user_id", user.id)
         .order("created_at", { ascending: true });
 
@@ -66,7 +67,7 @@ export function useLayoutStorage(unitId: string | undefined, organizationId: str
 
       return (data || []).map((row) => rowToSavedLayout(row as unknown as LayoutRow));
     },
-    enabled: !!unitId,
+    enabled: !!sensorId,
   });
 
   // Save a new layout
@@ -78,25 +79,27 @@ export function useLayoutStorage(unitId: string | undefined, organizationId: str
       timelineStateJson?: TimelineState;
       isUserDefault?: boolean;
     }) => {
-      if (!unitId || !organizationId) {
-        throw new Error("Missing unit or organization ID");
+      if (!sensorId || !organizationId) {
+        throw new Error("Missing sensor or organization ID");
       }
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
+      const insertData = {
+        organization_id: organizationId,
+        sensor_id: sensorId,
+        user_id: user.id,
+        name: params.name,
+        layout_json: params.layoutJson,
+        widget_prefs_json: params.widgetPrefsJson || {},
+        timeline_state_json: params.timelineStateJson || {},
+        is_user_default: params.isUserDefault || false,
+      };
+
       const { data, error } = await supabase
-        .from("unit_dashboard_layouts")
-        .insert({
-          organization_id: organizationId,
-          unit_id: unitId,
-          user_id: user.id,
-          name: params.name,
-          layout_json: params.layoutJson as unknown as Database["public"]["Tables"]["unit_dashboard_layouts"]["Insert"]["layout_json"],
-          widget_prefs_json: (params.widgetPrefsJson || {}) as unknown as Database["public"]["Tables"]["unit_dashboard_layouts"]["Insert"]["widget_prefs_json"],
-          timeline_state_json: (params.timelineStateJson || {}) as unknown as Database["public"]["Tables"]["unit_dashboard_layouts"]["Insert"]["timeline_state_json"],
-          is_user_default: params.isUserDefault || false,
-        })
+        .from("sensor_dashboard_layouts")
+        .insert(insertData as never)
         .select()
         .single();
 
@@ -109,8 +112,8 @@ export function useLayoutStorage(unitId: string | undefined, organizationId: str
     },
     onError: (error: Error) => {
       console.error("[useLayoutStorage] Save error:", error);
-      if (error.message.includes("Maximum 3 layouts")) {
-        toast.error("Maximum 3 layouts per unit allowed");
+      if (error.message.includes("Maximum of 3 custom layouts")) {
+        toast.error("Maximum 3 layouts per sensor allowed");
       } else {
         toast.error("Failed to save layout");
       }
@@ -135,7 +138,7 @@ export function useLayoutStorage(unitId: string | undefined, organizationId: str
       if (params.isUserDefault !== undefined) updateData.is_user_default = params.isUserDefault;
 
       const { data, error } = await supabase
-        .from("unit_dashboard_layouts")
+        .from("sensor_dashboard_layouts")
         .update(updateData)
         .eq("id", params.id)
         .select()
@@ -157,7 +160,7 @@ export function useLayoutStorage(unitId: string | undefined, organizationId: str
   const deleteLayoutMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
-        .from("unit_dashboard_layouts")
+        .from("sensor_dashboard_layouts")
         .delete()
         .eq("id", id);
 
@@ -177,18 +180,18 @@ export function useLayoutStorage(unitId: string | undefined, organizationId: str
   const setAsDefaultMutation = useMutation({
     mutationFn: async (id: string) => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !unitId) throw new Error("Not authenticated");
+      if (!user || !sensorId) throw new Error("Not authenticated");
 
-      // First, unset all defaults for this user/unit
+      // First, unset all defaults for this user/sensor
       await supabase
-        .from("unit_dashboard_layouts")
+        .from("sensor_dashboard_layouts")
         .update({ is_user_default: false })
-        .eq("unit_id", unitId)
+        .eq("sensor_id", sensorId)
         .eq("user_id", user.id);
 
       // Then set the new default
       const { error } = await supabase
-        .from("unit_dashboard_layouts")
+        .from("sensor_dashboard_layouts")
         .update({ is_user_default: true })
         .eq("id", id);
 
