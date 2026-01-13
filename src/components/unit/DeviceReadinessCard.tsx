@@ -14,10 +14,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { 
-  computeSensorInstallationStatus, 
-  DeviceInfo 
-} from "@/hooks/useSensorInstallationStatus";
+// Only import types - status is computed from parent's offlineSeverity
+import { DeviceInfo } from "@/hooks/useSensorInstallationStatus";
 import { LoraSensor } from "@/types/ttn";
 
 interface DeviceReadinessProps {
@@ -119,13 +117,35 @@ const DeviceReadinessCard = ({
       };
     }
 
-    // Check if we have a sensor paired
-    const baseStatus = computeSensorInstallationStatus(device || null, lastReadingAt, loraSensor);
-    if (baseStatus.status === "not_paired") {
-      return baseStatus;
+    // Check if we have a sensor paired (simple check without threshold logic)
+    const hasSensorPaired = Boolean(loraSensor || device);
+    if (!hasSensorPaired) {
+      return {
+        status: "not_paired",
+        label: "Not Paired",
+        description: "No sensor is paired to this unit. Go to Settings to add a sensor.",
+        color: "text-muted-foreground",
+        bgColor: "bg-muted",
+      };
     }
 
-    // Online - sensor is reporting within configured thresholds
+    // Check if paired but never seen
+    const hasEverBeenSeen = Boolean(
+      loraSensor?.last_seen_at || 
+      device?.last_seen_at || 
+      lastReadingAt
+    );
+    if (!hasEverBeenSeen) {
+      return {
+        status: "paired_never_seen",
+        label: "Paired – Never Seen",
+        description: "Sensor is paired but has never reported data. Check device power and connectivity.",
+        color: "text-warning",
+        bgColor: "bg-warning/10",
+      };
+    }
+
+    // Online - sensor is reporting within configured thresholds (offlineSeverity === "none")
     return {
       status: "online",
       label: "Online",
