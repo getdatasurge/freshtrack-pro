@@ -53,7 +53,11 @@ export {
 export { useEntityLayoutStorage } from "./hooks/useEntityLayoutStorage";
 export { useLayoutManager } from "./hooks/useLayoutManager";
 export { useTimelineState } from "./hooks/useTimelineState";
-export { useAutoSave } from "./hooks/useAutoSave";
+export { useDraftLayout } from "./hooks/useDraftLayout";
+export { useUnsavedChangesGuard } from "./hooks/useUnsavedChangesGuard";
+
+// Utilities
+export { draftManager } from "./utils/draftManager";
 
 // Components
 export { LayoutSelector } from "./components/LayoutSelector";

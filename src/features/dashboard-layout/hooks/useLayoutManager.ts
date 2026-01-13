@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type {
   ActiveLayout,
   LayoutConfig,
@@ -9,26 +9,57 @@ import type {
 } from "../types";
 import { DEFAULT_LAYOUT_ID } from "../types";
 import { useEntityLayoutStorage, EntityType } from "./useEntityLayoutStorage";
+import { useDraftLayout } from "./useDraftLayout";
 import {
   getDefaultLayout,
   dbRowToActiveLayout,
   areLayoutConfigsEqual,
   cloneLayoutConfig,
 } from "../utils/layoutTransforms";
+import { toast } from "sonner";
+
+// Extended state to include draft-related properties
+interface ExtendedLayoutManagerState extends LayoutManagerState {
+  hasDraft: boolean;
+  draftUpdatedAt: Date | null;
+}
+
+// Extended actions to include draft-related methods
+interface ExtendedLayoutManagerActions extends LayoutManagerActions {
+  saveDraftLocally: () => void;
+  clearLocalDraft: () => void;
+  applyDraft: () => void;
+}
 
 /**
  * Hook for managing entity (unit/site) dashboard layouts.
+ * Now with local draft persistence (no auto-save to DB).
  */
 export function useLayoutManager(
   entityType: EntityType,
   entityId: string | undefined,
-  organizationId: string | undefined
-): { state: LayoutManagerState; actions: LayoutManagerActions } {
+  organizationId: string | undefined,
+  userId?: string
+): { state: ExtendedLayoutManagerState; actions: ExtendedLayoutManagerActions } {
   const storage = useEntityLayoutStorage(entityType, entityId, organizationId);
 
   const [activeLayout, setActiveLayout] = useState<ActiveLayout>(() => getDefaultLayout());
   const [originalConfig, setOriginalConfig] = useState<LayoutConfig | null>(null);
+  const [originalTimelineState, setOriginalTimelineState] = useState<TimelineState | null>(null);
   const [isCustomizing, setIsCustomizing] = useState(false);
+  const [serverUpdatedAt, setServerUpdatedAt] = useState<string | null>(null);
+  
+  // Track if we've applied the draft
+  const draftAppliedRef = useRef(false);
+
+  // Draft management
+  const draft = useDraftLayout(
+    entityType,
+    entityId,
+    activeLayout.id || DEFAULT_LAYOUT_ID,
+    userId,
+    serverUpdatedAt
+  );
 
   const isDirty = useMemo(() => {
     if (activeLayout.isDefault) return false;
@@ -36,6 +67,7 @@ export function useLayoutManager(
     return !areLayoutConfigsEqual(activeLayout.config, originalConfig);
   }, [activeLayout, originalConfig]);
 
+  // Load layout from storage on mount or when storage changes
   useEffect(() => {
     if (!storage.isLoading && storage.savedLayouts) {
       const userDefault = storage.savedLayouts.find((l) => l.isUserDefault);
@@ -43,12 +75,32 @@ export function useLayoutManager(
         const active = dbRowToActiveLayout(userDefault);
         setActiveLayout(active);
         setOriginalConfig(cloneLayoutConfig(active.config));
+        setOriginalTimelineState({ ...active.timelineState });
+        setServerUpdatedAt(userDefault.updatedAt);
+        draftAppliedRef.current = false;
       } else {
         setActiveLayout(getDefaultLayout());
         setOriginalConfig(null);
+        setOriginalTimelineState(null);
+        setServerUpdatedAt(null);
+        draftAppliedRef.current = false;
       }
     }
   }, [storage.isLoading, storage.savedLayouts]);
+
+  // Auto-apply draft if exists and not yet applied (only for non-default layouts)
+  useEffect(() => {
+    if (
+      !activeLayout.isDefault && 
+      draft.state.hasDraft && 
+      draft.state.draftData && 
+      !draftAppliedRef.current &&
+      !isDirty
+    ) {
+      // Don't auto-apply, just show the banner
+      // User will click "Restore Draft" to apply
+    }
+  }, [activeLayout.isDefault, draft.state.hasDraft, draft.state.draftData, isDirty]);
 
   const availableLayouts = useMemo(() => {
     const layouts: Array<{ id: string; name: string; isDefault: boolean; isUserDefault: boolean }> = [
@@ -61,9 +113,14 @@ export function useLayoutManager(
   }, [storage.savedLayouts]);
 
   const selectLayout = useCallback((layoutId: string) => {
+    // Clear draft applied flag when switching layouts
+    draftAppliedRef.current = false;
+    
     if (layoutId === DEFAULT_LAYOUT_ID) {
       setActiveLayout(getDefaultLayout());
       setOriginalConfig(null);
+      setOriginalTimelineState(null);
+      setServerUpdatedAt(null);
       setIsCustomizing(false);
     } else {
       const saved = storage.savedLayouts.find((l) => l.id === layoutId);
@@ -71,6 +128,8 @@ export function useLayoutManager(
         const active = dbRowToActiveLayout(saved);
         setActiveLayout(active);
         setOriginalConfig(cloneLayoutConfig(active.config));
+        setOriginalTimelineState({ ...active.timelineState });
+        setServerUpdatedAt(saved.updatedAt);
         setIsCustomizing(false);
       }
     }
@@ -98,33 +157,86 @@ export function useLayoutManager(
     setActiveLayout((prev) => ({ ...prev, timelineState }));
   }, []);
 
+  // Save draft locally (called on edits)
+  const saveDraftLocally = useCallback(() => {
+    if (activeLayout.isDefault) return;
+    
+    draft.actions.saveDraftLocally(
+      activeLayout.config,
+      activeLayout.timelineState,
+      activeLayout.widgetPrefs
+    );
+  }, [activeLayout, draft.actions]);
+
+  // Clear local draft
+  const clearLocalDraft = useCallback(() => {
+    draft.actions.clearLocalDraft();
+  }, [draft.actions]);
+
+  // Apply draft to current layout
+  const applyDraft = useCallback(() => {
+    const draftData = draft.actions.applyDraft();
+    if (!draftData) return;
+    
+    setActiveLayout((prev) => ({
+      ...prev,
+      config: draftData.config,
+      timelineState: draftData.timelineState,
+      widgetPrefs: draftData.widgetPrefs,
+    }));
+    draftAppliedRef.current = true;
+    toast.info("Draft restored");
+  }, [draft.actions]);
+
+  // Save layout to database (explicit user action)
   const saveLayout = useCallback(async (name?: string) => {
     const nextSlot = storage.nextAvailableSlot();
-    if (activeLayout.isDefault && nextSlot) {
-      const saved = await storage.saveLayout({
-        slotNumber: nextSlot,
-        name: name || `Layout ${nextSlot}`,
-        layoutJson: activeLayout.config,
-        timelineStateJson: activeLayout.timelineState,
-        widgetPrefsJson: activeLayout.widgetPrefs,
-      });
-      const active = dbRowToActiveLayout(saved);
-      setActiveLayout(active);
-      setOriginalConfig(cloneLayoutConfig(active.config));
-      return saved;
-    } else if (activeLayout.id) {
-      const saved = await storage.updateLayout({
-        layoutId: activeLayout.id,
-        name: name || activeLayout.name,
-        layoutJson: activeLayout.config,
-        timelineStateJson: activeLayout.timelineState,
-        widgetPrefsJson: activeLayout.widgetPrefs,
-      });
-      setOriginalConfig(cloneLayoutConfig(activeLayout.config));
-      return saved;
+    
+    try {
+      if (activeLayout.isDefault && nextSlot) {
+        const saved = await storage.saveLayout({
+          slotNumber: nextSlot,
+          name: name || `Layout ${nextSlot}`,
+          layoutJson: activeLayout.config,
+          timelineStateJson: activeLayout.timelineState,
+          widgetPrefsJson: activeLayout.widgetPrefs,
+        });
+        const active = dbRowToActiveLayout(saved);
+        setActiveLayout(active);
+        setOriginalConfig(cloneLayoutConfig(active.config));
+        setOriginalTimelineState({ ...active.timelineState });
+        setServerUpdatedAt(saved.updatedAt);
+        
+        // Clear local draft on successful save
+        clearLocalDraft();
+        toast.success("Layout saved");
+        return saved;
+      } else if (activeLayout.id) {
+        const saved = await storage.updateLayout({
+          layoutId: activeLayout.id,
+          name: name || activeLayout.name,
+          layoutJson: activeLayout.config,
+          timelineStateJson: activeLayout.timelineState,
+          widgetPrefsJson: activeLayout.widgetPrefs,
+        });
+        setOriginalConfig(cloneLayoutConfig(activeLayout.config));
+        setOriginalTimelineState({ ...activeLayout.timelineState });
+        if (saved?.updatedAt) {
+          setServerUpdatedAt(saved.updatedAt);
+        }
+        
+        // Clear local draft on successful save
+        clearLocalDraft();
+        toast.success("Layout saved");
+        return saved;
+      }
+    } catch (error) {
+      console.error("[useLayoutManager] Save failed:", error);
+      toast.error("Failed to save layout");
+      throw error;
     }
     return null;
-  }, [activeLayout, storage]);
+  }, [activeLayout, storage, clearLocalDraft]);
 
   const renameLayout = useCallback(async (newName: string) => {
     if (!activeLayout.id || activeLayout.isDefault) return;
@@ -134,11 +246,17 @@ export function useLayoutManager(
 
   const deleteLayout = useCallback(async () => {
     if (!activeLayout.id || activeLayout.isDefault) return;
+    
+    // Clear draft before deleting
+    clearLocalDraft();
+    
     await storage.deleteLayout(activeLayout.id);
     setActiveLayout(getDefaultLayout());
     setOriginalConfig(null);
+    setOriginalTimelineState(null);
+    setServerUpdatedAt(null);
     setIsCustomizing(false);
-  }, [activeLayout, storage]);
+  }, [activeLayout, storage, clearLocalDraft]);
 
   const setAsUserDefault = useCallback(async () => {
     if (!activeLayout.id || activeLayout.isDefault) return;
@@ -151,11 +269,19 @@ export function useLayoutManager(
   }, []);
 
   const discardChanges = useCallback(() => {
+    // Clear local draft
+    clearLocalDraft();
+    
+    // Revert to original saved state
     if (originalConfig) {
-      setActiveLayout((prev) => ({ ...prev, config: cloneLayoutConfig(originalConfig) }));
+      setActiveLayout((prev) => ({ 
+        ...prev, 
+        config: cloneLayoutConfig(originalConfig),
+        timelineState: originalTimelineState ? { ...originalTimelineState } : prev.timelineState,
+      }));
     }
     setIsCustomizing(false);
-  }, [originalConfig]);
+  }, [originalConfig, originalTimelineState, clearLocalDraft]);
 
   const createNewLayout = useCallback(async (name: string) => {
     const nextSlot = storage.nextAvailableSlot();
@@ -170,6 +296,8 @@ export function useLayoutManager(
     const active = dbRowToActiveLayout(saved);
     setActiveLayout(active);
     setOriginalConfig(cloneLayoutConfig(active.config));
+    setOriginalTimelineState({ ...active.timelineState });
+    setServerUpdatedAt(saved.updatedAt);
     return saved;
   }, [activeLayout, storage]);
 
@@ -183,6 +311,8 @@ export function useLayoutManager(
       isCustomizing,
       canCreateNew: storage.canCreateNew,
       layoutCount: storage.layoutCount,
+      hasDraft: draft.state.hasDraft && !isDirty && !activeLayout.isDefault,
+      draftUpdatedAt: draft.state.draftUpdatedAt,
     },
     actions: {
       selectLayout,
@@ -197,6 +327,9 @@ export function useLayoutManager(
       discardChanges,
       createNewLayout,
       setIsCustomizing,
+      saveDraftLocally,
+      clearLocalDraft,
+      applyDraft,
     },
   };
 }

@@ -5,12 +5,23 @@
  * Renders the customizable grid layout for both units and sites.
  */
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { subHours, subDays, parseISO } from "date-fns";
-import { Undo2, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useLayoutManager } from "../hooks/useLayoutManager";
-import { useAutoSave } from "../hooks/useAutoSave";
+import { useUnsavedChangesGuard } from "../hooks/useUnsavedChangesGuard";
 import { LayoutSelector } from "./LayoutSelector";
 import { LayoutManager } from "./LayoutManager";
 import { CustomizeToggle } from "./CustomizeToggle";
@@ -26,6 +37,7 @@ export interface EntityDashboardProps {
   entityType: EntityType;
   entityId: string;
   organizationId: string;
+  userId?: string;
   unit?: {
     id: string;
     name: string;
@@ -104,6 +116,7 @@ export function EntityDashboard({
   entityType,
   entityId,
   organizationId,
+  userId,
   unit,
   sensor,
   readings = [],
@@ -116,21 +129,17 @@ export function EntityDashboard({
   areas = [],
   totalUnits = 0,
 }: EntityDashboardProps) {
-  const { state, actions } = useLayoutManager(entityType, entityId, organizationId);
+  const { state, actions } = useLayoutManager(entityType, entityId, organizationId, userId);
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   
-  const autoSave = useAutoSave(
-    state.activeLayout,
+  // Navigation guard for unsaved changes
+  const unsavedGuard = useUnsavedChangesGuard(
+    state.isDirty && !state.activeLayout.isDefault,
     async () => { await actions.saveLayout(); },
-    { enabled: !state.activeLayout.isDefault && !state.activeLayout.isImmutable, debounceMs: 2000 }
+    actions.discardChanges
   );
 
   const dateRange = useMemo(() => computeDateRange(state.activeLayout.timelineState), [state.activeLayout.timelineState]);
-
-  const handleUndo = useCallback(() => {
-    const previousConfig = autoSave.undo();
-    if (previousConfig) actions.updatePositions(previousConfig.widgets);
-  }, [autoSave, actions]);
 
   const widgetProps = useMemo(() => {
     const allProps = {
@@ -180,21 +189,168 @@ export function EntityDashboard({
     setAddWidgetOpen(false);
   }, [actions, state.activeLayout.config]);
 
+  const handleSave = useCallback(async () => {
+    await actions.saveLayout();
+  }, [actions]);
+
+  const handleDiscard = useCallback(() => {
+    actions.discardChanges();
+  }, [actions]);
+
   return (
     <div className="space-y-4">
+      {/* Unsaved Changes Banner */}
+      {state.isDirty && !state.activeLayout.isDefault && (
+        <Alert className="bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800">
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-sm text-amber-800 dark:text-amber-200">
+              You have unsaved changes to this layout
+            </span>
+            <div className="flex gap-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={handleDiscard}
+                className="text-amber-800 hover:text-amber-900 dark:text-amber-200"
+              >
+                Discard
+              </Button>
+              <Button 
+                size="sm" 
+                onClick={handleSave}
+                disabled={state.isSaving}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {state.isSaving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Draft Recovery Banner */}
+      {state.hasDraft && !state.isDirty && !state.activeLayout.isDefault && (
+        <Alert className="bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-800">
+          <AlertDescription className="flex items-center justify-between">
+            <span className="text-sm text-blue-800 dark:text-blue-200">
+              You have a saved draft from a previous session
+            </span>
+            <div className="flex gap-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={actions.clearLocalDraft}
+                className="text-blue-800 hover:text-blue-900 dark:text-blue-200"
+              >
+                Discard Draft
+              </Button>
+              <Button 
+                size="sm" 
+                onClick={actions.applyDraft}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                Restore Draft
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-border">
-        <LayoutSelector activeLayoutId={state.activeLayout.id} availableLayouts={state.availableLayouts} onSelect={actions.selectLayout} isDirty={state.isDirty} canCreateNew={state.canCreateNew} onCreateNew={() => actions.createNewLayout(`Layout ${state.layoutCount + 1}`)} layoutCount={state.layoutCount} />
+        <LayoutSelector 
+          activeLayoutId={state.activeLayout.id} 
+          availableLayouts={state.availableLayouts} 
+          onSelect={actions.selectLayout} 
+          isDirty={state.isDirty} 
+          canCreateNew={state.canCreateNew} 
+          onCreateNew={() => actions.createNewLayout(`Layout ${state.layoutCount + 1}`)} 
+          layoutCount={state.layoutCount} 
+        />
         <div className="flex items-center gap-2">
-          {autoSave.canUndo && <Button variant="ghost" size="sm" onClick={handleUndo} className="text-muted-foreground"><Undo2 className="w-4 h-4 mr-1" />Undo</Button>}
-          {state.isCustomizing && !state.activeLayout.isDefault && <Button variant="outline" size="sm" onClick={() => setAddWidgetOpen(true)}><Plus className="w-4 h-4 mr-1" />Add Widget</Button>}
-          <CustomizeToggle isCustomizing={state.isCustomizing} onToggle={actions.setIsCustomizing} disabled={false} isDirty={state.isDirty} />
-          <LayoutManager activeLayout={state.activeLayout} isDirty={state.isDirty} isSaving={state.isSaving || autoSave.isSaving} canCreateNew={state.canCreateNew} onSave={() => actions.saveLayout()} onRename={actions.renameLayout} onDelete={actions.deleteLayout} onSetDefault={actions.setAsUserDefault} onRevert={actions.revertToDefault} onDiscard={actions.discardChanges} onCreateFromDefault={actions.createNewLayout} />
+          {state.isCustomizing && !state.activeLayout.isDefault && (
+            <Button variant="outline" size="sm" onClick={() => setAddWidgetOpen(true)}>
+              <Plus className="w-4 h-4 mr-1" />Add Widget
+            </Button>
+          )}
+          <CustomizeToggle 
+            isCustomizing={state.isCustomizing} 
+            onToggle={actions.setIsCustomizing} 
+            disabled={false} 
+            isDirty={state.isDirty} 
+          />
+          <LayoutManager 
+            activeLayout={state.activeLayout} 
+            isDirty={state.isDirty} 
+            isSaving={state.isSaving} 
+            canCreateNew={state.canCreateNew} 
+            onSave={() => actions.saveLayout()} 
+            onRename={actions.renameLayout} 
+            onDelete={actions.deleteLayout} 
+            onSetDefault={actions.setAsUserDefault} 
+            onRevert={actions.revertToDefault} 
+            onDiscard={actions.discardChanges} 
+            onCreateFromDefault={actions.createNewLayout} 
+          />
         </div>
       </div>
-      <TimelineControls state={state.activeLayout.timelineState} onChange={actions.updateTimelineState} isDefaultLayout={state.activeLayout.isDefault} dateRange={dateRange} isComparing={!!state.activeLayout.timelineState.compare} />
-      {state.isCustomizing && <HiddenWidgetsPanel hiddenWidgetIds={state.activeLayout.config.hiddenWidgets || []} onRestore={handleRestoreWidget} onRestoreAll={handleRestoreAllWidgets} />}
-      <GridCanvas layout={state.activeLayout.config} isCustomizing={state.isCustomizing} onLayoutChange={handleLayoutChange} widgetProps={widgetProps} onHideWidget={actions.toggleWidgetVisibility} />
-      <AddWidgetModal open={addWidgetOpen} onOpenChange={setAddWidgetOpen} entityType={entityType} visibleWidgetIds={state.activeLayout.config.widgets.map(w => w.i)} hiddenWidgetIds={state.activeLayout.config.hiddenWidgets || []} onAddWidget={handleAddWidget} />
+      <TimelineControls 
+        state={state.activeLayout.timelineState} 
+        onChange={actions.updateTimelineState} 
+        isDefaultLayout={state.activeLayout.isDefault} 
+        dateRange={dateRange} 
+        isComparing={!!state.activeLayout.timelineState.compare} 
+      />
+      {state.isCustomizing && (
+        <HiddenWidgetsPanel 
+          hiddenWidgetIds={state.activeLayout.config.hiddenWidgets || []} 
+          onRestore={handleRestoreWidget} 
+          onRestoreAll={handleRestoreAllWidgets} 
+        />
+      )}
+      <GridCanvas 
+        layout={state.activeLayout.config} 
+        isCustomizing={state.isCustomizing} 
+        onLayoutChange={handleLayoutChange} 
+        widgetProps={widgetProps} 
+        onHideWidget={actions.toggleWidgetVisibility} 
+      />
+      <AddWidgetModal 
+        open={addWidgetOpen} 
+        onOpenChange={setAddWidgetOpen} 
+        entityType={entityType} 
+        visibleWidgetIds={state.activeLayout.config.widgets.map(w => w.i)} 
+        hiddenWidgetIds={state.activeLayout.config.hiddenWidgets || []} 
+        onAddWidget={handleAddWidget} 
+      />
+
+      {/* Navigation Guard Dialog */}
+      <AlertDialog open={unsavedGuard.showPrompt}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save before leaving?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes to this layout. Would you like to save them before navigating away?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={unsavedGuard.onCancel}>
+              Cancel
+            </AlertDialogCancel>
+            <Button 
+              variant="outline" 
+              onClick={unsavedGuard.onDiscard}
+            >
+              Discard
+            </Button>
+            <AlertDialogAction 
+              onClick={unsavedGuard.onSave}
+              disabled={unsavedGuard.isSaving}
+            >
+              {unsavedGuard.isSaving ? "Saving..." : "Save"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
