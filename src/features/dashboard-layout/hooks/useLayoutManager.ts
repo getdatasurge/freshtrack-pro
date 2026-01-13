@@ -45,7 +45,7 @@ export function useLayoutManager(
 
   const [activeLayout, setActiveLayout] = useState<ActiveLayout>(() => {
     try {
-      return getDefaultLayout();
+      return getDefaultLayout(entityType);
     } catch (error) {
       console.error("[useLayoutManager] Failed to get default layout:", error);
       // Return a minimal safe default that matches ActiveLayout interface
@@ -68,6 +68,14 @@ export function useLayoutManager(
   
   // Track if we've applied the draft
   const draftAppliedRef = useRef(false);
+  // Track if initial load has completed to prevent post-save overwrites
+  const initialLoadDoneRef = useRef(false);
+
+  // Reset initial load guard when entity changes
+  useEffect(() => {
+    initialLoadDoneRef.current = false;
+    draftAppliedRef.current = false;
+  }, [entityId]);
 
   // Draft management
   const draft = useDraftLayout(
@@ -84,26 +92,36 @@ export function useLayoutManager(
     return !areLayoutConfigsEqual(activeLayout.config, originalConfig);
   }, [activeLayout, originalConfig]);
 
-  // Load layout from storage on mount or when storage changes
+  // Load layout from storage on mount ONLY (not after saves)
   useEffect(() => {
-    if (!storage.isLoading && storage.savedLayouts) {
-      const userDefault = storage.savedLayouts.find((l) => l.isUserDefault);
-      if (userDefault) {
-        const active = dbRowToActiveLayout(userDefault);
-        setActiveLayout(active);
-        setOriginalConfig(cloneLayoutConfig(active.config));
-        setOriginalTimelineState({ ...active.timelineState });
-        setServerUpdatedAt(userDefault.updatedAt);
-        draftAppliedRef.current = false;
-      } else {
-        setActiveLayout(getDefaultLayout());
-        setOriginalConfig(null);
-        setOriginalTimelineState(null);
-        setServerUpdatedAt(null);
-        draftAppliedRef.current = false;
-      }
+    // Only run initial load once per entity
+    if (initialLoadDoneRef.current) return;
+    if (storage.isLoading || !storage.savedLayouts) return;
+    
+    initialLoadDoneRef.current = true;
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[useLayoutManager] Initial load:', {
+        entityType,
+        entityId,
+        layoutCount: storage.savedLayouts.length,
+      });
     }
-  }, [storage.isLoading, storage.savedLayouts]);
+    
+    const userDefault = storage.savedLayouts.find((l) => l.isUserDefault);
+    if (userDefault) {
+      const active = dbRowToActiveLayout(userDefault);
+      setActiveLayout(active);
+      setOriginalConfig(cloneLayoutConfig(active.config));
+      setOriginalTimelineState({ ...active.timelineState });
+      setServerUpdatedAt(userDefault.updatedAt);
+    } else {
+      setActiveLayout(getDefaultLayout(entityType));
+      setOriginalConfig(null);
+      setOriginalTimelineState(null);
+      setServerUpdatedAt(null);
+    }
+  }, [storage.isLoading, storage.savedLayouts, entityType, entityId]);
 
   // Auto-apply draft if exists and not yet applied (only for non-default layouts)
   useEffect(() => {
@@ -134,7 +152,7 @@ export function useLayoutManager(
     draftAppliedRef.current = false;
     
     if (layoutId === DEFAULT_LAYOUT_ID) {
-      setActiveLayout(getDefaultLayout());
+      setActiveLayout(getDefaultLayout(entityType));
       setOriginalConfig(null);
       setOriginalTimelineState(null);
       setServerUpdatedAt(null);
@@ -150,7 +168,7 @@ export function useLayoutManager(
         setIsCustomizing(false);
       }
     }
-  }, [storage.savedLayouts]);
+  }, [storage.savedLayouts, entityType]);
 
   const updatePositions = useCallback((positions: WidgetPosition[]) => {
     setActiveLayout((prev) => {
@@ -299,12 +317,12 @@ export function useLayoutManager(
     clearLocalDraft();
     
     await storage.deleteLayout(activeLayout.id);
-    setActiveLayout(getDefaultLayout());
+    setActiveLayout(getDefaultLayout(entityType));
     setOriginalConfig(null);
     setOriginalTimelineState(null);
     setServerUpdatedAt(null);
     setIsCustomizing(false);
-  }, [activeLayout, storage, clearLocalDraft]);
+  }, [activeLayout, storage, clearLocalDraft, entityType]);
 
   const setAsUserDefault = useCallback(async () => {
     if (!activeLayout.id || activeLayout.isDefault) return;
@@ -312,9 +330,9 @@ export function useLayoutManager(
   }, [activeLayout, storage]);
 
   const revertToDefault = useCallback(() => {
-    const defaultLayout = getDefaultLayout();
+    const defaultLayout = getDefaultLayout(entityType);
     setActiveLayout((prev) => ({ ...prev, config: cloneLayoutConfig(defaultLayout.config) }));
-  }, []);
+  }, [entityType]);
 
   const discardChanges = useCallback(() => {
     // Clear local draft
