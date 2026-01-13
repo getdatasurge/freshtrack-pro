@@ -152,6 +152,122 @@ export interface ActiveLayout {
 }
 
 // ============================================================================
+// Widget Data Types
+// ============================================================================
+
+/**
+ * Unit data passed to unit widgets.
+ */
+export interface WidgetUnit {
+  id: string;
+  name: string;
+  unit_type: string;
+  temp_limit_high: number;
+  temp_limit_low: number | null;
+  last_temp_reading: number | null;
+  last_reading_at: string | null;
+  door_state?: "open" | "closed" | "unknown" | null;
+  door_last_changed_at?: string | null;
+}
+
+/**
+ * Site data passed to site widgets.
+ */
+export interface WidgetSite {
+  id: string;
+  name: string;
+  organization_id: string;
+  timezone?: string;
+  compliance_mode?: string;
+  manual_log_cadence_seconds?: number;
+  corrective_action_required?: boolean;
+}
+
+/**
+ * Sensor data passed to widgets.
+ */
+export interface WidgetSensor {
+  id: string;
+  name: string;
+  dev_eui?: string;
+  last_seen_at: string | null;
+  battery_level: number | null;
+  signal_strength: number | null;
+  status: string;
+  sensor_type: string;
+  is_primary?: boolean;
+}
+
+/**
+ * Device info for device readiness widgets.
+ */
+export interface WidgetDevice {
+  id: string;
+  unit_id: string | null;
+  last_seen_at: string | null;
+  serial_number: string | null;
+  battery_level: number | null;
+  signal_strength: number | null;
+  status: string;
+}
+
+/**
+ * Derived status passed to widgets.
+ */
+export interface WidgetDerivedStatus {
+  isOnline: boolean;
+  status: string;
+  statusLabel: string;
+  statusColor: string;
+  statusBgColor: string;
+  offlineSeverity: "none" | "warning" | "critical";
+  missedCheckins: number;
+  lastSeenAt: string | null;
+  lastReadingAt: string | null;
+}
+
+/**
+ * Last known good reading data.
+ */
+export interface WidgetLastKnownGood {
+  temp: number | null;
+  at: string | null;
+  source: "sensor" | "manual" | null;
+}
+
+/**
+ * Alert data for widgets.
+ */
+export interface WidgetAlert {
+  id: string;
+  type: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  message: string;
+  clearCondition: string;
+}
+
+/**
+ * Area data for site widgets.
+ */
+export interface WidgetArea {
+  id: string;
+  name: string;
+  description?: string | null;
+  unitsCount?: number;
+}
+
+/**
+ * Sensor reading for chart widgets.
+ */
+export interface WidgetReading {
+  id: string;
+  temperature: number;
+  humidity: number | null;
+  recorded_at: string;
+}
+
+// ============================================================================
 // Widget Registry
 // ============================================================================
 
@@ -159,18 +275,50 @@ export interface ActiveLayout {
  * Widget component props passed by the grid.
  */
 export interface WidgetProps {
+  /** Entity type */
+  entityType?: EntityType;
+  /** Entity ID (unit or site ID) */
+  entityId?: string;
+  /** Organization ID */
+  organizationId?: string;
+  /** Site ID (for unit widgets) */
+  siteId?: string;
   /** Whether the dashboard is in customize mode */
-  isCustomizing: boolean;
+  isCustomizing?: boolean;
   /** Widget preferences from the active layout */
-  preferences: WidgetPreferences[string] | undefined;
+  preferences?: WidgetPreferences[string];
   /** Callback to update widget preferences */
-  onPreferencesChange: (prefs: WidgetPreferences[string]) => void;
+  onPreferencesChange?: (prefs: WidgetPreferences[string]) => void;
   /** Timeline state (for time-series widgets) */
-  timelineState: TimelineState;
+  timelineState?: TimelineState;
   /** Callback to update timeline state */
-  onTimelineChange: (state: TimelineState) => void;
-  /** Additional props passed from parent */
-  [key: string]: unknown;
+  onTimelineChange?: (state: TimelineState) => void;
+  /** Unit data (for unit widgets) */
+  unit?: WidgetUnit;
+  /** Site data (for site widgets) */
+  site?: WidgetSite;
+  /** Primary sensor data */
+  sensor?: WidgetSensor;
+  /** All LoRa sensors for the unit */
+  loraSensors?: WidgetSensor[];
+  /** Device data */
+  device?: WidgetDevice;
+  /** Derived status */
+  derivedStatus?: WidgetDerivedStatus;
+  /** Last known good reading */
+  lastKnownGood?: WidgetLastKnownGood;
+  /** Active alerts */
+  alerts?: WidgetAlert[];
+  /** Sensor readings */
+  readings?: WidgetReading[];
+  /** Comparison readings for chart overlay */
+  comparisonReadings?: WidgetReading[];
+  /** Areas (for site widgets) */
+  areas?: WidgetArea[];
+  /** Total unit count (for site widgets) */
+  totalUnits?: number;
+  /** Callback for logging temperature */
+  onLogTemp?: () => void;
 }
 
 /**
