@@ -298,7 +298,8 @@ export function EntityDashboard({
         onChange={actions.updateTimelineState} 
         isDefaultLayout={state.activeLayout.isDefault} 
         dateRange={dateRange} 
-        isComparing={!!state.activeLayout.timelineState.compare} 
+        isComparing={!!state.activeLayout.timelineState.compare}
+        saveStatus={state.isSaving ? 'saving' : state.isDirty ? 'dirty' : 'saved'}
       />
       {state.isCustomizing && (
         <HiddenWidgetsPanel 

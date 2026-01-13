@@ -7,6 +7,10 @@ import {
   ZoomIn,
   ZoomOut,
   X,
+  Check,
+  AlertCircle,
+  Loader2,
+  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,12 +33,16 @@ import type { DateRange } from "../hooks/useTimelineState";
 
 const QUICK_RANGES = ["1h", "6h", "24h", "7d", "30d"] as const;
 
+export type SaveStatus = 'saved' | 'dirty' | 'saving' | 'error';
+
 interface TimelineControlsProps {
   state: TimelineState;
   onChange: (updates: Partial<TimelineState>) => void;
   isDefaultLayout: boolean;
   dateRange: DateRange;
   isComparing: boolean;
+  saveStatus?: SaveStatus;
+  saveError?: string | null;
 }
 
 export function TimelineControls({
@@ -43,6 +51,8 @@ export function TimelineControls({
   isDefaultLayout,
   dateRange,
   isComparing,
+  saveStatus = 'saved',
+  saveError,
 }: TimelineControlsProps) {
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [comparePickerOpen, setComparePickerOpen] = useState(false);
@@ -50,6 +60,50 @@ export function TimelineControls({
     from: Date | undefined;
     to: Date | undefined;
   }>({ from: undefined, to: undefined });
+
+  const getSaveStatusBadge = () => {
+    switch (saveStatus) {
+      case 'saved':
+        return (
+          <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-800">
+            <Check className="h-3 w-3 mr-1" />
+            Saved
+          </Badge>
+        );
+      case 'dirty':
+        return (
+          <Badge variant="secondary" className="text-xs bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-800">
+            <AlertCircle className="h-3 w-3 mr-1" />
+            Unsaved changes
+          </Badge>
+        );
+      case 'saving':
+        return (
+          <Badge variant="secondary" className="text-xs">
+            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            Saving...
+          </Badge>
+        );
+      case 'error':
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="destructive" className="text-xs cursor-help">
+                  <XCircle className="h-3 w-3 mr-1" />
+                  Save failed
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {saveError || "An error occurred while saving"}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      default:
+        return null;
+    }
+  };
 
   const handleQuickRange = (range: typeof QUICK_RANGES[number]) => {
     onChange({
@@ -254,8 +308,8 @@ export function TimelineControls({
             </TooltipProvider>
           </div>
 
-          {/* Persistence indicator for default layout */}
-          {isDefaultLayout && (
+          {/* Save Status Indicator */}
+          {isDefaultLayout ? (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -270,6 +324,8 @@ export function TimelineControls({
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+          ) : (
+            getSaveStatusBadge()
           )}
         </div>
       </div>

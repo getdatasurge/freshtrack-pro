@@ -151,12 +151,12 @@ export function useEntityLayoutStorage(
 
       return rowToSavedLayout(data as EntityLayoutRow);
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
       queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"] });
       queryClient.invalidateQueries({ queryKey: ["nav-tree-units"] });
-      toast.success(`Layout "${data.name}" created`);
+      // Toast handled by useLayoutManager to avoid duplicates
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to create layout");
@@ -195,7 +195,7 @@ export function useEntityLayoutStorage(
       queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
       queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"] });
       queryClient.invalidateQueries({ queryKey: ["nav-tree-units"] });
-      toast.success("Layout saved");
+      // Toast handled by useLayoutManager to avoid duplicates
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to save layout");
