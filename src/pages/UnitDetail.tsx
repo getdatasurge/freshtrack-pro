@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
@@ -212,6 +213,9 @@ const UnitDetail = () => {
     if (unitId) loadUnitData();
   }, [unitId, timeRange]);
 
+  // Query client for cache invalidation
+  const queryClient = useQueryClient();
+
   // Realtime subscription for sensor_readings - auto-refresh when new readings arrive
   useEffect(() => {
     if (!unitId) return;
@@ -228,6 +232,10 @@ const UnitDetail = () => {
         },
         () => {
           loadUnitData(); // Refresh all data when new reading arrives
+          // Invalidate LoRa sensors cache so last_seen_at is fresh
+          queryClient.invalidateQueries({ 
+            queryKey: ['lora-sensors-by-unit', unitId] 
+          });
         }
       )
       .subscribe();
@@ -235,7 +243,35 @@ const UnitDetail = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [unitId]);
+  }, [unitId, queryClient]);
+
+  // Realtime subscription for lora_sensors - refresh when sensor status updates
+  useEffect(() => {
+    if (!unitId) return;
+    
+    const channel = supabase
+      .channel(`unit-lora-sensors-${unitId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'lora_sensors',
+          filter: `unit_id=eq.${unitId}`,
+        },
+        () => {
+          // Invalidate LoRa sensors cache when sensor data updates (e.g., last_seen_at)
+          queryClient.invalidateQueries({ 
+            queryKey: ['lora-sensors-by-unit', unitId] 
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [unitId, queryClient]);
 
   const getTimeRangeDate = () => {
     const now = new Date();
