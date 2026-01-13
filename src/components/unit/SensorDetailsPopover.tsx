@@ -14,6 +14,8 @@ import {
   Unlink,
   CloudUpload,
   Loader2,
+  DoorOpen,
+  DoorClosed,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { LoraSensor } from "@/types/ttn";
@@ -27,6 +29,8 @@ interface SensorDetailsPopoverProps {
   onProvision?: () => void;
   isProvisioning?: boolean;
   isSettingPrimary?: boolean;
+  doorState?: 'open' | 'closed' | null;
+  doorLastChangedAt?: string | null;
 }
 
 const formatEUI = (eui: string) => {
@@ -42,7 +46,13 @@ export function SensorDetailsPopover({
   onProvision,
   isProvisioning = false,
   isSettingPrimary = false,
+  doorState,
+  doorLastChangedAt,
 }: SensorDetailsPopoverProps) {
+  const isDoorSensor = 
+    sensor.sensor_type === 'door' || 
+    sensor.sensor_type === 'contact';
+    
   const canBePrimary = 
     sensor.sensor_type === 'temperature' || 
     sensor.sensor_type === 'temperature_humidity' || 
@@ -100,7 +110,47 @@ export function SensorDetailsPopover({
             </p>
           </div>
 
-          {/* Primary Status */}
+          {/* Door State (for door/contact sensors) */}
+          {isDoorSensor && (
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                {doorState === 'open' ? (
+                  <DoorOpen className="w-3 h-3" />
+                ) : (
+                  <DoorClosed className="w-3 h-3" />
+                )}
+                Door State
+              </p>
+              {doorState ? (
+                <Badge 
+                  variant="outline"
+                  className={doorState === 'open' 
+                    ? 'border-warning text-warning bg-warning/10' 
+                    : 'border-safe text-safe bg-safe/10'
+                  }
+                >
+                  {doorState === 'open' ? 'Open' : 'Closed'}
+                  {doorLastChangedAt && (
+                    <span className="ml-1 text-muted-foreground">
+                      · {formatDistanceToNow(new Date(doorLastChangedAt), { addSuffix: true })}
+                    </span>
+                  )}
+                </Badge>
+              ) : (
+                <p className="text-sm text-muted-foreground">Unknown</p>
+              )}
+            </div>
+          )}
+
+          {/* Door Sensor Label */}
+          {isDoorSensor && (
+            <div className="flex items-center gap-2">
+              <DoorOpen className="w-4 h-4 text-blue-500" />
+              <span className="text-sm text-muted-foreground">Door Sensor</span>
+            </div>
+          )}
+
+          {/* Primary Status (only for temperature-capable sensors) */}
           {canBePrimary && (
             <div className="flex items-center gap-2">
               <Star className={`w-4 h-4 ${sensor.is_primary ? 'text-accent fill-accent' : 'text-muted-foreground'}`} />

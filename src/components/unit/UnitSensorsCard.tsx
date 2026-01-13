@@ -43,6 +43,7 @@ const getStatusBadge = (status: LoraSensorStatus) => {
 const getSensorIcon = (type: string) => {
   switch (type) {
     case "door":
+    case "contact":
       return <DoorOpen className="w-4 h-4 text-blue-500" />;
     case "temperature":
     case "temperature_humidity":
@@ -59,6 +60,7 @@ const getSensorTypeLabel = (type: string): string => {
     case "temperature": return "Temp";
     case "temperature_humidity": return "Temp+Humidity";
     case "door": return "Door";
+    case "contact": return "Door";
     case "combo": return "Combo";
     default: return type;
   }
@@ -125,8 +127,8 @@ export function UnitSensorsCard({
     });
   };
 
-  // Check if a sensor is a door sensor (door or combo)
-  const isDoorSensor = (type: string) => type === 'door' || type === 'combo';
+  // Check if a sensor is a door sensor (door, contact, or combo)
+  const isDoorSensor = (type: string) => type === 'door' || type === 'contact' || type === 'combo';
 
   if (isLoading) {
     return (
@@ -203,6 +205,8 @@ export function UnitSensorsCard({
                       onProvision={() => handleProvision(sensor)}
                       isProvisioning={provisionSensor.isProvisioning(sensor.id)}
                       isSettingPrimary={setPrimarySensor.isPending}
+                      doorState={isDoor ? doorState : undefined}
+                      doorLastChangedAt={isDoor ? doorLastChangedAt : undefined}
                     >
                       <div
                         className={cn(
