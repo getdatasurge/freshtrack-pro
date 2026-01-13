@@ -652,17 +652,83 @@ const UnitDetail = () => {
     ? computeUnitStatus(unitStatusInfo, effectiveRules) 
     : null;
 
-  // Derive display status from computed status (uses alert rules, not stale DB value)
-  const status = computedStatus 
-    ? { 
-        label: computedStatus.statusLabel, 
-        color: computedStatus.statusColor, 
-        bgColor: computedStatus.statusBgColor 
-      }
-    : STATUS_CONFIG.offline;
-
-  // Use computed online status (based on missed check-ins vs configured thresholds)
-  const isOnline = computedStatus?.sensorOnline ?? false;
+  // ========== SINGLE SOURCE OF TRUTH ==========
+  // This derivedStatus object is the ONLY source of truth for online/offline status.
+  // All UI widgets (Current Temperature, Device Status, Device Readiness) must use this.
+  const derivedStatus = useMemo(() => {
+    const now = Date.now();
+    
+    // Determine the effective last seen timestamp (prefer LoRa sensor's last_seen_at)
+    const lastSeenAt = primaryLoraSensor?.last_seen_at || null;
+    const lastReadingAtVal = unit?.last_reading_at || null;
+    const effectiveLastCheckin = lastSeenAt || lastReadingAtVal;
+    
+    // Compute age in seconds
+    const lastSeenAgeSec = effectiveLastCheckin 
+      ? Math.floor((now - new Date(effectiveLastCheckin).getTime()) / 1000) 
+      : null;
+    const lastReadingAgeSec = lastReadingAtVal 
+      ? Math.floor((now - new Date(lastReadingAtVal).getTime()) / 1000) 
+      : null;
+    
+    // Get sensor ID being used
+    const sensorId = primaryLoraSensor?.id || device?.id || null;
+    
+    // Use computed values from computeUnitStatus (respects alert rules thresholds)
+    const offlineSeverity = computedStatus?.offlineSeverity ?? "critical";
+    const isOnline = offlineSeverity === "none";
+    const missedCheckins = computedStatus?.missedCheckins ?? 999;
+    
+    // Determine status label and colors
+    let statusLabel: string;
+    let statusColor: string;
+    let statusBgColor: string;
+    
+    if (isOnline) {
+      statusLabel = computedStatus?.statusLabel ?? "OK";
+      statusColor = computedStatus?.statusColor ?? "text-safe";
+      statusBgColor = computedStatus?.statusBgColor ?? "bg-safe/10";
+    } else if (offlineSeverity === "warning") {
+      statusLabel = "Offline";
+      statusColor = "text-warning";
+      statusBgColor = "bg-warning/10";
+    } else {
+      statusLabel = "Offline";
+      statusColor = "text-alarm";
+      statusBgColor = "bg-alarm/10";
+    }
+    
+    return {
+      sensorId,
+      isOnline,
+      status: isOnline ? "online" : offlineSeverity === "warning" ? "offline_warning" : "offline_critical",
+      statusLabel,
+      statusColor,
+      statusBgColor,
+      offlineSeverity,
+      missedCheckins,
+      lastSeenAt,
+      lastSeenAgeSec,
+      lastReadingAt: lastReadingAtVal,
+      lastReadingAgeSec,
+      checkinIntervalMinutes: effectiveRules.expected_reading_interval_seconds / 60,
+      // Source info for debugging
+      sources: {
+        primaryLoraSensorId: primaryLoraSensor?.id || null,
+        loraSensorLastSeenAt: primaryLoraSensor?.last_seen_at || null,
+        deviceId: device?.id || null,
+        unitLastReadingAt: unit?.last_reading_at || null,
+        computedOnline: computedStatus?.sensorOnline ?? null,
+      },
+    };
+  }, [
+    unit?.last_reading_at,
+    primaryLoraSensor?.last_seen_at,
+    primaryLoraSensor?.id,
+    device?.id,
+    computedStatus,
+    effectiveRules.expected_reading_interval_seconds,
+  ]);
 
   return (
     <DashboardLayout>
@@ -830,12 +896,12 @@ const UnitDetail = () => {
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-muted-foreground">Current Temperature</p>
                   <div className="flex items-center gap-1">
-                    {isOnline ? (
+                    {derivedStatus.isOnline ? (
                       <Wifi className="w-4 h-4 text-safe" />
                     ) : (
                       <WifiOff className="w-4 h-4 text-muted-foreground" />
                     )}
-                    <span className="text-xs text-muted-foreground">{isOnline ? "Live" : "Offline"}</span>
+                    <span className="text-xs text-muted-foreground">{derivedStatus.isOnline ? "Live" : "Offline"}</span>
                   </div>
                 </div>
                 <p className={`text-5xl font-bold ${
@@ -860,12 +926,12 @@ const UnitDetail = () => {
               <CardContent className="pt-4">
                 <p className="text-sm font-medium text-muted-foreground mb-3">Device Status</p>
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${status.bgColor}`}>
-                    <Thermometer className={`w-5 h-5 ${status.color}`} />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${derivedStatus.statusBgColor}`}>
+                    <Thermometer className={`w-5 h-5 ${derivedStatus.statusColor}`} />
                   </div>
                   <div>
-                    <Badge className={`${status.bgColor} ${status.color} border-0`}>
-                      {status.label}
+                    <Badge className={`${derivedStatus.statusBgColor} ${derivedStatus.statusColor} border-0`}>
+                      {derivedStatus.statusLabel}
                     </Badge>
                     <p className="text-xs text-muted-foreground mt-1">
                       {unit.unit_type.replace(/_/g, " ")}
@@ -912,17 +978,17 @@ const UnitDetail = () => {
           source={lastKnownGood.source}
           tempLimitHigh={unit.temp_limit_high}
           tempLimitLow={unit.temp_limit_low}
-          isCurrentlyOnline={isOnline}
+          isCurrentlyOnline={derivedStatus.isOnline}
         />
 
         {/* Device Readiness */}
         <DeviceReadinessCard
-          unitStatus={computedStatus?.statusLabel || unit.status}
-          lastReadingAt={unit.last_reading_at}
+          unitStatus={derivedStatus.statusLabel}
+          lastReadingAt={derivedStatus.lastReadingAt}
           device={device}
           batteryLevel={primaryLoraSensor?.battery_level ?? device?.battery_level}
           signalStrength={primaryLoraSensor?.signal_strength ?? device?.signal_strength}
-          lastHeartbeat={primaryLoraSensor?.last_seen_at ?? device?.last_seen_at}
+          lastHeartbeat={derivedStatus.lastSeenAt}
           deviceSerial={primaryLoraSensor?.dev_eui || device?.serial_number}
           doorState={
             derivedDoorState.doorOpen !== null 
@@ -931,10 +997,45 @@ const UnitDetail = () => {
           }
           doorLastChangedAt={derivedDoorState.recordedAt || (unit as any).door_last_changed_at}
           loraSensor={primaryLoraSensor}
-          missedCheckins={computedStatus?.missedCheckins || 0}
-          offlineSeverity={computedStatus?.offlineSeverity || "none"}
-          lastCheckinAt={primaryLoraSensor?.last_seen_at || unit.last_reading_at}
+          missedCheckins={derivedStatus.missedCheckins}
+          offlineSeverity={derivedStatus.offlineSeverity}
+          lastCheckinAt={derivedStatus.lastSeenAt}
         />
+
+        {/* Dev Debug Panel - Single Source of Truth Verification */}
+        {process.env.NODE_ENV === 'development' && (
+          <Card className="border-dashed border-yellow-500/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm text-yellow-600 dark:text-yellow-400">Status Debug (Dev Only)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <pre className="text-xs bg-muted p-3 rounded overflow-auto max-h-64 font-mono">
+{JSON.stringify({
+  now: new Date().toISOString(),
+  derivedStatus: {
+    sensorId: derivedStatus.sensorId,
+    isOnline: derivedStatus.isOnline,
+    status: derivedStatus.status,
+    statusLabel: derivedStatus.statusLabel,
+    offlineSeverity: derivedStatus.offlineSeverity,
+    missedCheckins: derivedStatus.missedCheckins,
+    lastSeenAt: derivedStatus.lastSeenAt,
+    lastSeenAgeSec: derivedStatus.lastSeenAgeSec,
+    lastReadingAt: derivedStatus.lastReadingAt,
+    lastReadingAgeSec: derivedStatus.lastReadingAgeSec,
+    checkinIntervalMin: derivedStatus.checkinIntervalMinutes,
+  },
+  sources: derivedStatus.sources,
+  effectiveRules: {
+    checkinIntervalMin: effectiveRules.expected_reading_interval_seconds / 60,
+    offlineWarningThreshold: effectiveRules.offline_warning_missed_checkins,
+    offlineCriticalThreshold: effectiveRules.offline_critical_missed_checkins,
+  },
+}, null, 2)}
+              </pre>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Connected LoRa Sensors */}
         {unit.area.site.organization_id && (
