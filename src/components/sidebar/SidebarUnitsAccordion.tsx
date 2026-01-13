@@ -96,14 +96,14 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
           <Thermometer className="h-5 w-5 shrink-0" />
           <span className="font-medium flex-1">Units</span>
           <ChevronDown className={cn(
-            "h-4 w-4 text-muted-foreground transition-transform shrink-0",
+            "h-4 w-4 text-muted-foreground transition-transform duration-200 shrink-0",
             expandState.isUnitsSectionCollapsed && "-rotate-90"
           )} />
         </div>
       </CollapsibleTrigger>
 
-      <CollapsibleContent>
-        <div className="mt-1 space-y-2">
+      <CollapsibleContent className="overflow-hidden data-[state=open]:animate-accordion-down data-[state=closed]:animate-accordion-up">
+        <div className="mt-1 space-y-1">
           {allUnits.length > 5 && (
             <div className="px-3">
               <div className="relative">
@@ -127,11 +127,11 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
           {error && <div className="px-3 py-2 text-xs text-destructive">Failed to load</div>}
 
           {!isLoading && !error && allUnits.length === 0 && (
-            <div className="px-3 py-2 text-xs text-muted-foreground">No units found</div>
+            <div className="px-3 py-2 text-xs text-muted-foreground">No units yet</div>
           )}
 
           {!isLoading && !error && filteredUnits.length > 0 && (
-            <ScrollArea className="max-h-[35vh]">
+            <ScrollArea className="max-h-[40vh]">
               <div className="px-2 space-y-0.5">
                 {filteredUnits.map((unit) => {
                   const IconComponent = getUnitIcon(unit.unitType);
@@ -148,26 +148,28 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
                           params.unitId === unit.unitId && "bg-accent/10 text-accent"
                         )}>
                           <IconComponent className="h-4 w-4 shrink-0" />
-                          <span className="truncate flex-1">{unit.unitName}</span>
+                          <span className="truncate flex-1" title={unit.unitName}>{unit.unitName}</span>
                           {unit.sensorCount > 0 && (
                             <span className="text-xs text-muted-foreground mr-1">
                               {unit.sensorCount}
                             </span>
                           )}
                           <ChevronDown className={cn(
-                            "h-3 w-3 text-muted-foreground transition-transform shrink-0",
+                            "h-3 w-3 text-muted-foreground transition-transform duration-200 shrink-0",
                             !expandState.isUnitExpanded(unit.unitId) && "-rotate-90"
                           )} />
                         </div>
                       </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <LayoutLinksGroup
-                          entityType="unit"
-                          entityId={unit.unitId}
-                          layouts={unit.layouts}
-                          onCreateLayout={(slot) => handleCreateUnitLayout(unit.unitId, slot)}
-                          isCreating={createLayoutMutation.isPending}
-                        />
+                      <CollapsibleContent className="overflow-hidden data-[state=open]:animate-accordion-down data-[state=closed]:animate-accordion-up">
+                        <div className="pl-4">
+                          <LayoutLinksGroup
+                            entityType="unit"
+                            entityId={unit.unitId}
+                            layouts={unit.layouts}
+                            onCreateLayout={(slot) => handleCreateUnitLayout(unit.unitId, slot)}
+                            isCreating={createLayoutMutation.isPending}
+                          />
+                        </div>
                       </CollapsibleContent>
                     </Collapsible>
                   );
