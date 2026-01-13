@@ -1,26 +1,26 @@
 import { AlertTriangle } from "lucide-react";
 import { WIDGET_REGISTRY } from "../registry/widgetRegistry";
+import type { WidgetProps } from "../types";
 
-// Widget component imports - these will be created or mapped later
-// For now, we'll use placeholder components that can be replaced
+// Widget imports
+import { TemperatureChartWidget } from "../widgets/TemperatureChartWidget";
+import { CurrentTempWidget } from "../widgets/CurrentTempWidget";
+import { DeviceStatusWidget } from "../widgets/DeviceStatusWidget";
+import { TempLimitsWidget } from "../widgets/TempLimitsWidget";
+import { ReadingsCountWidget } from "../widgets/ReadingsCountWidget";
+import { AlertsBannerWidget } from "../widgets/AlertsBannerWidget";
+import { DeviceReadinessWidget } from "../widgets/DeviceReadinessWidget";
+import { LastKnownGoodWidget } from "../widgets/LastKnownGoodWidget";
+import { ConnectedSensorsWidget } from "../widgets/ConnectedSensorsWidget";
+import { BatteryHealthWidget } from "../widgets/BatteryHealthWidget";
+import { SiteOverviewWidget } from "../widgets/SiteOverviewWidget";
+import { UnitsStatusGridWidget } from "../widgets/UnitsStatusGridWidget";
+import { SiteAlertsSummaryWidget } from "../widgets/SiteAlertsSummaryWidget";
+import { ComplianceSummaryWidget } from "../widgets/ComplianceSummaryWidget";
 
 interface WidgetRendererProps {
   widgetId: string;
-  props: Record<string, unknown>;
-}
-
-// Placeholder component for widgets not yet implemented
-function PlaceholderWidget({ widgetId }: { widgetId: string }) {
-  const widgetDef = WIDGET_REGISTRY[widgetId];
-  const Icon = widgetDef?.icon;
-
-  return (
-    <div className="h-full flex flex-col items-center justify-center p-4 text-center text-muted-foreground">
-      {Icon ? <Icon className="h-8 w-8 mb-2 opacity-50" /> : null}
-      <p className="text-sm font-medium">{widgetDef?.name || widgetId}</p>
-      <p className="text-xs opacity-75">{widgetDef?.description}</p>
-    </div>
-  );
+  props: WidgetProps;
 }
 
 // Unknown widget fallback
@@ -41,53 +41,83 @@ export function WidgetRenderer({ widgetId, props }: WidgetRendererProps) {
     return <UnknownWidget widgetId={widgetId} />;
   }
 
-  // For now, render placeholders. In Phase 7, we'll connect these to actual widget components
-  // by either:
-  // 1. Adding a `component` property to WIDGET_REGISTRY entries
-  // 2. Or mapping widgetId to imported components here
-  
+  // Unit widgets
   switch (widgetId) {
     case "temperature_chart":
-      // Will render TemperatureChartWidget with props.readings, props.timelineState, etc.
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return (
+        <TemperatureChartWidget
+          readings={props.readings || []}
+          comparisonReadings={props.comparisonReadings}
+          tempLimitHigh={props.unit?.temp_limit_high ?? 40}
+          tempLimitLow={props.unit?.temp_limit_low ?? null}
+          timelineState={props.timelineState!}
+        />
+      );
     
     case "current_temp":
-      // Will render CurrentTempWidget with props.unit, props.derivedStatus
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return (
+        <CurrentTempWidget
+          temperature={props.unit?.last_temp_reading ?? null}
+          tempLimitHigh={props.unit?.temp_limit_high ?? 40}
+          tempLimitLow={props.unit?.temp_limit_low ?? null}
+          lastReadingAt={props.unit?.last_reading_at ?? null}
+          derivedStatus={props.derivedStatus || { isOnline: false, statusLabel: "Unknown", statusColor: "text-muted-foreground", statusBgColor: "bg-muted" }}
+        />
+      );
     
     case "device_status":
-      // Will render DeviceStatusWidget with props.derivedStatus
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return (
+        <DeviceStatusWidget
+          derivedStatus={props.derivedStatus || { statusLabel: "Unknown", statusColor: "text-muted-foreground", statusBgColor: "bg-muted" }}
+          unitType={props.unit?.unit_type ?? "refrigerator"}
+        />
+      );
     
     case "alerts_banner":
-      // Will render AlertsBannerWidget with props.unitId
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return (
+        <AlertsBannerWidget
+          alerts={props.alerts || []}
+          onLogTemp={props.onLogTemp || (() => {})}
+        />
+      );
     
     case "temp_limits":
-      // Will render TempLimitsWidget with props.unit
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return (
+        <TempLimitsWidget
+          tempLimitHigh={props.unit?.temp_limit_high ?? 40}
+          tempLimitLow={props.unit?.temp_limit_low ?? null}
+        />
+      );
     
     case "readings_count":
-      // Will render ReadingsCountWidget with props.count
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return <ReadingsCountWidget count={props.readings?.length ?? 0} />;
     
     case "device_readiness":
-      // Will render DeviceReadinessCard component
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return <DeviceReadinessWidget {...props} />;
     
     case "last_known_good":
-      // Will render LastKnownGoodCard component
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return <LastKnownGoodWidget {...props} />;
     
     case "connected_sensors":
-      // Will render UnitSensorsCard component
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return <ConnectedSensorsWidget {...props} />;
     
     case "battery_health":
-      // Will render BatteryHealthCard component
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return <BatteryHealthWidget {...props} />;
+    
+    // Site widgets
+    case "site_overview":
+      return <SiteOverviewWidget {...props} />;
+    
+    case "units_status_grid":
+      return <UnitsStatusGridWidget {...props} />;
+    
+    case "site_alerts_summary":
+      return <SiteAlertsSummaryWidget {...props} />;
+    
+    case "compliance_summary":
+      return <ComplianceSummaryWidget {...props} />;
     
     default:
-      return <PlaceholderWidget widgetId={widgetId} />;
+      return <UnknownWidget widgetId={widgetId} />;
   }
 }
