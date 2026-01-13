@@ -2756,6 +2756,69 @@ export type Database = {
           },
         ]
       }
+      unit_dashboard_layouts: {
+        Row: {
+          created_at: string
+          id: string
+          is_user_default: boolean | null
+          layout_json: Json
+          name: string
+          organization_id: string
+          shared_with_roles: Database["public"]["Enums"]["app_role"][] | null
+          timeline_state_json: Json | null
+          unit_id: string
+          updated_at: string
+          user_id: string
+          visibility: string | null
+          widget_prefs_json: Json | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          name: string
+          organization_id: string
+          shared_with_roles?: Database["public"]["Enums"]["app_role"][] | null
+          timeline_state_json?: Json | null
+          unit_id: string
+          updated_at?: string
+          user_id: string
+          visibility?: string | null
+          widget_prefs_json?: Json | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          name?: string
+          organization_id?: string
+          shared_with_roles?: Database["public"]["Enums"]["app_role"][] | null
+          timeline_state_json?: Json | null
+          unit_id?: string
+          updated_at?: string
+          user_id?: string
+          visibility?: string | null
+          widget_prefs_json?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_dashboard_layouts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unit_dashboard_layouts_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       unit_settings_history: {
         Row: {
           changed_at: string
