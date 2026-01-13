@@ -355,7 +355,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
         {/* Main Content */}
         <main className="flex-1 lg:ml-64">
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="w-full px-4 lg:px-6 py-6">
             {title && (
               <h1 className="text-2xl font-bold text-foreground mb-6">{title}</h1>
             )}
