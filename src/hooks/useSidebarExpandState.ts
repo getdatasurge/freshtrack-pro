@@ -5,12 +5,14 @@ const STORAGE_KEY = "frostguard-sidebar-expand-state";
 interface ExpandState {
   expandedSites: string[];
   expandedUnits: string[];
+  sitesCollapsed: boolean;
   unitsCollapsed: boolean;
 }
 
 const DEFAULT_STATE: ExpandState = {
   expandedSites: [],
   expandedUnits: [],
+  sitesCollapsed: false,
   unitsCollapsed: false,
 };
 
@@ -23,6 +25,7 @@ function loadFromStorage(): ExpandState {
       return {
         expandedSites: parsed.expandedSites || [],
         expandedUnits: parsed.expandedUnits || [],
+        sitesCollapsed: parsed.sitesCollapsed ?? false,
         unitsCollapsed: parsed.unitsCollapsed ?? false,
       };
     }
@@ -160,7 +163,15 @@ export function useSidebarExpandState() {
     }));
   }, []);
 
+  const toggleSitesSection = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      sitesCollapsed: !prev.sitesCollapsed,
+    }));
+  }, []);
+
   const isUnitsSectionCollapsed = state.unitsCollapsed;
+  const isSitesSectionCollapsed = state.sitesCollapsed;
 
   return {
     isSiteExpanded,
@@ -173,5 +184,7 @@ export function useSidebarExpandState() {
     expandToActiveSite,
     isUnitsSectionCollapsed,
     toggleUnitsSection,
+    isSitesSectionCollapsed,
+    toggleSitesSection,
   };
 }
