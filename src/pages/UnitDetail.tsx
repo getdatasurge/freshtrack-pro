@@ -56,8 +56,9 @@ import {
 import { format } from "date-fns";
 import { Session } from "@supabase/supabase-js";
 import { computeUnitAlerts, ComputedAlert } from "@/hooks/useUnitAlerts";
-import { UnitStatusInfo } from "@/hooks/useUnitStatus";
+import { UnitStatusInfo, computeUnitStatus, ComputedUnitStatus } from "@/hooks/useUnitStatus";
 import { DeviceInfo } from "@/hooks/useSensorInstallationStatus";
+import { useUnitAlertRules, DEFAULT_ALERT_RULES, AlertRules } from "@/hooks/useAlertRules";
 
 interface UnitData {
   id: string;
@@ -620,8 +621,45 @@ const UnitDetail = () => {
     );
   }
 
-  const status = STATUS_CONFIG[unit.status] || STATUS_CONFIG.offline;
-  const isOnline = Boolean(unit.status !== "offline" && unit.last_reading_at);
+  // Fetch the effective alert rules for this unit (uses hierarchical cascade: unit → site → org → default)
+  const { data: alertRules } = useUnitAlertRules(unitId || null);
+  const effectiveRules: AlertRules = alertRules || DEFAULT_ALERT_RULES;
+
+  // Build UnitStatusInfo from current data for computed status
+  const unitStatusInfo: UnitStatusInfo | null = unit ? {
+    id: unit.id,
+    name: unit.name,
+    unit_type: unit.unit_type,
+    status: unit.status,
+    temp_limit_high: unit.temp_limit_high,
+    temp_limit_low: unit.temp_limit_low,
+    manual_log_cadence: unit.manual_log_cadence,
+    last_manual_log_at: unit.last_manual_log_at,
+    last_reading_at: unit.last_reading_at,
+    last_temp_reading: unit.last_temp_reading,
+    // Use primary sensor's last_seen_at for accurate check-in tracking
+    last_checkin_at: primaryLoraSensor?.last_seen_at || unit.last_reading_at,
+    // Convert expected_reading_interval_seconds to minutes
+    checkin_interval_minutes: effectiveRules.expected_reading_interval_seconds / 60,
+    area: { name: unit.area.name, site: { name: unit.area.site.name } },
+  } : null;
+
+  // Compute device status using alert rules thresholds (respects user-configured offline thresholds)
+  const computedStatus: ComputedUnitStatus | null = unitStatusInfo 
+    ? computeUnitStatus(unitStatusInfo, effectiveRules) 
+    : null;
+
+  // Derive display status from computed status (uses alert rules, not stale DB value)
+  const status = computedStatus 
+    ? { 
+        label: computedStatus.statusLabel, 
+        color: computedStatus.statusColor, 
+        bgColor: computedStatus.statusBgColor 
+      }
+    : STATUS_CONFIG.offline;
+
+  // Use computed online status (based on missed check-ins vs configured thresholds)
+  const isOnline = computedStatus?.sensorOnline ?? false;
 
   return (
     <DashboardLayout>
@@ -876,13 +914,13 @@ const UnitDetail = () => {
 
         {/* Device Readiness */}
         <DeviceReadinessCard
-          unitStatus={unit.status}
+          unitStatus={computedStatus?.statusLabel || unit.status}
           lastReadingAt={unit.last_reading_at}
           device={device}
-          batteryLevel={device?.battery_level}
-          signalStrength={device?.signal_strength}
-          lastHeartbeat={device?.last_seen_at}
-          deviceSerial={device?.serial_number}
+          batteryLevel={primaryLoraSensor?.battery_level ?? device?.battery_level}
+          signalStrength={primaryLoraSensor?.signal_strength ?? device?.signal_strength}
+          lastHeartbeat={primaryLoraSensor?.last_seen_at ?? device?.last_seen_at}
+          deviceSerial={primaryLoraSensor?.dev_eui || device?.serial_number}
           doorState={
             derivedDoorState.doorOpen !== null 
               ? (derivedDoorState.doorOpen ? 'open' : 'closed')
@@ -890,6 +928,9 @@ const UnitDetail = () => {
           }
           doorLastChangedAt={derivedDoorState.recordedAt || (unit as any).door_last_changed_at}
           loraSensor={primaryLoraSensor}
+          missedCheckins={computedStatus?.missedCheckins || 0}
+          offlineSeverity={computedStatus?.offlineSeverity || "none"}
+          lastCheckinAt={primaryLoraSensor?.last_seen_at || unit.last_reading_at}
         />
 
         {/* Connected LoRa Sensors */}
