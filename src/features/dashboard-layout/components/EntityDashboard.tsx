@@ -5,7 +5,7 @@
  * Renders the customizable grid layout for both units and sites.
  */
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { subHours, subDays, parseISO } from "date-fns";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -132,6 +132,24 @@ export function EntityDashboard({
 }: EntityDashboardProps) {
   const { state, actions } = useLayoutManager(entityType, entityId, organizationId, userId);
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
+  
+  // Measure container width for the grid
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
   
   // Navigation guard for unsaved changes
   const unsavedGuard = useUnsavedChangesGuard(
@@ -314,13 +332,18 @@ export function EntityDashboard({
           onRestoreAll={handleRestoreAllWidgets} 
         />
       )}
-      <GridCanvas 
-        layout={state.activeLayout.config} 
-        isCustomizing={state.isCustomizing} 
-        onLayoutChange={handleLayoutChange} 
-        widgetProps={widgetProps} 
-        onHideWidget={actions.toggleWidgetVisibility} 
-      />
+      <div ref={containerRef} className="w-full">
+        {containerWidth > 0 && (
+          <GridCanvas 
+            layout={state.activeLayout.config} 
+            isCustomizing={state.isCustomizing} 
+            onLayoutChange={handleLayoutChange} 
+            widgetProps={widgetProps} 
+            onHideWidget={actions.toggleWidgetVisibility}
+            containerWidth={containerWidth}
+          />
+        )}
+      </div>
       <AddWidgetModal 
         open={addWidgetOpen} 
         onOpenChange={setAddWidgetOpen} 

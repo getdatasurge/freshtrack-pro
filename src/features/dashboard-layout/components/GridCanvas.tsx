@@ -89,7 +89,7 @@ export function GridCanvas({
         isCustomizing ? "customizing" : ""
       }`}
     >
-      <GridLayout
+<GridLayout
         className="layout"
         layout={gridLayout}
         cols={GRID_CONFIG.cols}
@@ -99,6 +99,7 @@ export function GridCanvas({
         containerPadding={GRID_CONFIG.containerPadding as [number, number]}
         isDraggable={isCustomizing}
         isResizable={isCustomizing}
+        resizeHandles={['se', 'e', 's']}
         onLayoutChange={handleLayoutChange}
         draggableHandle=".widget-drag-handle"
         useCSSTransforms={true}
@@ -106,7 +107,7 @@ export function GridCanvas({
         preventCollision={false}
       >
         {visibleWidgets.map((widget) => (
-          <div key={widget.i} className="widget-container">
+          <div key={widget.i} className="widget-container h-full">
             <WidgetWrapper
               widgetId={widget.i}
               isCustomizing={isCustomizing}
