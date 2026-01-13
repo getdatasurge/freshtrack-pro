@@ -55,9 +55,11 @@ const App = () => (
             <Route path="/organization" element={<OrganizationDashboard />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/sites" element={<Sites />} />
+            <Route path="/sites/:siteId/layout/:layoutKey" element={<SiteDetail />} />
             <Route path="/sites/:siteId" element={<SiteDetail />} />
             <Route path="/sites/:siteId/areas/:areaId" element={<AreaDetail />} />
             <Route path="/units" element={<Units />} />
+            <Route path="/units/:unitId/layout/:layoutKey" element={<UnitDetail />} />
             <Route path="/units/:unitId" element={<UnitDetail />} />
             <Route path="/manual-log" element={<ManualLog />} />
             <Route path="/alerts" element={<Alerts />} />
