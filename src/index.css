@@ -353,6 +353,66 @@
   }
 }
 
+/* Dashboard Grid Layout - Resize Handles */
+.grid-canvas.customizing .react-resizable-handle {
+  position: absolute;
+  z-index: 30;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.grid-canvas.customizing .widget-container:hover .react-resizable-handle {
+  opacity: 1;
+}
+
+.grid-canvas.customizing .react-resizable-handle-se {
+  bottom: 4px;
+  right: 4px;
+  width: 16px;
+  height: 16px;
+  cursor: se-resize;
+  background: hsl(var(--accent));
+  border-radius: 2px;
+  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.2);
+}
+
+.grid-canvas.customizing .react-resizable-handle-se::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 6px;
+  height: 6px;
+  border-right: 2px solid hsl(var(--accent-foreground));
+  border-bottom: 2px solid hsl(var(--accent-foreground));
+}
+
+.grid-canvas.customizing .react-resizable-handle-e {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: e-resize;
+  width: 8px;
+  height: 32px;
+  border-radius: 0 4px 4px 0;
+  background: hsl(var(--accent) / 0.6);
+}
+
+.grid-canvas.customizing .react-resizable-handle-s {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: s-resize;
+  width: 32px;
+  height: 8px;
+  border-radius: 0 0 4px 4px;
+  background: hsl(var(--accent) / 0.6);
+}
+
+.grid-canvas.customizing .react-resizable-handle:hover {
+  background: hsl(var(--accent));
+}
+
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
