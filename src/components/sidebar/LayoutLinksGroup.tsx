@@ -14,10 +14,10 @@ interface LayoutLinksGroupProps {
 }
 
 /**
- * Renders layout links with progressive visibility:
- * - Default always shown
- * - "Create Layout 1" shown only when Layout 1 doesn't exist
- * - Layout 2/3 only appear after they're created (no create CTAs for them)
+ * Renders layout links in the sidebar with these visibility rules:
+ * - Default: always shown (static, cannot be deleted)
+ * - "Create Layout 1": shown only when zero custom layouts exist
+ * - Layout 1/2/3: shown only if they exist (no Create 2/3 CTAs in sidebar)
  */
 export function LayoutLinksGroup({
   entityType,
@@ -94,58 +94,28 @@ export function LayoutLinksGroup({
         </button>
       )}
 
-      {/* Layout 2 - show if Layout 1 exists (either layout or create button) */}
-      {layout1 && (
-        layout2 ? (
-          <Link
-            to={buildUrl(layout2.layoutId!)}
-            className={cn(linkBaseClass, isLayoutActive(layout2.layoutId, false) ? activeClass : inactiveClass)}
-          >
-            <Layout className="w-3.5 h-3.5" />
-            <span className="truncate">{layout2.name}</span>
-            {layout2.isUserDefault && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-auto" />}
-          </Link>
-        ) : (
-          <button
-            onClick={() => onCreateLayout(2)}
-            disabled={isCreating}
-            className={cn(
-              linkBaseClass,
-              "text-muted-foreground hover:text-primary hover:bg-primary/5 cursor-pointer",
-              isCreating && "opacity-50 cursor-not-allowed"
-            )}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Create Layout 2</span>
-          </button>
-        )
+      {/* Layout 2 - only show if it exists (no Create CTA in sidebar) */}
+      {layout2 && (
+        <Link
+          to={buildUrl(layout2.layoutId!)}
+          className={cn(linkBaseClass, isLayoutActive(layout2.layoutId, false) ? activeClass : inactiveClass)}
+        >
+          <Layout className="w-3.5 h-3.5" />
+          <span className="truncate">{layout2.name}</span>
+          {layout2.isUserDefault && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-auto" />}
+        </Link>
       )}
 
-      {/* Layout 3 - show if Layout 2 exists (either layout or create button) */}
-      {layout1 && layout2 && (
-        layout3 ? (
-          <Link
-            to={buildUrl(layout3.layoutId!)}
-            className={cn(linkBaseClass, isLayoutActive(layout3.layoutId, false) ? activeClass : inactiveClass)}
-          >
-            <Layout className="w-3.5 h-3.5" />
-            <span className="truncate">{layout3.name}</span>
-            {layout3.isUserDefault && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-auto" />}
-          </Link>
-        ) : (
-          <button
-            onClick={() => onCreateLayout(3)}
-            disabled={isCreating}
-            className={cn(
-              linkBaseClass,
-              "text-muted-foreground hover:text-primary hover:bg-primary/5 cursor-pointer",
-              isCreating && "opacity-50 cursor-not-allowed"
-            )}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Create Layout 3</span>
-          </button>
-        )
+      {/* Layout 3 - only show if it exists (no Create CTA in sidebar) */}
+      {layout3 && (
+        <Link
+          to={buildUrl(layout3.layoutId!)}
+          className={cn(linkBaseClass, isLayoutActive(layout3.layoutId, false) ? activeClass : inactiveClass)}
+        >
+          <Layout className="w-3.5 h-3.5" />
+          <span className="truncate">{layout3.name}</span>
+          {layout3.isUserDefault && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-auto" />}
+        </Link>
       )}
     </div>
   );
