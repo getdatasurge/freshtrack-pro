@@ -69,9 +69,11 @@ export const DEFAULT_ALERT_RULES: AlertRules = {
 
 /**
  * Compute missed check-ins based on last check-in time and interval
+ * Returns 999 for null lastCheckinAt to indicate "never seen" (treated as critical offline)
  */
 export function computeMissedCheckins(lastCheckinAt: string | null, intervalMinutes: number): number {
-  if (!lastCheckinAt) return 0;
+  // If never checked in, treat as "always offline" - return max missed
+  if (!lastCheckinAt) return 999;
   const elapsed = Date.now() - new Date(lastCheckinAt).getTime();
   const intervalMs = intervalMinutes * 60 * 1000;
   // Add 30-second buffer to avoid flapping
