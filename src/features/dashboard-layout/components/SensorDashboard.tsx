@@ -129,7 +129,7 @@ export function SensorDashboard({
   lastKnownGood,
   children,
 }: SensorDashboardProps) {
-  const { state, actions } = useLayoutManager(sensor.id, organizationId);
+  const { state, actions } = useLayoutManager('unit', unit?.id, organizationId);
   const [newLayoutDialogOpen, setNewLayoutDialogOpen] = useState(false);
   
   // Auto-save hook
