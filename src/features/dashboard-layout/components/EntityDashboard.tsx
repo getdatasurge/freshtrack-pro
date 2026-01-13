@@ -5,7 +5,7 @@
  * Renders the customizable grid layout for both units and sites.
  */
 
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { subHours, subDays, parseISO } from "date-fns";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import { GridCanvas } from "./GridCanvas";
 import { HiddenWidgetsPanel } from "./HiddenWidgetsPanel";
 import { TimelineControls } from "./TimelineControls";
 import { AddWidgetModal } from "./AddWidgetModal";
+import { DashboardErrorBoundary } from "./DashboardErrorBoundary";
 import { WIDGET_REGISTRY } from "../registry/widgetRegistry";
 import type { TimelineState, WidgetPosition } from "../types";
 import type { EntityType } from "../hooks/useEntityLayoutStorage";
@@ -198,6 +199,11 @@ export function EntityDashboard({
   }, [actions]);
 
   return (
+    <DashboardErrorBoundary
+      entityType={entityType}
+      entityId={entityId}
+      userId={userId}
+    >
     <div className="space-y-4">
       {/* Unsaved Changes Banner */}
       {state.isDirty && !state.activeLayout.isDefault && (
@@ -353,5 +359,6 @@ export function EntityDashboard({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+    </DashboardErrorBoundary>
   );
 }

@@ -3,10 +3,13 @@
  * 
  * Prevents navigation when there are unsaved changes.
  * Shows a prompt with Save/Discard/Cancel options.
+ * 
+ * NOTE: useBlocker from react-router-dom requires a Data Router (createBrowserRouter).
+ * Since this app uses BrowserRouter, we disable in-app navigation blocking.
+ * Browser tab close/refresh protection still works via beforeunload.
  */
 
 import { useEffect, useCallback, useState } from "react";
-import { useBlocker } from "react-router-dom";
 
 // ============================================================================
 // Types
@@ -36,11 +39,11 @@ export function useUnsavedChangesGuard(
 ): UnsavedChangesGuardResult {
   const [isSaving, setIsSaving] = useState(false);
   
-  // React Router blocker for in-app navigation
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      isDirty && currentLocation.pathname !== nextLocation.pathname
-  );
+  // NOTE: useBlocker requires Data Router (createBrowserRouter + RouterProvider).
+  // This app uses BrowserRouter, so in-app navigation blocking is disabled.
+  // Browser beforeunload protection still works below.
+  // TODO: Migrate App.tsx to createBrowserRouter to re-enable useBlocker.
+  const blockerState = "unblocked" as const;
 
   // Browser beforeunload handler for tab close/refresh
   useEffect(() => {
@@ -56,39 +59,33 @@ export function useUnsavedChangesGuard(
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
 
-  // Handle Save action
+  // Handle Save action (no-op since blocker is disabled)
   const handleSave = useCallback(async () => {
-    if (blocker.state !== "blocked") return;
-    
+    // Blocker disabled - this won't be called from the dialog
     try {
       setIsSaving(true);
       await onSave();
-      blocker.proceed?.();
     } catch (error) {
       console.error("[UnsavedChangesGuard] Save failed:", error);
-      // Don't proceed on error - let user retry or discard
     } finally {
       setIsSaving(false);
     }
-  }, [blocker, onSave]);
+  }, [onSave]);
 
-  // Handle Discard action
+  // Handle Discard action (no-op since blocker is disabled)
   const handleDiscard = useCallback(() => {
-    if (blocker.state !== "blocked") return;
-    
     onDiscard();
-    blocker.proceed?.();
-  }, [blocker, onDiscard]);
+  }, [onDiscard]);
 
-  // Handle Cancel action
+  // Handle Cancel action (no-op since blocker is disabled)
   const handleCancel = useCallback(() => {
-    if (blocker.state !== "blocked") return;
-    
-    blocker.reset?.();
-  }, [blocker]);
+    // No-op - blocker disabled
+  }, []);
 
+  // Note: showPrompt will always be false until we migrate to Data Router
+  // This is intentional - useBlocker requires createBrowserRouter
   return {
-    showPrompt: blocker.state === "blocked",
+    showPrompt: false,
     isSaving,
     onSave: handleSave,
     onDiscard: handleDiscard,
