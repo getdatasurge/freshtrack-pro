@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -132,8 +132,69 @@ const UnitDetail = () => {
 
   // Fetch LoRa sensors linked to this unit
   const { data: loraSensors } = useLoraSensorsByUnit(unitId || null);
-  // Use the first LoRa sensor for DeviceReadinessCard display
-  const primaryLoraSensor = loraSensors?.[0] || null;
+  
+  // Select primary sensor: prefer is_primary flag, then most recent temperature sensor
+  const primaryLoraSensor = useMemo(() => {
+    if (!loraSensors?.length) return null;
+    
+    // First preference: sensor marked as primary
+    const primary = loraSensors.find(s => s.is_primary);
+    if (primary) return primary;
+    
+    // Second preference: most recently seen temperature-capable sensor
+    const tempSensors = loraSensors.filter(s => 
+      s.sensor_type === 'temperature' || 
+      s.sensor_type === 'temperature_humidity' || 
+      s.sensor_type === 'combo'
+    );
+    if (tempSensors.length) {
+      return tempSensors.sort((a, b) => 
+        new Date(b.last_seen_at || 0).getTime() - new Date(a.last_seen_at || 0).getTime()
+      )[0];
+    }
+    
+    // Fallback: any sensor
+    return loraSensors[0];
+  }, [loraSensors]);
+  
+  // Find door sensor linked to this unit
+  const doorSensor = useMemo(() => 
+    loraSensors?.find(s => s.sensor_type === 'door' || s.sensor_type === 'contact') || null,
+    [loraSensors]
+  );
+  
+  // State for door reading derived from sensor_readings
+  const [derivedDoorState, setDerivedDoorState] = useState<{
+    doorOpen: boolean | null;
+    recordedAt: string | null;
+  }>({ doorOpen: null, recordedAt: null });
+  
+  // Fetch latest door reading from sensor_readings when we have a door sensor
+  useEffect(() => {
+    if (!doorSensor?.id) {
+      setDerivedDoorState({ doorOpen: null, recordedAt: null });
+      return;
+    }
+    
+    const fetchDoorReading = async () => {
+      const { data } = await supabase
+        .from('sensor_readings')
+        .select('door_open, recorded_at')
+        .eq('lora_sensor_id', doorSensor.id)
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (data) {
+        setDerivedDoorState({
+          doorOpen: data.door_open,
+          recordedAt: data.recorded_at,
+        });
+      }
+    };
+    
+    fetchDoorReading();
+  }, [doorSensor?.id]);
 
   const handleDeleteUnit = async () => {
     if (!session?.user?.id || !unitId) return;
@@ -716,8 +777,12 @@ const UnitDetail = () => {
           signalStrength={device?.signal_strength}
           lastHeartbeat={device?.last_seen_at}
           deviceSerial={device?.serial_number}
-          doorState={(unit as any).door_state}
-          doorLastChangedAt={(unit as any).door_last_changed_at}
+          doorState={
+            derivedDoorState.doorOpen !== null 
+              ? (derivedDoorState.doorOpen ? 'open' : 'closed')
+              : (unit as any).door_state
+          }
+          doorLastChangedAt={derivedDoorState.recordedAt || (unit as any).door_last_changed_at}
           loraSensor={primaryLoraSensor}
         />
 
