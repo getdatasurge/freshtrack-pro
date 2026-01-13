@@ -12,7 +12,8 @@ import {
   Menu,
   X,
   ChevronLeft,
-  Trash2
+  Trash2,
+  Boxes
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
   { href: "/organization", label: "Organization", icon: Building2 },
   { href: "/sites", label: "Sites", icon: MapPin },
+  { href: "/units", label: "Units", icon: Boxes },
   { href: "/manual-log", label: "Log Temps", icon: ClipboardList },
   { href: "/alerts", label: "Alerts", icon: AlertCircle },
   { href: "/reports", label: "Reports", icon: FileBarChart },
