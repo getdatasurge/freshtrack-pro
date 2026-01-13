@@ -13,8 +13,8 @@ import {
   X,
   ChevronLeft,
   Trash2,
-  Boxes
 } from "lucide-react";
+import { SidebarUnitsAccordion } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
@@ -31,17 +31,27 @@ interface DashboardLayoutProps {
   backHref?: string;
 }
 
-import { ClipboardList, AlertCircle, FileBarChart } from "lucide-react";
+import { ClipboardList, AlertCircle, FileBarChart, Boxes } from "lucide-react";
 
-const navItems = [
+// Nav items - Units is handled separately via SidebarUnitsAccordion
+const navItemsBeforeUnits = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
   { href: "/organization", label: "Organization", icon: Building2 },
   { href: "/sites", label: "Sites", icon: MapPin },
-  { href: "/units", label: "Units", icon: Boxes },
+];
+
+const navItemsAfterUnits = [
   { href: "/manual-log", label: "Log Temps", icon: ClipboardList },
   { href: "/alerts", label: "Alerts", icon: AlertCircle },
   { href: "/reports", label: "Reports", icon: FileBarChart },
   { href: "/settings", label: "Settings", icon: Settings },
+];
+
+// Fallback nav for when accordion can't load (missing orgId)
+const navItemsWithUnitsLink = [
+  ...navItemsBeforeUnits,
+  { href: "/units", label: "Units", icon: Boxes },
+  ...navItemsAfterUnits,
 ];
 
 const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayoutProps) => {
@@ -202,8 +212,9 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
       <div className="flex">
         {/* Desktop Sidebar */}
         <aside className="hidden lg:flex w-64 flex-col fixed left-0 top-16 bottom-0 border-r border-border/50 bg-card/50">
-          <nav className="flex-1 p-4 space-y-1">
-            {navItems.map((item) => {
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+            {/* Nav items before Units */}
+            {navItemsBeforeUnits.map((item) => {
               const isActive = location.pathname === item.href || 
                 (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
               return (
@@ -221,6 +232,30 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 </Link>
               );
             })}
+
+            {/* Units Accordion */}
+            <SidebarUnitsAccordion organizationId={orgId} />
+
+            {/* Nav items after Units */}
+            {navItemsAfterUnits.map((item) => {
+              const isActive = location.pathname === item.href || 
+                (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
+              return (
+                <Link key={item.href} to={item.href}>
+                  <Button
+                    variant={isActive ? "secondary" : "ghost"}
+                    className={cn(
+                      "w-full justify-start gap-3",
+                      isActive && "bg-accent/10 text-accent"
+                    )}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    {item.label}
+                  </Button>
+                </Link>
+              );
+            })}
+
             {canDeleteEntities && !permissionsLoading && (
               <Link to="/admin/recently-deleted">
                 <Button
@@ -245,9 +280,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
               className="absolute inset-0 bg-background/80 backdrop-blur-sm"
               onClick={() => setMobileNavOpen(false)}
             />
-            <aside className="absolute left-0 top-16 bottom-0 w-64 bg-card border-r border-border/50 p-4">
+            <aside className="absolute left-0 top-16 bottom-0 w-64 bg-card border-r border-border/50 p-4 overflow-y-auto">
               <nav className="space-y-1">
-                {navItems.map((item) => {
+                {/* Nav items before Units */}
+                {navItemsBeforeUnits.map((item) => {
                   const isActive = location.pathname === item.href || 
                     (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
                   return (
@@ -269,6 +305,34 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                     </Link>
                   );
                 })}
+
+                {/* Units Accordion (Mobile) */}
+                <SidebarUnitsAccordion organizationId={orgId} />
+
+                {/* Nav items after Units */}
+                {navItemsAfterUnits.map((item) => {
+                  const isActive = location.pathname === item.href || 
+                    (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
+                  return (
+                    <Link 
+                      key={item.href} 
+                      to={item.href}
+                      onClick={() => setMobileNavOpen(false)}
+                    >
+                      <Button
+                        variant={isActive ? "secondary" : "ghost"}
+                        className={cn(
+                          "w-full justify-start gap-3",
+                          isActive && "bg-accent/10 text-accent"
+                        )}
+                      >
+                        <item.icon className="w-5 h-5" />
+                        {item.label}
+                      </Button>
+                    </Link>
+                  );
+                })}
+
                 {canDeleteEntities && !permissionsLoading && (
                   <Link 
                     to="/admin/recently-deleted"
