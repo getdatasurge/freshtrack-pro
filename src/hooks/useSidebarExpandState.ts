@@ -133,6 +133,26 @@ export function useSidebarExpandState() {
     });
   }, []);
 
+  /**
+   * Auto-expand to show a specific site's layouts.
+   * Expands the units section and the site accordion.
+   */
+  const expandToActiveSite = useCallback((siteId: string) => {
+    setState((prev) => {
+      const newState = { ...prev };
+      
+      // Expand units section
+      newState.unitsCollapsed = false;
+      
+      // Expand the site
+      if (!newState.expandedSites.includes(siteId)) {
+        newState.expandedSites = [...newState.expandedSites, siteId];
+      }
+      
+      return newState;
+    });
+  }, []);
+
   const toggleUnitsSection = useCallback(() => {
     setState((prev) => ({
       ...prev,
@@ -150,6 +170,7 @@ export function useSidebarExpandState() {
     expandSite,
     expandUnit,
     expandToActive,
+    expandToActiveSite,
     isUnitsSectionCollapsed,
     toggleUnitsSection,
   };

@@ -154,6 +154,8 @@ export function useEntityLayoutStorage(
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"] });
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-units"] });
       toast.success(`Layout "${data.name}" created`);
     },
     onError: (error: Error) => {
@@ -191,6 +193,8 @@ export function useEntityLayoutStorage(
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"] });
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-units"] });
       toast.success("Layout saved");
     },
     onError: (error: Error) => {
@@ -211,6 +215,8 @@ export function useEntityLayoutStorage(
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
       queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"] });
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-units"] });
       toast.success("Layout deleted");
     },
     onError: (error: Error) => {

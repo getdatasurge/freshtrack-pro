@@ -94,28 +94,58 @@ export function LayoutLinksGroup({
         </button>
       )}
 
-      {/* Layout 2 - only show if Layout 1 exists */}
-      {layout1 && layout2 && (
-        <Link
-          to={buildUrl(layout2.layoutId!)}
-          className={cn(linkBaseClass, isLayoutActive(layout2.layoutId, false) ? activeClass : inactiveClass)}
-        >
-          <Layout className="w-3.5 h-3.5" />
-          <span className="truncate">{layout2.name}</span>
-          {layout2.isUserDefault && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-auto" />}
-        </Link>
+      {/* Layout 2 - show if Layout 1 exists (either layout or create button) */}
+      {layout1 && (
+        layout2 ? (
+          <Link
+            to={buildUrl(layout2.layoutId!)}
+            className={cn(linkBaseClass, isLayoutActive(layout2.layoutId, false) ? activeClass : inactiveClass)}
+          >
+            <Layout className="w-3.5 h-3.5" />
+            <span className="truncate">{layout2.name}</span>
+            {layout2.isUserDefault && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-auto" />}
+          </Link>
+        ) : (
+          <button
+            onClick={() => onCreateLayout(2)}
+            disabled={isCreating}
+            className={cn(
+              linkBaseClass,
+              "text-muted-foreground hover:text-primary hover:bg-primary/5 cursor-pointer",
+              isCreating && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Create Layout 2</span>
+          </button>
+        )
       )}
 
-      {/* Layout 3 - only show if Layout 2 exists */}
-      {layout1 && layout2 && layout3 && (
-        <Link
-          to={buildUrl(layout3.layoutId!)}
-          className={cn(linkBaseClass, isLayoutActive(layout3.layoutId, false) ? activeClass : inactiveClass)}
-        >
-          <Layout className="w-3.5 h-3.5" />
-          <span className="truncate">{layout3.name}</span>
-          {layout3.isUserDefault && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-auto" />}
-        </Link>
+      {/* Layout 3 - show if Layout 2 exists (either layout or create button) */}
+      {layout1 && layout2 && (
+        layout3 ? (
+          <Link
+            to={buildUrl(layout3.layoutId!)}
+            className={cn(linkBaseClass, isLayoutActive(layout3.layoutId, false) ? activeClass : inactiveClass)}
+          >
+            <Layout className="w-3.5 h-3.5" />
+            <span className="truncate">{layout3.name}</span>
+            {layout3.isUserDefault && <Star className="w-3 h-3 text-amber-500 fill-amber-500 ml-auto" />}
+          </Link>
+        ) : (
+          <button
+            onClick={() => onCreateLayout(3)}
+            disabled={isCreating}
+            className={cn(
+              linkBaseClass,
+              "text-muted-foreground hover:text-primary hover:bg-primary/5 cursor-pointer",
+              isCreating && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Create Layout 3</span>
+          </button>
+        )
       )}
     </div>
   );
