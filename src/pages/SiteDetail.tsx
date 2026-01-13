@@ -12,11 +12,13 @@ import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-di
 import { useSiteAlertRules, useOrgAlertRules } from "@/hooks/useAlertRules";
 import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteSite } from "@/hooks/useSoftDelete";
+import { EntityDashboard } from "@/features/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +40,8 @@ import {
   History,
   LayoutGrid,
   Trash2,
+  LayoutDashboard,
+  Settings,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -73,7 +77,7 @@ const SiteDetail = () => {
   const { siteId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { layoutKey } = useEntityDashboardUrl(); // Read layout from route (defaults to "default")
+  const { layoutKey } = useEntityDashboardUrl();
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
   const [session, setSession] = useState<Session | null>(null);
   const [site, setSite] = useState<SiteData | null>(null);
@@ -113,7 +117,6 @@ const SiteDetail = () => {
   const loadSiteData = async () => {
     setIsLoading(true);
     
-    // Load site with compliance fields
     const { data: siteData, error: siteError } = await supabase
       .from("sites")
       .select("id, name, address, city, state, postal_code, timezone, compliance_mode, manual_log_cadence_seconds, corrective_action_required, organization_id")
@@ -143,7 +146,6 @@ const SiteDetail = () => {
       postal_code: siteData.postal_code || "",
     });
 
-    // Load sibling sites for breadcrumb dropdown (only active)
     const { data: siblingsData } = await supabase
       .from("sites")
       .select("id, name")
@@ -160,7 +162,6 @@ const SiteDetail = () => {
       })));
     }
 
-    // Load areas with unit counts (only active)
     const { data: areasData, error: areasError } = await supabase
       .from("areas")
       .select(`
@@ -248,7 +249,6 @@ const SiteDetail = () => {
     setIsExporting(true);
 
     try {
-      // Ensure fresh session token before invoking edge function
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) {
         toast({ title: "Session expired. Please sign in again.", variant: "destructive" });
@@ -257,7 +257,7 @@ const SiteDetail = () => {
       }
 
       const endDate = new Date();
-      const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000); // Last 7 days
+      const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
 
       const { data, error } = await supabase.functions.invoke("export-temperature-logs", {
         body: {
@@ -433,199 +433,239 @@ const SiteDetail = () => {
           </div>
         }
       />
-      <div className="space-y-4">
-        {/* Site Header Card - simplified since breadcrumb has the name */}
-        <Card>
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                <MapPin className="w-6 h-6 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <CardTitle className="text-xl sm:text-2xl truncate">{site.name}</CardTitle>
-                <CardDescription className="truncate">{formatAddress()}</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-        </Card>
 
-        {/* Quick Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      {/* Tab-based layout */}
+      <Tabs defaultValue="dashboard" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="dashboard">
+            <LayoutDashboard className="w-4 h-4 mr-2" />
+            Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="areas">
+            <LayoutGrid className="w-4 h-4 mr-2" />
+            Areas & Units
+          </TabsTrigger>
+          <TabsTrigger value="settings">
+            <Settings className="w-4 h-4 mr-2" />
+            Settings
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Dashboard Tab - Customizable Grid */}
+        <TabsContent value="dashboard" className="space-y-4">
+          {/* Site Header Card */}
           <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
-                  <LayoutGrid className="w-5 h-5 text-muted-foreground" />
+            <CardHeader className="pb-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                  <MapPin className="w-6 h-6 text-primary" />
                 </div>
-                <div>
-                  <p className="text-2xl font-bold">{areas.length}</p>
-                  <p className="text-xs text-muted-foreground">Areas</p>
+                <div className="min-w-0">
+                  <CardTitle className="text-xl sm:text-2xl truncate">{site.name}</CardTitle>
+                  <CardDescription className="truncate">{formatAddress()}</CardDescription>
                 </div>
               </div>
-            </CardContent>
+            </CardHeader>
           </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
-                  <Thermometer className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{totalUnits}</p>
-                  <p className="text-xs text-muted-foreground">Units</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="col-span-2 sm:col-span-1">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
-                  <Building2 className="w-5 h-5 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium truncate">{site.timezone}</p>
-                  <p className="text-xs text-muted-foreground">Timezone</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
-        {/* Gateways Section */}
-        <SiteGatewaysCard
-          siteId={site.id}
-          siteName={site.name}
-          organizationId={site.organization_id}
-        />
-
-        {/* Compliance Settings Section */}
-        <SiteComplianceSettings
-          siteId={site.id}
-          siteName={site.name}
-          timezone={site.timezone}
-          complianceMode={site.compliance_mode}
-          manualLogCadenceSeconds={site.manual_log_cadence_seconds}
-          correctiveActionRequired={site.corrective_action_required}
-          onSettingsUpdated={loadSiteData}
-        />
-
-        {/* Areas Section */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-lg">Areas</CardTitle>
-                <CardDescription>Organize units by location within this site</CardDescription>
-              </div>
-              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Area
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add New Area</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 pt-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="area-name">Area Name *</Label>
-                      <Input
-                        id="area-name"
-                        placeholder="e.g., Main Kitchen"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="area-desc">Description</Label>
-                      <Textarea
-                        id="area-desc"
-                        placeholder="Optional description"
-                        value={formData.description}
-                        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                      />
-                    </div>
-                    <div className="flex justify-end gap-2 pt-4">
-                      <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button 
-                        onClick={handleCreateArea} 
-                        disabled={isSubmitting}
-                      >
-                        {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                        Create Area
-                      </Button>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {areas.length > 0 ? (
-              <div className="space-y-2">
-                {areas.map((area) => (
-                  <Link key={area.id} to={`/sites/${siteId}/areas/${area.id}`}>
-                    <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors cursor-pointer">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0">
-                          <Building2 className="w-5 h-5 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0">
-                          <h3 className="font-medium text-foreground truncate">{area.name}</h3>
-                          <p className="text-sm text-muted-foreground truncate">
-                            {area.description || "No description"}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                          <Thermometer className="w-4 h-4" />
-                          <span>{area.unitsCount}</span>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-8 border border-dashed rounded-lg">
-                <div className="w-12 h-12 rounded-xl bg-secondary/50 flex items-center justify-center mb-3">
-                  <Building2 className="w-6 h-6 text-muted-foreground" />
-                </div>
-                <h3 className="font-medium text-foreground mb-1">No Areas Yet</h3>
-                <p className="text-sm text-muted-foreground text-center max-w-sm mb-4">
-                  Create areas within this site to organize your refrigeration units.
-                </p>
-                <Button 
-                  size="sm"
-                  onClick={() => setDialogOpen(true)}
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add First Area
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {site && (
-          <DeleteConfirmationDialog
-            open={deleteDialogOpen}
-            onOpenChange={setDeleteDialogOpen}
-            entityName={site.name}
+          {/* Customizable Dashboard Grid */}
+          <EntityDashboard
             entityType="site"
-            onConfirm={handleDeleteSite}
-            hasChildren={areas.length > 0}
-            childrenCount={areas.length + totalUnits}
+            entityId={siteId!}
+            organizationId={site.organization_id}
+            site={{
+              id: site.id,
+              name: site.name,
+              organization_id: site.organization_id,
+            }}
+            areas={areas}
+            totalUnits={totalUnits}
           />
-        )}
-      </div>
+        </TabsContent>
+
+        {/* Areas Tab */}
+        <TabsContent value="areas" className="space-y-4">
+          {/* Quick Stats Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
+                    <LayoutGrid className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{areas.length}</p>
+                    <p className="text-xs text-muted-foreground">Areas</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
+                    <Thermometer className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{totalUnits}</p>
+                    <p className="text-xs text-muted-foreground">Units</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="col-span-2 sm:col-span-1">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
+                    <Building2 className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium truncate">{site.timezone}</p>
+                    <p className="text-xs text-muted-foreground">Timezone</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Areas List */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-lg">Areas</CardTitle>
+                  <CardDescription>Organize units by location within this site</CardDescription>
+                </div>
+                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Area
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add New Area</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="area-name">Area Name *</Label>
+                        <Input
+                          id="area-name"
+                          placeholder="e.g., Main Kitchen"
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="area-desc">Description</Label>
+                        <Textarea
+                          id="area-desc"
+                          placeholder="Optional description"
+                          value={formData.description}
+                          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                        />
+                      </div>
+                      <div className="flex justify-end gap-2 pt-4">
+                        <Button variant="outline" onClick={() => setDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button 
+                          onClick={handleCreateArea} 
+                          disabled={isSubmitting}
+                        >
+                          {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                          Create Area
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {areas.length > 0 ? (
+                <div className="space-y-2">
+                  {areas.map((area) => (
+                    <Link key={area.id} to={`/sites/${siteId}/areas/${area.id}`}>
+                      <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors cursor-pointer">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0">
+                            <Building2 className="w-5 h-5 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="font-medium text-foreground truncate">{area.name}</h3>
+                            <p className="text-sm text-muted-foreground truncate">
+                              {area.description || "No description"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                            <Thermometer className="w-4 h-4" />
+                            <span>{area.unitsCount}</span>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8 border border-dashed rounded-lg">
+                  <div className="w-12 h-12 rounded-xl bg-secondary/50 flex items-center justify-center mb-3">
+                    <Building2 className="w-6 h-6 text-muted-foreground" />
+                  </div>
+                  <h3 className="font-medium text-foreground mb-1">No Areas Yet</h3>
+                  <p className="text-sm text-muted-foreground text-center max-w-sm mb-4">
+                    Create areas within this site to organize your refrigeration units.
+                  </p>
+                  <Button 
+                    size="sm"
+                    onClick={() => setDialogOpen(true)}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add First Area
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Settings Tab */}
+        <TabsContent value="settings" className="space-y-4">
+          {/* Gateways Section */}
+          <SiteGatewaysCard
+            siteId={site.id}
+            siteName={site.name}
+            organizationId={site.organization_id}
+          />
+
+          {/* Compliance Settings Section */}
+          <SiteComplianceSettings
+            siteId={site.id}
+            siteName={site.name}
+            timezone={site.timezone}
+            complianceMode={site.compliance_mode}
+            manualLogCadenceSeconds={site.manual_log_cadence_seconds}
+            correctiveActionRequired={site.corrective_action_required}
+            onSettingsUpdated={loadSiteData}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {site && (
+        <DeleteConfirmationDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          entityName={site.name}
+          entityType="site"
+          onConfirm={handleDeleteSite}
+          hasChildren={areas.length > 0}
+          childrenCount={areas.length + totalUnits}
+        />
+      )}
     </DashboardLayout>
   );
 };
