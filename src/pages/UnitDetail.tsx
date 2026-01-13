@@ -135,6 +135,10 @@ const UnitDetail = () => {
   // Fetch LoRa sensors linked to this unit
   const { data: loraSensors } = useLoraSensorsByUnit(unitId || null);
   
+  // Fetch the effective alert rules for this unit (uses hierarchical cascade: unit → site → org → default)
+  // IMPORTANT: Must be called unconditionally at top level (React hooks rule)
+  const { data: alertRules } = useUnitAlertRules(unitId || null);
+  
   // Select primary sensor: prefer is_primary flag, then most recent temperature sensor
   const primaryLoraSensor = useMemo(() => {
     if (!loraSensors?.length) return null;
@@ -621,8 +625,7 @@ const UnitDetail = () => {
     );
   }
 
-  // Fetch the effective alert rules for this unit (uses hierarchical cascade: unit → site → org → default)
-  const { data: alertRules } = useUnitAlertRules(unitId || null);
+  // Use alert rules (fetched at top level to follow hooks rules)
   const effectiveRules: AlertRules = alertRules || DEFAULT_ALERT_RULES;
 
   // Build UnitStatusInfo from current data for computed status
