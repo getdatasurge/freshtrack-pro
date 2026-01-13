@@ -12,11 +12,11 @@ interface WidgetRendererProps {
 // Placeholder component for widgets not yet implemented
 function PlaceholderWidget({ widgetId }: { widgetId: string }) {
   const widgetDef = WIDGET_REGISTRY[widgetId];
-  const IconComponent = widgetDef?.icon;
+  const Icon = widgetDef?.icon;
 
   return (
     <div className="h-full flex flex-col items-center justify-center p-4 text-center text-muted-foreground">
-      {IconComponent && <IconComponent className="h-8 w-8 mb-2 opacity-50" />}
+      {Icon ? <Icon className="h-8 w-8 mb-2 opacity-50" /> : null}
       <p className="text-sm font-medium">{widgetDef?.name || widgetId}</p>
       <p className="text-xs opacity-75">{widgetDef?.description}</p>
     </div>

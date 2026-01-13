@@ -5,6 +5,18 @@
  * size constraints, categories, and capabilities.
  */
 
+import {
+  LineChart,
+  Thermometer,
+  Activity,
+  AlertTriangle,
+  Gauge,
+  Hash,
+  CheckCircle2,
+  ShieldCheck,
+  Radio,
+  Battery,
+} from "lucide-react";
 import type { WidgetDefinition } from "../types";
 
 /**
@@ -33,7 +45,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 8,
     defaultH: 6,
     category: "monitoring",
-    icon: "LineChart",
+    icon: LineChart,
     supportsTimeline: true,
   },
   
@@ -49,7 +61,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 4,
     defaultH: 2,
     category: "monitoring",
-    icon: "Thermometer",
+    icon: Thermometer,
     supportsTimeline: false,
   },
   
@@ -65,7 +77,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 4,
     defaultH: 2,
     category: "device",
-    icon: "Activity",
+    icon: Activity,
     supportsTimeline: false,
   },
   
@@ -85,7 +97,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 12,
     defaultH: 2,
     category: "alerts",
-    icon: "AlertTriangle",
+    icon: AlertTriangle,
     supportsTimeline: false,
   },
   
@@ -101,7 +113,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 4,
     defaultH: 2,
     category: "alerts",
-    icon: "Gauge",
+    icon: Gauge,
     supportsTimeline: false,
   },
   
@@ -117,7 +129,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 4,
     defaultH: 2,
     category: "monitoring",
-    icon: "Hash",
+    icon: Hash,
     supportsTimeline: true,
   },
   
@@ -133,7 +145,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 4,
     defaultH: 4,
     category: "device",
-    icon: "CheckCircle2",
+    icon: CheckCircle2,
     supportsTimeline: false,
   },
   
@@ -149,7 +161,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 4,
     defaultH: 4,
     category: "compliance",
-    icon: "ShieldCheck",
+    icon: ShieldCheck,
     supportsTimeline: false,
   },
   
@@ -165,7 +177,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 6,
     defaultH: 3,
     category: "device",
-    icon: "Radio",
+    icon: Radio,
     supportsTimeline: false,
   },
   
@@ -181,7 +193,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     defaultW: 6,
     defaultH: 3,
     category: "device",
-    icon: "Battery",
+    icon: Battery,
     supportsTimeline: false,
   },
 };

@@ -4,7 +4,7 @@
  * Types for customizable unit dashboard layouts with drag-and-drop widgets.
  */
 
-import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 
 // ============================================================================
 // Layout Configuration
@@ -191,8 +191,8 @@ export interface WidgetDefinition {
   defaultH: number;
   /** Widget category for grouping */
   category: "monitoring" | "alerts" | "device" | "compliance";
-  /** Icon name from lucide-react */
-  icon: string;
+  /** Icon component from lucide-react */
+  icon: LucideIcon;
   /** Whether this widget supports timeline controls */
   supportsTimeline: boolean;
 }
@@ -207,18 +207,20 @@ export interface WidgetDefinition {
 export interface LayoutManagerState {
   /** Currently active layout */
   activeLayout: ActiveLayout;
-  /** All available layouts (default + user's saved) */
-  availableLayouts: Array<{ id: string; name: string; isDefault: boolean }>;
-  /** Whether layouts are loading */
+  /** List of available layouts (default + saved) */
+  availableLayouts: Array<{ id: string; name: string; isDefault: boolean; isUserDefault: boolean }>;
+  /** Loading state */
   isLoading: boolean;
-  /** Current error */
-  error: Error | null;
-  /** Whether user can customize layouts */
-  canCustomize: boolean;
-  /** Number of saved layouts (excluding default) */
-  savedLayoutCount: number;
-  /** Maximum allowed saved layouts */
-  maxLayouts: number;
+  /** Whether a save operation is in progress */
+  isSaving: boolean;
+  /** Whether layout has unsaved changes */
+  isDirty: boolean;
+  /** Whether currently in customize mode */
+  isCustomizing: boolean;
+  /** Whether user can create more layouts */
+  canCreateNew: boolean;
+  /** Number of saved layouts */
+  layoutCount: number;
 }
 
 /**
@@ -231,22 +233,24 @@ export interface LayoutManagerActions {
   updatePositions: (positions: WidgetPosition[]) => void;
   /** Toggle widget visibility */
   toggleWidgetVisibility: (widgetId: string) => void;
-  /** Update widget preferences */
-  updateWidgetPrefs: (widgetId: string, prefs: WidgetPreferences[string]) => void;
   /** Update timeline state */
   updateTimelineState: (state: TimelineState) => void;
-  /** Save current layout */
-  saveLayout: (name?: string) => Promise<void>;
-  /** Rename a layout */
-  renameLayout: (layoutId: string, newName: string) => Promise<void>;
-  /** Delete a layout */
-  deleteLayout: (layoutId: string) => Promise<void>;
-  /** Set a layout as user default */
-  setAsDefault: (layoutId: string) => Promise<void>;
+  /** Save current layout (create if default, update if custom) */
+  saveLayout: (name?: string) => Promise<SavedLayout | null>;
+  /** Rename current layout */
+  renameLayout: (newName: string) => Promise<void>;
+  /** Delete current layout */
+  deleteLayout: () => Promise<void>;
+  /** Set current layout as user default */
+  setAsUserDefault: () => Promise<void>;
   /** Revert to default layout */
   revertToDefault: () => void;
   /** Discard unsaved changes */
   discardChanges: () => void;
+  /** Create new layout from current */
+  createNewLayout: (name: string) => Promise<SavedLayout>;
+  /** Set customizing mode */
+  setIsCustomizing: (value: boolean) => void;
 }
 
 // ============================================================================

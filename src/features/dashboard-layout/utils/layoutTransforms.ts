@@ -9,6 +9,9 @@ import { LAYOUT_CONFIG_VERSION, DEFAULT_LAYOUT_ID } from "../types";
 import { WIDGET_REGISTRY, getMandatoryWidgets } from "../registry/widgetRegistry";
 import { DEFAULT_LAYOUT_CONFIG, DEFAULT_TIMELINE_STATE, DEFAULT_WIDGET_PREFS, getDefaultLayout } from "../constants/defaultLayout";
 
+// Re-export getDefaultLayout for convenience
+export { getDefaultLayout };
+
 // ============================================================================
 // Validation
 // ============================================================================

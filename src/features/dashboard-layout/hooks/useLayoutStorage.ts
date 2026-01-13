@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import type { Database } from "@/integrations/supabase/types";
 import type { SavedLayout, LayoutConfig, TimelineState, WidgetPreferences } from "../types";
 import { MAX_CUSTOM_LAYOUTS } from "../types";
 
@@ -91,11 +92,11 @@ export function useLayoutStorage(unitId: string | undefined, organizationId: str
           unit_id: unitId,
           user_id: user.id,
           name: params.name,
-          layout_json: params.layoutJson as unknown as Record<string, unknown>,
-          widget_prefs_json: (params.widgetPrefsJson || {}) as unknown as Record<string, unknown>,
-          timeline_state_json: (params.timelineStateJson || {}) as unknown as Record<string, unknown>,
+          layout_json: params.layoutJson as unknown as Database["public"]["Tables"]["unit_dashboard_layouts"]["Insert"]["layout_json"],
+          widget_prefs_json: (params.widgetPrefsJson || {}) as unknown as Database["public"]["Tables"]["unit_dashboard_layouts"]["Insert"]["widget_prefs_json"],
+          timeline_state_json: (params.timelineStateJson || {}) as unknown as Database["public"]["Tables"]["unit_dashboard_layouts"]["Insert"]["timeline_state_json"],
           is_user_default: params.isUserDefault || false,
-        } as Record<string, unknown>)
+        })
         .select()
         .single();
 

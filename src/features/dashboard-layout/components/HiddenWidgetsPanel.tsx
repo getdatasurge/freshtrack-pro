@@ -43,7 +43,7 @@ export function HiddenWidgetsPanel({
         <div className="flex flex-wrap gap-2">
         {hiddenWidgetIds.map((id) => {
             const widget = WIDGET_REGISTRY[id];
-            const IconComponent = widget?.icon;
+            const Icon = widget?.icon;
             return (
               <Badge
                 key={id}
@@ -51,7 +51,7 @@ export function HiddenWidgetsPanel({
                 className="flex items-center gap-1.5 py-1.5 px-2 cursor-pointer hover:bg-accent transition-colors"
                 onClick={() => onRestore(id)}
               >
-                {IconComponent && <IconComponent className="h-3 w-3" />}
+                {Icon ? <Icon className="h-3 w-3" /> : null}
                 <span className="text-xs">{widget?.name || id}</span>
                 <Eye className="h-3 w-3 ml-1 text-muted-foreground" />
               </Badge>
