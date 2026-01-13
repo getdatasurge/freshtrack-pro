@@ -6,6 +6,7 @@
  */
 
 import { useMemo, useState, useCallback } from "react";
+import { subHours, subDays, parseISO } from "date-fns";
 import { Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLayoutManager } from "../hooks/useLayoutManager";
@@ -86,6 +87,36 @@ export interface SensorDashboardProps {
   children?: React.ReactNode;
 }
 
+/**
+ * Compute date range from timeline state
+ */
+function computeDateRange(state: TimelineState): { from: Date; to: Date } {
+  const now = new Date();
+
+  switch (state.range) {
+    case "1h":
+      return { from: subHours(now, 1), to: now };
+    case "6h":
+      return { from: subHours(now, 6), to: now };
+    case "24h":
+      return { from: subHours(now, 24), to: now };
+    case "7d":
+      return { from: subDays(now, 7), to: now };
+    case "30d":
+      return { from: subDays(now, 30), to: now };
+    case "custom":
+      if (state.customFrom && state.customTo) {
+        return {
+          from: parseISO(state.customFrom),
+          to: parseISO(state.customTo),
+        };
+      }
+      return { from: subHours(now, 24), to: now };
+    default:
+      return { from: subHours(now, 24), to: now };
+  }
+}
+
 export function SensorDashboard({
   sensor,
   unit,
@@ -108,6 +139,12 @@ export function SensorDashboard({
       await actions.saveLayout();
     },
     { enabled: !state.activeLayout.isDefault && !state.activeLayout.isImmutable }
+  );
+
+  // Compute date range for timeline controls
+  const dateRange = useMemo(
+    () => computeDateRange(state.activeLayout.timelineState),
+    [state.activeLayout.timelineState]
   );
 
   // Handle undo
@@ -161,6 +198,19 @@ export function SensorDashboard({
   const handleLayoutChange = useCallback((layout: WidgetPosition[]) => {
     actions.updatePositions(layout);
   }, [actions]);
+
+  // Handle restoring a hidden widget
+  const handleRestoreWidget = useCallback((widgetId: string) => {
+    actions.toggleWidgetVisibility(widgetId);
+  }, [actions]);
+
+  // Handle restoring all hidden widgets
+  const handleRestoreAllWidgets = useCallback(() => {
+    const hiddenWidgets = state.activeLayout.config.hiddenWidgets || [];
+    hiddenWidgets.forEach((widgetId) => {
+      actions.toggleWidgetVisibility(widgetId);
+    });
+  }, [actions, state.activeLayout.config.hiddenWidgets]);
 
   // If in default mode and not customizing, render static layout (children)
   if (state.activeLayout.isDefault && !state.isCustomizing) {
@@ -239,8 +289,7 @@ export function SensorDashboard({
             onSetDefault={actions.setAsUserDefault}
             onRevert={actions.revertToDefault}
             onDiscard={actions.discardChanges}
-            onCreateNew={actions.createNewLayout}
-            onStartCustomizing={() => actions.setIsCustomizing(true)}
+            onCreateFromDefault={actions.createNewLayout}
           />
         </div>
       </div>
@@ -249,13 +298,17 @@ export function SensorDashboard({
       <TimelineControls
         state={state.activeLayout.timelineState}
         onChange={actions.updateTimelineState}
+        isDefaultLayout={state.activeLayout.isDefault}
+        dateRange={dateRange}
+        isComparing={!!state.activeLayout.timelineState.compare}
       />
 
       {/* Hidden Widgets Panel (only in customize mode) */}
       {state.isCustomizing && (
         <HiddenWidgetsPanel
-          hiddenWidgets={state.activeLayout.config.hiddenWidgets}
-          onRestoreWidget={actions.toggleWidgetVisibility}
+          hiddenWidgetIds={state.activeLayout.config.hiddenWidgets || []}
+          onRestore={handleRestoreWidget}
+          onRestoreAll={handleRestoreAllWidgets}
         />
       )}
 
