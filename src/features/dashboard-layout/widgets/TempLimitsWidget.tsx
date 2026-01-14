@@ -2,9 +2,8 @@
  * Temperature Limits Widget
  * 
  * Displays configured high and low temperature limits.
+ * Note: Card wrapper is provided by WidgetWrapper.
  */
-
-import { Card, CardContent } from "@/components/ui/card";
 
 interface TempLimitsWidgetProps {
   tempLimitHigh: number;
@@ -16,22 +15,20 @@ export function TempLimitsWidget({
   tempLimitLow,
 }: TempLimitsWidgetProps) {
   return (
-    <Card className="h-full">
-      <CardContent className="pt-4 h-full">
-        <p className="text-sm font-medium text-muted-foreground mb-3">Configured Limits</p>
-        <div className="space-y-2">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-muted-foreground">High Limit</span>
-            <span className="font-medium text-alarm">{tempLimitHigh}°F</span>
-          </div>
-          {tempLimitLow !== null && (
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted-foreground">Low Limit</span>
-              <span className="font-medium text-accent">{tempLimitLow}°F</span>
-            </div>
-          )}
+    <div className="h-full p-4">
+      <p className="text-sm font-medium text-muted-foreground mb-3">Configured Limits</p>
+      <div className="space-y-2">
+        <div className="flex justify-between items-center">
+          <span className="text-sm text-muted-foreground">High Limit</span>
+          <span className="font-medium text-alarm">{tempLimitHigh}°F</span>
         </div>
-      </CardContent>
-    </Card>
+        {tempLimitLow !== null && (
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground">Low Limit</span>
+            <span className="font-medium text-accent">{tempLimitLow}°F</span>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
