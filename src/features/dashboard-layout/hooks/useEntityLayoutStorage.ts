@@ -82,7 +82,7 @@ export function useEntityLayoutStorage(
       return (data as EntityLayoutRow[]).map(rowToSavedLayout);
     },
     enabled: !!entityId,
-    staleTime: 1000 * 60, // 1 minute
+    staleTime: 1000 * 60 * 5, // 5 minutes - prevents refetch on navigation
   });
 
   // Get layouts mapped by slot number

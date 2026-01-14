@@ -18,6 +18,31 @@ import {
 } from "../utils/layoutTransforms";
 import { toast } from "sonner";
 
+// Session storage helpers to persist active layout selection across navigation
+function getLastActiveLayoutId(entityType: string, entityId: string): string | null {
+  try {
+    return sessionStorage.getItem(`layout-active-${entityType}-${entityId}`);
+  } catch {
+    return null;
+  }
+}
+
+function setLastActiveLayoutId(entityType: string, entityId: string, layoutId: string): void {
+  try {
+    sessionStorage.setItem(`layout-active-${entityType}-${entityId}`, layoutId);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function clearLastActiveLayoutId(entityType: string, entityId: string): void {
+  try {
+    sessionStorage.removeItem(`layout-active-${entityType}-${entityId}`);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 // Extended state to include draft-related properties
 interface ExtendedLayoutManagerState extends LayoutManagerState {
   hasDraft: boolean;
@@ -100,21 +125,34 @@ export function useLayoutManager(
     
     initialLoadDoneRef.current = true;
     
+    // Priority 1: Last active layout for this entity (from sessionStorage)
+    const lastActiveId = entityId ? getLastActiveLayoutId(entityType, entityId) : null;
+    
+    let layoutToLoad = lastActiveId && lastActiveId !== DEFAULT_LAYOUT_ID
+      ? storage.savedLayouts.find((l) => l.id === lastActiveId)
+      : undefined;
+    
+    // Priority 2: User's default layout
+    if (!layoutToLoad) {
+      layoutToLoad = storage.savedLayouts.find((l) => l.isUserDefault);
+    }
+    
     if (process.env.NODE_ENV === 'development') {
-      console.log('[useLayoutManager] Initial load:', {
+      console.log('[useLayoutManager] LAYOUT_LOAD:', {
         entityType,
         entityId,
-        layoutCount: storage.savedLayouts.length,
+        source: lastActiveId && layoutToLoad ? 'sessionStorage' : layoutToLoad ? 'userDefault' : 'systemDefault',
+        layoutId: layoutToLoad?.id || DEFAULT_LAYOUT_ID,
+        widgetCount: layoutToLoad?.layoutJson?.widgets?.length ?? null,
       });
     }
     
-    const userDefault = storage.savedLayouts.find((l) => l.isUserDefault);
-    if (userDefault) {
-      const active = dbRowToActiveLayout(userDefault);
+    if (layoutToLoad) {
+      const active = dbRowToActiveLayout(layoutToLoad);
       setActiveLayout(active);
       setOriginalConfig(cloneLayoutConfig(active.config));
       setOriginalTimelineState({ ...active.timelineState });
-      setServerUpdatedAt(userDefault.updatedAt);
+      setServerUpdatedAt(layoutToLoad.updatedAt);
     } else {
       setActiveLayout(getDefaultLayout(entityType));
       setOriginalConfig(null);
@@ -151,6 +189,15 @@ export function useLayoutManager(
     // Clear draft applied flag when switching layouts
     draftAppliedRef.current = false;
     
+    // Persist active layout choice in sessionStorage
+    if (entityId) {
+      if (layoutId === DEFAULT_LAYOUT_ID) {
+        clearLastActiveLayoutId(entityType, entityId);
+      } else {
+        setLastActiveLayoutId(entityType, entityId, layoutId);
+      }
+    }
+    
     if (layoutId === DEFAULT_LAYOUT_ID) {
       setActiveLayout(getDefaultLayout(entityType));
       setOriginalConfig(null);
@@ -168,7 +215,7 @@ export function useLayoutManager(
         setIsCustomizing(false);
       }
     }
-  }, [storage.savedLayouts, entityType]);
+  }, [storage.savedLayouts, entityType, entityId]);
 
   const updatePositions = useCallback((positions: WidgetPosition[]) => {
     setActiveLayout((prev) => {
@@ -273,8 +320,24 @@ export function useLayoutManager(
         setOriginalTimelineState({ ...active.timelineState });
         setServerUpdatedAt(saved.updatedAt);
         
+        // Persist new layout selection in sessionStorage
+        if (entityId && saved.id) {
+          setLastActiveLayoutId(entityType, entityId, saved.id);
+        }
+        
         // Clear local draft on successful save
         clearLocalDraft();
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[useLayoutManager] SAVE_SUCCESS (new):', {
+            entityType,
+            entityId,
+            layoutId: saved.id,
+            widgetCount: activeLayout.config.widgets.length,
+            updatedAt: saved.updatedAt,
+          });
+        }
+        
         toast.success("Layout saved");
         return saved;
       } else if (activeLayout.id) {
@@ -293,6 +356,17 @@ export function useLayoutManager(
         
         // Clear local draft on successful save
         clearLocalDraft();
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[useLayoutManager] SAVE_SUCCESS (update):', {
+            entityType,
+            entityId,
+            layoutId: activeLayout.id,
+            widgetCount: activeLayout.config.widgets.length,
+            updatedAt: saved?.updatedAt,
+          });
+        }
+        
         toast.success("Layout saved");
         return saved;
       }
