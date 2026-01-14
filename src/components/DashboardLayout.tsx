@@ -3,6 +3,7 @@ import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { 
   LogOut,
   MapPin,
@@ -202,11 +203,21 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 </Link>
               )}
               {orgName && (
-                <span className="text-sm text-muted-foreground font-medium truncate">
+                <Link 
+                  to="/organization"
+                  className="text-sm text-muted-foreground font-medium truncate hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm transition-colors"
+                  title={`Go to ${orgName} overview`}
+                >
                   {orgName}
-                </span>
+                </Link>
               )}
             </div>
+
+            {/* Divider between org info and actions - desktop only */}
+            <Separator 
+              orientation="vertical" 
+              className="hidden lg:block h-6 mx-4 bg-border/50" 
+            />
 
             {/* Right side actions */}
             <div className="flex items-center gap-2 shrink-0">
