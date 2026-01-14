@@ -2,11 +2,11 @@
  * Current Temperature Widget
  * 
  * Displays the current temperature with live/offline indicator.
+ * Note: Card wrapper is provided by WidgetWrapper.
  */
 
 import { format } from "date-fns";
 import { Wifi, WifiOff } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 
 interface DerivedStatus {
   isOnline: boolean;
@@ -43,30 +43,28 @@ export function CurrentTempWidget({
   };
 
   return (
-    <Card className="h-full">
-      <CardContent className="pt-6 pb-4 h-full flex flex-col">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-medium text-muted-foreground">Current Temperature</p>
-          <div className="flex items-center gap-1">
-            {derivedStatus.isOnline ? (
-              <Wifi className="w-4 h-4 text-safe" />
-            ) : (
-              <WifiOff className="w-4 h-4 text-muted-foreground" />
-            )}
-            <span className="text-xs text-muted-foreground">
-              {derivedStatus.isOnline ? "Live" : "Offline"}
-            </span>
-          </div>
+    <div className="h-full p-4 pt-6 pb-4 flex flex-col">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-medium text-muted-foreground">Current Temperature</p>
+        <div className="flex items-center gap-1">
+          {derivedStatus.isOnline ? (
+            <Wifi className="w-4 h-4 text-safe" />
+          ) : (
+            <WifiOff className="w-4 h-4 text-muted-foreground" />
+          )}
+          <span className="text-xs text-muted-foreground">
+            {derivedStatus.isOnline ? "Live" : "Offline"}
+          </span>
         </div>
-        <p className={`text-5xl font-bold ${getTempColor()}`}>
-          {formatTemp(temperature)}
+      </div>
+      <p className={`text-5xl font-bold ${getTempColor()}`}>
+        {formatTemp(temperature)}
+      </p>
+      {lastReadingAt && (
+        <p className="text-xs text-muted-foreground mt-auto pt-2">
+          Last reading: {format(new Date(lastReadingAt), "MMM d, h:mm a")}
         </p>
-        {lastReadingAt && (
-          <p className="text-xs text-muted-foreground mt-auto pt-2">
-            Last reading: {format(new Date(lastReadingAt), "MMM d, h:mm a")}
-          </p>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 }

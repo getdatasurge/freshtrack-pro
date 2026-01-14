@@ -84,10 +84,12 @@ export function WidgetWrapper({
 
       {/* Widget content */}
       <div
-        className={`h-full ${isCustomizing ? "pt-8" : ""}`}
+        className={`h-full flex flex-col min-h-0 ${isCustomizing ? "pt-8" : ""}`}
         style={{ pointerEvents: isCustomizing ? "none" : "auto" }}
       >
-        <WidgetRenderer widgetId={widgetId} props={props} />
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+          <WidgetRenderer widgetId={widgetId} props={props} />
+        </div>
       </div>
     </Card>
   );

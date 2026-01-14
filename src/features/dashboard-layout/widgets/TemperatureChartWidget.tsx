@@ -2,6 +2,7 @@
  * Temperature Chart Widget
  * 
  * Displays temperature readings over time with comparison overlay support.
+ * Note: Card wrapper is provided by WidgetWrapper.
  */
 
 import { useMemo } from "react";
@@ -18,7 +19,6 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import { Activity } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { TimelineState } from "../types";
 
 interface SensorReading {
@@ -68,24 +68,24 @@ export function TemperatureChartWidget({
 
   if (readings.length === 0) {
     return (
-      <Card className="h-full">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-2">
+      <div className="h-full flex flex-col">
+        <div className="flex-shrink-0 p-4 pb-2">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
             <Activity className="w-5 h-5 text-accent" />
             Temperature History
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="h-[calc(100%-4rem)] flex items-center justify-center">
+          </h3>
+        </div>
+        <div className="flex-1 min-h-0 flex items-center justify-center">
           <p className="text-muted-foreground">No sensor readings in this time period</p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg flex items-center gap-2">
+    <div className="h-full flex flex-col">
+      <div className="flex-shrink-0 p-4 pb-2">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
           <Activity className="w-5 h-5 text-accent" />
           Temperature History
           {showComparison && (
@@ -93,9 +93,9 @@ export function TemperatureChartWidget({
               (Comparing with previous period)
             </span>
           )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="h-[calc(100%-4rem)]">
+        </h3>
+      </div>
+      <div className="flex-1 min-h-0 px-4 pb-4">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
             <defs>
@@ -172,7 +172,7 @@ export function TemperatureChartWidget({
             )}
           </ComposedChart>
         </ResponsiveContainer>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
