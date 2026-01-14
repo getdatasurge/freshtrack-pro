@@ -84,71 +84,73 @@ export function AddWidgetModal({
           </DialogDescription>
         </DialogHeader>
         
-        <ScrollArea className="flex-1 min-h-0 -mx-6 px-6">
-          {addableWidgets.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <p>All available widgets are already in your layout.</p>
-            </div>
-          ) : (
-            <div className="space-y-6 pb-4">
-              {sortedCategories.map((category) => {
-                const widgets = widgetsByCategory[category];
-                if (!widgets?.length) return null;
-                
-                return (
-                  <div key={category}>
-                    <h4 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">
-                      {categoryLabels[category] || category}
-                    </h4>
-                    <div className="grid gap-2">
-                      {widgets.map(widget => {
-                        const Icon = widget.icon;
-                        const isHidden = hiddenWidgetIds.includes(widget.id);
-                        
-                        return (
-                          <button
-                            key={widget.id}
-                            onClick={() => handleAddWidget(widget.id)}
-                            className={cn(
-                              "flex items-start gap-3 p-3 rounded-lg border border-border",
-                              "hover:bg-accent/50 hover:border-accent transition-colors",
-                              "text-left w-full group"
-                            )}
-                          >
-                            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 group-hover:bg-accent/20 transition-colors">
-                              <Icon className="w-5 h-5 text-muted-foreground group-hover:text-accent-foreground" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium text-sm">{widget.name}</p>
-                                {isHidden && (
-                                  <Badge variant="secondary" className="text-xs">
-                                    Hidden
-                                  </Badge>
-                                )}
-                                {widget.mandatory && (
-                                  <Badge variant="outline" className="text-xs">
-                                    Required
-                                  </Badge>
-                                )}
+        <div className="flex-1 min-h-0 overflow-hidden -mx-6 px-6">
+          <ScrollArea className="h-full">
+            {addableWidgets.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>All available widgets are already in your layout.</p>
+              </div>
+            ) : (
+              <div className="space-y-6 pb-4">
+                {sortedCategories.map((category) => {
+                  const widgets = widgetsByCategory[category];
+                  if (!widgets?.length) return null;
+
+                  return (
+                    <div key={category}>
+                      <h4 className="text-sm font-medium text-muted-foreground mb-3 uppercase tracking-wide">
+                        {categoryLabels[category] || category}
+                      </h4>
+                      <div className="grid gap-2">
+                        {widgets.map(widget => {
+                          const Icon = widget.icon;
+                          const isHidden = hiddenWidgetIds.includes(widget.id);
+
+                          return (
+                            <button
+                              key={widget.id}
+                              onClick={() => handleAddWidget(widget.id)}
+                              className={cn(
+                                "flex items-start gap-3 p-3 rounded-lg border border-border",
+                                "hover:bg-accent/50 hover:border-accent transition-colors",
+                                "text-left w-full group"
+                              )}
+                            >
+                              <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center shrink-0 group-hover:bg-accent/20 transition-colors">
+                                <Icon className="w-5 h-5 text-muted-foreground group-hover:text-accent-foreground" />
                               </div>
-                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                                {widget.description}
-                              </p>
-                              <p className="text-xs text-muted-foreground/60 mt-1">
-                                {widget.defaultW}×{widget.defaultH} grid units
-                              </p>
-                            </div>
-                          </button>
-                        );
-                      })}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-medium text-sm">{widget.name}</p>
+                                  {isHidden && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      Hidden
+                                    </Badge>
+                                  )}
+                                  {widget.mandatory && (
+                                    <Badge variant="outline" className="text-xs">
+                                      Required
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                                  {widget.description}
+                                </p>
+                                <p className="text-xs text-muted-foreground/60 mt-1">
+                                  {widget.defaultW}×{widget.defaultH} grid units
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </ScrollArea>
+                  );
+                })}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
         
         <div className="flex justify-end pt-4 border-t border-border -mx-6 px-6">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
