@@ -2,6 +2,12 @@ import { GripHorizontal, EyeOff, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { WIDGET_REGISTRY } from "../registry/widgetRegistry";
 import { WidgetRenderer } from "./WidgetRenderer";
 
@@ -51,15 +57,24 @@ export function WidgetWrapper({
             </Button>
           )}
 
-          {/* Mandatory badge */}
+          {/* Mandatory badge with tooltip */}
           {widgetDef?.mandatory && (
-            <Badge
-              variant="secondary"
-              className="absolute bottom-2 right-2 z-20 text-xs"
-            >
-              <Lock className="h-3 w-3 mr-1" />
-              Required
-            </Badge>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge
+                    variant="secondary"
+                    className="absolute bottom-2 right-2 z-20 text-xs cursor-help"
+                  >
+                    <Lock className="h-3 w-3 mr-1" />
+                    Required
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>This widget cannot be hidden or removed</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
 
           {/* Border highlight */}

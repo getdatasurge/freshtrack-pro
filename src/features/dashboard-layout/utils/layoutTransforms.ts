@@ -4,10 +4,10 @@
  * Functions for validating, sanitizing, and migrating layout configurations.
  */
 
-import type { LayoutConfig, WidgetPosition, SavedLayout, ActiveLayout, WidgetPreferences, TimelineState } from "../types";
+import type { LayoutConfig, WidgetPosition, SavedLayout, ActiveLayout, WidgetPreferences, TimelineState, EntityType } from "../types";
 import { LAYOUT_CONFIG_VERSION, DEFAULT_LAYOUT_ID } from "../types";
 import { WIDGET_REGISTRY, getMandatoryWidgets } from "../registry/widgetRegistry";
-import { DEFAULT_LAYOUT_CONFIG, DEFAULT_TIMELINE_STATE, DEFAULT_WIDGET_PREFS, getDefaultLayout } from "../constants/defaultLayout";
+import { DEFAULT_TIMELINE_STATE, DEFAULT_WIDGET_PREFS, getDefaultLayout } from "../constants/defaultLayout";
 
 // Re-export getDefaultLayout for convenience
 export { getDefaultLayout };
@@ -27,8 +27,10 @@ export interface ValidationResult {
 
 /**
  * Validate a layout configuration.
+ * @param config - The layout configuration to validate
+ * @param entityType - Optional entity type to validate mandatory widgets for specific entity
  */
-export function validateLayoutConfig(config: unknown): ValidationResult {
+export function validateLayoutConfig(config: unknown, entityType?: EntityType): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -72,9 +74,17 @@ export function validateLayoutConfig(config: unknown): ValidationResult {
     }
   }
 
-  // Check mandatory widgets are present
-  const mandatory = getMandatoryWidgets();
+  // Check mandatory widgets are present (entity-type aware)
+  const mandatory = getMandatoryWidgets(entityType);
   const hiddenWidgets = Array.isArray(cfg.hiddenWidgets) ? cfg.hiddenWidgets as string[] : [];
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[Layout] validateLayoutConfig:', {
+      entityType: entityType || 'unspecified',
+      widgetCount: (cfg.widgets as unknown[]).length,
+      mandatoryRequired: mandatory.map(m => m.id),
+    });
+  }
   
   for (const mw of mandatory) {
     const inLayout = (cfg.widgets as WidgetPosition[]).some(w => w.i === mw.id);
@@ -118,14 +128,21 @@ function isValidWidgetPosition(obj: unknown): obj is WidgetPosition {
 /**
  * Sanitize a layout config, fixing issues and applying defaults.
  * Returns a valid LayoutConfig or falls back to default.
+ * @param config - The layout configuration to sanitize
+ * @param entityType - Optional entity type for entity-specific mandatory widgets and defaults
  */
-export function sanitizeLayoutConfig(config: unknown): LayoutConfig {
-  const validation = validateLayoutConfig(config);
+export function sanitizeLayoutConfig(config: unknown, entityType?: EntityType): LayoutConfig {
+  const validation = validateLayoutConfig(config, entityType);
   
-  // If completely invalid, return default
+  // Get entity-specific default layout
+  const defaultConfig = entityType 
+    ? getDefaultLayout(entityType).config 
+    : getDefaultLayout('unit').config;
+  
+  // If completely invalid, return entity-specific default
   if (!validation.valid && validation.errors.length > 0) {
     console.warn("[Layout] Invalid layout, falling back to default:", validation.errors);
-    return { ...DEFAULT_LAYOUT_CONFIG };
+    return { ...defaultConfig };
   }
 
   const cfg = config as Record<string, unknown>;
@@ -138,15 +155,15 @@ export function sanitizeLayoutConfig(config: unknown): LayoutConfig {
     return true;
   });
 
-  // Ensure mandatory widgets are present
-  const mandatory = getMandatoryWidgets();
+  // Ensure mandatory widgets are present (entity-type aware)
+  const mandatory = getMandatoryWidgets(entityType);
   for (const mw of mandatory) {
     if (!widgets.some(w => w.i === mw.id)) {
-      // Add mandatory widget at default position
-      const defaultPos = DEFAULT_LAYOUT_CONFIG.widgets.find(w => w.i === mw.id);
+      // Add mandatory widget at default position from entity-specific defaults
+      const defaultPos = defaultConfig.widgets.find(w => w.i === mw.id);
       if (defaultPos) {
         widgets.push({ ...defaultPos });
-        console.warn(`[Layout] Added missing mandatory widget: ${mw.id}`);
+        console.warn(`[Layout] Auto-repaired: Added missing mandatory widget: ${mw.id}`);
       }
     }
   }
@@ -250,9 +267,11 @@ function fixOverlappingWidgets(widgets: WidgetPosition[]): WidgetPosition[] {
 
 /**
  * Transform a database row to ActiveLayout.
+ * @param row - The saved layout from the database
+ * @param entityType - Optional entity type for entity-specific validation and defaults
  */
-export function dbRowToActiveLayout(row: SavedLayout): ActiveLayout {
-  const sanitizedConfig = sanitizeLayoutConfig(row.layoutJson);
+export function dbRowToActiveLayout(row: SavedLayout, entityType?: EntityType): ActiveLayout {
+  const sanitizedConfig = sanitizeLayoutConfig(row.layoutJson, entityType);
   
   return {
     id: row.id,
