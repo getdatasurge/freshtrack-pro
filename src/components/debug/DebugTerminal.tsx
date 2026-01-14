@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { useDebugContext } from '@/contexts/DebugContext';
+import { useDebugContextSafe } from '@/contexts/DebugContext';
 import { DebugLogEntry, DebugLogLevel, DebugLogCategory, EntityType } from '@/lib/debugLogger';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -189,6 +189,12 @@ function LogEntry({ entry, onExplain, onFilterByCorrelation, onCopyEntry }: LogE
 }
 
 export function DebugTerminal() {
+  const debugContext = useDebugContextSafe();
+  const { toast } = useToast();
+  
+  // Early return if context not available (component rendered outside provider)
+  if (!debugContext) return null;
+  
   const { 
     isDebugEnabled, 
     isTerminalVisible, 
@@ -201,8 +207,7 @@ export function DebugTerminal() {
     selectedErrorForExplanation,
     showExplanation,
     hideExplanation
-  } = useDebugContext();
-  const { toast } = useToast();
+  } = debugContext;
   
   const [isMinimized, setIsMinimized] = useState(false);
   const [height, setHeight] = useState(300);

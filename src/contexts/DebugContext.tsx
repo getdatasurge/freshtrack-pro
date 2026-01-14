@@ -166,3 +166,11 @@ export function useDebugContext() {
   }
   return context;
 }
+
+/**
+ * Safe version of useDebugContext that returns null if used outside the provider.
+ * Use this for components that may render before providers are mounted.
+ */
+export function useDebugContextSafe(): DebugContextValue | null {
+  return useContext(DebugContext);
+}
