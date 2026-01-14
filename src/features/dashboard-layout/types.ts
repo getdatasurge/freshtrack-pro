@@ -346,7 +346,7 @@ export interface WidgetDefinition {
   /** Default height in grid units */
   defaultH: number;
   /** Widget category for grouping */
-  category: "monitoring" | "alerts" | "device" | "compliance";
+  category: "monitoring" | "alerts" | "device" | "compliance" | "utility";
   /** Icon component from lucide-react */
   icon: LucideIcon;
   /** Whether this widget supports timeline controls */

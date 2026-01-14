@@ -60,10 +60,11 @@ export function AddWidgetModal({
     alerts: "Alerts",
     device: "Device & Sensors",
     compliance: "Compliance",
+    utility: "Utility & Actions",
     other: "Other",
   };
 
-  const categoryOrder = ["monitoring", "alerts", "device", "compliance", "other"];
+  const categoryOrder = ["monitoring", "alerts", "device", "compliance", "utility", "other"];
   const sortedCategories = Object.keys(widgetsByCategory).sort(
     (a, b) => categoryOrder.indexOf(a) - categoryOrder.indexOf(b)
   );
