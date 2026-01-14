@@ -223,34 +223,6 @@ export function EntityDashboard({
       userId={userId}
     >
     <div className="space-y-4">
-      {/* Unsaved Changes Banner */}
-      {state.isDirty && !state.activeLayout.isDefault && (
-        <Alert className="bg-amber-50 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800">
-          <AlertDescription className="flex items-center justify-between">
-            <span className="text-sm text-amber-800 dark:text-amber-200">
-              You have unsaved changes to this layout
-            </span>
-            <div className="flex gap-2">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={handleDiscard}
-                className="text-amber-800 hover:text-amber-900 dark:text-amber-200"
-              >
-                Discard
-              </Button>
-              <Button 
-                size="sm" 
-                onClick={handleSave}
-                disabled={state.isSaving}
-                className="bg-amber-600 hover:bg-amber-700 text-white"
-              >
-                {state.isSaving ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* Draft Recovery Banner */}
       {state.hasDraft && !state.isDirty && !state.activeLayout.isDefault && (
