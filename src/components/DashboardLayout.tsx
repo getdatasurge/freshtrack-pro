@@ -213,10 +213,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
               )}
             </div>
 
-            {/* Divider between org info and actions - desktop only */}
-            <Separator 
-              orientation="vertical" 
-              className="hidden lg:block h-6 mx-4 bg-border/50" 
+            {/* Frost Pill Divider - desktop only */}
+            <div 
+              className="hidden lg:block w-0.5 h-8 mx-4 rounded-full bg-muted-foreground/30 shadow-[0_0_8px_hsl(192_85%_45%/0.15)]"
+              aria-hidden="true"
             />
 
             {/* Right side actions */}
