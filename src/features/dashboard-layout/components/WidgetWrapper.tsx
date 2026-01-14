@@ -14,6 +14,7 @@ import { WidgetRenderer } from "./WidgetRenderer";
 interface WidgetWrapperProps {
   widgetId: string;
   isCustomizing: boolean;
+  isResizing?: boolean;
   canHide: boolean;
   onHide: () => void;
   props: Record<string, unknown>;
@@ -22,6 +23,7 @@ interface WidgetWrapperProps {
 export function WidgetWrapper({
   widgetId,
   isCustomizing,
+  isResizing = false,
   canHide,
   onHide,
   props,
@@ -88,7 +90,16 @@ export function WidgetWrapper({
         style={{ pointerEvents: isCustomizing ? "none" : "auto" }}
       >
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-          <WidgetRenderer widgetId={widgetId} props={props} />
+          {isResizing ? (
+            <div className="h-full w-full flex items-center justify-center bg-muted/30">
+              <div className="text-muted-foreground text-sm flex items-center gap-2">
+                {Icon && <Icon className="h-5 w-5" />}
+                <span>{widgetDef?.name || widgetId}</span>
+              </div>
+            </div>
+          ) : (
+            <WidgetRenderer widgetId={widgetId} props={props} />
+          )}
         </div>
       </div>
     </Card>
