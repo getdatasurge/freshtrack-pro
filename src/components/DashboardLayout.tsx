@@ -215,12 +215,12 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
             {/* Frost Pill Divider - desktop only */}
             <div 
-              className="hidden lg:block w-0.5 h-8 mx-4 rounded-full bg-muted-foreground/30 shadow-[0_0_8px_hsl(192_85%_45%/0.15)]"
+              className="hidden lg:block w-0.5 h-8 mx-4 rounded-full bg-muted-foreground/30 shadow-[0_0_8px_hsl(192_85%_45%/0.15)] transition-all duration-200 hover:bg-muted-foreground/50 hover:shadow-[0_0_12px_hsl(192_85%_45%/0.35)] motion-reduce:transition-none"
               aria-hidden="true"
             />
 
-            {/* Right side actions */}
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Right side actions with backplate */}
+            <div className="flex items-center gap-2 shrink-0 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/30 transition-colors duration-200 hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring/20">
               <ThemeToggle />
               <NotificationDropdown alertCount={alertCount} />
               <Button variant="ghost" size="sm" onClick={handleSignOut} className="hidden sm:flex">

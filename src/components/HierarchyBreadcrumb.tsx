@@ -36,7 +36,10 @@ export function HierarchyBreadcrumb({ items, actions, className }: HierarchyBrea
         {items.map((item, index) => (
           <div key={index} className="flex items-center gap-2 shrink-0">
             {index > 0 && (
-              <span className="text-muted-foreground/60 select-none">|</span>
+              <span 
+                className="w-0.5 h-4 rounded-full bg-muted-foreground/40 select-none" 
+                aria-hidden="true"
+              />
             )}
             
             {item.isCurrentPage && item.siblings && item.siblings.length > 0 ? (
