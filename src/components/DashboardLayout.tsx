@@ -159,35 +159,57 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="sticky top-0 z-50 glass border-b border-border/50">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
+        <div className="flex h-16">
+          {/* Left section - fixed width matching sidebar on desktop */}
+          <div className="hidden lg:flex items-center w-64 px-4 shrink-0">
+            <Link to="/dashboard" className="flex items-center gap-3">
+              <BrandedLogo showText={true} size="md" />
+            </Link>
+          </div>
+          
+          {/* Right section - main content area header with matching gutters */}
+          <div className="flex-1 flex items-center justify-between px-4 sm:px-6 lg:px-8">
+            {/* Mobile: hamburger + logo */}
+            <div className="flex items-center gap-3 lg:hidden">
               {showBack && backHref ? (
                 <Link to={backHref}>
-                  <Button variant="ghost" size="icon" className="mr-2">
+                  <Button variant="ghost" size="icon" className="shrink-0">
                     <ChevronLeft className="w-5 h-5" />
                   </Button>
                 </Link>
               ) : (
                 <Button 
                   variant="ghost" 
-                  size="icon" 
-                  className="lg:hidden"
+                  size="icon"
+                  className="shrink-0"
                   onClick={() => setMobileNavOpen(!mobileNavOpen)}
                 >
                   {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </Button>
               )}
-              <Link to="/dashboard" className="flex items-center gap-3">
+              <Link to="/dashboard">
                 <BrandedLogo showText={true} size="md" />
-                {orgName && (
-                  <span className="hidden sm:inline text-sm text-muted-foreground">
-                    · {orgName}
-                  </span>
-                )}
               </Link>
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Desktop: org name + back button if needed */}
+            <div className="hidden lg:flex items-center gap-3 min-w-0">
+              {showBack && backHref && (
+                <Link to={backHref}>
+                  <Button variant="ghost" size="icon" className="shrink-0">
+                    <ChevronLeft className="w-5 h-5" />
+                  </Button>
+                </Link>
+              )}
+              {orgName && (
+                <span className="text-sm text-muted-foreground font-medium truncate">
+                  {orgName}
+                </span>
+              )}
+            </div>
+
+            {/* Right side actions */}
+            <div className="flex items-center gap-2 shrink-0">
               <ThemeToggle />
               <NotificationDropdown alertCount={alertCount} />
               <Button variant="ghost" size="sm" onClick={handleSignOut} className="hidden sm:flex">
