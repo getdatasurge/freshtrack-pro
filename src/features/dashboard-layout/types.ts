@@ -178,6 +178,8 @@ export interface WidgetSite {
   name: string;
   organization_id: string;
   timezone?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   compliance_mode?: string;
   manual_log_cadence_seconds?: number;
   corrective_action_required?: boolean;
