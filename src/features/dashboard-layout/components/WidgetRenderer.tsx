@@ -18,6 +18,39 @@ import { UnitsStatusGridWidget } from "../widgets/UnitsStatusGridWidget";
 import { SiteAlertsSummaryWidget } from "../widgets/SiteAlertsSummaryWidget";
 import { ComplianceSummaryWidget } from "../widgets/ComplianceSummaryWidget";
 
+// New Unit widgets
+import { TemperatureStatisticsWidget } from "../widgets/TemperatureStatisticsWidget";
+import { TemperatureTrendWidget } from "../widgets/TemperatureTrendWidget";
+import { TemperatureExcursionWidget } from "../widgets/TemperatureExcursionWidget";
+import { DoorActivityWidget } from "../widgets/DoorActivityWidget";
+import { HumidityChartWidget } from "../widgets/HumidityChartWidget";
+import { ManualLogStatusWidget } from "../widgets/ManualLogStatusWidget";
+import { AlertHistoryWidget } from "../widgets/AlertHistoryWidget";
+import { SensorSignalTrendWidget } from "../widgets/SensorSignalTrendWidget";
+import { QuickActionsWidget } from "../widgets/QuickActionsWidget";
+import { EventTimelineWidget } from "../widgets/EventTimelineWidget";
+import { UnitComplianceScoreWidget } from "../widgets/UnitComplianceScoreWidget";
+import { MaintenanceForecastWidget } from "../widgets/MaintenanceForecastWidget";
+import { TemperatureVsExternalWidget } from "../widgets/TemperatureVsExternalWidget";
+import { AnnotationsWidget } from "../widgets/AnnotationsWidget";
+
+// New Site widgets
+import { TemperatureHeatmapWidget } from "../widgets/TemperatureHeatmapWidget";
+import { AlertsTrendWidget } from "../widgets/AlertsTrendWidget";
+import { ComplianceScoreboardWidget } from "../widgets/ComplianceScoreboardWidget";
+import { AreaBreakdownWidget } from "../widgets/AreaBreakdownWidget";
+import { RecentEventsFeedWidget } from "../widgets/RecentEventsFeedWidget";
+import { UnitComparisonWidget } from "../widgets/UnitComparisonWidget";
+import { ProblemUnitsWidget } from "../widgets/ProblemUnitsWidget";
+import { ManualLogOverviewWidget } from "../widgets/ManualLogOverviewWidget";
+import { SiteActivityGraphWidget } from "../widgets/SiteActivityGraphWidget";
+import { ExternalWeatherWidget } from "../widgets/ExternalWeatherWidget";
+import { MaintenanceCalendarWidget } from "../widgets/MaintenanceCalendarWidget";
+import { DowntimeTrackerWidget } from "../widgets/DowntimeTrackerWidget";
+import { QuickStatsCardsWidget } from "../widgets/QuickStatsCardsWidget";
+import { UnitTypeDistributionWidget } from "../widgets/UnitTypeDistributionWidget";
+import { GatewayHealthWidget } from "../widgets/GatewayHealthWidget";
+
 interface WidgetRendererProps {
   widgetId: string;
   props: WidgetProps;
@@ -41,8 +74,8 @@ export function WidgetRenderer({ widgetId, props }: WidgetRendererProps) {
     return <UnknownWidget widgetId={widgetId} />;
   }
 
-  // Unit widgets
   switch (widgetId) {
+    // ===== Existing Unit widgets =====
     case "temperature_chart":
       return (
         <TemperatureChartWidget
@@ -103,8 +136,8 @@ export function WidgetRenderer({ widgetId, props }: WidgetRendererProps) {
     
     case "battery_health":
       return <BatteryHealthWidget {...props} />;
-    
-    // Site widgets
+
+    // ===== Existing Site widgets =====
     case "site_overview":
       return <SiteOverviewWidget {...props} />;
     
@@ -116,7 +149,96 @@ export function WidgetRenderer({ widgetId, props }: WidgetRendererProps) {
     
     case "compliance_summary":
       return <ComplianceSummaryWidget {...props} />;
-    
+
+    // ===== New Unit widgets =====
+    case "temperature_statistics":
+      return <TemperatureStatisticsWidget {...props} />;
+
+    case "temperature_trend":
+      return <TemperatureTrendWidget {...props} />;
+
+    case "temperature_excursion":
+      return <TemperatureExcursionWidget {...props} />;
+
+    case "door_activity":
+      return <DoorActivityWidget {...props} />;
+
+    case "humidity_chart":
+      return <HumidityChartWidget {...props} />;
+
+    case "manual_log_status":
+      return <ManualLogStatusWidget {...props} />;
+
+    case "alert_history":
+      return <AlertHistoryWidget {...props} />;
+
+    case "sensor_signal_trend":
+      return <SensorSignalTrendWidget {...props} />;
+
+    case "quick_actions":
+      return <QuickActionsWidget {...props} />;
+
+    case "event_timeline":
+      return <EventTimelineWidget {...props} />;
+
+    case "unit_compliance_score":
+      return <UnitComplianceScoreWidget {...props} />;
+
+    case "maintenance_forecast":
+      return <MaintenanceForecastWidget {...props} />;
+
+    case "temperature_vs_external":
+      return <TemperatureVsExternalWidget {...props} />;
+
+    case "annotations":
+      return <AnnotationsWidget {...props} />;
+
+    // ===== New Site widgets =====
+    case "temperature_heatmap":
+      return <TemperatureHeatmapWidget {...props} />;
+
+    case "alerts_trend":
+      return <AlertsTrendWidget {...props} />;
+
+    case "compliance_scoreboard":
+      return <ComplianceScoreboardWidget {...props} />;
+
+    case "area_breakdown":
+      return <AreaBreakdownWidget {...props} />;
+
+    case "recent_events_feed":
+      return <RecentEventsFeedWidget {...props} />;
+
+    case "unit_comparison":
+      return <UnitComparisonWidget {...props} />;
+
+    case "problem_units":
+      return <ProblemUnitsWidget {...props} />;
+
+    case "manual_log_overview":
+      return <ManualLogOverviewWidget {...props} />;
+
+    case "site_activity_graph":
+      return <SiteActivityGraphWidget {...props} />;
+
+    case "external_weather":
+      return <ExternalWeatherWidget {...props} />;
+
+    case "maintenance_calendar":
+      return <MaintenanceCalendarWidget {...props} />;
+
+    case "downtime_tracker":
+      return <DowntimeTrackerWidget {...props} />;
+
+    case "quick_stats_cards":
+      return <QuickStatsCardsWidget {...props} />;
+
+    case "unit_type_distribution":
+      return <UnitTypeDistributionWidget {...props} />;
+
+    case "gateway_health":
+      return <GatewayHealthWidget {...props} />;
+
     default:
       return <UnknownWidget widgetId={widgetId} />;
   }
