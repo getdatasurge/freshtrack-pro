@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import type { LayoutConfig, TimelineState, WidgetPreferences, SavedLayout } from "../types";
+import type { LayoutConfig, TimelineState, WidgetPreferences, SavedLayout, EntityType } from "../types";
 import { DEFAULT_LAYOUT_CONFIG, DEFAULT_TIMELINE_STATE } from "../constants/defaultLayout";
 import { Json } from "@/integrations/supabase/types";
 
-export type EntityType = 'unit' | 'site';
+// Re-export EntityType for backward compatibility
+export type { EntityType };
 
 interface EntityLayoutRow {
   id: string;
@@ -151,12 +152,11 @@ export function useEntityLayoutStorage(
 
       return rowToSavedLayout(data as EntityLayoutRow);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"] });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree-units"] });
-      // Toast handled by useLayoutManager to avoid duplicates
+    onSuccess: (savedLayout) => {
+      // Update cache directly instead of invalidating to reduce refetches
+      queryClient.setQueryData(queryKey, (old: SavedLayout[] = []) => [...old, savedLayout]);
+      // Only invalidate nav-tree if layout name might appear in navigation
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"], exact: false });
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to create layout");
@@ -190,12 +190,13 @@ export function useEntityLayoutStorage(
       if (error) throw error;
       return rowToSavedLayout(data as EntityLayoutRow);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"] });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree-units"] });
-      // Toast handled by useLayoutManager to avoid duplicates
+    onSuccess: (updatedLayout) => {
+      // Update cache directly with the returned layout
+      queryClient.setQueryData(queryKey, (old: SavedLayout[] = []) => 
+        old.map(l => l.id === updatedLayout.id ? updatedLayout : l)
+      );
+      // Only invalidate nav-tree-layouts if name might have changed
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"], exact: false });
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to save layout");
@@ -212,11 +213,12 @@ export function useEntityLayoutStorage(
 
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"] });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree-units"] });
+    onSuccess: (_data, deletedLayoutId) => {
+      // Update cache directly by removing the deleted layout
+      queryClient.setQueryData(queryKey, (old: SavedLayout[] = []) => 
+        old.filter(l => l.id !== deletedLayoutId)
+      );
+      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts"], exact: false });
       toast.success("Layout deleted");
     },
     onError: (error: Error) => {

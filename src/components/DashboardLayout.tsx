@@ -106,12 +106,13 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
       if (org) setOrgName(org.name);
 
-      // Get alert count - explicitly filter by organization_id
+      // Get alert count - use GET with limit(0) instead of HEAD to avoid CORS/RLS issues
       const { count } = await supabase
         .from("alerts")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact" })
         .eq("organization_id", profile.organization_id)
-        .eq("status", "active");
+        .eq("status", "active")
+        .limit(0);
 
       setAlertCount(count || 0);
     }

@@ -148,7 +148,7 @@ export function useLayoutManager(
     }
     
     if (layoutToLoad) {
-      const active = dbRowToActiveLayout(layoutToLoad);
+      const active = dbRowToActiveLayout(layoutToLoad, entityType);
       setActiveLayout(active);
       setOriginalConfig(cloneLayoutConfig(active.config));
       setOriginalTimelineState({ ...active.timelineState });
@@ -207,7 +207,7 @@ export function useLayoutManager(
     } else {
       const saved = storage.savedLayouts.find((l) => l.id === layoutId);
       if (saved) {
-        const active = dbRowToActiveLayout(saved);
+        const active = dbRowToActiveLayout(saved, entityType);
         setActiveLayout(active);
         setOriginalConfig(cloneLayoutConfig(active.config));
         setOriginalTimelineState({ ...active.timelineState });
@@ -314,7 +314,7 @@ export function useLayoutManager(
           timelineStateJson: activeLayout.timelineState,
           widgetPrefsJson: activeLayout.widgetPrefs,
         });
-        const active = dbRowToActiveLayout(saved);
+        const active = dbRowToActiveLayout(saved, entityType);
         setActiveLayout(active);
         setOriginalConfig(cloneLayoutConfig(active.config));
         setOriginalTimelineState({ ...active.timelineState });
@@ -433,7 +433,7 @@ export function useLayoutManager(
       timelineStateJson: activeLayout.timelineState,
       widgetPrefsJson: activeLayout.widgetPrefs,
     });
-    const active = dbRowToActiveLayout(saved);
+    const active = dbRowToActiveLayout(saved, entityType);
     setActiveLayout(active);
     setOriginalConfig(cloneLayoutConfig(active.config));
     setOriginalTimelineState({ ...active.timelineState });
