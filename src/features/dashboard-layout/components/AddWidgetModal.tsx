@@ -84,7 +84,7 @@ export function AddWidgetModal({
           </DialogDescription>
         </DialogHeader>
         
-        <ScrollArea className="flex-1 -mx-6 px-6">
+        <ScrollArea className="flex-1 -mx-6 px-6 max-h-[60vh]">
           {addableWidgets.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>All available widgets are already in your layout.</p>
