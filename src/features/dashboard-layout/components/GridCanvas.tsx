@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import GridLayout, { Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -6,6 +6,8 @@ import type { LayoutConfig, WidgetPosition } from "../types";
 import { GRID_CONFIG } from "../types";
 import { WIDGET_REGISTRY } from "../registry/widgetRegistry";
 import { WidgetWrapper } from "./WidgetWrapper";
+import { GridOverlay } from "./GridOverlay";
+import { ResizeSizeLabel } from "./ResizeSizeLabel";
 
 interface GridCanvasProps {
   layout: LayoutConfig;
@@ -24,6 +26,15 @@ export function GridCanvas({
   onHideWidget,
   containerWidth = 1200,
 }: GridCanvasProps) {
+  // Resize/drag state for grid overlay and size label
+  const [isResizing, setIsResizing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [resizeSize, setResizeSize] = useState<{ w: number; h: number } | null>(null);
+
+  // Show grid overlay when actively resizing or dragging
+  const isInteracting = isResizing || isDragging;
+
   const hiddenWidgets = layout.hiddenWidgets || [];
 
   // Filter out hidden widgets
@@ -83,13 +94,63 @@ export function GridCanvas({
     return widgetDef ? !widgetDef.mandatory : true;
   }, []);
 
+  // Resize lifecycle handlers
+  const handleResizeStart = useCallback(
+    (_layout: Layout[], _oldItem: Layout, newItem: Layout) => {
+      setIsResizing(true);
+      setActiveItemId(newItem.i);
+      setResizeSize({ w: newItem.w, h: newItem.h });
+    },
+    []
+  );
+
+  const handleResize = useCallback(
+    (_layout: Layout[], _oldItem: Layout, newItem: Layout) => {
+      setResizeSize({ w: newItem.w, h: newItem.h });
+    },
+    []
+  );
+
+  const handleResizeStop = useCallback(() => {
+    setIsResizing(false);
+    setActiveItemId(null);
+    setResizeSize(null);
+  }, []);
+
+  // Drag lifecycle handlers
+  const handleDragStart = useCallback(
+    (_layout: Layout[], _oldItem: Layout, newItem: Layout) => {
+      setIsDragging(true);
+      setActiveItemId(newItem.i);
+    },
+    []
+  );
+
+  const handleDragStop = useCallback(() => {
+    setIsDragging(false);
+    setActiveItemId(null);
+  }, []);
+
   return (
     <div
       className={`grid-canvas relative ${
         isCustomizing ? "customizing" : ""
       }`}
     >
-<GridLayout
+      {/* Grid overlay - visible during resize/drag */}
+      <GridOverlay 
+        containerWidth={containerWidth} 
+        isVisible={isInteracting}
+      />
+
+      {/* Size label during resize */}
+      <ResizeSizeLabel
+        width={resizeSize?.w ?? 0}
+        height={resizeSize?.h ?? 0}
+        isVisible={isResizing && resizeSize !== null}
+      />
+
+      <GridLayout
         className="layout"
         layout={gridLayout}
         cols={GRID_CONFIG.cols}
@@ -101,6 +162,11 @@ export function GridCanvas({
         isResizable={isCustomizing}
         resizeHandles={['se', 'e', 's']}
         onLayoutChange={handleLayoutChange}
+        onResizeStart={handleResizeStart}
+        onResize={handleResize}
+        onResizeStop={handleResizeStop}
+        onDragStart={handleDragStart}
+        onDragStop={handleDragStop}
         draggableHandle=".widget-drag-handle"
         useCSSTransforms={true}
         compactType="vertical"
@@ -111,6 +177,7 @@ export function GridCanvas({
             <WidgetWrapper
               widgetId={widget.i}
               isCustomizing={isCustomizing}
+              isResizing={isResizing && activeItemId === widget.i}
               canHide={canHideWidget(widget.i)}
               onHide={() => onHideWidget(widget.i)}
               props={widgetProps[widget.i] || {}}
@@ -118,20 +185,6 @@ export function GridCanvas({
           </div>
         ))}
       </GridLayout>
-
-      {/* Grid overlay for visual guidance when customizing */}
-      {isCustomizing && (
-        <div
-          className="pointer-events-none absolute inset-0 opacity-10"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px),
-              linear-gradient(to bottom, hsl(var(--border)) 1px, transparent 1px)
-            `,
-            backgroundSize: `${containerWidth / GRID_CONFIG.cols}px ${GRID_CONFIG.rowHeight}px`,
-          }}
-        />
-      )}
     </div>
   );
 }

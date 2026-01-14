@@ -64,6 +64,8 @@ export { LayoutSelector } from "./components/LayoutSelector";
 export { LayoutManager } from "./components/LayoutManager";
 export { CustomizeToggle } from "./components/CustomizeToggle";
 export { GridCanvas } from "./components/GridCanvas";
+export { GridOverlay } from "./components/GridOverlay";
+export { ResizeSizeLabel } from "./components/ResizeSizeLabel";
 export { WidgetWrapper } from "./components/WidgetWrapper";
 export { WidgetRenderer } from "./components/WidgetRenderer";
 export { HiddenWidgetsPanel } from "./components/HiddenWidgetsPanel";
