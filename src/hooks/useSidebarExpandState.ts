@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "frostguard-sidebar-expand-state";
 
@@ -16,12 +16,13 @@ const DEFAULT_STATE: ExpandState = {
   unitsCollapsed: false,
 };
 
+// ========== SINGLETON STORE ==========
+
 function loadFromStorage(): ExpandState {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      // Migrate old state: remove sensor keys, ensure site keys exist
       return {
         expandedSites: parsed.expandedSites || [],
         expandedUnits: parsed.expandedUnits || [],
@@ -30,7 +31,7 @@ function loadFromStorage(): ExpandState {
       };
     }
   } catch (e) {
-    console.warn("[useSidebarExpandState] Failed to load from localStorage:", e);
+    console.warn("[useSidebarExpandState] Failed to load:", e);
   }
   return DEFAULT_STATE;
 }
@@ -39,23 +40,45 @@ function saveToStorage(state: ExpandState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
-    console.warn("[useSidebarExpandState] Failed to save to localStorage:", e);
+    console.warn("[useSidebarExpandState] Failed to save:", e);
   }
 }
 
+// Module-level state (singleton) - loaded once at module initialization
+let currentState: ExpandState = loadFromStorage();
+const listeners: Set<() => void> = new Set();
+
+function getSnapshot(): ExpandState {
+  return currentState;
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function updateState(updater: (prev: ExpandState) => ExpandState): void {
+  const newState = updater(currentState);
+  if (newState !== currentState) {
+    currentState = newState;
+    saveToStorage(newState);
+    // Notify all subscribers
+    listeners.forEach((listener) => listener());
+  }
+}
+
+// ========== HOOK ==========
+
 /**
  * Hook for managing sidebar expand/collapse state.
- * Persists state in localStorage across sessions.
- * 
+ * Uses a singleton store pattern with useSyncExternalStore to ensure
+ * all hook instances share the same state and persist to localStorage.
+ *
  * Scopes: Sites and Units (no sensor-level expand state)
  */
 export function useSidebarExpandState() {
-  const [state, setState] = useState<ExpandState>(loadFromStorage);
-
-  // Persist to storage on state change
-  useEffect(() => {
-    saveToStorage(state);
-  }, [state]);
+  // useSyncExternalStore ensures all hook instances share the same state
+  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const isSiteExpanded = useCallback(
     (siteId: string) => state.expandedSites.includes(siteId),
@@ -68,46 +91,34 @@ export function useSidebarExpandState() {
   );
 
   const toggleSite = useCallback((siteId: string) => {
-    setState((prev) => {
-      const isExpanded = prev.expandedSites.includes(siteId);
-      return {
-        ...prev,
-        expandedSites: isExpanded
-          ? prev.expandedSites.filter((id) => id !== siteId)
-          : [...prev.expandedSites, siteId],
-      };
-    });
+    updateState((prev) => ({
+      ...prev,
+      expandedSites: prev.expandedSites.includes(siteId)
+        ? prev.expandedSites.filter((id) => id !== siteId)
+        : [...prev.expandedSites, siteId],
+    }));
   }, []);
 
   const toggleUnit = useCallback((unitId: string) => {
-    setState((prev) => {
-      const isExpanded = prev.expandedUnits.includes(unitId);
-      return {
-        ...prev,
-        expandedUnits: isExpanded
-          ? prev.expandedUnits.filter((id) => id !== unitId)
-          : [...prev.expandedUnits, unitId],
-      };
-    });
+    updateState((prev) => ({
+      ...prev,
+      expandedUnits: prev.expandedUnits.includes(unitId)
+        ? prev.expandedUnits.filter((id) => id !== unitId)
+        : [...prev.expandedUnits, unitId],
+    }));
   }, []);
 
   const expandSite = useCallback((siteId: string) => {
-    setState((prev) => {
+    updateState((prev) => {
       if (prev.expandedSites.includes(siteId)) return prev;
-      return {
-        ...prev,
-        expandedSites: [...prev.expandedSites, siteId],
-      };
+      return { ...prev, expandedSites: [...prev.expandedSites, siteId] };
     });
   }, []);
 
   const expandUnit = useCallback((unitId: string) => {
-    setState((prev) => {
+    updateState((prev) => {
       if (prev.expandedUnits.includes(unitId)) return prev;
-      return {
-        ...prev,
-        expandedUnits: [...prev.expandedUnits, unitId],
-      };
+      return { ...prev, expandedUnits: [...prev.expandedUnits, unitId] };
     });
   }, []);
 
@@ -116,22 +127,14 @@ export function useSidebarExpandState() {
    * If siteId is provided, also expands the site.
    */
   const expandToActive = useCallback((unitId: string, siteId?: string) => {
-    setState((prev) => {
-      const newState = { ...prev };
-      
-      // Expand units section
-      newState.unitsCollapsed = false;
-      
-      // Expand the site if provided
+    updateState((prev) => {
+      const newState = { ...prev, unitsCollapsed: false };
       if (siteId && !newState.expandedSites.includes(siteId)) {
         newState.expandedSites = [...newState.expandedSites, siteId];
       }
-      
-      // Expand the unit
       if (!newState.expandedUnits.includes(unitId)) {
         newState.expandedUnits = [...newState.expandedUnits, unitId];
       }
-      
       return newState;
     });
   }, []);
@@ -141,37 +144,22 @@ export function useSidebarExpandState() {
    * Expands the units section and the site accordion.
    */
   const expandToActiveSite = useCallback((siteId: string) => {
-    setState((prev) => {
-      const newState = { ...prev };
-      
-      // Expand units section
-      newState.unitsCollapsed = false;
-      
-      // Expand the site
+    updateState((prev) => {
+      const newState = { ...prev, unitsCollapsed: false };
       if (!newState.expandedSites.includes(siteId)) {
         newState.expandedSites = [...newState.expandedSites, siteId];
       }
-      
       return newState;
     });
   }, []);
 
   const toggleUnitsSection = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      unitsCollapsed: !prev.unitsCollapsed,
-    }));
+    updateState((prev) => ({ ...prev, unitsCollapsed: !prev.unitsCollapsed }));
   }, []);
 
   const toggleSitesSection = useCallback(() => {
-    setState((prev) => ({
-      ...prev,
-      sitesCollapsed: !prev.sitesCollapsed,
-    }));
+    updateState((prev) => ({ ...prev, sitesCollapsed: !prev.sitesCollapsed }));
   }, []);
-
-  const isUnitsSectionCollapsed = state.unitsCollapsed;
-  const isSitesSectionCollapsed = state.sitesCollapsed;
 
   return {
     isSiteExpanded,
@@ -182,9 +170,9 @@ export function useSidebarExpandState() {
     expandUnit,
     expandToActive,
     expandToActiveSite,
-    isUnitsSectionCollapsed,
+    isUnitsSectionCollapsed: state.unitsCollapsed,
     toggleUnitsSection,
-    isSitesSectionCollapsed,
+    isSitesSectionCollapsed: state.sitesCollapsed,
     toggleSitesSection,
   };
 }
