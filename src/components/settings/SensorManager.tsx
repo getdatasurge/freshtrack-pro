@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLoraSensors, useDeleteLoraSensor, useProvisionLoraSensor, useUpdateLoraSensor } from "@/hooks/useLoraSensors";
-import { LoraSensor, LoraSensorStatus, LoraSensorType } from "@/types/ttn";
+import { LoraSensor, LoraSensorStatus, LoraSensorType, TtnProvisioningState } from "@/types/ttn";
 import {
   Table,
   TableBody,
@@ -28,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Loader2, Thermometer, CloudUpload, Copy, Check, Info, MapPin, Box, RefreshCw, Code, AlertTriangle, DoorOpen } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Thermometer, Copy, Check, Info, MapPin, Box, RefreshCw, Code, AlertTriangle, DoorOpen, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -39,9 +39,10 @@ import { formatDistanceToNow } from "date-fns";
 import { SENSOR_STATUS_CONFIG, SENSOR_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
 import { cn } from "@/lib/utils";
 import { debugLog } from "@/lib/debugLogger";
-import { canProvisionSensor } from "@/lib/actions";
 import { useTTNConfig } from "@/contexts/TTNConfigContext";
 import { checkTTNOperationAllowed } from "@/lib/ttn/guards";
+import { TtnProvisioningStatusBadge, TtnActions } from "./TtnProvisioningStatusBadge";
+import { useCheckTtnProvisioningState } from "@/hooks/useCheckTtnProvisioningState";
 
 interface Site {
   id: string;
@@ -267,126 +268,13 @@ const SensorUnitSelector = ({
     </Select>
   );
 };
-
-// Provision button component using centralized eligibility helper
-const ProvisionButton = ({
-  sensor,
-  ttnConfig,
-  isProvisioning,
-  onProvision,
-}: {
-  sensor: LoraSensor;
-  ttnConfig?: TTNConfig | null;
-  isProvisioning: boolean;
-  onProvision: () => void;
-}) => {
-  // Already provisioned - show success badge
-  if (sensor.ttn_device_id) {
-    return (
-      <Badge variant="outline" className="text-safe border-safe/30 bg-safe/10">
-        Provisioned
-      </Badge>
-    );
-  }
-
-  // Use centralized eligibility helper
-  const eligibility = canProvisionSensor(
-    {
-      dev_eui: sensor.dev_eui,
-      app_key: sensor.app_key,
-      ttn_device_id: sensor.ttn_device_id,
-      status: sensor.status,
-    },
-    ttnConfig ? {
-      isEnabled: ttnConfig.isEnabled,
-      hasApiKey: ttnConfig.hasApiKey,
-      applicationId: ttnConfig.applicationId,
-    } : null
-  );
-
-  // TTN not configured - show inline action hint
-  if (eligibility.code === "TTN_NOT_CONFIGURED" || 
-      eligibility.code === "TTN_MISSING_API_KEY" || 
-      eligibility.code === "TTN_MISSING_APPLICATION") {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap cursor-help">
-            <CloudUpload className="h-3.5 w-3.5" />
-            <span>Configure TTN</span>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs">
-          <p className="font-medium">TTN not configured</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            {eligibility.reason}
-          </p>
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  // Sensor missing OTAA keys - show inline action hint
-  if (eligibility.code === "MISSING_DEV_EUI" || eligibility.code === "MISSING_APP_KEY") {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="outline" className="text-warning border-warning/30 bg-warning/10 cursor-help">
-            Add Keys
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs">
-          <p className="font-medium">Missing OTAA credentials</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            {eligibility.reason}
-          </p>
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  // Other disabled reasons (permission denied, etc.)
-  if (!eligibility.allowed) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap cursor-help">
-            <CloudUpload className="h-3.5 w-3.5" />
-            <span>Unavailable</span>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs">
-          <p className="text-sm">{eligibility.reason}</p>
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  // Ready to provision - show prominent button
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={onProvision}
-      disabled={isProvisioning}
-      className="gap-1.5 h-7 px-2.5 text-primary border-primary/30 hover:bg-primary/10 hover:border-primary/50"
-    >
-      {isProvisioning ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      ) : (
-        <CloudUpload className="h-3.5 w-3.5" />
-      )}
-      <span className="text-xs font-medium">Provision</span>
-    </Button>
-  );
-};
-
 export function SensorManager({ organizationId, sites, units, canEdit, autoOpenAdd, ttnConfig }: SensorManagerProps) {
   const queryClient = useQueryClient();
   const { data: sensors, isLoading, dataUpdatedAt } = useLoraSensors(organizationId);
   const deleteSensor = useDeleteLoraSensor();
   const provisionSensor = useProvisionLoraSensor();
   const updateSensor = useUpdateLoraSensor();
+  const checkTtnStatus = useCheckTtnProvisioningState();
 
   // TTN Config Context for state awareness
   const { context: ttnContext } = useTTNConfig();
@@ -395,6 +283,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [viewRawSensor, setViewRawSensor] = useState<LoraSensor | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [checkingSensorId, setCheckingSensorId] = useState<string | null>(null);
 
   useEffect(() => {
     if (autoOpenAdd) {
@@ -410,6 +299,41 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     debugLog.info('crud', 'SENSORS_FORCE_REFRESH', { org_id: organizationId });
     await queryClient.invalidateQueries({ queryKey: ["lora-sensors", organizationId] });
     setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  // TTN Check handlers
+  const handleCheckTtn = async (sensorId: string) => {
+    setCheckingSensorId(sensorId);
+    try {
+      await checkTtnStatus.mutateAsync([sensorId]);
+    } catch (error) {
+      // Error toast is handled by the hook
+    } finally {
+      setCheckingSensorId(null);
+    }
+  };
+
+  const handleCheckAllTtn = async () => {
+    if (!sensors?.length) return;
+    const sensorIds = sensors
+      .filter(s => s.dev_eui && (s.provisioning_state as TtnProvisioningState) !== 'not_configured')
+      .map(s => s.id);
+    
+    if (sensorIds.length === 0) {
+      toast.info("No sensors eligible for TTN check");
+      return;
+    }
+    
+    try {
+      await checkTtnStatus.mutateAsync(sensorIds);
+    } catch (error) {
+      // Error toast is handled by the hook
+    }
+  };
+
+  const handleUnprovision = (sensor: LoraSensor) => {
+    // TODO: Queue a deprovision job via existing system
+    toast.info("Deprovisioning will be implemented - creates a job in ttn_deprovision_jobs");
   };
   
   // Site change confirmation state
@@ -702,6 +626,28 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {canEdit && sensors && sensors.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCheckAllTtn}
+                    disabled={checkTtnStatus.isPending}
+                  >
+                    {checkTtnStatus.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4 mr-2" />
+                    )}
+                    Check All TTN
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Check if all sensors exist in TTN</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -778,7 +724,13 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                       <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.lastUplink} />
                     </span>
                   </TableHead>
-                  {canEdit && <TableHead className="w-[140px]">Actions</TableHead>}
+                  <TableHead>
+                    <span className="inline-flex items-center">
+                      TTN Status
+                      <ColumnHeaderTooltip content="Whether this device exists in The Things Network. Use 'Check TTN' to detect, then Provision or Unprovision as needed." />
+                    </span>
+                  </TableHead>
+                  {canEdit && <TableHead className="w-[100px]">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -901,15 +853,27 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                     <TableCell className="text-sm text-muted-foreground">
                       {formatLastUplink(sensor.last_seen_at, sensor.status)}
                     </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <TtnProvisioningStatusBadge
+                          state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
+                          lastCheckAt={sensor.last_provision_check_at}
+                          lastError={sensor.last_provision_check_error}
+                        />
+                        <TtnActions
+                          state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
+                          isCheckingTtn={checkingSensorId === sensor.id || (checkTtnStatus.isPending && checkingSensorId === null)}
+                          isProvisioning={provisionSensor.isProvisioning(sensor.id)}
+                          onCheckTtn={() => handleCheckTtn(sensor.id)}
+                          onProvision={() => handleProvision(sensor)}
+                          onUnprovision={() => handleUnprovision(sensor)}
+                          canEdit={canEdit}
+                        />
+                      </div>
+                    </TableCell>
                     {canEdit && (
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          <ProvisionButton
-                            sensor={sensor}
-                            ttnConfig={ttnConfig}
-                            isProvisioning={provisionSensor.isProvisioning(sensor.id)}
-                            onProvision={() => handleProvision(sensor)}
-                          />
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
