@@ -32,10 +32,12 @@ export function useSiteLocationMutation(siteId: string) {
       return data;
     },
     onSuccess: () => {
-      // Invalidate all relevant queries to refresh data
+      // Invalidate site queries to refresh site data (so components receive new lat/lon)
       queryClient.invalidateQueries({ queryKey: ["site", siteId] });
       queryClient.invalidateQueries({ queryKey: ["sites"] });
-      queryClient.invalidateQueries({ queryKey: ["weather", siteId] });
+      // Invalidate ALL weather queries - the hook uses ["weather", "current", lat, lon, tz]
+      // By invalidating the prefix, we catch all weather queries regardless of coordinates
+      queryClient.invalidateQueries({ queryKey: ["weather"] });
       toast.success("Site location updated successfully");
     },
     onError: (error) => {
