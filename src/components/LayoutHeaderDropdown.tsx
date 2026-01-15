@@ -3,6 +3,8 @@
  *
  * A compact dropdown for selecting dashboard layouts in page headers.
  * Navigates to the appropriate route when a layout is selected.
+ *
+ * Permission-gated: Layout creation requires 'layouts.create' permission.
  */
 
 import { useNavigate } from "react-router-dom";
@@ -19,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useQuickCreateEntityLayout } from "@/hooks/useQuickCreateEntityLayout";
+import { useCan } from "@/hooks/useCan";
 
 interface LayoutHeaderDropdownProps {
   entityType: "site" | "unit";
@@ -42,6 +45,7 @@ export function LayoutHeaderDropdown({
 }: LayoutHeaderDropdownProps) {
   const navigate = useNavigate();
   const createLayoutMutation = useQuickCreateEntityLayout();
+  const { allowed: canCreateLayouts } = useCan('layouts.create');
 
   // Fetch layouts for this entity
   const { data: layouts = [], isLoading } = useQuery({
@@ -95,7 +99,8 @@ export function LayoutHeaderDropdown({
   const isDefault = currentLayoutKey === "default";
   const currentLayout = layouts.find(l => l.id === currentLayoutKey);
   const currentName = isDefault ? "Default" : (currentLayout?.name || "Layout");
-  const canCreateMore = layouts.length < 3;
+  // Only show create option if user has permission AND slots available
+  const canCreateMore = canCreateLayouts && layouts.length < 3;
 
   return (
     <DropdownMenu>

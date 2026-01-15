@@ -36,7 +36,8 @@ import {
   Code2,
   CheckCircle,
   Radio,
-  Thermometer
+  Thermometer,
+  Lock
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
@@ -57,6 +58,7 @@ import { TTNProvisioningLogs } from "@/components/settings/TTNProvisioningLogs";
 import { EmulatorSyncHistory } from "@/components/settings/EmulatorSyncHistory";
 import { EmulatorResyncCard } from "@/components/settings/EmulatorResyncCard";
 import { AccountDeletionModal } from "@/components/settings/AccountDeletionModal";
+import { SecurityTab } from "@/components/settings/SecurityTab";
 
 // E.164 phone number validation regex
 const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -174,6 +176,23 @@ const Settings = () => {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<AppRole>("staff");
+
+  // Role change confirmation dialog
+  const [roleChangeConfirm, setRoleChangeConfirm] = useState<{
+    open: boolean;
+    userId: string;
+    userName: string;
+    currentRole: AppRole;
+    newRole: AppRole;
+  } | null>(null);
+
+  // Remove user confirmation dialog
+  const [removeUserConfirm, setRemoveUserConfirm] = useState<{
+    open: boolean;
+    userId: string;
+    userName: string;
+    role: AppRole;
+  } | null>(null);
 
   const [searchParams] = useSearchParams();
   const defaultTab = searchParams.get("tab") || "organization";
@@ -511,8 +530,36 @@ const Settings = () => {
     }
   };
 
-  const updateUserRole = async (userId: string, newRole: AppRole) => {
-    if (!organization) return;
+  // Count how many owners exist
+  const ownerCount = users.filter(u => u.role === "owner").length;
+
+  // Request a role change (triggers confirmation dialog)
+  const requestRoleChange = (userId: string, newRole: AppRole) => {
+    const user = users.find(u => u.user_id === userId);
+    if (!user) return;
+
+    // Check if trying to demote the last owner
+    if (user.role === "owner" && newRole !== "owner" && ownerCount <= 1) {
+      toast.error("Cannot demote the last owner. Transfer ownership first or promote another user to owner.");
+      return;
+    }
+
+    // Show confirmation dialog
+    setRoleChangeConfirm({
+      open: true,
+      userId,
+      userName: user.full_name || user.email || "this user",
+      currentRole: user.role,
+      newRole,
+    });
+  };
+
+  // Confirm and execute the role change
+  const confirmRoleChange = async () => {
+    if (!roleChangeConfirm || !organization) return;
+
+    const { userId, newRole } = roleChangeConfirm;
+
     try {
       const { error } = await supabase
         .from("user_roles")
@@ -521,23 +568,49 @@ const Settings = () => {
         .eq("organization_id", organization.id);
 
       if (error) throw error;
-      
-      setUsers(prev => prev.map(u => 
+
+      setUsers(prev => prev.map(u =>
         u.user_id === userId ? { ...u, role: newRole } : u
       ));
-      toast.success("Role updated");
+      toast.success("Role updated successfully");
     } catch (error) {
       console.error("Error updating role:", error);
       toast.error("Failed to update role");
+    } finally {
+      setRoleChangeConfirm(null);
     }
   };
 
-  const removeUser = async (userId: string) => {
-    if (!organization) return;
+  // Request user removal (triggers confirmation dialog)
+  const requestRemoveUser = (userId: string) => {
+    const user = users.find(u => u.user_id === userId);
+    if (!user) return;
+
+    // Prevent removing the last owner
+    if (user.role === "owner" && ownerCount <= 1) {
+      toast.error("Cannot remove the last owner. Transfer ownership first.");
+      return;
+    }
+
+    setRemoveUserConfirm({
+      open: true,
+      userId,
+      userName: user.full_name || user.email || "this user",
+      role: user.role,
+    });
+  };
+
+  // Confirm and execute user removal
+  const confirmRemoveUser = async () => {
+    if (!removeUserConfirm || !organization) return;
+
+    const { userId } = removeUserConfirm;
+    setRemoveUserConfirm(null);
+
     try {
       // First, clean up any sensors created by this user
       toast.loading("Cleaning up user's sensors...", { id: "remove-user" });
-      
+
       const { data: cleanupResult, error: cleanupError } = await supabase.functions.invoke(
         "cleanup-user-sensors",
         { body: { user_id: userId, organization_id: organization.id } }
@@ -545,7 +618,6 @@ const Settings = () => {
 
       if (cleanupError) {
         console.error("Sensor cleanup error:", cleanupError);
-        // Continue with user removal even if cleanup fails
         toast.warning("Some sensors may not have been cleaned up", { id: "remove-user" });
       } else if (cleanupResult?.deleted_count > 0) {
         console.log(`Cleaned up ${cleanupResult.deleted_count} sensors (${cleanupResult.ttn_deprovision_count} from TTN)`);
@@ -559,10 +631,9 @@ const Settings = () => {
         .eq("organization_id", organization.id);
 
       if (error) throw error;
-      
+
       setUsers(prev => prev.filter(u => u.user_id !== userId));
-      
-      // Show success with cleanup summary
+
       if (cleanupResult?.deleted_count > 0) {
         toast.success(`User removed. Cleaned up ${cleanupResult.deleted_count} sensor(s).`, { id: "remove-user" });
       } else {
@@ -603,10 +674,14 @@ const Settings = () => {
   return (
     <DashboardLayout title="Settings">
       <Tabs defaultValue={defaultTab} className="space-y-6">
-        <TabsList className={`grid w-full max-w-4xl ${canManageUsers ? 'grid-cols-8' : 'grid-cols-7'}`}>
+        <TabsList className={`grid w-full max-w-5xl ${canManageUsers ? 'grid-cols-9' : 'grid-cols-8'}`}>
           <TabsTrigger value="organization" className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <span className="hidden sm:inline">Organization</span>
+          </TabsTrigger>
+          <TabsTrigger value="security" className="flex items-center gap-2">
+            <Lock className="w-4 h-4" />
+            <span className="hidden sm:inline">Security</span>
           </TabsTrigger>
           <TabsTrigger value="alerts" className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" />
@@ -777,6 +852,14 @@ const Settings = () => {
             hasOtherUsers={hasOtherUsers}
             sensorCount={sensorCount}
             gatewayCount={gatewayCount}
+          />
+        </TabsContent>
+
+        {/* Security Tab */}
+        <TabsContent value="security">
+          <SecurityTab
+            currentRole={userRole}
+            organizationId={organization?.id || null}
           />
         </TabsContent>
 
@@ -1062,7 +1145,7 @@ const Settings = () => {
                             {canManageUsers && !isOwner && !isCurrentUser ? (
                               <Select
                                 value={user.role}
-                                onValueChange={(v) => updateUserRole(user.user_id, v as AppRole)}
+                                onValueChange={(v) => requestRoleChange(user.user_id, v as AppRole)}
                               >
                                 <SelectTrigger className="w-[130px]">
                                   <SelectValue />
@@ -1072,6 +1155,7 @@ const Settings = () => {
                                   <SelectItem value="manager">Manager</SelectItem>
                                   <SelectItem value="staff">Staff</SelectItem>
                                   <SelectItem value="viewer">Viewer</SelectItem>
+                                  <SelectItem value="inspector">Inspector</SelectItem>
                                 </SelectContent>
                               </Select>
                             ) : (
@@ -1088,7 +1172,7 @@ const Settings = () => {
                                   variant="ghost"
                                   size="icon"
                                   className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  onClick={() => removeUser(user.user_id)}
+                                  onClick={() => requestRemoveUser(user.user_id)}
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
@@ -1190,6 +1274,78 @@ const Settings = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Role Change Confirmation Dialog */}
+      <Dialog open={roleChangeConfirm?.open ?? false} onOpenChange={(open) => !open && setRoleChangeConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Role Change</DialogTitle>
+            <DialogDescription>
+              You are about to change the role for <strong>{roleChangeConfirm?.userName}</strong> from{" "}
+              <Badge variant="outline" className="mx-1">
+                {roleConfig[roleChangeConfirm?.currentRole ?? "staff"]?.label}
+              </Badge>
+              to{" "}
+              <Badge variant="outline" className="mx-1">
+                {roleConfig[roleChangeConfirm?.newRole ?? "staff"]?.label}
+              </Badge>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              This will immediately affect what actions this user can perform in the organization.
+            </p>
+            {roleChangeConfirm?.newRole === "admin" && (
+              <p className="text-sm text-warning mt-2 flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Admins have elevated privileges and can manage users and settings.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRoleChangeConfirm(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmRoleChange}>
+              Confirm Change
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove User Confirmation Dialog */}
+      <Dialog open={removeUserConfirm?.open ?? false} onOpenChange={(open) => !open && setRemoveUserConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Remove Team Member
+            </DialogTitle>
+            <DialogDescription>
+              You are about to remove <strong>{removeUserConfirm?.userName}</strong> from this organization.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              This will revoke their access to all organization data and resources. Any sensors they created will also be cleaned up.
+            </p>
+            <div className="p-3 bg-destructive/10 rounded-lg border border-destructive/30">
+              <p className="text-sm font-medium text-destructive">This action cannot be undone.</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                The user will need to be re-invited to regain access.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveUserConfirm(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmRemoveUser}>
+              Remove User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };
