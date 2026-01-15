@@ -44,8 +44,65 @@ function safeDecrypt(encrypted: string | null, salt: string): string | null {
   return safeDecryptWithStatus(encrypted, salt).value;
 }
 
+// Reset stuck sensors when TTN becomes fully configured
+// This handles sensors marked not_configured when TTN wasn't set up
+// deno-lint-ignore no-explicit-any
+async function resetStuckSensors(supabase: any, organizationId: string, requestId: string): Promise<void> {
+  try {
+    // Find sensors that were marked not_configured due to "TTN not configured" error
+    const { data: stuckSensors, error: fetchError } = await supabase
+      .from("lora_sensors")
+      .select("id, name, provisioning_state, last_provision_check_error")
+      .eq("organization_id", organizationId)
+      .eq("provisioning_state", "not_configured")
+      .not("dev_eui", "is", null)
+      .is("deleted_at", null);
+
+    if (fetchError) {
+      console.error(`[manage-ttn-settings] [${requestId}] Error fetching stuck sensors:`, fetchError);
+      return;
+    }
+
+    if (!stuckSensors || stuckSensors.length === 0) {
+      console.log(`[manage-ttn-settings] [${requestId}] No stuck sensors to reset`);
+      return;
+    }
+
+    // Filter to only sensors that were stuck due to TTN not being configured
+    const sensorsToReset = stuckSensors.filter((s: { last_provision_check_error?: string }) => 
+      s.last_provision_check_error?.includes("TTN not configured")
+    );
+
+    if (sensorsToReset.length === 0) {
+      console.log(`[manage-ttn-settings] [${requestId}] No sensors need TTN-config reset`);
+      return;
+    }
+
+    console.log(`[manage-ttn-settings] [${requestId}] Resetting ${sensorsToReset.length} stuck sensors to 'unknown' state`);
+
+    // Reset their provisioning_state to 'unknown' so they can be checked again
+    const sensorIds = sensorsToReset.map((s: { id: string }) => s.id);
+    const { error: updateError } = await supabase
+      .from("lora_sensors")
+      .update({
+        provisioning_state: "unknown",
+        last_provision_check_error: null,
+        last_provision_check_at: null,
+      })
+      .in("id", sensorIds);
+
+    if (updateError) {
+      console.error(`[manage-ttn-settings] [${requestId}] Error resetting stuck sensors:`, updateError);
+    } else {
+      console.log(`[manage-ttn-settings] [${requestId}] Successfully reset ${sensorsToReset.length} sensors`);
+    }
+  } catch (err) {
+    console.error(`[manage-ttn-settings] [${requestId}] resetStuckSensors error:`, err);
+  }
+}
+
 Deno.serve(async (req: Request) => {
-  const BUILD_VERSION = "manage-ttn-settings-v7.4-decryption-status-20260110";
+  const BUILD_VERSION = "manage-ttn-settings-v7.5-reset-stuck-sensors-20260115";
   const requestId = crypto.randomUUID().slice(0, 8);
   console.log(`[manage-ttn-settings] [${requestId}] Build: ${BUILD_VERSION}`);
   console.log(`[manage-ttn-settings] [${requestId}] Method: ${req.method}, URL: ${req.url}`);
@@ -883,6 +940,16 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({ error: "Failed to save settings", details: result.error.message }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
+      }
+
+      // After successful insert/update, reset stuck sensors if TTN is now fully configured
+      if (
+        result.data && 
+        result.data.is_enabled && 
+        result.data.ttn_api_key_encrypted && 
+        result.data.ttn_application_id
+      ) {
+        await resetStuckSensors(supabaseAdmin, organizationId, requestId);
       }
 
       // Log to event_logs
