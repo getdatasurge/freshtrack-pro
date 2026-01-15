@@ -132,10 +132,16 @@ export function EntityDashboard({
 }: EntityDashboardProps) {
   const { state, actions } = useLayoutManager(entityType, entityId, organizationId, userId);
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
+  const [recentlyAddedWidgetId, setRecentlyAddedWidgetId] = useState<string | null>(null);
   
   // Measure container width for the grid
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+
+  // Callback to clear recently added widget ID after handling
+  const handleClearRecentlyAdded = useCallback(() => {
+    setRecentlyAddedWidgetId(null);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -183,13 +189,15 @@ export function EntityDashboard({
       site,
       areas,
       totalUnits,
+      recentlyAddedWidgetId,
+      onClearRecentlyAdded: handleClearRecentlyAdded,
     };
     const result: Record<string, Record<string, unknown>> = {};
     state.activeLayout.config.widgets.forEach((w) => {
       result[w.i] = allProps as unknown as Record<string, unknown>;
     });
     return result;
-  }, [entityType, entityId, organizationId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets]);
+  }, [entityType, entityId, organizationId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded]);
 
   const handleLayoutChange = useCallback((layout: WidgetPosition[]) => actions.updatePositions(layout), [actions]);
   const handleRestoreWidget = useCallback((widgetId: string) => actions.toggleWidgetVisibility(widgetId), [actions]);
@@ -205,6 +213,7 @@ export function EntityDashboard({
     const currentWidgets = state.activeLayout.config.widgets.filter(w => w.i !== widgetId);
     actions.updatePositions([...currentWidgets, newWidget]);
     if (state.activeLayout.config.hiddenWidgets?.includes(widgetId)) actions.toggleWidgetVisibility(widgetId);
+    setRecentlyAddedWidgetId(widgetId); // Track the just-added widget for auto-prompt flows
     setAddWidgetOpen(false);
   }, [actions, state.activeLayout.config]);
 

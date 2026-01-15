@@ -321,6 +321,10 @@ export interface WidgetProps {
   totalUnits?: number;
   /** Callback for logging temperature */
   onLogTemp?: () => void;
+  /** ID of the widget that was just added (for auto-prompt flows) */
+  recentlyAddedWidgetId?: string;
+  /** Callback to clear the recently added widget ID after handling */
+  onClearRecentlyAdded?: () => void;
 }
 
 /**
