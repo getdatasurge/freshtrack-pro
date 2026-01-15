@@ -119,6 +119,10 @@ verify_jwt = false
 [functions.ttn-provision-worker]
 verify_jwt = false
 
+# TTN device existence check - handles CORS preflight
+[functions.check-ttn-device-exists]
+verify_jwt = false
+
 # Upload public assets - internal function for compliance assets
 [functions.upload-public-asset]
 verify_jwt = false

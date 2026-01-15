@@ -3,6 +3,17 @@
  * Types for gateways and LoRa sensors
  */
 
+// TTN Provisioning State - tracks whether device exists in TTN
+export type TtnProvisioningState =
+  | "not_configured"
+  | "unknown"
+  | "exists_in_ttn"
+  | "missing_in_ttn"
+  | "error";
+
+// Where the device was provisioned from
+export type ProvisionedSource = "emulator" | "app" | "unknown" | "manual";
+
 export type GatewayStatus = 'pending' | 'online' | 'offline' | 'maintenance';
 
 export interface Gateway {
@@ -33,6 +44,7 @@ export interface LoraSensor {
   app_key: string | null;
   ttn_device_id: string | null;
   ttn_application_id: string | null;
+  ttn_cluster: string | null;
   name: string;
   description: string | null;
   sensor_type: LoraSensorType;
@@ -50,6 +62,11 @@ export interface LoraSensor {
   updated_at: string;
   deleted_at: string | null;
   deleted_by: string | null;
+  // TTN provisioning detection fields
+  provisioning_state: TtnProvisioningState;
+  last_provision_check_at: string | null;
+  last_provision_check_error: string | null;
+  provisioned_source: ProvisionedSource | null;
 }
 
 export interface GatewayInsert {
@@ -73,11 +90,14 @@ export interface LoraSensorInsert {
   app_key?: string | null;
   ttn_device_id?: string | null;
   ttn_application_id?: string | null;
+  ttn_cluster?: string | null;
   description?: string | null;
   sensor_type?: LoraSensorType;
   manufacturer?: string | null;
   model?: string | null;
   created_by?: string | null;
+  provisioning_state?: TtnProvisioningState;
+  provisioned_source?: ProvisionedSource | null;
 }
 
 // ============================================================================
