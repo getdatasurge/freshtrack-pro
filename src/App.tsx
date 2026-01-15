@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { DebugProvider } from "@/contexts/DebugContext";
 import { TTNConfigProvider } from "@/contexts/TTNConfigContext";
+import { SuperAdminProvider } from "@/contexts/SuperAdminContext";
 import { DebugTerminal, RouteLogger } from "@/components/debug";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -51,6 +52,7 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <SuperAdminProvider>
             <RouteLogger />
             <Routes>
             <Route path="/" element={<Index />} />
@@ -81,9 +83,18 @@ const App = () => (
             <Route path="/admin/health" element={<HealthDashboard />} />
             <Route path="/admin/upload-telnyx-image" element={<UploadTelnyxImage />} />
             <Route path="/account-deleted" element={<AccountDeleted />} />
+              {/* Platform Admin Routes (Super Admin only) */}
+              <Route path="/platform" element={<PlatformOrganizations />} />
+              <Route path="/platform/organizations" element={<PlatformOrganizations />} />
+              <Route path="/platform/organizations/:orgId" element={<PlatformOrganizationDetail />} />
+              <Route path="/platform/users" element={<PlatformUsers />} />
+              <Route path="/platform/users/:userId" element={<PlatformUserDetail />} />
+              <Route path="/platform/audit" element={<PlatformAuditLog />} />
+              <Route path="/platform/developer-tools" element={<PlatformDeveloperTools />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
+            </SuperAdminProvider>
           </BrowserRouter>
           <DebugTerminal />
         </TTNConfigProvider>
