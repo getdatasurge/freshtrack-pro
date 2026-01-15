@@ -20,6 +20,21 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { toast } from "sonner";
 import { useLayoutManager } from "../hooks/useLayoutManager";
 import { useUnsavedChangesGuard } from "../hooks/useUnsavedChangesGuard";
 import { LayoutSelector } from "./LayoutSelector";
@@ -133,6 +148,11 @@ export function EntityDashboard({
   const { state, actions } = useLayoutManager(entityType, entityId, organizationId, userId);
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [recentlyAddedWidgetId, setRecentlyAddedWidgetId] = useState<string | null>(null);
+  const [createLayoutPromptOpen, setCreateLayoutPromptOpen] = useState(false);
+  
+  // Derived flags for "Add Widget" CTA on Default layout
+  const isDefaultLayout = state.activeLayout.isDefault;
+  const hasAnyCustomLayouts = state.layoutCount > 0;
   
   // Measure container width for the grid
   const containerRef = useRef<HTMLDivElement>(null);
@@ -225,6 +245,18 @@ export function EntityDashboard({
     actions.discardChanges();
   }, [actions]);
 
+  // Handler for creating first layout from the Default layout prompt
+  const handleCreateFirstLayout = useCallback(async () => {
+    try {
+      await actions.createNewLayout("My Layout");
+      setCreateLayoutPromptOpen(false);
+      // Layout manager automatically switches to the new layout
+    } catch (error) {
+      console.error("Failed to create layout:", error);
+      toast.error("Failed to create layout");
+    }
+  }, [actions]);
+
   return (
     <DashboardErrorBoundary
       entityType={entityType}
@@ -272,12 +304,37 @@ export function EntityDashboard({
           layoutCount={state.layoutCount} 
         />
         <div className="flex items-center gap-2">
-          {state.isCustomizing && !state.activeLayout.isDefault && (
+          {/* Normal Add Widget button for custom layouts in customize mode */}
+          {state.isCustomizing && !isDefaultLayout && (
             <Button variant="outline" size="sm" onClick={() => setAddWidgetOpen(true)}>
               <Plus className="w-4 h-4 mr-1" />Add Widget
             </Button>
           )}
-          <CustomizeToggle 
+          
+          {/* Add Widget CTA on Default layout ONLY when no custom layouts exist */}
+          {isDefaultLayout && !hasAnyCustomLayouts && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setCreateLayoutPromptOpen(true)}
+                    disabled={!state.canCreateNew}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />Add Widget
+                  </Button>
+                </TooltipTrigger>
+                {!state.canCreateNew && (
+                  <TooltipContent>
+                    Unable to create layouts. Contact your administrator.
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          
+          <CustomizeToggle
             isCustomizing={state.isCustomizing} 
             onToggle={actions.setIsCustomizing} 
             disabled={false} 
@@ -362,6 +419,26 @@ export function EntityDashboard({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Create Layout Prompt Modal (shown when clicking Add Widget on Default with no custom layouts) */}
+      <Dialog open={createLayoutPromptOpen} onOpenChange={setCreateLayoutPromptOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Your First Layout</DialogTitle>
+            <DialogDescription>
+              Widgets can only be added to custom layouts. Create a layout to start customizing your dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setCreateLayoutPromptOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateFirstLayout}>
+              Create Layout
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     </DashboardErrorBoundary>
   );
