@@ -73,15 +73,12 @@ export function TtnActions({
 }: TtnActionsProps) {
   if (!canEdit) return null;
 
-  // Not configured - can't do anything
+  // Not configured - just show compact icon
   if (state === "not_configured") {
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground cursor-help">
-            <AlertCircle className="h-3.5 w-3.5" />
-            N/A
-          </span>
+          <AlertCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
         </TooltipTrigger>
         <TooltipContent>
           Configure TTN and add DevEUI to enable provisioning
