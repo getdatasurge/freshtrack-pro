@@ -92,32 +92,51 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     orgName: null,
   });
 
+  // Helper for gated RBAC logging
+  const shouldLogRbac = useCallback(() => 
+    import.meta.env.DEV || 
+    (typeof window !== 'undefined' && window.location.search.includes('debug_rbac=1')), []);
+
+  const rbacLog = useCallback((message: string, ...args: unknown[]) => {
+    if (shouldLogRbac()) {
+      console.log(`[RBAC] ${message}`, ...args);
+    }
+  }, [shouldLogRbac]);
+
   // Check super admin status
   const checkSuperAdminStatus = useCallback(async () => {
     try {
+      rbacLog('role fetch start');
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        rbacLog('no authenticated user');
         setIsSuperAdmin(false);
         setIsLoadingSuperAdmin(false);
         return;
       }
 
+      rbacLog('session user:', user.email, user.id);
+
       // Call the is_current_user_super_admin function
       const { data, error } = await supabase.rpc('is_current_user_super_admin');
 
       if (error) {
+        rbacLog('role fetch error:', error.message);
         console.error('Error checking super admin status:', error);
         setIsSuperAdmin(false);
       } else {
+        rbacLog('isSuperAdmin result:', data);
         setIsSuperAdmin(data === true);
       }
+      rbacLog('role fetch end, isSuperAdmin:', data === true);
     } catch (err) {
+      rbacLog('role fetch exception:', err);
       console.error('Error checking super admin status:', err);
       setIsSuperAdmin(false);
     } finally {
       setIsLoadingSuperAdmin(false);
     }
-  }, []);
+  }, [rbacLog]);
 
   // Initial load and auth state changes
   useEffect(() => {

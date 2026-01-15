@@ -6,6 +6,7 @@ import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { RBACDebugPanel } from "@/components/debug/RBACDebugPanel";
 import { 
   Thermometer, 
   AlertTriangle, 
@@ -290,6 +291,9 @@ const Dashboard = () => {
 
   return (
     <DashboardLayout>
+      {/* RBAC Debug Panel - only visible with ?debug_rbac=1 */}
+      <RBACDebugPanel />
+      
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Card className="stat-card card-hover">
