@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { ScrollArea, ScrollAreaScrollbar } from '@/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import {
   Shield,
   Crown,
@@ -252,7 +252,7 @@ export function SecurityTab({ currentRole, organizationId }: SecurityTabProps) {
                     </TableBody>
                   </Table>
                 </div>
-                <ScrollAreaScrollbar orientation="horizontal" />
+                <ScrollBar orientation="horizontal" />
               </ScrollArea>
             </TabsContent>
           </Tabs>
