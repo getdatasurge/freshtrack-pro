@@ -90,10 +90,10 @@ Deno.serve(async (req) => {
     // Get unique org IDs
     const orgIds = [...new Set(sensors.map((s) => s.organization_id))];
 
-    // Fetch TTN configs for all orgs
+    // Fetch TTN configs for all orgs from ttn_connections table
     const { data: ttnConfigs, error: configError } = await supabase
-      .from("ttn_settings")
-      .select("organization_id, api_key, application_id, cluster")
+      .from("ttn_connections")
+      .select("organization_id, ttn_api_key_encrypted, ttn_application_id, ttn_region")
       .in("organization_id", orgIds)
       .eq("is_enabled", true);
 
@@ -101,14 +101,37 @@ Deno.serve(async (req) => {
       console.error("[check-ttn-device-exists] Error fetching TTN configs:", configError);
     }
 
+    console.log(`[check-ttn-device-exists] Found ${ttnConfigs?.length || 0} TTN configs for ${orgIds.length} org(s)`);
+
     // Build org -> config map
     const configMap = new Map<string, TTNConfig>();
     for (const cfg of ttnConfigs || []) {
-      if (cfg.api_key && cfg.application_id && cfg.cluster) {
+      if (cfg.ttn_api_key_encrypted && cfg.ttn_application_id && cfg.ttn_region) {
+        // Deobfuscate the API key - it may be plain base64 (b64: prefix) or XOR obfuscated
+        let apiKey = cfg.ttn_api_key_encrypted;
+        try {
+          if (apiKey.startsWith("b64:")) {
+            // Plain base64 encoded
+            apiKey = atob(apiKey.slice(4));
+          } else {
+            // Try legacy XOR deobfuscation with org_id as salt
+            const salt = cfg.organization_id;
+            const decoded = atob(apiKey);
+            const saltBytes = new TextEncoder().encode(salt);
+            const resultBytes = new Uint8Array(decoded.length);
+            for (let i = 0; i < decoded.length; i++) {
+              resultBytes[i] = decoded.charCodeAt(i) ^ saltBytes[i % saltBytes.length];
+            }
+            apiKey = new TextDecoder().decode(resultBytes);
+          }
+        } catch (e) {
+          console.warn(`[check-ttn-device-exists] Failed to deobfuscate key for org ${cfg.organization_id}, using as-is`);
+        }
+        
         configMap.set(cfg.organization_id, {
-          api_key: cfg.api_key,
-          application_id: cfg.application_id,
-          cluster: cfg.cluster,
+          api_key: apiKey,
+          application_id: cfg.ttn_application_id,
+          cluster: cfg.ttn_region,
         });
       }
     }
