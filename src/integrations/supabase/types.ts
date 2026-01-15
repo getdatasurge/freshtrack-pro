@@ -1181,16 +1181,21 @@ export type Database = {
           id: string
           is_primary: boolean
           last_join_at: string | null
+          last_provision_check_at: string | null
+          last_provision_check_error: string | null
           last_seen_at: string | null
           manufacturer: string | null
           model: string | null
           name: string
           organization_id: string
+          provisioned_source: string | null
+          provisioning_state: string
           sensor_type: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength: number | null
           site_id: string | null
           status: Database["public"]["Enums"]["lora_sensor_status"]
           ttn_application_id: string | null
+          ttn_cluster: string | null
           ttn_device_id: string | null
           unit_id: string | null
           updated_at: string
@@ -1209,16 +1214,21 @@ export type Database = {
           id?: string
           is_primary?: boolean
           last_join_at?: string | null
+          last_provision_check_at?: string | null
+          last_provision_check_error?: string | null
           last_seen_at?: string | null
           manufacturer?: string | null
           model?: string | null
           name: string
           organization_id: string
+          provisioned_source?: string | null
+          provisioning_state?: string
           sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength?: number | null
           site_id?: string | null
           status?: Database["public"]["Enums"]["lora_sensor_status"]
           ttn_application_id?: string | null
+          ttn_cluster?: string | null
           ttn_device_id?: string | null
           unit_id?: string | null
           updated_at?: string
@@ -1237,16 +1247,21 @@ export type Database = {
           id?: string
           is_primary?: boolean
           last_join_at?: string | null
+          last_provision_check_at?: string | null
+          last_provision_check_error?: string | null
           last_seen_at?: string | null
           manufacturer?: string | null
           model?: string | null
           name?: string
           organization_id?: string
+          provisioned_source?: string | null
+          provisioning_state?: string
           sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength?: number | null
           site_id?: string | null
           status?: Database["public"]["Enums"]["lora_sensor_status"]
           ttn_application_id?: string | null
+          ttn_cluster?: string | null
           ttn_device_id?: string | null
           unit_id?: string | null
           updated_at?: string
