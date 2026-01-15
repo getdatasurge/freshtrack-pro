@@ -415,8 +415,13 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     }
   };
 
-  // Compute effective status based on last_seen_at staleness
+  // Compute effective status based on provisioning_state and last_seen_at staleness
   const getEffectiveStatus = (sensor: LoraSensor): LoraSensorStatus => {
+    // If sensor is pending but exists in TTN, show 'joining' (awaiting first uplink)
+    if (sensor.status === 'pending' && sensor.provisioning_state === 'exists_in_ttn') {
+      return 'joining';
+    }
+    
     // If status is 'active' but last_seen_at is stale (>5 min), show 'offline'
     if (sensor.status === 'active' && sensor.last_seen_at) {
       const staleThresholdMs = 5 * 60 * 1000; // 5 minutes
