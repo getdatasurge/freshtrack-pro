@@ -697,7 +697,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                       <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.type} />
                     </span>
                   </TableHead>
-                  <TableHead>
+                  <TableHead className="min-w-[130px]">
                     <span className="inline-flex items-center">
                       Assignment
                       <ColumnHeaderTooltip content="Site and unit this sensor is assigned to" />
@@ -835,10 +835,10 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                     </TableCell>
                     
                     {/* Actions - TTN status + edit/delete combined */}
-                    <TableCell className="py-3">
+                    <TableCell className="py-3 max-w-[160px]">
                       <div className="flex flex-col gap-2">
-                        {/* TTN Status row */}
-                        <div className="flex items-center gap-1">
+                        {/* TTN Status - stacked vertically */}
+                        <div className="flex flex-col items-start gap-1">
                           <TtnProvisioningStatusBadge
                             state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
                             lastCheckAt={sensor.last_provision_check_at}
