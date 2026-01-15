@@ -72,6 +72,8 @@ interface SiteData {
   manual_log_cadence_seconds: number;
   corrective_action_required: boolean;
   organization_id: string;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 const SiteDetail = () => {
@@ -120,7 +122,7 @@ const SiteDetail = () => {
     
     const { data: siteData, error: siteError } = await supabase
       .from("sites")
-      .select("id, name, address, city, state, postal_code, timezone, compliance_mode, manual_log_cadence_seconds, corrective_action_required, organization_id")
+      .select("id, name, address, city, state, postal_code, timezone, compliance_mode, manual_log_cadence_seconds, corrective_action_required, organization_id, latitude, longitude")
       .eq("id", siteId)
       .maybeSingle();
 
@@ -138,6 +140,8 @@ const SiteDetail = () => {
       compliance_mode: siteData.compliance_mode || "fda_food_code",
       manual_log_cadence_seconds: siteData.manual_log_cadence_seconds || 14400,
       corrective_action_required: siteData.corrective_action_required ?? true,
+      latitude: siteData.latitude,
+      longitude: siteData.longitude,
     });
     setEditFormData({
       name: siteData.name,
@@ -485,9 +489,13 @@ const SiteDetail = () => {
               id: site.id,
               name: site.name,
               organization_id: site.organization_id,
+              latitude: site.latitude,
+              longitude: site.longitude,
+              timezone: site.timezone,
             }}
             areas={areas}
             totalUnits={totalUnits}
+            onSiteLocationChange={loadSiteData}
           />
         </TabsContent>
 

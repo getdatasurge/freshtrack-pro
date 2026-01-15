@@ -325,6 +325,8 @@ export interface WidgetProps {
   recentlyAddedWidgetId?: string;
   /** Callback to clear the recently added widget ID after handling */
   onClearRecentlyAdded?: () => void;
+  /** Callback to refetch site data after location changes */
+  onSiteLocationChange?: () => void;
 }
 
 /**

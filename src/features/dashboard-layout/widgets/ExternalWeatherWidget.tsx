@@ -29,7 +29,8 @@ export function ExternalWeatherWidget({
   site, 
   recentlyAddedWidgetId,
   onClearRecentlyAdded,
-}: WidgetProps) {
+  onSiteLocationChange,
+}: WidgetProps & { onSiteLocationChange?: () => void }) {
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const { canManageSites } = usePermissions();
   
@@ -105,7 +106,10 @@ export function ExternalWeatherWidget({
           currentLongitude={site?.longitude ?? null}
           currentTimezone={site?.timezone || "America/New_York"}
           canEdit={canManageSites}
-          onSaved={() => refetch()}
+          onSaved={() => {
+            onSiteLocationChange?.();
+            refetch();
+          }}
         />
       </>
     );
@@ -192,7 +196,10 @@ export function ExternalWeatherWidget({
           currentLongitude={site?.longitude ?? null}
           currentTimezone={site?.timezone || "America/New_York"}
           canEdit={canManageSites}
-          onSaved={() => refetch()}
+          onSaved={() => {
+            onSiteLocationChange?.();
+            refetch();
+          }}
         />
       </>
     );
@@ -308,7 +315,10 @@ export function ExternalWeatherWidget({
         currentLongitude={site?.longitude ?? null}
         currentTimezone={site?.timezone || "America/New_York"}
         canEdit={canManageSites}
-        onSaved={() => refetch()}
+        onSaved={() => {
+          onSiteLocationChange?.();
+          refetch();
+        }}
       />
     </>
   );
