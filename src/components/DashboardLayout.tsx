@@ -3,7 +3,7 @@ import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { 
+import {
   LogOut,
   MapPin,
   Settings,
@@ -12,7 +12,8 @@ import {
   Menu,
   X,
   ChevronLeft,
-  Trash2
+  Trash2,
+  Shield
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
@@ -22,6 +23,8 @@ import BrandedLogo from "@/components/BrandedLogo";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import { clearOfflineStorage } from "@/lib/offlineStorage";
 import { usePermissions } from "@/hooks/useUserRole";
+import { useSuperAdmin } from "@/contexts/SuperAdminContext";
+import { SupportModeBanner, ImpersonationBanner } from "@/components/platform/SupportModeBanner";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -48,6 +51,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
+  const { isSuperAdmin, isSupportModeActive, impersonation } = useSuperAdmin();
   const [session, setSession] = useState<Session | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
@@ -152,8 +156,15 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Support Mode Banner for Super Admins */}
+      <SupportModeBanner />
+      <ImpersonationBanner />
+
       {/* Header */}
-      <header className="sticky top-0 z-50 glass border-b border-border/50">
+      <header className={cn(
+        "sticky z-50 glass border-b border-border/50",
+        isSupportModeActive ? "top-10" : "top-0"
+      )}>
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
@@ -199,7 +210,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
       <div className="flex">
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:flex w-64 flex-col fixed left-0 top-16 bottom-0 border-r border-border/50 bg-card/50">
+        <aside className={cn(
+          "hidden lg:flex w-64 flex-col fixed left-0 bottom-0 border-r border-border/50 bg-card/50",
+          isSupportModeActive ? "top-[104px]" : "top-16"
+        )}>
           <nav className="flex-1 p-4 space-y-1">
             {navItems.map((item) => {
               const isActive = location.pathname === item.href || 
@@ -233,17 +247,35 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 </Button>
               </Link>
             )}
+            {isSuperAdmin && (
+              <Link to="/platform">
+                <Button
+                  variant={location.pathname.startsWith("/platform") ? "secondary" : "ghost"}
+                  className={cn(
+                    "w-full justify-start gap-3 mt-2",
+                    !canDeleteEntities && "mt-4 pt-4 border-t border-border/50",
+                    location.pathname.startsWith("/platform") && "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+                  )}
+                >
+                  <Shield className="w-5 h-5" />
+                  Platform Admin
+                </Button>
+              </Link>
+            )}
           </nav>
         </aside>
 
         {/* Mobile Nav Overlay */}
         {mobileNavOpen && (
           <div className="fixed inset-0 z-40 lg:hidden">
-            <div 
+            <div
               className="absolute inset-0 bg-background/80 backdrop-blur-sm"
               onClick={() => setMobileNavOpen(false)}
             />
-            <aside className="absolute left-0 top-16 bottom-0 w-64 bg-card border-r border-border/50 p-4">
+            <aside className={cn(
+              "absolute left-0 bottom-0 w-64 bg-card border-r border-border/50 p-4",
+              isSupportModeActive ? "top-[104px]" : "top-16"
+            )}>
               <nav className="space-y-1">
                 {navItems.map((item) => {
                   const isActive = location.pathname === item.href || 
@@ -268,7 +300,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                   );
                 })}
                 {canDeleteEntities && !permissionsLoading && (
-                  <Link 
+                  <Link
                     to="/admin/recently-deleted"
                     onClick={() => setMobileNavOpen(false)}
                   >
@@ -284,13 +316,34 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                     </Button>
                   </Link>
                 )}
+                {isSuperAdmin && (
+                  <Link
+                    to="/platform"
+                    onClick={() => setMobileNavOpen(false)}
+                  >
+                    <Button
+                      variant={location.pathname.startsWith("/platform") ? "secondary" : "ghost"}
+                      className={cn(
+                        "w-full justify-start gap-3 mt-2",
+                        !canDeleteEntities && "mt-4 pt-4 border-t border-border/50",
+                        location.pathname.startsWith("/platform") && "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+                      )}
+                    >
+                      <Shield className="w-5 h-5" />
+                      Platform Admin
+                    </Button>
+                  </Link>
+                )}
               </nav>
             </aside>
           </div>
         )}
 
         {/* Main Content */}
-        <main className="flex-1 lg:ml-64">
+        <main className={cn(
+          "flex-1 lg:ml-64",
+          isSupportModeActive && "pt-10"
+        )}>
           <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
             {title && (
               <h1 className="text-2xl font-bold text-foreground mb-6">{title}</h1>

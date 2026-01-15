@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { SuperAdminProvider } from "@/contexts/SuperAdminContext";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -23,16 +24,24 @@ import RecentlyDeleted from "./pages/RecentlyDeleted";
 import TTNCleanup from "./pages/TTNCleanup";
 import DataMaintenance from "./pages/DataMaintenance";
 import NotFound from "./pages/NotFound";
+// Platform Admin pages (Super Admin only)
+import PlatformOrganizations from "./pages/platform/PlatformOrganizations";
+import PlatformOrganizationDetail from "./pages/platform/PlatformOrganizationDetail";
+import PlatformUsers from "./pages/platform/PlatformUsers";
+import PlatformUserDetail from "./pages/platform/PlatformUserDetail";
+import PlatformAuditLog from "./pages/platform/PlatformAuditLog";
+import PlatformDeveloperTools from "./pages/platform/PlatformDeveloperTools";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
+    <SuperAdminProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -52,11 +61,20 @@ const App = () => (
           <Route path="/admin/recently-deleted" element={<RecentlyDeleted />} />
           <Route path="/admin/ttn-cleanup" element={<TTNCleanup />} />
           <Route path="/admin/data-maintenance" element={<DataMaintenance />} />
+          {/* Platform Admin routes (Super Admin only) */}
+          <Route path="/platform" element={<PlatformOrganizations />} />
+          <Route path="/platform/organizations" element={<PlatformOrganizations />} />
+          <Route path="/platform/organizations/:orgId" element={<PlatformOrganizationDetail />} />
+          <Route path="/platform/users" element={<PlatformUsers />} />
+          <Route path="/platform/users/:userId" element={<PlatformUserDetail />} />
+          <Route path="/platform/audit" element={<PlatformAuditLog />} />
+          <Route path="/platform/developer-tools" element={<PlatformDeveloperTools />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </SuperAdminProvider>
   </QueryClientProvider>
 );
 
