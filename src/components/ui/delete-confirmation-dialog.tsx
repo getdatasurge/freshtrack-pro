@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { AlertTriangle, Trash2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type DeleteEntityType = "unit" | "area" | "site" | "device";
+export type DeleteEntityType = "unit" | "area" | "site" | "device" | "sensor";
 
 interface DeleteConfirmationDialogProps {
   open: boolean;
@@ -33,6 +33,7 @@ const entityTypeLabels: Record<DeleteEntityType, string> = {
   area: "Area",
   site: "Site",
   device: "Device",
+  sensor: "Sensor",
 };
 
 export function DeleteConfirmationDialog({
