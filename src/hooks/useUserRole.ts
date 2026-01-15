@@ -84,7 +84,7 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
   staff: {
     canLogTemps: true,
     canViewAlerts: true,
-    canAcknowledgeAlerts: false,
+    canAcknowledgeAlerts: true, // Fixed: Staff CAN acknowledge alerts per PERMISSION_MATRIX
     canEditTempLimits: false,
     canManageSites: false,
     canManageSensors: false,
