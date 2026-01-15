@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { deobfuscateKey } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +25,21 @@ interface TriggerPayload {
   user_sites: UserSite[];
 }
 
+interface TtnConfig {
+  enabled: boolean;
+  cluster: string;
+  application_id: string | null;
+  api_key: string | null;
+  api_key_last4: string | null;
+  gateway_api_key: string | null;
+  gateway_api_key_last4: string | null;
+  gateway_owner_type: 'organization' | null;
+  gateway_owner_id: string | null;
+  webhook_id: string | null;
+  webhook_url: string | null;
+  webhook_secret_last4: string | null;
+}
+
 interface Project2Payload {
   users: Array<{
     user_id: string;
@@ -35,6 +51,7 @@ interface Project2Payload {
     updated_at: string;
     default_site_id: string | null;
     user_sites: UserSite[];
+    ttn: TtnConfig;
   }>;
 }
 
@@ -61,11 +78,86 @@ serve(async (req) => {
 
   try {
     const triggerPayload: TriggerPayload = await req.json();
-    
+
     console.log(`[user-sync-emitter] Received ${triggerPayload.event_type} event for user ${triggerPayload.user_id}`);
     console.log(`[user-sync-emitter] Site data: default_site_id=${triggerPayload.default_site_id}, user_sites=${JSON.stringify(triggerPayload.user_sites)}`);
 
-    // Build the outbound payload for Project 2 with site membership data
+    // Get organization's TTN configuration
+    let ttnConfig: TtnConfig = {
+      enabled: false,
+      cluster: "eu1",
+      application_id: null,
+      api_key: null,
+      api_key_last4: null,
+      gateway_api_key: null,
+      gateway_api_key_last4: null,
+      gateway_owner_type: null,
+      gateway_owner_id: null,
+      webhook_id: null,
+      webhook_url: null,
+      webhook_secret_last4: null,
+    };
+
+    if (triggerPayload.organization_id) {
+      console.log(`[user-sync-emitter] Fetching TTN config for org: ${triggerPayload.organization_id}`);
+
+      const { data: ttnConnection } = await supabase
+        .from("ttn_connections")
+        .select(`
+          is_enabled, 
+          ttn_region, 
+          ttn_application_id, 
+          ttn_api_key_encrypted, 
+          ttn_api_key_last4,
+          ttn_org_api_key_encrypted,
+          ttn_org_api_key_last4,
+          tts_organization_id,
+          ttn_webhook_id,
+          ttn_webhook_url,
+          ttn_webhook_secret_last4
+        `)
+        .eq("organization_id", triggerPayload.organization_id)
+        .maybeSingle();
+
+      if (ttnConnection) {
+        console.log(`[user-sync-emitter] Found TTN config, enabled: ${ttnConnection.is_enabled}, app: ${ttnConnection.ttn_application_id}`);
+
+        // Decrypt the API key
+        const encryptionSalt = Deno.env.get("TTN_ENCRYPTION_SALT") ||
+          supabaseServiceKey?.slice(0, 32) || "";
+
+        // Decrypt the Application API key
+        const fullApiKey = ttnConnection.ttn_api_key_encrypted
+          ? deobfuscateKey(ttnConnection.ttn_api_key_encrypted, encryptionSalt)
+          : null;
+
+        // Decrypt the Gateway/Organization API key
+        const fullGatewayApiKey = ttnConnection.ttn_org_api_key_encrypted
+          ? deobfuscateKey(ttnConnection.ttn_org_api_key_encrypted, encryptionSalt)
+          : null;
+
+        ttnConfig = {
+          enabled: ttnConnection.is_enabled || false,
+          cluster: ttnConnection.ttn_region || "eu1",
+          application_id: ttnConnection.ttn_application_id || null,
+          api_key: fullApiKey,
+          api_key_last4: ttnConnection.ttn_api_key_last4 || null,
+          gateway_api_key: fullGatewayApiKey,
+          gateway_api_key_last4: ttnConnection.ttn_org_api_key_last4 || null,
+          gateway_owner_type: ttnConnection.tts_organization_id ? 'organization' : null,
+          gateway_owner_id: ttnConnection.tts_organization_id || null,
+          webhook_id: ttnConnection.ttn_webhook_id || null,
+          webhook_url: ttnConnection.ttn_webhook_url || null,
+          webhook_secret_last4: ttnConnection.ttn_webhook_secret_last4 || null,
+        };
+
+        console.log(`[user-sync-emitter] TTN config prepared: cluster=${ttnConfig.cluster}, app=${ttnConfig.application_id}, api_key_present=${!!ttnConfig.api_key}, gateway_api_key_present=${!!ttnConfig.gateway_api_key}`);
+      } else {
+        console.log(`[user-sync-emitter] No TTN config found for org: ${triggerPayload.organization_id}`);
+      }
+    }
+
+    // Build the outbound payload for Project 2 with site membership data and TTN config
     const outboundPayload: Project2Payload = {
       users: [
         {
@@ -78,6 +170,7 @@ serve(async (req) => {
           updated_at: triggerPayload.updated_at,
           default_site_id: triggerPayload.default_site_id,
           user_sites: triggerPayload.user_sites || [],
+          ttn: ttnConfig,
         }
       ]
     };
@@ -99,12 +192,12 @@ serve(async (req) => {
 
     if (!response.ok) {
       console.error(`[user-sync-emitter] Project 2 returned ${response.status}: ${responseText}`);
-      
+
       // Update sync log to failed
       await supabase
         .from('user_sync_log')
-        .update({ 
-          status: 'failed', 
+        .update({
+          status: 'failed',
           last_error: `HTTP ${response.status}: ${responseText}`,
           attempts: 1
         })
@@ -124,8 +217,8 @@ serve(async (req) => {
     // Update sync log to sent
     await supabase
       .from('user_sync_log')
-      .update({ 
-        status: 'sent', 
+      .update({
+        status: 'sent',
         sent_at: new Date().toISOString(),
         attempts: 1
       })

@@ -1,0 +1,140 @@
+name: Documentation CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'docs/**'
+      - 'scripts/docs/**'
+      - '.github/workflows/docs-ci.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'scripts/docs/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run documentation linter
+        run: npm run docs:lint
+
+  generate:
+    name: Generate Documentation
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate documentation (deterministic mode)
+        run: npm run docs:generate
+        env:
+          CI: 'true'  # Ensures deterministic output (no timestamps)
+
+      - name: Check for uncommitted changes
+        run: |
+          if [[ -n $(git status --porcelain docs/) ]]; then
+            echo "❌ Documentation is out of date!"
+            echo ""
+            echo "The docs generator detected changes. This usually means:"
+            echo "1. You modified a doc file without regenerating INDEX.md/GLOSSARY.md"
+            echo "2. You added/removed a term in glossary-seed.yml"
+            echo "3. You added/removed a markdown file in docs/"
+            echo ""
+            echo "Fix: Run 'npm run docs:generate' locally and commit the changes."
+            echo ""
+            echo "Changed files:"
+            git status --porcelain docs/
+            echo ""
+            echo "Diff:"
+            git diff docs/
+            exit 1
+          fi
+          echo "✅ Documentation is up to date"
+
+  build:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    needs: generate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc texlive-xetex
+
+      - name: Build documentation
+        run: npm run docs:build
+
+      - name: Upload documentation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: |
+            docs/_build/FreshTrackPro-Documentation.md
+            docs/_build/FreshTrackPro-Documentation.html
+            docs/_build/FreshTrackPro-Documentation.pdf
+          retention-days: 30
+
+  notify:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [lint, generate]
+    if: failure()
+
+    steps:
+      - name: Create failure summary
+        run: |
+          echo "## Documentation CI Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "One or more documentation checks failed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Common fixes:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Run \`npm run docs:lint\` locally to see errors" >> $GITHUB_STEP_SUMMARY
+          echo "2. Run \`npm run docs:generate\` to regenerate INDEX.md and GLOSSARY.md" >> $GITHUB_STEP_SUMMARY
+          echo "3. Fix broken links and missing required files" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "See [CI_CHECKLIST.md](../docs/CI_CHECKLIST.md) for full validation rules." >> $GITHUB_STEP_SUMMARY

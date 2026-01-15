@@ -25,12 +25,12 @@ export const SENSOR_STATUS_CONFIG: Record<string, EntityStatusConfig> = {
     }
   },
   joining: {
-    label: "Joining...",
+    label: "Awaiting Uplink",
     variant: "outline",
-    className: "border-yellow-500 text-yellow-600",
+    className: "border-accent text-accent",
     tooltip: {
-      meaning: "Device has been registered but has not yet completed LoRaWAN join",
-      systemState: "Waiting for device to power on and join the network",
+      meaning: "Device is provisioned in TTN but hasn't sent data yet",
+      systemState: "Device is registered and ready to communicate",
       userAction: "Ensure device is powered and in range of a gateway"
     }
   },
@@ -113,9 +113,11 @@ export const SENSOR_COLUMN_TOOLTIPS = {
   name: "Friendly name used to identify this sensor in FrostGuard",
   devEui: "Unique identifier used by The Things Network to recognize this device",
   type: "Sensor category determines how data is interpreted and displayed",
-  location: "Site and sub-location where this sensor is installed",
+  location: "Site where this sensor is installed",
+  unit: "The specific equipment unit (refrigerator, freezer, etc.) this sensor is monitoring. Units must belong to the selected site.",
   status: "Current connectivity and provisioning state of the sensor",
-  lastUplink: "The most recent time this sensor successfully sent data"
+  lastUplink: "The most recent time this sensor successfully sent data",
+  ttnStatus: "Whether device exists in The Things Network"
 };
 
 // COLUMN HEADER TOOLTIPS - GATEWAYS
@@ -124,6 +126,66 @@ export const GATEWAY_COLUMN_TOOLTIPS = {
   gatewayEui: "Unique identifier for the LoRaWAN gateway hardware",
   site: "Physical location where this gateway is installed",
   status: "Current connectivity state of the gateway"
+};
+
+// TTN PROVISIONING STATE DEFINITIONS
+export interface TtnProvisioningStateConfig {
+  label: string;
+  variant: 'default' | 'secondary' | 'destructive' | 'outline';
+  className?: string;
+  tooltip: StatusTooltipInfo;
+}
+
+export const TTN_PROVISIONING_STATE_CONFIG: Record<string, TtnProvisioningStateConfig> = {
+  exists_in_ttn: {
+    label: "Provisioned",
+    variant: "default",
+    className: "bg-safe/15 text-safe border-safe/30",
+    tooltip: {
+      meaning: "Device exists in The Things Network",
+      systemState: "Device is registered and can send/receive data",
+      userAction: null
+    }
+  },
+  missing_in_ttn: {
+    label: "Not in TTN",
+    variant: "outline",
+    className: "bg-warning/15 text-warning border-warning/30",
+    tooltip: {
+      meaning: "Device not found in TTN application",
+      systemState: "Device needs to be provisioned to TTN",
+      userAction: "Click 'Provision' to register this device"
+    }
+  },
+  unknown: {
+    label: "Unknown",
+    variant: "secondary",
+    className: "bg-muted text-muted-foreground",
+    tooltip: {
+      meaning: "TTN status has not been checked",
+      systemState: "Run 'Check TTN' to verify device status",
+      userAction: "Click 'Check TTN' to detect if device exists"
+    }
+  },
+  not_configured: {
+    label: "Not Configured",
+    variant: "outline",
+    className: "bg-muted/50 text-muted-foreground border-border",
+    tooltip: {
+      meaning: "TTN is not configured or sensor is missing DevEUI",
+      systemState: "Cannot check or provision without TTN configuration",
+      userAction: "Configure TTN settings or add DevEUI to sensor"
+    }
+  },
+  error: {
+    label: "Check Failed",
+    variant: "destructive",
+    tooltip: {
+      meaning: "Failed to check TTN status",
+      systemState: "API error occurred during check",
+      userAction: "Click 'Check TTN' to retry"
+    }
+  }
 };
 
 // Unit sensors card status config (simplified labels)

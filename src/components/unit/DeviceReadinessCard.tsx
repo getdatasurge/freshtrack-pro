@@ -14,10 +14,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { 
-  computeSensorInstallationStatus, 
-  DeviceInfo 
-} from "@/hooks/useSensorInstallationStatus";
+// Only import types - status is computed from parent's offlineSeverity
+import { DeviceInfo } from "@/hooks/useSensorInstallationStatus";
 import { LoraSensor } from "@/types/ttn";
 
 interface DeviceReadinessProps {
@@ -68,37 +66,108 @@ const DeviceReadinessCard = ({
   const effectiveSignalStrength = hasLoraData ? loraSensor.signal_strength : signalStrength;
   const effectiveLastSeen = hasLoraData ? loraSensor.last_seen_at : (lastHeartbeat || device?.last_seen_at);
 
-  // Compute installation status - pass loraSensor for proper status derivation
-  const baseInstallationStatus = computeSensorInstallationStatus(device || null, lastReadingAt, loraSensor);
-  
-  // Override status for pending/joining LoRa sensors
-  const installationStatus = isLoraPending
-    ? {
-        status: "pending_registration" as const,
+  // Compute installation status based on offline severity from alert rules (not hardcoded threshold)
+  // This respects user-configured "Sensor Offline Thresholds"
+  const getSensorStatusFromSeverity = (): {
+    status: string;
+    label: string;
+    description: string;
+    color: string;
+    bgColor: string;
+  } => {
+    // Handle LoRa pending/joining states first
+    if (isLoraPending) {
+      return {
+        status: "pending_registration",
         label: "Pending Registration",
-        description: "Sensor registered - awaiting network join. No alerts will trigger until active.",
+        description: "Sensor created but not yet provisioned to TTN. Configure TTN connection in Settings → Developer.",
         color: "text-muted-foreground",
         bgColor: "bg-muted",
-      }
-    : isLoraJoining
-    ? {
-        status: "joining_network" as const,
+      };
+    }
+    if (isLoraJoining) {
+      return {
+        status: "joining_network",
         label: "Joining Network",
-        description: "Sensor is attempting to join the LoRaWAN network. This may take a few minutes.",
+        description: loraSensor?.ttn_device_id 
+          ? "Sensor is provisioned and attempting to join the LoRaWAN network. Ensure a gateway is online nearby."
+          : "Sensor is awaiting TTN device registration. Check TTN configuration.",
         color: "text-warning",
         bgColor: "bg-warning/10",
-      }
-    : baseInstallationStatus;
+      };
+    }
+
+    // Use offlineSeverity from computed status (respects alert rules thresholds)
+    if (offlineSeverity === "critical") {
+      return {
+        status: "offline_critical",
+        label: "Offline (Critical)",
+        description: `Sensor has missed ${missedCheckins} check-ins. Immediate attention required.`,
+        color: "text-alarm",
+        bgColor: "bg-alarm/10",
+      };
+    }
+    if (offlineSeverity === "warning") {
+      return {
+        status: "offline_warning",
+        label: "Offline (Warning)",
+        description: `Sensor has missed ${missedCheckins} check-ins. Check device connectivity.`,
+        color: "text-warning",
+        bgColor: "bg-warning/10",
+      };
+    }
+
+    // Check if we have a sensor paired (simple check without threshold logic)
+    const hasSensorPaired = Boolean(loraSensor || device);
+    if (!hasSensorPaired) {
+      return {
+        status: "not_paired",
+        label: "Not Paired",
+        description: "No sensor is paired to this unit. Go to Settings to add a sensor.",
+        color: "text-muted-foreground",
+        bgColor: "bg-muted",
+      };
+    }
+
+    // Check if paired but never seen
+    const hasEverBeenSeen = Boolean(
+      loraSensor?.last_seen_at || 
+      device?.last_seen_at || 
+      lastReadingAt
+    );
+    if (!hasEverBeenSeen) {
+      return {
+        status: "paired_never_seen",
+        label: "Paired – Never Seen",
+        description: "Sensor is paired but has never reported data. Check device power and connectivity.",
+        color: "text-warning",
+        bgColor: "bg-warning/10",
+      };
+    }
+
+    // Online - sensor is reporting within configured thresholds (offlineSeverity === "none")
+    return {
+      status: "online",
+      label: "Online",
+      description: "Sensor is reporting normally within configured thresholds.",
+      color: "text-safe",
+      bgColor: "bg-safe/10",
+    };
+  };
+
+  const installationStatus = getSensorStatusFromSeverity();
 
   const getStatusIcon = () => {
     if (isLoraPending) return Radio;
     if (isLoraJoining) return Loader2;
-    switch (baseInstallationStatus.status) {
+    switch (installationStatus.status) {
       case "not_paired":
         return LinkIcon;
       case "paired_never_seen":
         return AlertTriangle;
       case "previously_seen_offline":
+      case "offline_warning":
+      case "offline_critical":
         return XCircle;
       case "online":
         return CheckCircle;
@@ -299,7 +368,7 @@ const DeviceReadinessCard = ({
                 <Loader2 className="w-4 h-4 text-warning animate-spin" />
               ) : installationStatus.status === "not_paired" ? (
                 <LinkIcon className="w-4 h-4" />
-              ) : baseInstallationStatus.status === "paired_never_seen" ? (
+              ) : installationStatus.status === "paired_never_seen" ? (
                 <AlertTriangle className="w-4 h-4 text-warning" />
               ) : (
                 <XCircle className="w-4 h-4 text-warning" />

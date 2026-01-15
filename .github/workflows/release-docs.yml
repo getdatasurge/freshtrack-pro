@@ -1,0 +1,206 @@
+# Release Documentation Workflow
+# Triggered on version tags (v*.*.*) to:
+# 1. Build versioned documentation
+# 2. Update version metadata
+# 3. Deploy versioned docs to GitHub Pages
+# 4. Create docs release tag (docs/vX.Y.Z)
+# 5. Upload PDF as release artifact
+
+name: Release Docs
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'  # Pre-releases like v1.0.0-beta.1
+
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.2.3)'
+        required: true
+        type: string
+      skip_pdf:
+        description: 'Skip PDF generation'
+        required: false
+        default: false
+        type: boolean
+
+# Allow only one concurrent release
+concurrency:
+  group: release-docs
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # For creating tags and releases
+  pages: write
+  id-token: write
+
+jobs:
+  release:
+    name: Release Documentation
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          # Remove 'v' prefix for some uses
+          VERSION_NUM="${VERSION#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_num=$VERSION_NUM" >> $GITHUB_OUTPUT
+          echo "📦 Building docs for version: $VERSION"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', steps.version.outputs.version_num) || github.ref }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('docs-site/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install MkDocs dependencies
+        run: pip install -r docs-site/requirements.txt
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Pandoc (for PDF)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_pdf != true }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc texlive-xetex texlive-fonts-recommended
+
+      - name: Update version metadata
+        run: |
+          node scripts/docs/update-version.js --app-version=${{ steps.version.outputs.version }}
+        env:
+          CI: 'true'
+
+      - name: Generate documentation (deterministic mode)
+        run: npm run docs:generate
+        env:
+          CI: 'true'  # Ensures deterministic output (no timestamps)
+
+      - name: Run documentation linter
+        run: npm run docs:lint
+
+      - name: Build PDF documentation
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_pdf != true }}
+        run: npm run docs:build
+
+      - name: Rename PDF with version
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_pdf != true }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ -f "docs/_build/FreshTrackPro-Documentation.pdf" ]; then
+            cp docs/_build/FreshTrackPro-Documentation.pdf "docs/_build/FreshTrackPro-Documentation-${VERSION}.pdf"
+          fi
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Deploy versioned docs with mike
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cd docs-site
+
+          # Deploy this version
+          mike deploy --push --update-aliases "$VERSION" latest
+
+          # Set latest as default
+          mike set-default --push latest
+
+          echo "✅ Deployed version $VERSION as latest"
+
+      - name: Build static site for GitHub Pages
+        run: |
+          cd docs-site
+          mkdocs build --strict
+        env:
+          CI: true
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-docs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Create docs release tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DOCS_TAG="docs/${VERSION}"
+
+          # Check if tag already exists
+          if git rev-parse "$DOCS_TAG" >/dev/null 2>&1; then
+            echo "⚠️ Tag $DOCS_TAG already exists, skipping"
+          else
+            git tag -a "$DOCS_TAG" -m "Documentation release for ${VERSION}"
+            git push origin "$DOCS_TAG"
+            echo "✅ Created and pushed tag: $DOCS_TAG"
+          fi
+
+      - name: Upload PDF to release
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.skip_pdf != true) && github.event_name == 'push' }}
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            docs/_build/FreshTrackPro-Documentation-${{ steps.version.outputs.version }}.pdf
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "## 📚 Documentation Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Version: ${VERSION}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version metadata updated | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Documentation generated | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docs site deployed | ✅ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docs tag created | ✅ docs/${VERSION} |" >> $GITHUB_STEP_SUMMARY
+          if [ -f "docs/_build/FreshTrackPro-Documentation-${VERSION}.pdf" ]; then
+            echo "| PDF attached to release | ✅ |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **Latest**: https://getdatasurge.github.io/freshtrack-pro/" >> $GITHUB_STEP_SUMMARY
+          echo "- **Versioned**: https://getdatasurge.github.io/freshtrack-pro/${VERSION}/" >> $GITHUB_STEP_SUMMARY

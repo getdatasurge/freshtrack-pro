@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_deletion_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          current_step: string | null
+          deleted_user_email: string | null
+          error_message: string | null
+          id: string
+          org_deleted: boolean | null
+          org_had_other_users: boolean | null
+          organization_id: string | null
+          request_id: string | null
+          status: string
+          steps_completed: Json | null
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          deleted_user_email?: string | null
+          error_message?: string | null
+          id?: string
+          org_deleted?: boolean | null
+          org_had_other_users?: boolean | null
+          organization_id?: string | null
+          request_id?: string | null
+          status?: string
+          steps_completed?: Json | null
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          current_step?: string | null
+          deleted_user_email?: string | null
+          error_message?: string | null
+          id?: string
+          org_deleted?: boolean | null
+          org_had_other_users?: boolean | null
+          organization_id?: string | null
+          request_id?: string | null
+          status?: string
+          steps_completed?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       alert_rules: {
         Row: {
           created_at: string
@@ -635,6 +683,65 @@ export type Database = {
           },
         ]
       }
+      entity_dashboard_layouts: {
+        Row: {
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          is_user_default: boolean | null
+          layout_json: Json
+          layout_version: number | null
+          name: string
+          organization_id: string
+          slot_number: number
+          timeline_state_json: Json | null
+          updated_at: string
+          user_id: string
+          widget_prefs_json: Json | null
+        }
+        Insert: {
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          layout_version?: number | null
+          name: string
+          organization_id: string
+          slot_number: number
+          timeline_state_json?: Json | null
+          updated_at?: string
+          user_id: string
+          widget_prefs_json?: Json | null
+        }
+        Update: {
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          layout_version?: number | null
+          name?: string
+          organization_id?: string
+          slot_number?: number
+          timeline_state_json?: Json | null
+          updated_at?: string
+          user_id?: string
+          widget_prefs_json?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entity_dashboard_layouts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       escalation_contacts: {
         Row: {
           created_at: string
@@ -856,6 +963,9 @@ export type Database = {
           site_id: string | null
           status: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id: string | null
+          ttn_gateway_id: string | null
+          ttn_last_error: string | null
+          ttn_registered_at: string | null
           updated_at: string
         }
         Insert: {
@@ -870,6 +980,9 @@ export type Database = {
           site_id?: string | null
           status?: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id?: string | null
+          ttn_gateway_id?: string | null
+          ttn_last_error?: string | null
+          ttn_registered_at?: string | null
           updated_at?: string
         }
         Update: {
@@ -884,6 +997,9 @@ export type Database = {
           site_id?: string | null
           status?: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id?: string | null
+          ttn_gateway_id?: string | null
+          ttn_last_error?: string | null
+          ttn_registered_at?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1057,22 +1173,29 @@ export type Database = {
           battery_level: number | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           description: string | null
           dev_eui: string
           firmware_version: string | null
           id: string
           is_primary: boolean
           last_join_at: string | null
+          last_provision_check_at: string | null
+          last_provision_check_error: string | null
           last_seen_at: string | null
           manufacturer: string | null
           model: string | null
           name: string
           organization_id: string
+          provisioned_source: string | null
+          provisioning_state: string
           sensor_type: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength: number | null
           site_id: string | null
           status: Database["public"]["Enums"]["lora_sensor_status"]
           ttn_application_id: string | null
+          ttn_cluster: string | null
           ttn_device_id: string | null
           unit_id: string | null
           updated_at: string
@@ -1083,22 +1206,29 @@ export type Database = {
           battery_level?: number | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           dev_eui: string
           firmware_version?: string | null
           id?: string
           is_primary?: boolean
           last_join_at?: string | null
+          last_provision_check_at?: string | null
+          last_provision_check_error?: string | null
           last_seen_at?: string | null
           manufacturer?: string | null
           model?: string | null
           name: string
           organization_id: string
+          provisioned_source?: string | null
+          provisioning_state?: string
           sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength?: number | null
           site_id?: string | null
           status?: Database["public"]["Enums"]["lora_sensor_status"]
           ttn_application_id?: string | null
+          ttn_cluster?: string | null
           ttn_device_id?: string | null
           unit_id?: string | null
           updated_at?: string
@@ -1109,22 +1239,29 @@ export type Database = {
           battery_level?: number | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           dev_eui?: string
           firmware_version?: string | null
           id?: string
           is_primary?: boolean
           last_join_at?: string | null
+          last_provision_check_at?: string | null
+          last_provision_check_error?: string | null
           last_seen_at?: string | null
           manufacturer?: string | null
           model?: string | null
           name?: string
           organization_id?: string
+          provisioned_source?: string | null
+          provisioning_state?: string
           sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength?: number | null
           site_id?: string | null
           status?: Database["public"]["Enums"]["lora_sensor_status"]
           ttn_application_id?: string | null
+          ttn_cluster?: string | null
           ttn_device_id?: string | null
           unit_id?: string | null
           updated_at?: string
@@ -1530,6 +1667,41 @@ export type Database = {
           },
         ]
       }
+      org_sync_state: {
+        Row: {
+          is_dirty: boolean
+          last_change_at: string
+          last_synced_at: string | null
+          last_synced_version: number | null
+          organization_id: string
+          sync_version: number
+        }
+        Insert: {
+          is_dirty?: boolean
+          last_change_at?: string
+          last_synced_at?: string | null
+          last_synced_version?: number | null
+          organization_id: string
+          sync_version?: number
+        }
+        Update: {
+          is_dirty?: boolean
+          last_change_at?: string
+          last_synced_at?: string | null
+          last_synced_version?: number | null
+          organization_id?: string
+          sync_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "org_sync_state_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           accent_color: string | null
@@ -1808,6 +1980,66 @@ export type Database = {
         }
         Relationships: []
       }
+      sensor_dashboard_layouts_archived: {
+        Row: {
+          created_at: string
+          id: string
+          is_user_default: boolean | null
+          layout_json: Json
+          layout_version: number | null
+          name: string
+          organization_id: string
+          sensor_id: string
+          timeline_state_json: Json | null
+          updated_at: string
+          user_id: string
+          widget_prefs_json: Json | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          layout_version?: number | null
+          name: string
+          organization_id: string
+          sensor_id: string
+          timeline_state_json?: Json | null
+          updated_at?: string
+          user_id: string
+          widget_prefs_json?: Json | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          layout_version?: number | null
+          name?: string
+          organization_id?: string
+          sensor_id?: string
+          timeline_state_json?: Json | null
+          updated_at?: string
+          user_id?: string
+          widget_prefs_json?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sensor_dashboard_layouts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sensor_dashboard_layouts_sensor_id_fkey"
+            columns: ["sensor_id"]
+            isOneToOne: false
+            referencedRelation: "lora_sensors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sensor_readings: {
         Row: {
           battery_level: number | null
@@ -2060,39 +2292,45 @@ export type Database = {
           alert_id: string | null
           alert_type: string
           created_at: string
+          delivery_updated_at: string | null
           error_message: string | null
+          from_number: string | null
           id: string
           message: string
           organization_id: string
           phone_number: string
+          provider_message_id: string | null
           status: string
-          twilio_sid: string | null
           user_id: string | null
         }
         Insert: {
           alert_id?: string | null
           alert_type: string
           created_at?: string
+          delivery_updated_at?: string | null
           error_message?: string | null
+          from_number?: string | null
           id?: string
           message: string
           organization_id: string
           phone_number: string
+          provider_message_id?: string | null
           status?: string
-          twilio_sid?: string | null
           user_id?: string | null
         }
         Update: {
           alert_id?: string | null
           alert_type?: string
           created_at?: string
+          delivery_updated_at?: string | null
           error_message?: string | null
+          from_number?: string | null
           id?: string
           message?: string
           organization_id?: string
           phone_number?: string
+          provider_message_id?: string | null
           status?: string
-          twilio_sid?: string | null
           user_id?: string | null
         }
         Relationships: [
@@ -2171,17 +2409,110 @@ export type Database = {
           },
         ]
       }
+      telnyx_webhook_config: {
+        Row: {
+          created_at: string
+          id: string
+          last_error: string | null
+          last_event_at: string | null
+          organization_id: string | null
+          status: string
+          updated_at: string
+          webhook_id: string | null
+          webhook_url: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          last_event_at?: string | null
+          organization_id?: string | null
+          status?: string
+          updated_at?: string
+          webhook_id?: string | null
+          webhook_url: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          last_event_at?: string | null
+          organization_id?: string | null
+          status?: string
+          updated_at?: string
+          webhook_id?: string | null
+          webhook_url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "telnyx_webhook_config_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      telnyx_webhook_events: {
+        Row: {
+          created_at: string
+          event_id: string
+          event_type: string
+          id: string
+          message_id: string | null
+          payload: Json
+          processed: boolean
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          event_type: string
+          id?: string
+          message_id?: string | null
+          payload?: Json
+          processed?: boolean
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          event_type?: string
+          id?: string
+          message_id?: string | null
+          payload?: Json
+          processed?: boolean
+        }
+        Relationships: []
+      }
       ttn_connections: {
         Row: {
+          app_rights_check_status: string | null
+          cluster_lock: string | null
           created_at: string | null
           created_by: string | null
+          credentials_last_rotated_at: string | null
+          credentials_rotation_count: number | null
           id: string
           is_enabled: boolean | null
           last_connection_test_at: string | null
           last_connection_test_result: Json | null
+          last_http_body: string | null
+          last_http_status: number | null
+          last_provisioning_attempt_at: string | null
+          last_ttn_correlation_id: string | null
+          last_ttn_error_name: string | null
+          last_ttn_error_namespace: string | null
+          last_ttn_http_status: number | null
           organization_id: string
+          provisioning_attempt_count: number
+          provisioning_attempts: number | null
+          provisioning_can_retry: boolean | null
           provisioning_error: string | null
+          provisioning_last_heartbeat_at: string | null
+          provisioning_last_step: string | null
+          provisioning_started_at: string | null
           provisioning_status: string | null
+          provisioning_step: string | null
+          provisioning_step_details: Json | null
           ttn_api_key_encrypted: string | null
           ttn_api_key_id: string | null
           ttn_api_key_last4: string | null
@@ -2189,27 +2520,65 @@ export type Database = {
           ttn_application_id: string | null
           ttn_application_name: string | null
           ttn_application_provisioned_at: string | null
+          ttn_application_uid: string | null
+          ttn_credential_type: string | null
+          ttn_gateway_rights_checked_at: string | null
+          ttn_gateway_rights_verified: boolean | null
           ttn_identity_server_url: string | null
+          ttn_last_test_source: string | null
+          ttn_last_updated_source: string | null
+          ttn_org_api_key_encrypted: string | null
+          ttn_org_api_key_id: string | null
+          ttn_org_api_key_last4: string | null
+          ttn_org_api_key_updated_at: string | null
+          ttn_owner_scope: string | null
           ttn_region: string | null
           ttn_stack_base_url: string | null
           ttn_user_id: string | null
+          ttn_webhook_events: string[] | null
           ttn_webhook_id: string | null
+          ttn_webhook_last_updated_at: string | null
+          ttn_webhook_last_updated_by: string | null
           ttn_webhook_secret_encrypted: string | null
           ttn_webhook_secret_last4: string | null
           ttn_webhook_url: string | null
+          tts_base_url: string | null
+          tts_org_admin_added: boolean | null
+          tts_org_provisioned_at: string | null
+          tts_org_provisioning_status: string | null
+          tts_organization_id: string | null
           updated_at: string | null
           updated_by: string | null
         }
         Insert: {
+          app_rights_check_status?: string | null
+          cluster_lock?: string | null
           created_at?: string | null
           created_by?: string | null
+          credentials_last_rotated_at?: string | null
+          credentials_rotation_count?: number | null
           id?: string
           is_enabled?: boolean | null
           last_connection_test_at?: string | null
           last_connection_test_result?: Json | null
+          last_http_body?: string | null
+          last_http_status?: number | null
+          last_provisioning_attempt_at?: string | null
+          last_ttn_correlation_id?: string | null
+          last_ttn_error_name?: string | null
+          last_ttn_error_namespace?: string | null
+          last_ttn_http_status?: number | null
           organization_id: string
+          provisioning_attempt_count?: number
+          provisioning_attempts?: number | null
+          provisioning_can_retry?: boolean | null
           provisioning_error?: string | null
+          provisioning_last_heartbeat_at?: string | null
+          provisioning_last_step?: string | null
+          provisioning_started_at?: string | null
           provisioning_status?: string | null
+          provisioning_step?: string | null
+          provisioning_step_details?: Json | null
           ttn_api_key_encrypted?: string | null
           ttn_api_key_id?: string | null
           ttn_api_key_last4?: string | null
@@ -2217,27 +2586,65 @@ export type Database = {
           ttn_application_id?: string | null
           ttn_application_name?: string | null
           ttn_application_provisioned_at?: string | null
+          ttn_application_uid?: string | null
+          ttn_credential_type?: string | null
+          ttn_gateway_rights_checked_at?: string | null
+          ttn_gateway_rights_verified?: boolean | null
           ttn_identity_server_url?: string | null
+          ttn_last_test_source?: string | null
+          ttn_last_updated_source?: string | null
+          ttn_org_api_key_encrypted?: string | null
+          ttn_org_api_key_id?: string | null
+          ttn_org_api_key_last4?: string | null
+          ttn_org_api_key_updated_at?: string | null
+          ttn_owner_scope?: string | null
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
           ttn_user_id?: string | null
+          ttn_webhook_events?: string[] | null
           ttn_webhook_id?: string | null
+          ttn_webhook_last_updated_at?: string | null
+          ttn_webhook_last_updated_by?: string | null
           ttn_webhook_secret_encrypted?: string | null
           ttn_webhook_secret_last4?: string | null
           ttn_webhook_url?: string | null
+          tts_base_url?: string | null
+          tts_org_admin_added?: boolean | null
+          tts_org_provisioned_at?: string | null
+          tts_org_provisioning_status?: string | null
+          tts_organization_id?: string | null
           updated_at?: string | null
           updated_by?: string | null
         }
         Update: {
+          app_rights_check_status?: string | null
+          cluster_lock?: string | null
           created_at?: string | null
           created_by?: string | null
+          credentials_last_rotated_at?: string | null
+          credentials_rotation_count?: number | null
           id?: string
           is_enabled?: boolean | null
           last_connection_test_at?: string | null
           last_connection_test_result?: Json | null
+          last_http_body?: string | null
+          last_http_status?: number | null
+          last_provisioning_attempt_at?: string | null
+          last_ttn_correlation_id?: string | null
+          last_ttn_error_name?: string | null
+          last_ttn_error_namespace?: string | null
+          last_ttn_http_status?: number | null
           organization_id?: string
+          provisioning_attempt_count?: number
+          provisioning_attempts?: number | null
+          provisioning_can_retry?: boolean | null
           provisioning_error?: string | null
+          provisioning_last_heartbeat_at?: string | null
+          provisioning_last_step?: string | null
+          provisioning_started_at?: string | null
           provisioning_status?: string | null
+          provisioning_step?: string | null
+          provisioning_step_details?: Json | null
           ttn_api_key_encrypted?: string | null
           ttn_api_key_id?: string | null
           ttn_api_key_last4?: string | null
@@ -2245,14 +2652,33 @@ export type Database = {
           ttn_application_id?: string | null
           ttn_application_name?: string | null
           ttn_application_provisioned_at?: string | null
+          ttn_application_uid?: string | null
+          ttn_credential_type?: string | null
+          ttn_gateway_rights_checked_at?: string | null
+          ttn_gateway_rights_verified?: boolean | null
           ttn_identity_server_url?: string | null
+          ttn_last_test_source?: string | null
+          ttn_last_updated_source?: string | null
+          ttn_org_api_key_encrypted?: string | null
+          ttn_org_api_key_id?: string | null
+          ttn_org_api_key_last4?: string | null
+          ttn_org_api_key_updated_at?: string | null
+          ttn_owner_scope?: string | null
           ttn_region?: string | null
           ttn_stack_base_url?: string | null
           ttn_user_id?: string | null
+          ttn_webhook_events?: string[] | null
           ttn_webhook_id?: string | null
+          ttn_webhook_last_updated_at?: string | null
+          ttn_webhook_last_updated_by?: string | null
           ttn_webhook_secret_encrypted?: string | null
           ttn_webhook_secret_last4?: string | null
           ttn_webhook_url?: string | null
+          tts_base_url?: string | null
+          tts_org_admin_added?: boolean | null
+          tts_org_provisioned_at?: string | null
+          tts_org_provisioning_status?: string | null
+          tts_organization_id?: string | null
           updated_at?: string | null
           updated_by?: string | null
         }
@@ -2342,6 +2768,193 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ttn_provisioning_logs: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          error_category: string | null
+          id: string
+          message: string | null
+          organization_id: string
+          payload: Json | null
+          request_id: string | null
+          status: string
+          step: string
+          ttn_endpoint: string | null
+          ttn_http_status: number | null
+          ttn_response_body: string | null
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          error_category?: string | null
+          id?: string
+          message?: string | null
+          organization_id: string
+          payload?: Json | null
+          request_id?: string | null
+          status: string
+          step: string
+          ttn_endpoint?: string | null
+          ttn_http_status?: number | null
+          ttn_response_body?: string | null
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          error_category?: string | null
+          id?: string
+          message?: string | null
+          organization_id?: string
+          payload?: Json | null
+          request_id?: string | null
+          status?: string
+          step?: string
+          ttn_endpoint?: string | null
+          ttn_http_status?: number | null
+          ttn_response_body?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ttn_provisioning_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ttn_provisioning_queue: {
+        Row: {
+          attempts: number
+          completed_at: string | null
+          completed_steps: string[] | null
+          created_at: string
+          current_step: string | null
+          error_code: string | null
+          id: string
+          last_error: string | null
+          last_error_at: string | null
+          max_attempts: number
+          next_retry_at: string | null
+          organization_id: string
+          priority: number
+          started_at: string | null
+          status: string
+          trigger_reason: string | null
+          triggered_by: string | null
+        }
+        Insert: {
+          attempts?: number
+          completed_at?: string | null
+          completed_steps?: string[] | null
+          created_at?: string
+          current_step?: string | null
+          error_code?: string | null
+          id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          max_attempts?: number
+          next_retry_at?: string | null
+          organization_id: string
+          priority?: number
+          started_at?: string | null
+          status?: string
+          trigger_reason?: string | null
+          triggered_by?: string | null
+        }
+        Update: {
+          attempts?: number
+          completed_at?: string | null
+          completed_steps?: string[] | null
+          created_at?: string
+          current_step?: string | null
+          error_code?: string | null
+          id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          max_attempts?: number
+          next_retry_at?: string | null
+          organization_id?: string
+          priority?: number
+          started_at?: string | null
+          status?: string
+          trigger_reason?: string | null
+          triggered_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ttn_provisioning_queue_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      unit_dashboard_layouts: {
+        Row: {
+          created_at: string
+          id: string
+          is_user_default: boolean | null
+          layout_json: Json
+          name: string
+          organization_id: string
+          shared_with_roles: Database["public"]["Enums"]["app_role"][] | null
+          timeline_state_json: Json | null
+          unit_id: string
+          updated_at: string
+          user_id: string
+          visibility: string | null
+          widget_prefs_json: Json | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          name: string
+          organization_id: string
+          shared_with_roles?: Database["public"]["Enums"]["app_role"][] | null
+          timeline_state_json?: Json | null
+          unit_id: string
+          updated_at?: string
+          user_id: string
+          visibility?: string | null
+          widget_prefs_json?: Json | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_user_default?: boolean | null
+          layout_json?: Json
+          name?: string
+          organization_id?: string
+          shared_with_roles?: Database["public"]["Enums"]["app_role"][] | null
+          timeline_state_json?: Json | null
+          unit_id?: string
+          updated_at?: string
+          user_id?: string
+          visibility?: string | null
+          widget_prefs_json?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_dashboard_layouts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unit_dashboard_layouts_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]
@@ -2576,6 +3189,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_manage_annotations: {
+        Args: { _org_id: string; _user_id: string }
+        Returns: boolean
+      }
       can_view_all_audit_logs: {
         Args: { _org_id: string; _user_id: string }
         Returns: boolean
@@ -2584,7 +3201,13 @@ export type Database = {
         Args: { _target_org_id: string; _viewer_id: string }
         Returns: boolean
       }
-      check_slug_available: { Args: { p_slug: string }; Returns: boolean }
+      check_org_dirty: { Args: { p_org_id: string }; Returns: Json }
+      check_slug_available:
+        | { Args: { p_slug: string }; Returns: boolean }
+        | {
+            Args: { p_exclude_org_id?: string; p_slug: string }
+            Returns: boolean
+          }
       create_area_for_site: {
         Args: { p_description?: string; p_name: string; p_site_id: string }
         Returns: string
@@ -2596,7 +3219,7 @@ export type Database = {
           p_slug: string
           p_timezone?: string
         }
-        Returns: string
+        Returns: Json
       }
       create_site_for_org: {
         Args: {
@@ -2619,6 +3242,7 @@ export type Database = {
         }
         Returns: string
       }
+      delete_user_account: { Args: { p_user_id: string }; Returns: Json }
       enqueue_deprovision_jobs_for_unit: {
         Args: { p_created_by?: string; p_reason: string; p_unit_id: string }
         Returns: number
@@ -2649,6 +3273,18 @@ export type Database = {
         Args: { p_alert_type: string; p_unit_id: string }
         Returns: Json
       }
+      get_next_tts_provisioning_job: {
+        Args: never
+        Returns: {
+          attempts: number
+          current_step: string
+          id: string
+          org_name: string
+          org_slug: string
+          organization_id: string
+        }[]
+      }
+      get_org_sync_payload: { Args: { p_org_id: string }; Returns: Json }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
       hard_delete_organization: { Args: { p_org_id: string }; Returns: Json }
       has_role: {
@@ -2664,10 +3300,22 @@ export type Database = {
         Args: { p_org_id: string; p_user_id: string }
         Returns: Json
       }
+      update_tts_provisioning_job: {
+        Args: {
+          p_completed_steps?: string[]
+          p_current_step?: string
+          p_error?: string
+          p_error_code?: string
+          p_job_id: string
+          p_status: string
+        }
+        Returns: undefined
+      }
       user_belongs_to_org: {
         Args: { _org_id: string; _user_id: string }
         Returns: boolean
       }
+      watchdog_fail_stale_ttn_provisioning: { Args: never; Returns: number }
     }
     Enums: {
       alert_severity: "info" | "warning" | "critical"
@@ -2692,6 +3340,7 @@ export type Database = {
         | "temperature_humidity"
         | "door"
         | "combo"
+        | "contact"
       notification_channel: "push" | "email" | "sms"
       notification_status: "pending" | "sent" | "delivered" | "failed"
       pairing_status:
@@ -2872,6 +3521,7 @@ export const Constants = {
         "temperature_humidity",
         "door",
         "combo",
+        "contact",
       ],
       notification_channel: ["push", "email", "sms"],
       notification_status: ["pending", "sent", "delivered", "failed"],

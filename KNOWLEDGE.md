@@ -522,7 +522,9 @@ try {
 
 - **Supabase Project:** Access via environment variables
 - **TTN Console:** https://console.thethingsnetwork.org/
-- **Twilio (SMS):** https://www.twilio.com/docs/sms
+- **Telnyx (SMS):** https://developers.telnyx.com/docs/messaging/sms
+  - Messaging Profile: `frost guard` (ID: `40019baa-aa62-463c-b254-463c66f4b2d3`)
+  - Toll-Free Number: `+18889890560`
 
 ---
 
@@ -670,9 +672,12 @@ Use these terms consistently throughout the application:
 | `process-unit-states` | Creates/resolves alerts (SSOT) |
 | `process-escalations` | Sends notifications |
 | `ingest-readings` | Receives sensor data |
-| `send-sms-alert` | Sends SMS via Twilio |
+| `send-sms-alert` | Sends SMS via Telnyx |
 | `ttn-webhook` | Receives TTN uplinks |
 | `ttn-provision-device` | Provisions LoRa devices |
+| `telnyx-webhook` | Receives SMS delivery status webhooks |
+| `telnyx-verification-status` | Checks toll-free verification status |
+| `telnyx-configure-webhook` | Automates Telnyx webhook setup |
 
 ---
 

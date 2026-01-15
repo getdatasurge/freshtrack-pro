@@ -1,0 +1,252 @@
+# MkDocs Configuration for FreshTrack Pro Documentation
+# https://www.mkdocs.org/user-guide/configuration/
+
+site_name: FreshTrack Pro Documentation
+site_description: Complete documentation for FreshTrack Pro cold chain monitoring platform
+site_author: FreshTrack Pro Team
+site_url: https://getdatasurge.github.io/freshtrack-pro/
+
+# Repository
+repo_name: getdatasurge/freshtrack-pro
+repo_url: https://github.com/getdatasurge/freshtrack-pro
+edit_uri: edit/main/docs/
+
+# Documentation directory (relative to mkdocs.yml)
+docs_dir: ../docs
+
+# Build output directory
+site_dir: ../dist-docs
+
+# Theme configuration
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.tabs.link
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      accent: light blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      accent: light blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  icon:
+    repo: fontawesome/brands/github
+    admonition:
+      note: octicons/tag-16
+      abstract: octicons/checklist-16
+      info: octicons/info-16
+      tip: octicons/squirrel-16
+      success: octicons/check-16
+      question: octicons/question-16
+      warning: octicons/alert-16
+      failure: octicons/x-circle-16
+      danger: octicons/zap-16
+      bug: octicons/bug-16
+      example: octicons/beaker-16
+      quote: octicons/quote-16
+
+# Validation settings - allow generated files in _build/ and _meta/ to not be in nav
+validation:
+  nav:
+    omitted_files: ignore
+  links:
+    not_found: warn
+
+# Exclude generated output directories from docs source
+exclude_docs: |
+  _build/
+  _meta/
+
+# Plugins
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+  - tags
+  - mike:
+      alias_type: symlink
+      redirect_template: null
+      deploy_prefix: ''
+      canonical_version: latest
+      version_selector: true
+      css_dir: css
+      javascript_dir: js
+
+# Extensions
+markdown_extensions:
+  # Python Markdown
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+  # PyMdown Extensions
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      normalize_issue_symbols: true
+      repo_url_shorthand: true
+      user: getdatasurge
+      repo: freshtrack-pro
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Navigation structure
+nav:
+  - Home: README.md
+  - Index: INDEX.md
+  - Glossary: GLOSSARY.md
+
+  - Executive:
+    - Overview: executive/OVERVIEW.md
+    - Value Proposition: executive/VALUE_PROPOSITION.md
+    - System at a Glance: executive/SYSTEM_AT_A_GLANCE.md
+    - User Journeys: executive/USER_JOURNEYS.md
+    - FAQ: executive/FAQ.md
+
+  - Architecture:
+    - System Architecture: architecture/ARCHITECTURE.md
+
+  - Product:
+    - Pages: product/PAGES.md
+    - User Flows: product/USER_FLOWS.md
+
+  - Engineering:
+    - API: engineering/API.md
+    - Data Model: engineering/DATA_MODEL.md
+    - Integrations: engineering/INTEGRATIONS.md
+    - Observability: engineering/OBSERVABILITY.md
+
+  - Onboarding:
+    - Getting Started: onboarding/GETTING_STARTED.md
+    - Local Development: onboarding/LOCAL_DEV.md
+    - Repository Tour: onboarding/REPO_TOUR.md
+    - Common Tasks: onboarding/COMMON_TASKS.md
+    - Debugging Guide: onboarding/DEBUGGING_GUIDE.md
+
+  - Quality Assurance:
+    - Test Strategy: qa/TEST_STRATEGY.md
+    - Coverage Map: qa/COVERAGE_MAP.md
+    - E2E Scenarios: qa/E2E_SCENARIOS.md
+    - Manual Testing: qa/MANUAL_TESTING.md
+    - Known Gaps: qa/KNOWN_GAPS.md
+
+  - Security:
+    - Security Overview: security/SECURITY_OVERVIEW.md
+    - Auth Model: security/AUTH_MODEL.md
+    - Data Protection: security/DATA_PROTECTION.md
+    - Threat Model: security/THREAT_MODEL.md
+    - Incident Response: security/INCIDENT_RESPONSE.md
+
+  - Operations:
+    - Metrics Overview: operations/METRICS_OVERVIEW.md
+    - Dashboards: operations/DASHBOARDS.md
+    - Alerting: operations/ALERTING.md
+    - Logging: operations/LOGGING.md
+    - Runbooks: operations/RUNBOOKS.md
+
+  - Diagrams:
+    - System Context: diagrams/SYSTEM_CONTEXT.md
+    - Container Diagram: diagrams/CONTAINER_DIAGRAM.md
+    - Page Diagrams: diagrams/PAGE_DIAGRAMS.md
+    - Sequences: diagrams/SEQUENCES.md
+    - State Machines: diagrams/STATE_MACHINES.md
+
+  - Charts:
+    - ER Diagram: charts/ER_DIAGRAM.md
+    - Flowcharts: charts/FLOWCHARTS.md
+
+  - ADR:
+    - Overview: adr/README.md
+    - Template: adr/template.md
+
+  - General:
+    - TTN Setup: TTN_SETUP.md
+    - TTN Production: TTN_PRODUCTION_SETUP.md
+    - Emulator Quick Start: EMULATOR_QUICK_START.md
+    - Emulator Integration: EMULATOR_TTN_INTEGRATION.md
+    - System Map: system-map.md
+    - Deprecations: deprecations.md
+    - CI Checklist: CI_CHECKLIST.md
+
+# Extra configuration
+extra:
+  version:
+    provider: mike
+    default: latest
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/getdatasurge/freshtrack-pro
+  generator: false
+  analytics:
+    provider: google
+    property: !ENV [GOOGLE_ANALYTICS_KEY, '']
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/extra.js
+
+# Copyright
+copyright: Copyright &copy; 2026 FreshTrack Pro Team

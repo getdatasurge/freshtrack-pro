@@ -14,7 +14,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v6-perorg-20251231";
+  const BUILD_VERSION = "ttn-provision-device-v8-cluster-validation-20260109";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -145,9 +145,45 @@ serve(async (req) => {
     }
 
     const deviceId = `sensor-${sensor.dev_eui.toLowerCase()}`;
+    const frequencyPlan = ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2";
+    
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
+    console.log(`[ttn-provision-device] Region from config: ${ttnConfig.region}`);
+    console.log(`[ttn-provision-device] Frequency plan: ${frequencyPlan}`);
     console.log(`[ttn-provision-device] Identity Server URL: ${ttnConfig.identityBaseUrl}`);
     console.log(`[ttn-provision-device] Regional Server URL: ${ttnConfig.regionalBaseUrl}`);
+
+    // PRE-PROVISIONING CLUSTER VALIDATION (fail fast)
+    // All TTN operations must go to eu1 to prevent split-cluster bugs
+    const EU1_BASE = "https://eu1.cloud.thethings.network";
+    if (ttnConfig.region !== "eu1") {
+      console.error(`[ttn-provision-device] CLUSTER MISMATCH: Config region="${ttnConfig.region}" but EU1 required`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Cluster mismatch detected",
+          details: `TTN config region is "${ttnConfig.region}" but FrostGuard requires EU1. Update ttn_region in ttn_connections table.`,
+          cluster_mismatch: true,
+          fix: "UPDATE ttn_connections SET ttn_region = 'eu1' WHERE organization_id = '<your-org-id>'",
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (ttnConfig.identityBaseUrl !== EU1_BASE || ttnConfig.regionalBaseUrl !== EU1_BASE) {
+      console.error(`[ttn-provision-device] URL MISMATCH: IS=${ttnConfig.identityBaseUrl}, Regional=${ttnConfig.regionalBaseUrl}, Expected=${EU1_BASE}`);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "TTN URL mismatch",
+          details: `Identity or Regional server URL is not EU1. IS=${ttnConfig.identityBaseUrl}, Regional=${ttnConfig.regionalBaseUrl}`,
+          cluster_mismatch: true,
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`[ttn-provision-device] ✓ Cluster validation passed: all URLs point to EU1`);
 
     // Helper for TTN Identity Server API calls
     const ttnIsFetch = async (endpoint: string, options: RequestInit = {}) => {
@@ -223,7 +259,7 @@ serve(async (req) => {
           description: sensor.description || `FreshTracker ${sensor.sensor_type} sensor`,
           lorawan_version: "MAC_V1_0_3",
           lorawan_phy_version: "PHY_V1_0_3_REV_A",
-          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : "US_902_928_FSB_2",
+          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2",
           supports_join: true,
         },
         field_mask: {
@@ -312,7 +348,7 @@ serve(async (req) => {
           },
           lorawan_version: "MAC_V1_0_3",
           lorawan_phy_version: "PHY_V1_0_3_REV_A",
-          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : "US_902_928_FSB_2",
+          frequency_plan_id: ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2",
           supports_join: true,
         },
         field_mask: {
@@ -368,6 +404,46 @@ serve(async (req) => {
         console.warn(`[ttn-provision-device] AS registration warning: ${errorText}`);
       }
 
+      // Step 5: Verify device exists in correct cluster
+      console.log(`[ttn-provision-device] Step 5: Verifying device in ${ttnConfig.region?.toUpperCase() || 'EU1'} cluster`);
+
+      const verifyUrl = `${ttnConfig.identityBaseUrl}/api/v3/applications/${ttnAppId}/devices/${deviceId}`;
+      const verifyResponse = await ttnIsFetch(`/api/v3/applications/${ttnAppId}/devices/${deviceId}`, {
+        method: "GET",
+      });
+
+      if (!verifyResponse.ok) {
+        const errorText = await verifyResponse.text();
+        console.error(`[ttn-provision-device] Cluster verification failed: ${verifyResponse.status} - ${errorText}`);
+
+        // Check for "other cluster" indicator
+        if (errorText.includes("other_cluster") || errorText.includes("Other cluster")) {
+          await supabase
+            .from("lora_sensors")
+            .update({ status: "fault" })
+            .eq("id", sensor_id);
+
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "TTN resource created in wrong cluster",
+              details: `Device was provisioned to the wrong TTN cluster. ${ttnConfig.region?.toUpperCase() || 'EU1'} is required.`,
+              hint: "The device needs to be deleted and re-provisioned to the correct cluster",
+              cluster_error: true,
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      } else {
+        console.log(`[ttn-provision-device] Device verified in ${ttnConfig.region?.toUpperCase() || 'EU1'} cluster`);
+      }
+
+      // Define cluster verification status for response
+      const clusterVerified = verifyResponse.ok;
+      const clusterWarning = !verifyResponse.ok 
+        ? `Device verification returned ${verifyResponse.status}` 
+        : null;
+
       // Update sensor with TTN info
       await supabase
         .from("lora_sensors")
@@ -386,6 +462,11 @@ serve(async (req) => {
           device_id: deviceId,
           application_id: ttnAppId,
           status: "joining",
+          cluster: ttnConfig.region,
+          cluster_verified: clusterVerified,
+          cluster_warning: clusterWarning,
+          identity_server: ttnConfig.identityBaseUrl,
+          regional_server: ttnConfig.regionalBaseUrl,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );

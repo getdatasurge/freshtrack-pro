@@ -28,6 +28,10 @@ import {
 } from "lucide-react";
 import { TTNSetupWizard } from "./TTNSetupWizard";
 import { cn } from "@/lib/utils";
+import { useTTNConfig } from "@/contexts/TTNConfigContext";
+import { TTNConfigSourceBadge } from "@/components/ttn/TTNConfigSourceBadge";
+import { TTNGuardDisplay } from "@/components/ttn/TTNGuardDisplay";
+import { checkTTNOperationAllowed } from "@/lib/ttn/guards";
 
 interface EmulatorTTNRoutingCardProps {
   organizationId: string | null;
@@ -58,6 +62,10 @@ export function EmulatorTTNRoutingCard({
   const [isTesting, setIsTesting] = useState(false);
   const [routeViaTTN, setRouteViaTTN] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  
+  // TTN Config Context for state awareness
+  const { context: ttnContext } = useTTNConfig();
+  const guardResult = checkTTNOperationAllowed('simulate', ttnContext);
 
   const loadStatus = useCallback(async () => {
     if (!organizationId) return;
@@ -149,15 +157,23 @@ export function EmulatorTTNRoutingCard({
     <>
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Route className="w-4 h-4 text-primary" />
-            TTN Routing
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Route className="w-4 h-4 text-primary" />
+              TTN Routing
+            </CardTitle>
+            <TTNConfigSourceBadge context={ttnContext} size="sm" />
+          </div>
           <CardDescription className="text-xs">
             Route emulator data through The Things Network for end-to-end testing
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Guard Display - Show blockers when TTN routing enabled but config not ready */}
+          {routeViaTTN && !guardResult.allowed && (
+            <TTNGuardDisplay result={guardResult} showWarnings />
+          )}
+          
           {/* Routing Mode Toggle */}
           <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
             <div className="flex items-center gap-3">

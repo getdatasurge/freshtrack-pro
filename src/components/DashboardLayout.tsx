@@ -3,7 +3,8 @@ import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import {
+import { Separator } from "@/components/ui/separator";
+import { 
   LogOut,
   MapPin,
   Settings,
@@ -13,8 +14,8 @@ import {
   X,
   ChevronLeft,
   Trash2,
-  Shield
 } from "lucide-react";
+import { SidebarSitesAccordion, SidebarUnitsAccordion } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
@@ -33,12 +34,15 @@ interface DashboardLayoutProps {
   backHref?: string;
 }
 
-import { ClipboardList, AlertCircle, FileBarChart } from "lucide-react";
+import { ClipboardList, AlertCircle, FileBarChart, Boxes } from "lucide-react";
 
-const navItems = [
+// Nav items - Sites and Units handled separately via accordions
+const navItemsBeforeAccordions = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
   { href: "/organization", label: "Organization", icon: Building2 },
-  { href: "/sites", label: "Sites", icon: MapPin },
+];
+
+const navItemsAfterAccordions = [
   { href: "/manual-log", label: "Log Temps", icon: ClipboardList },
   { href: "/alerts", label: "Alerts", icon: AlertCircle },
   { href: "/reports", label: "Reports", icon: FileBarChart },
@@ -106,12 +110,13 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
       if (org) setOrgName(org.name);
 
-      // Get alert count - explicitly filter by organization_id
+      // Get alert count - use GET with limit(0) instead of HEAD to avoid CORS/RLS issues
       const { count } = await supabase
         .from("alerts")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact" })
         .eq("organization_id", profile.organization_id)
-        .eq("status", "active");
+        .eq("status", "active")
+        .limit(0);
 
       setAlertCount(count || 0);
     }
@@ -161,39 +166,68 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
       <ImpersonationBanner />
 
       {/* Header */}
-      <header className={cn(
-        "sticky z-50 glass border-b border-border/50",
-        isSupportModeActive ? "top-10" : "top-0"
-      )}>
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-50 glass border-b border-border/50">
+        <div className="flex h-16">
+          {/* Left section - fixed width matching sidebar on desktop */}
+          <div className="hidden lg:flex items-center w-64 px-4 shrink-0">
+            <Link to="/dashboard" className="flex items-center gap-3">
+              <BrandedLogo showText={true} size="md" />
+            </Link>
+          </div>
+          
+          {/* Right section - main content area header with matching gutters */}
+          <div className="flex-1 flex items-center justify-between px-4 sm:px-6 lg:px-8">
+            {/* Mobile: hamburger + logo */}
+            <div className="flex items-center gap-3 lg:hidden">
               {showBack && backHref ? (
                 <Link to={backHref}>
-                  <Button variant="ghost" size="icon" className="mr-2">
+                  <Button variant="ghost" size="icon" className="shrink-0">
                     <ChevronLeft className="w-5 h-5" />
                   </Button>
                 </Link>
               ) : (
                 <Button 
                   variant="ghost" 
-                  size="icon" 
-                  className="lg:hidden"
+                  size="icon"
+                  className="shrink-0"
                   onClick={() => setMobileNavOpen(!mobileNavOpen)}
                 >
                   {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </Button>
               )}
-              <Link to="/dashboard" className="flex items-center gap-3">
+              <Link to="/dashboard">
                 <BrandedLogo showText={true} size="md" />
-                {orgName && (
-                  <span className="hidden sm:inline text-sm text-muted-foreground">
-                    · {orgName}
-                  </span>
-                )}
               </Link>
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Desktop: org name + back button if needed */}
+            <div className="hidden lg:flex items-center gap-3 min-w-0">
+              {showBack && backHref && (
+                <Link to={backHref}>
+                  <Button variant="ghost" size="icon" className="shrink-0">
+                    <ChevronLeft className="w-5 h-5" />
+                  </Button>
+                </Link>
+              )}
+              {orgName && (
+                <Link 
+                  to="/organization"
+                  className="text-sm text-muted-foreground font-medium truncate hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm transition-colors"
+                  title={`Go to ${orgName} overview`}
+                >
+                  {orgName}
+                </Link>
+              )}
+            </div>
+
+            {/* Frost Pill Divider - desktop only */}
+            <div 
+              className="hidden lg:block w-0.5 h-8 mx-4 rounded-full bg-muted-foreground/30 shadow-[0_0_8px_hsl(192_85%_45%/0.15)] transition-all duration-200 hover:bg-muted-foreground/50 hover:shadow-[0_0_12px_hsl(192_85%_45%/0.35)] motion-reduce:transition-none"
+              aria-hidden="true"
+            />
+
+            {/* Right side actions with backplate */}
+            <div className="flex items-center gap-2 shrink-0 px-3 py-1.5 rounded-lg bg-muted/40 border border-border/30 transition-colors duration-200 hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring/20">
               <ThemeToggle />
               <NotificationDropdown alertCount={alertCount} />
               <Button variant="ghost" size="sm" onClick={handleSignOut} className="hidden sm:flex">
@@ -210,12 +244,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
       <div className="flex">
         {/* Desktop Sidebar */}
-        <aside className={cn(
-          "hidden lg:flex w-64 flex-col fixed left-0 bottom-0 border-r border-border/50 bg-card/50",
-          isSupportModeActive ? "top-[104px]" : "top-16"
-        )}>
-          <nav className="flex-1 p-4 space-y-1">
-            {navItems.map((item) => {
+        <aside className="hidden lg:flex w-64 flex-col fixed left-0 top-16 bottom-0 border-r border-border/50 bg-card/50">
+          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+            {/* Nav items before accordions */}
+            {navItemsBeforeAccordions.map((item) => {
               const isActive = location.pathname === item.href || 
                 (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
               return (
@@ -233,6 +265,33 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 </Link>
               );
             })}
+
+            {/* Sites Accordion */}
+            <SidebarSitesAccordion organizationId={orgId} />
+
+            {/* Units Accordion */}
+            <SidebarUnitsAccordion organizationId={orgId} />
+
+            {/* Nav items after accordions */}
+            {navItemsAfterAccordions.map((item) => {
+              const isActive = location.pathname === item.href || 
+                (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
+              return (
+                <Link key={item.href} to={item.href}>
+                  <Button
+                    variant={isActive ? "secondary" : "ghost"}
+                    className={cn(
+                      "w-full justify-start gap-3",
+                      isActive && "bg-accent/10 text-accent"
+                    )}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    {item.label}
+                  </Button>
+                </Link>
+              );
+            })}
+
             {canDeleteEntities && !permissionsLoading && (
               <Link to="/admin/recently-deleted">
                 <Button
@@ -272,12 +331,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
               className="absolute inset-0 bg-background/80 backdrop-blur-sm"
               onClick={() => setMobileNavOpen(false)}
             />
-            <aside className={cn(
-              "absolute left-0 bottom-0 w-64 bg-card border-r border-border/50 p-4",
-              isSupportModeActive ? "top-[104px]" : "top-16"
-            )}>
+            <aside className="absolute left-0 top-16 bottom-0 w-64 bg-card border-r border-border/50 p-4 overflow-y-auto">
               <nav className="space-y-1">
-                {navItems.map((item) => {
+                {/* Nav items before accordions */}
+                {navItemsBeforeAccordions.map((item) => {
                   const isActive = location.pathname === item.href || 
                     (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
                   return (
@@ -299,6 +356,37 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                     </Link>
                   );
                 })}
+
+                {/* Sites Accordion (Mobile) */}
+                <SidebarSitesAccordion organizationId={orgId} />
+
+                {/* Units Accordion (Mobile) */}
+                <SidebarUnitsAccordion organizationId={orgId} />
+
+                {/* Nav items after accordions */}
+                {navItemsAfterAccordions.map((item) => {
+                  const isActive = location.pathname === item.href || 
+                    (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
+                  return (
+                    <Link 
+                      key={item.href} 
+                      to={item.href}
+                      onClick={() => setMobileNavOpen(false)}
+                    >
+                      <Button
+                        variant={isActive ? "secondary" : "ghost"}
+                        className={cn(
+                          "w-full justify-start gap-3",
+                          isActive && "bg-accent/10 text-accent"
+                        )}
+                      >
+                        <item.icon className="w-5 h-5" />
+                        {item.label}
+                      </Button>
+                    </Link>
+                  );
+                })}
+
                 {canDeleteEntities && !permissionsLoading && (
                   <Link
                     to="/admin/recently-deleted"
@@ -340,11 +428,8 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
         )}
 
         {/* Main Content */}
-        <main className={cn(
-          "flex-1 lg:ml-64",
-          isSupportModeActive && "pt-10"
-        )}>
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <main className="flex-1 lg:ml-64 min-w-0 overflow-x-hidden">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
             {title && (
               <h1 className="text-2xl font-bold text-foreground mb-6">{title}</h1>
             )}

@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
@@ -35,19 +36,29 @@ import {
   Code2,
   CheckCircle,
   Radio,
-  Thermometer
+  Thermometer,
+  Lock
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { BillingTab } from "@/components/billing/BillingTab";
 import { AlertRulesScopedEditor } from "@/components/settings/AlertRulesScopedEditor";
 import { SensorSimulatorPanel } from "@/components/admin/SensorSimulatorPanel";
-import { EdgeFunctionDiagnostics } from "@/components/debug/EdgeFunctionDiagnostics";
+import { EdgeFunctionDiagnostics, DebugModeToggle } from "@/components/debug";
 import { NotificationSettingsCard } from "@/components/settings/NotificationSettingsCard";
 import { SmsAlertHistory } from "@/components/settings/SmsAlertHistory";
+import { WebhookStatusCard } from "@/components/settings/WebhookStatusCard";
+import { TollFreeVerificationCard } from "@/components/settings/TollFreeVerificationCard";
+import { TelnyxWebhookUrlsCard } from "@/components/settings/TelnyxWebhookUrlsCard";
+import { OptInImageStatusCard } from "@/components/settings/OptInImageStatusCard";
 import { GatewayManager } from "@/components/settings/GatewayManager";
 import { SensorManager } from "@/components/settings/SensorManager";
 import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettings";
+import { TTNCredentialsPanel } from "@/components/settings/TTNCredentialsPanel";
+import { TTNProvisioningLogs } from "@/components/settings/TTNProvisioningLogs";
 import { EmulatorSyncHistory } from "@/components/settings/EmulatorSyncHistory";
+import { EmulatorResyncCard } from "@/components/settings/EmulatorResyncCard";
+import { AccountDeletionModal } from "@/components/settings/AccountDeletionModal";
+import { SecurityTab } from "@/components/settings/SecurityTab";
 
 // E.164 phone number validation regex
 const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -137,6 +148,20 @@ const Settings = () => {
   const [userRole, setUserRole] = useState<AppRole | null>(null);
   const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
   const [units, setUnits] = useState<{ id: string; name: string; site_id: string }[]>([]);
+  
+  // Account deletion state
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [sensorCount, setSensorCount] = useState(0);
+  const [gatewayCount, setGatewayCount] = useState(0);
+  const [hasOtherUsers, setHasOtherUsers] = useState(false);
+  
+  // TTN config state for SensorManager
+  const [ttnConfig, setTtnConfig] = useState<{
+    isEnabled: boolean;
+    hasApiKey: boolean;
+    applicationId: string | null;
+    apiKeyLast4: string | null;
+  } | null>(null);
 
   // Form states
   const [orgName, setOrgName] = useState("");
@@ -151,6 +176,23 @@ const Settings = () => {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<AppRole>("staff");
+
+  // Role change confirmation dialog
+  const [roleChangeConfirm, setRoleChangeConfirm] = useState<{
+    open: boolean;
+    userId: string;
+    userName: string;
+    currentRole: AppRole;
+    newRole: AppRole;
+  } | null>(null);
+
+  // Remove user confirmation dialog
+  const [removeUserConfirm, setRemoveUserConfirm] = useState<{
+    open: boolean;
+    userId: string;
+    userName: string;
+    role: AppRole;
+  } | null>(null);
 
   const [searchParams] = useSearchParams();
   const defaultTab = searchParams.get("tab") || "organization";
@@ -235,12 +277,17 @@ const Settings = () => {
       }
 
       // Get current user's role
-      const { data: roleData } = await supabase
+      const { data: roleData, error: roleError } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", session!.user.id)
         .eq("organization_id", profileData.organization_id)
         .maybeSingle();
+
+      if (roleError) {
+        console.error("[Settings] Failed to load user role:", roleError);
+        toast.error("Failed to load user permissions. Some features may be hidden.");
+      }
 
       if (roleData) {
         setUserRole(roleData.role);
@@ -303,6 +350,43 @@ const Settings = () => {
         }));
         setUnits(formattedUnits);
       }
+
+      // Load sensor count for deletion modal
+      const { count: sensorCountResult } = await supabase
+        .from("lora_sensors")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", profileData.organization_id);
+      setSensorCount(sensorCountResult || 0);
+
+      // Load gateway count for deletion modal
+      const { count: gatewayCountResult } = await supabase
+        .from("gateways")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", profileData.organization_id);
+      setGatewayCount(gatewayCountResult || 0);
+
+      // Check if there are other users in the org
+      setHasOtherUsers((usersData?.length || 0) > 1);
+
+      // Load TTN config for SensorManager provisioning buttons
+      try {
+        const { data: ttnData } = await supabase.functions.invoke("manage-ttn-settings", {
+          body: { action: "get", organization_id: profileData.organization_id }
+        });
+        
+        if (ttnData) {
+          setTtnConfig({
+            isEnabled: ttnData.is_enabled ?? false,
+            hasApiKey: !!(ttnData.ttn_api_key_last4 || ttnData.has_api_key),
+            applicationId: ttnData.ttn_application_id ?? null,
+            apiKeyLast4: ttnData.ttn_api_key_last4 ?? null,
+          });
+        }
+      } catch (ttnError) {
+        console.error("[Settings] Failed to load TTN config:", ttnError);
+        // Don't block settings load if TTN config fails
+      }
+
     } catch (error) {
       console.error("Error loading settings:", error);
       toast.error("Failed to load settings");
@@ -370,19 +454,25 @@ const Settings = () => {
   const [smsVerified, setSmsVerified] = useState<boolean | null>(null);
   const queryClient = useQueryClient();
 
-  // Helper to parse Twilio-specific errors into user-friendly messages
-  const getTwilioErrorMessage = (error: string): string => {
-    if (error.includes("unverified") || error.includes("21608") || error.includes("21211")) {
-      return "This phone number needs to be verified in your Twilio console (trial account limitation). Add it at: twilio.com/console/phone-numbers/verified";
+  // Helper to parse Telnyx-specific errors into user-friendly messages
+  const getTelnyxErrorMessage = (error: string): string => {
+    if (error.includes("10009") || error.includes("Authentication")) {
+      return "SMS authentication failed. Please contact support.";
     }
-    if (error.includes("21614") || error.includes("not a valid phone number")) {
-      return "Invalid phone number format. Please check the number and try again.";
+    if (error.includes("40310") || error.includes("40311") || error.includes("invalid")) {
+      return "Invalid phone number format or number not SMS-capable.";
     }
-    if (error.includes("21610") || error.includes("blacklist")) {
-      return "This number has been blocked from receiving SMS. The recipient may have opted out.";
+    if (error.includes("40300") || error.includes("opted out")) {
+      return "This number has opted out of SMS. Reply START to re-enable.";
     }
-    if (error.includes("21408") || error.includes("permission")) {
-      return "Permission denied. Check your Twilio account geographic permissions.";
+    if (error.includes("40001") || error.includes("landline")) {
+      return "Cannot send SMS to landline numbers.";
+    }
+    if (error.includes("40002") || error.includes("40003") || error.includes("blocked")) {
+      return "Message blocked by carrier. Try a different message.";
+    }
+    if (error.includes("20100") || error.includes("funds")) {
+      return "SMS service temporarily unavailable. Contact support.";
     }
     if (error.includes("rate") || error.includes("limit")) {
       return "Rate limited. Please wait a few minutes before trying again.";
@@ -411,34 +501,65 @@ const Settings = () => {
         },
       });
 
-      console.log("SMS Response:", data, error);
-
       if (error) throw error;
       
       if (data?.status === "sent") {
-        toast.success(`Test SMS sent! (SID: ${data.twilio_sid?.slice(-8) || 'confirmed'})`, { id: "test-sms" });
+        // Check for verification warning
+        if (data.warning) {
+          toast.warning(`SMS sent with warning: ${data.warning}`, { id: "test-sms", duration: 8000 });
+        } else {
+          toast.success(`Test SMS sent! (ID: ${data.provider_message_id?.slice(-8) || 'confirmed'})`, { id: "test-sms" });
+        }
         setSmsVerified(true);
         // Refresh SMS history
         queryClient.invalidateQueries({ queryKey: ["sms-alert-history", organization.id] });
       } else if (data?.status === "rate_limited") {
         toast.info("SMS rate limited. Please wait 15 minutes before trying again.", { id: "test-sms" });
       } else {
-        const friendlyError = getTwilioErrorMessage(data?.error || "Unknown error");
+        const friendlyError = getTelnyxErrorMessage(data?.error || "Unknown error");
         toast.error(friendlyError, { id: "test-sms", duration: 8000 });
         setSmsVerified(false);
       }
     } catch (error) {
       console.error("Error sending test SMS:", error);
       const message = error instanceof Error ? error.message : "Failed to send test SMS";
-      toast.error(getTwilioErrorMessage(message), { id: "test-sms" });
+      toast.error(getTelnyxErrorMessage(message), { id: "test-sms" });
       setSmsVerified(false);
     } finally {
       setIsSendingSms(false);
     }
   };
 
-  const updateUserRole = async (userId: string, newRole: AppRole) => {
-    if (!organization) return;
+  // Count how many owners exist
+  const ownerCount = users.filter(u => u.role === "owner").length;
+
+  // Request a role change (triggers confirmation dialog)
+  const requestRoleChange = (userId: string, newRole: AppRole) => {
+    const user = users.find(u => u.user_id === userId);
+    if (!user) return;
+
+    // Check if trying to demote the last owner
+    if (user.role === "owner" && newRole !== "owner" && ownerCount <= 1) {
+      toast.error("Cannot demote the last owner. Transfer ownership first or promote another user to owner.");
+      return;
+    }
+
+    // Show confirmation dialog
+    setRoleChangeConfirm({
+      open: true,
+      userId,
+      userName: user.full_name || user.email || "this user",
+      currentRole: user.role,
+      newRole,
+    });
+  };
+
+  // Confirm and execute the role change
+  const confirmRoleChange = async () => {
+    if (!roleChangeConfirm || !organization) return;
+
+    const { userId, newRole } = roleChangeConfirm;
+
     try {
       const { error } = await supabase
         .from("user_roles")
@@ -447,23 +568,49 @@ const Settings = () => {
         .eq("organization_id", organization.id);
 
       if (error) throw error;
-      
-      setUsers(prev => prev.map(u => 
+
+      setUsers(prev => prev.map(u =>
         u.user_id === userId ? { ...u, role: newRole } : u
       ));
-      toast.success("Role updated");
+      toast.success("Role updated successfully");
     } catch (error) {
       console.error("Error updating role:", error);
       toast.error("Failed to update role");
+    } finally {
+      setRoleChangeConfirm(null);
     }
   };
 
-  const removeUser = async (userId: string) => {
-    if (!organization) return;
+  // Request user removal (triggers confirmation dialog)
+  const requestRemoveUser = (userId: string) => {
+    const user = users.find(u => u.user_id === userId);
+    if (!user) return;
+
+    // Prevent removing the last owner
+    if (user.role === "owner" && ownerCount <= 1) {
+      toast.error("Cannot remove the last owner. Transfer ownership first.");
+      return;
+    }
+
+    setRemoveUserConfirm({
+      open: true,
+      userId,
+      userName: user.full_name || user.email || "this user",
+      role: user.role,
+    });
+  };
+
+  // Confirm and execute user removal
+  const confirmRemoveUser = async () => {
+    if (!removeUserConfirm || !organization) return;
+
+    const { userId } = removeUserConfirm;
+    setRemoveUserConfirm(null);
+
     try {
       // First, clean up any sensors created by this user
       toast.loading("Cleaning up user's sensors...", { id: "remove-user" });
-      
+
       const { data: cleanupResult, error: cleanupError } = await supabase.functions.invoke(
         "cleanup-user-sensors",
         { body: { user_id: userId, organization_id: organization.id } }
@@ -471,7 +618,6 @@ const Settings = () => {
 
       if (cleanupError) {
         console.error("Sensor cleanup error:", cleanupError);
-        // Continue with user removal even if cleanup fails
         toast.warning("Some sensors may not have been cleaned up", { id: "remove-user" });
       } else if (cleanupResult?.deleted_count > 0) {
         console.log(`Cleaned up ${cleanupResult.deleted_count} sensors (${cleanupResult.ttn_deprovision_count} from TTN)`);
@@ -485,10 +631,9 @@ const Settings = () => {
         .eq("organization_id", organization.id);
 
       if (error) throw error;
-      
+
       setUsers(prev => prev.filter(u => u.user_id !== userId));
-      
-      // Show success with cleanup summary
+
       if (cleanupResult?.deleted_count > 0) {
         toast.success(`User removed. Cleaned up ${cleanupResult.deleted_count} sensor(s).`, { id: "remove-user" });
       } else {
@@ -513,6 +658,8 @@ const Settings = () => {
   const canManageUsers = userRole === "owner" || userRole === "admin";
   const canEditOrg = userRole === "owner" || userRole === "admin";
   const canManageBilling = userRole === "owner";
+  const canViewDeveloperTools = ["owner", "admin", "manager"].includes(userRole || "");
+  const canManageTTN = userRole === "owner" || userRole === "admin";
 
   if (isLoading) {
     return (
@@ -527,10 +674,14 @@ const Settings = () => {
   return (
     <DashboardLayout title="Settings">
       <Tabs defaultValue={defaultTab} className="space-y-6">
-        <TabsList className={`grid w-full max-w-4xl ${canManageUsers ? 'grid-cols-8' : 'grid-cols-6'}`}>
+        <TabsList className={`grid w-full max-w-5xl ${canManageUsers ? 'grid-cols-9' : 'grid-cols-8'}`}>
           <TabsTrigger value="organization" className="flex items-center gap-2">
             <Building2 className="w-4 h-4" />
             <span className="hidden sm:inline">Organization</span>
+          </TabsTrigger>
+          <TabsTrigger value="security" className="flex items-center gap-2">
+            <Lock className="w-4 h-4" />
+            <span className="hidden sm:inline">Security</span>
           </TabsTrigger>
           <TabsTrigger value="alerts" className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4" />
@@ -560,12 +711,10 @@ const Settings = () => {
               <span className="hidden sm:inline">Sensors</span>
             </TabsTrigger>
           )}
-          {canManageUsers && (
-            <TabsTrigger value="developer" className="flex items-center gap-2">
-              <Code2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Developer</span>
-            </TabsTrigger>
-          )}
+          <TabsTrigger value="developer" className="flex items-center gap-2">
+            <Code2 className="w-4 h-4" />
+            <span className="hidden sm:inline">Developer</span>
+          </TabsTrigger>
         </TabsList>
 
         {/* Organization Tab */}
@@ -650,6 +799,68 @@ const Settings = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Separator before Danger Zone */}
+          <Separator className="my-8" />
+
+          {/* Danger Zone - Account Deletion */}
+          <Card id="danger-zone" className="border-destructive/50 bg-destructive/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+                Danger Zone
+              </CardTitle>
+              <CardDescription>
+                Irreversible actions that affect your account
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-1">
+                  <p className="font-medium">Delete Account</p>
+                  <p className="text-sm text-muted-foreground">
+                    Permanently delete your account and all associated data
+                  </p>
+                </div>
+                {isLoading ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="text-sm">Loading...</span>
+                  </div>
+                ) : (
+                  <Button 
+                    variant="destructive" 
+                    onClick={() => setDeleteAccountOpen(true)}
+                    disabled={!session?.user || !profile}
+                    className="w-full sm:w-auto"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Account
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Account Deletion Modal - Always render, controls internally */}
+          <AccountDeletionModal
+            open={deleteAccountOpen}
+            onOpenChange={setDeleteAccountOpen}
+            userId={session?.user?.id || ''}
+            userEmail={profile?.email || ''}
+            isOwner={userRole === "owner"}
+            hasOtherUsers={hasOtherUsers}
+            sensorCount={sensorCount}
+            gatewayCount={gatewayCount}
+          />
+        </TabsContent>
+
+        {/* Security Tab */}
+        <TabsContent value="security">
+          <SecurityTab
+            currentRole={userRole}
+            organizationId={organization?.id || null}
+          />
         </TabsContent>
 
         {/* Alert Rules Tab */}
@@ -771,7 +982,7 @@ const Settings = () => {
                       {smsVerified === false && (
                         <p className="text-xs text-warning flex items-center gap-1">
                           <AlertTriangle className="h-3 w-3" />
-                          SMS verification failed. If using a Twilio trial account, verify this number in your Twilio console first.
+                          SMS verification failed. Check the error message and try again.
                         </p>
                       )}
                     </div>
@@ -813,9 +1024,13 @@ const Settings = () => {
             </CardContent>
           </Card>
 
-          {/* SMS Alert History */}
+          {/* Webhook Status + Toll-Free Verification + Opt-In Image + SMS Alert History */}
           {canManageUsers && organization && (
-            <div className="mt-6">
+            <div className="mt-6 space-y-6">
+              <TollFreeVerificationCard />
+              <OptInImageStatusCard />
+              <TelnyxWebhookUrlsCard />
+              <WebhookStatusCard organizationId={organization.id} canEdit={canEditOrg} />
               <SmsAlertHistory organizationId={organization.id} />
             </div>
           )}
@@ -930,7 +1145,7 @@ const Settings = () => {
                             {canManageUsers && !isOwner && !isCurrentUser ? (
                               <Select
                                 value={user.role}
-                                onValueChange={(v) => updateUserRole(user.user_id, v as AppRole)}
+                                onValueChange={(v) => requestRoleChange(user.user_id, v as AppRole)}
                               >
                                 <SelectTrigger className="w-[130px]">
                                   <SelectValue />
@@ -940,6 +1155,7 @@ const Settings = () => {
                                   <SelectItem value="manager">Manager</SelectItem>
                                   <SelectItem value="staff">Staff</SelectItem>
                                   <SelectItem value="viewer">Viewer</SelectItem>
+                                  <SelectItem value="inspector">Inspector</SelectItem>
                                 </SelectContent>
                               </Select>
                             ) : (
@@ -956,7 +1172,7 @@ const Settings = () => {
                                   variant="ghost"
                                   size="icon"
                                   className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  onClick={() => removeUser(user.user_id)}
+                                  onClick={() => requestRemoveUser(user.user_id)}
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
@@ -1006,6 +1222,7 @@ const Settings = () => {
               organizationId={organization.id}
               sites={sites}
               canEdit={canManageUsers}
+              ttnConfig={ttnConfig}
             />
           </TabsContent>
         )}
@@ -1019,20 +1236,116 @@ const Settings = () => {
               units={units}
               canEdit={canManageUsers}
               autoOpenAdd={action === "add" && defaultTab === "sensors"}
+              ttnConfig={ttnConfig}
             />
           </TabsContent>
         )}
 
-        {/* Developer Tab (Admin Only) */}
-        {canManageUsers && (
-          <TabsContent value="developer" className="space-y-6">
-            <TTNConnectionSettings organizationId={organization?.id || null} />
-            <EmulatorSyncHistory organizationId={organization?.id || null} />
-            <EdgeFunctionDiagnostics />
-            <SensorSimulatorPanel organizationId={organization?.id || null} />
-          </TabsContent>
-        )}
+        {/* Developer Tab - always render content, show permission message if no access */}
+        <TabsContent value="developer" className="space-y-6">
+          {canViewDeveloperTools ? (
+            <>
+              {canManageTTN && <DebugModeToggle />}
+              <TTNCredentialsPanel key={organization?.id || 'no-org'} organizationId={organization?.id || null} readOnly={!canManageTTN} />
+              <TTNConnectionSettings organizationId={organization?.id || null} readOnly={!canManageTTN} />
+              {canManageTTN && (
+                <>
+                  <TTNProvisioningLogs organizationId={organization?.id || null} />
+                  <EmulatorResyncCard organizationId={organization?.id || null} />
+                  <EmulatorSyncHistory organizationId={organization?.id || null} />
+                  <EdgeFunctionDiagnostics />
+                  <SensorSimulatorPanel organizationId={organization?.id || null} />
+                </>
+              )}
+            </>
+          ) : (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <AlertTriangle className="h-8 w-8 mx-auto text-warning mb-4" />
+                <h3 className="font-medium">Developer Tools Unavailable</h3>
+                <p className="text-sm text-muted-foreground mt-2">
+                  This section requires Owner, Admin, or Manager role. Current role: {userRole || "Not loaded"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-4">
+                  Debug: Org ID {organization?.id?.slice(0, 8) || "none"}...
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
+
+      {/* Role Change Confirmation Dialog */}
+      <Dialog open={roleChangeConfirm?.open ?? false} onOpenChange={(open) => !open && setRoleChangeConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Role Change</DialogTitle>
+            <DialogDescription>
+              You are about to change the role for <strong>{roleChangeConfirm?.userName}</strong> from{" "}
+              <Badge variant="outline" className="mx-1">
+                {roleConfig[roleChangeConfirm?.currentRole ?? "staff"]?.label}
+              </Badge>
+              to{" "}
+              <Badge variant="outline" className="mx-1">
+                {roleConfig[roleChangeConfirm?.newRole ?? "staff"]?.label}
+              </Badge>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              This will immediately affect what actions this user can perform in the organization.
+            </p>
+            {roleChangeConfirm?.newRole === "admin" && (
+              <p className="text-sm text-warning mt-2 flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Admins have elevated privileges and can manage users and settings.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRoleChangeConfirm(null)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmRoleChange}>
+              Confirm Change
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove User Confirmation Dialog */}
+      <Dialog open={removeUserConfirm?.open ?? false} onOpenChange={(open) => !open && setRemoveUserConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Remove Team Member
+            </DialogTitle>
+            <DialogDescription>
+              You are about to remove <strong>{removeUserConfirm?.userName}</strong> from this organization.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              This will revoke their access to all organization data and resources. Any sensors they created will also be cleaned up.
+            </p>
+            <div className="p-3 bg-destructive/10 rounded-lg border border-destructive/30">
+              <p className="text-sm font-medium text-destructive">This action cannot be undone.</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                The user will need to be re-invited to regain access.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveUserConfirm(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmRemoveUser}>
+              Remove User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };

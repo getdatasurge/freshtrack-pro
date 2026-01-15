@@ -1,0 +1,3644 @@
+{
+  "totalFiles": 51,
+  "categories": {
+    "executive": {
+      "name": "Executive Summary",
+      "order": 1,
+      "files": [
+        {
+          "path": "executive/FAQ.md",
+          "title": "FreshTrack Pro: Frequently Asked Questions"
+        },
+        {
+          "path": "executive/OVERVIEW.md",
+          "title": "FreshTrack Pro Overview"
+        },
+        {
+          "path": "executive/SYSTEM_AT_A_GLANCE.md",
+          "title": "FreshTrack Pro: System at a Glance"
+        },
+        {
+          "path": "executive/USER_JOURNEYS.md",
+          "title": "FreshTrack Pro User Journeys"
+        },
+        {
+          "path": "executive/VALUE_PROPOSITION.md",
+          "title": "FreshTrack Pro Value Proposition"
+        }
+      ]
+    },
+    "architecture": {
+      "name": "Architecture",
+      "order": 2,
+      "files": [
+        {
+          "path": "architecture/ARCHITECTURE.md",
+          "title": "FreshTrack Pro System Architecture"
+        }
+      ]
+    },
+    "product": {
+      "name": "Product",
+      "order": 3,
+      "files": [
+        {
+          "path": "product/PAGES.md",
+          "title": "FreshTrack Pro Pages Documentation"
+        },
+        {
+          "path": "product/USER_FLOWS.md",
+          "title": "FreshTrack Pro User Flows"
+        }
+      ]
+    },
+    "engineering": {
+      "name": "Engineering",
+      "order": 4,
+      "files": [
+        {
+          "path": "engineering/API.md",
+          "title": "FreshTrack Pro API Documentation"
+        },
+        {
+          "path": "engineering/DATA_MODEL.md",
+          "title": "FreshTrack Pro Data Model"
+        },
+        {
+          "path": "engineering/INTEGRATIONS.md",
+          "title": "FreshTrack Pro Integrations"
+        },
+        {
+          "path": "engineering/OBSERVABILITY.md",
+          "title": "FreshTrack Pro Observability"
+        }
+      ]
+    },
+    "onboarding": {
+      "name": "Onboarding",
+      "order": 5,
+      "files": [
+        {
+          "path": "onboarding/COMMON_TASKS.md",
+          "title": "Common Development Tasks"
+        },
+        {
+          "path": "onboarding/DEBUGGING_GUIDE.md",
+          "title": "Debugging Guide"
+        },
+        {
+          "path": "onboarding/GETTING_STARTED.md",
+          "title": "Getting Started with FreshTrack Pro"
+        },
+        {
+          "path": "onboarding/LOCAL_DEV.md",
+          "title": "Local Development Setup"
+        },
+        {
+          "path": "onboarding/REPO_TOUR.md",
+          "title": "Repository Tour"
+        }
+      ]
+    },
+    "qa": {
+      "name": "Quality Assurance",
+      "order": 6,
+      "files": [
+        {
+          "path": "qa/COVERAGE_MAP.md",
+          "title": "Coverage Map"
+        },
+        {
+          "path": "qa/E2E_SCENARIOS.md",
+          "title": "End-to-End Test Scenarios"
+        },
+        {
+          "path": "qa/KNOWN_GAPS.md",
+          "title": "Known Test Coverage Gaps"
+        },
+        {
+          "path": "qa/MANUAL_TESTING.md",
+          "title": "Manual Testing Guide"
+        },
+        {
+          "path": "qa/TEST_STRATEGY.md",
+          "title": "Test Strategy"
+        }
+      ]
+    },
+    "security": {
+      "name": "Security",
+      "order": 7,
+      "files": [
+        {
+          "path": "security/AUTH_MODEL.md",
+          "title": "Authentication & Authorization Model"
+        },
+        {
+          "path": "security/DATA_PROTECTION.md",
+          "title": "Data Protection"
+        },
+        {
+          "path": "security/INCIDENT_RESPONSE.md",
+          "title": "Incident Response"
+        },
+        {
+          "path": "security/SECURITY_OVERVIEW.md",
+          "title": "Security Overview"
+        },
+        {
+          "path": "security/THREAT_MODEL.md",
+          "title": "Threat Model"
+        }
+      ]
+    },
+    "operations": {
+      "name": "Operations",
+      "order": 8,
+      "files": [
+        {
+          "path": "operations/ALERTING.md",
+          "title": "Alerting"
+        },
+        {
+          "path": "operations/DASHBOARDS.md",
+          "title": "Dashboards"
+        },
+        {
+          "path": "operations/LOGGING.md",
+          "title": "Logging"
+        },
+        {
+          "path": "operations/METRICS_OVERVIEW.md",
+          "title": "Metrics Overview"
+        },
+        {
+          "path": "operations/RUNBOOKS.md",
+          "title": "Runbooks"
+        }
+      ]
+    },
+    "diagrams": {
+      "name": "Diagrams",
+      "order": 9,
+      "files": [
+        {
+          "path": "diagrams/CONTAINER_DIAGRAM.md",
+          "title": "Container Diagram"
+        },
+        {
+          "path": "diagrams/PAGE_DIAGRAMS.md",
+          "title": "Page Diagrams"
+        },
+        {
+          "path": "diagrams/SEQUENCES.md",
+          "title": "Sequence Diagrams"
+        },
+        {
+          "path": "diagrams/STATE_MACHINES.md",
+          "title": "State Machines"
+        },
+        {
+          "path": "diagrams/SYSTEM_CONTEXT.md",
+          "title": "System Context Diagram"
+        }
+      ]
+    },
+    "charts": {
+      "name": "Charts",
+      "order": 10,
+      "files": [
+        {
+          "path": "charts/ER_DIAGRAM.md",
+          "title": "Entity-Relationship Diagram"
+        },
+        {
+          "path": "charts/FLOWCHARTS.md",
+          "title": "Flowcharts"
+        }
+      ]
+    },
+    "adr": {
+      "name": "Architecture Decision Records",
+      "order": 11,
+      "files": [
+        {
+          "path": "adr/README.md",
+          "title": "Architecture Decision Records (ADRs)"
+        },
+        {
+          "path": "adr/template.md",
+          "title": "ADR-NNNN: [Title]"
+        }
+      ]
+    },
+    "root": {
+      "name": "General",
+      "order": 12,
+      "files": [
+        {
+          "path": "CI_CHECKLIST.md",
+          "title": "Documentation CI Checklist"
+        },
+        {
+          "path": "deprecations.md",
+          "title": "FrostGuard Deprecations"
+        },
+        {
+          "path": "EMULATOR_QUICK_START.md",
+          "title": "Emulator Quick Start - TTN Integration"
+        },
+        {
+          "path": "EMULATOR_TTN_INTEGRATION.md",
+          "title": "Emulator TTN Integration Guide"
+        },
+        {
+          "path": "GLOSSARY.md",
+          "title": "FreshTrack Pro Glossary"
+        },
+        {
+          "path": "INDEX.md",
+          "title": "FreshTrack Pro Documentation Index"
+        },
+        {
+          "path": "README.md",
+          "title": "FreshTrack Pro (FrostGuard)"
+        },
+        {
+          "path": "system-map.md",
+          "title": "FrostGuard System Map"
+        },
+        {
+          "path": "TTN_PRODUCTION_SETUP.md",
+          "title": "TTN Production Secrets Setup"
+        },
+        {
+          "path": "TTN_SETUP.md",
+          "title": "The Things Network (TTN) Setup Guide"
+        }
+      ]
+    }
+  },
+  "files": [
+    {
+      "path": "adr/README.md",
+      "title": "Architecture Decision Records (ADRs)",
+      "category": "adr",
+      "headings": [
+        {
+          "text": "Architecture Decision Records (ADRs)",
+          "anchor": "architecture-decision-records-adrs"
+        },
+        {
+          "text": "What are ADRs?",
+          "anchor": "what-are-adrs"
+        },
+        {
+          "text": "Why Use ADRs?",
+          "anchor": "why-use-adrs"
+        },
+        {
+          "text": "ADR Lifecycle",
+          "anchor": "adr-lifecycle"
+        },
+        {
+          "text": "How to Create an ADR",
+          "anchor": "how-to-create-an-adr"
+        },
+        {
+          "text": "Naming Convention",
+          "anchor": "naming-convention"
+        },
+        {
+          "text": "ADR Template Structure",
+          "anchor": "adr-template-structure"
+        },
+        {
+          "text": "Best Practices",
+          "anchor": "best-practices"
+        },
+        {
+          "text": "Current ADRs",
+          "anchor": "current-adrs"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ]
+    },
+    {
+      "path": "adr/template.md",
+      "title": "ADR-NNNN: [Title]",
+      "category": "adr",
+      "headings": [
+        {
+          "text": "ADR-NNNN: [Title]",
+          "anchor": "adr-nnnn-title"
+        },
+        {
+          "text": "Context",
+          "anchor": "context"
+        },
+        {
+          "text": "Decision",
+          "anchor": "decision"
+        },
+        {
+          "text": "Consequences",
+          "anchor": "consequences"
+        },
+        {
+          "text": "Alternatives Considered",
+          "anchor": "alternatives-considered"
+        },
+        {
+          "text": "Implementation Notes",
+          "anchor": "implementation-notes"
+        },
+        {
+          "text": "Related",
+          "anchor": "related"
+        },
+        {
+          "text": "References",
+          "anchor": "references"
+        }
+      ]
+    },
+    {
+      "path": "architecture/ARCHITECTURE.md",
+      "title": "FreshTrack Pro System Architecture",
+      "category": "architecture",
+      "headings": [
+        {
+          "text": "FreshTrack Pro System Architecture",
+          "anchor": "freshtrack-pro-system-architecture"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Architecture Overview",
+          "anchor": "architecture-overview"
+        },
+        {
+          "text": "Frontend Architecture",
+          "anchor": "frontend-architecture"
+        },
+        {
+          "text": "Backend Architecture",
+          "anchor": "backend-architecture"
+        },
+        {
+          "text": "Database Architecture",
+          "anchor": "database-architecture"
+        },
+        {
+          "text": "Authentication & Authorization",
+          "anchor": "authentication-authorization"
+        },
+        {
+          "text": "Third-Party Integrations",
+          "anchor": "third-party-integrations"
+        },
+        {
+          "text": "Environment Separation",
+          "anchor": "environment-separation"
+        },
+        {
+          "text": "Security Boundaries",
+          "anchor": "security-boundaries"
+        },
+        {
+          "text": "Diagrams",
+          "anchor": "diagrams"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "charts/ER_DIAGRAM.md",
+      "title": "Entity-Relationship Diagram",
+      "category": "charts",
+      "headings": [
+        {
+          "text": "Entity-Relationship Diagram",
+          "anchor": "entity-relationship-diagram"
+        },
+        {
+          "text": "Core Entity Relationships",
+          "anchor": "core-entity-relationships"
+        },
+        {
+          "text": "Sensor & Reading Relationships",
+          "anchor": "sensor-reading-relationships"
+        },
+        {
+          "text": "Alert & Notification Relationships",
+          "anchor": "alert-notification-relationships"
+        },
+        {
+          "text": "TTN Integration Relationships",
+          "anchor": "ttn-integration-relationships"
+        },
+        {
+          "text": "User & Billing Relationships",
+          "anchor": "user-billing-relationships"
+        },
+        {
+          "text": "Compliance Relationships",
+          "anchor": "compliance-relationships"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "charts/FLOWCHARTS.md",
+      "title": "Flowcharts",
+      "category": "charts",
+      "headings": [
+        {
+          "text": "Flowcharts",
+          "anchor": "flowcharts"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Data Ingestion Flow",
+          "anchor": "data-ingestion-flow"
+        },
+        {
+          "text": "Alert Processing Flow",
+          "anchor": "alert-processing-flow"
+        },
+        {
+          "text": "Notification Flow",
+          "anchor": "notification-flow"
+        },
+        {
+          "text": "TTN Provisioning Flow",
+          "anchor": "ttn-provisioning-flow"
+        },
+        {
+          "text": "Manual Logging Flow",
+          "anchor": "manual-logging-flow"
+        },
+        {
+          "text": "Authentication Flow",
+          "anchor": "authentication-flow"
+        },
+        {
+          "text": "Cascade Resolution Flow",
+          "anchor": "cascade-resolution-flow"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "CI_CHECKLIST.md",
+      "title": "Documentation CI Checklist",
+      "category": "root",
+      "headings": [
+        {
+          "text": "Documentation CI Checklist",
+          "anchor": "documentation-ci-checklist"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Automated Checks",
+          "anchor": "automated-checks"
+        },
+        {
+          "text": "CI Workflow",
+          "anchor": "ci-workflow"
+        },
+        {
+          "text": "Local Validation",
+          "anchor": "local-validation"
+        },
+        {
+          "text": "Full pipeline (generate + lint + build)",
+          "anchor": "full-pipeline-generate-lint-build"
+        },
+        {
+          "text": "Just validate",
+          "anchor": "just-validate"
+        },
+        {
+          "text": "Just regenerate index/glossary",
+          "anchor": "just-regenerate-indexglossary"
+        },
+        {
+          "text": "Check if docs changed",
+          "anchor": "check-if-docs-changed"
+        },
+        {
+          "text": "Fixing Common Issues",
+          "anchor": "fixing-common-issues"
+        },
+        {
+          "text": "Error: Broken link: ./missing.md",
+          "anchor": "error-broken-link-missingmd"
+        },
+        {
+          "text": "Fix: Update the link to correct path",
+          "anchor": "fix-update-the-link-to-correct-path"
+        },
+        {
+          "text": "Error: Document missing H1 title",
+          "anchor": "error-document-missing-h1-title"
+        },
+        {
+          "text": "Fix: Add title at top of document",
+          "anchor": "fix-add-title-at-top-of-document"
+        },
+        {
+          "text": "My Document Title",
+          "anchor": "my-document-title"
+        },
+        {
+          "text": "Warning: Heading level jumps from H2 to H4",
+          "anchor": "warning-heading-level-jumps-from-h2-to-h4"
+        },
+        {
+          "text": "Bad:",
+          "anchor": "bad"
+        },
+        {
+          "text": "Section",
+          "anchor": "section"
+        },
+        {
+          "text": "Good:",
+          "anchor": "good"
+        },
+        {
+          "text": "Section",
+          "anchor": "section"
+        },
+        {
+          "text": "Error: Contains placeholder text: [TBD]",
+          "anchor": "error-contains-placeholder-text-tbd"
+        },
+        {
+          "text": "Fix: Replace with actual content",
+          "anchor": "fix-replace-with-actual-content"
+        },
+        {
+          "text": "Error: Mermaid diagram: Missing diagram type",
+          "anchor": "error-mermaid-diagram-missing-diagram-type"
+        },
+        {
+          "text": "Bad:",
+          "anchor": "bad"
+        },
+        {
+          "text": "Good:",
+          "anchor": "good"
+        },
+        {
+          "text": "Severity Levels",
+          "anchor": "severity-levels"
+        },
+        {
+          "text": "Adding New Checks",
+          "anchor": "adding-new-checks"
+        },
+        {
+          "text": "Bypassing Checks",
+          "anchor": "bypassing-checks"
+        },
+        {
+          "text": "Document Without Related Section",
+          "anchor": "document-without-related-section"
+        },
+        {
+          "text": "Metrics",
+          "anchor": "metrics"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "deprecations.md",
+      "title": "FrostGuard Deprecations",
+      "category": "root",
+      "headings": [
+        {
+          "text": "FrostGuard Deprecations",
+          "anchor": "frostguard-deprecations"
+        },
+        {
+          "text": "Deprecated Items",
+          "anchor": "deprecated-items"
+        },
+        {
+          "text": "Migration Notes",
+          "anchor": "migration-notes"
+        },
+        {
+          "text": "Guidelines for Future Deprecations",
+          "anchor": "guidelines-for-future-deprecations"
+        }
+      ]
+    },
+    {
+      "path": "diagrams/CONTAINER_DIAGRAM.md",
+      "title": "Container Diagram",
+      "category": "diagrams",
+      "headings": [
+        {
+          "text": "Container Diagram",
+          "anchor": "container-diagram"
+        },
+        {
+          "text": "C4 Container Diagram",
+          "anchor": "c4-container-diagram"
+        },
+        {
+          "text": "Container Details",
+          "anchor": "container-details"
+        },
+        {
+          "text": "Data Flow Patterns",
+          "anchor": "data-flow-patterns"
+        },
+        {
+          "text": "Container Communication",
+          "anchor": "container-communication"
+        },
+        {
+          "text": "Deployment Architecture",
+          "anchor": "deployment-architecture"
+        },
+        {
+          "text": "Scalability Considerations",
+          "anchor": "scalability-considerations"
+        },
+        {
+          "text": "Related Diagrams",
+          "anchor": "related-diagrams"
+        }
+      ]
+    },
+    {
+      "path": "diagrams/PAGE_DIAGRAMS.md",
+      "title": "Page Diagrams",
+      "category": "diagrams",
+      "headings": [
+        {
+          "text": "Page Diagrams",
+          "anchor": "page-diagrams"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Landing Page",
+          "anchor": "landing-page"
+        },
+        {
+          "text": "Organization Dashboard",
+          "anchor": "organization-dashboard"
+        },
+        {
+          "text": "Sites",
+          "anchor": "sites"
+        },
+        {
+          "text": "Event History",
+          "anchor": "event-history"
+        },
+        {
+          "text": "Dashboard",
+          "anchor": "dashboard"
+        },
+        {
+          "text": "Unit Detail",
+          "anchor": "unit-detail"
+        },
+        {
+          "text": "Alerts",
+          "anchor": "alerts"
+        },
+        {
+          "text": "Settings",
+          "anchor": "settings"
+        },
+        {
+          "text": "Manual Log",
+          "anchor": "manual-log"
+        },
+        {
+          "text": "Reports",
+          "anchor": "reports"
+        },
+        {
+          "text": "Auth Page",
+          "anchor": "auth-page"
+        },
+        {
+          "text": "Site Detail",
+          "anchor": "site-detail"
+        },
+        {
+          "text": "Area Detail",
+          "anchor": "area-detail"
+        },
+        {
+          "text": "Health Dashboard",
+          "anchor": "health-dashboard"
+        },
+        {
+          "text": "Onboarding",
+          "anchor": "onboarding"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "diagrams/SEQUENCES.md",
+      "title": "Sequence Diagrams",
+      "category": "diagrams",
+      "headings": [
+        {
+          "text": "Sequence Diagrams",
+          "anchor": "sequence-diagrams"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "User Registration",
+          "anchor": "user-registration"
+        },
+        {
+          "text": "User Sign In",
+          "anchor": "user-sign-in"
+        },
+        {
+          "text": "Temperature Reading Flow",
+          "anchor": "temperature-reading-flow"
+        },
+        {
+          "text": "Manual Logging Flow",
+          "anchor": "manual-logging-flow"
+        },
+        {
+          "text": "Alert Acknowledgment",
+          "anchor": "alert-acknowledgment"
+        },
+        {
+          "text": "Excursion Detection",
+          "anchor": "excursion-detection"
+        },
+        {
+          "text": "Alert Escalation",
+          "anchor": "alert-escalation"
+        },
+        {
+          "text": "TTN Setup Flow",
+          "anchor": "ttn-setup-flow"
+        },
+        {
+          "text": "Sensor Provisioning",
+          "anchor": "sensor-provisioning"
+        },
+        {
+          "text": "Dashboard Monitoring",
+          "anchor": "dashboard-monitoring"
+        },
+        {
+          "text": "Add Unit",
+          "anchor": "add-unit"
+        },
+        {
+          "text": "Configure Thresholds",
+          "anchor": "configure-thresholds"
+        },
+        {
+          "text": "Configure Notifications",
+          "anchor": "configure-notifications"
+        },
+        {
+          "text": "Generate Report",
+          "anchor": "generate-report"
+        },
+        {
+          "text": "Corrective Action",
+          "anchor": "corrective-action"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "diagrams/STATE_MACHINES.md",
+      "title": "State Machines",
+      "category": "diagrams",
+      "headings": [
+        {
+          "text": "State Machines",
+          "anchor": "state-machines"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Unit Status",
+          "anchor": "unit-status"
+        },
+        {
+          "text": "Alert Status",
+          "anchor": "alert-status"
+        },
+        {
+          "text": "Sensor Status",
+          "anchor": "sensor-status"
+        },
+        {
+          "text": "Gateway Status",
+          "anchor": "gateway-status"
+        },
+        {
+          "text": "Provisioning Job Status",
+          "anchor": "provisioning-job-status"
+        },
+        {
+          "text": "Page States",
+          "anchor": "page-states"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "diagrams/SYSTEM_CONTEXT.md",
+      "title": "System Context Diagram",
+      "category": "diagrams",
+      "headings": [
+        {
+          "text": "System Context Diagram",
+          "anchor": "system-context-diagram"
+        },
+        {
+          "text": "C4 System Context",
+          "anchor": "c4-system-context"
+        },
+        {
+          "text": "Actor Descriptions",
+          "anchor": "actor-descriptions"
+        },
+        {
+          "text": "External System Descriptions",
+          "anchor": "external-system-descriptions"
+        },
+        {
+          "text": "Data Flow Summary",
+          "anchor": "data-flow-summary"
+        },
+        {
+          "text": "Security Boundaries",
+          "anchor": "security-boundaries"
+        },
+        {
+          "text": "Related Diagrams",
+          "anchor": "related-diagrams"
+        }
+      ]
+    },
+    {
+      "path": "EMULATOR_QUICK_START.md",
+      "title": "Emulator Quick Start - TTN Integration",
+      "category": "root",
+      "headings": [
+        {
+          "text": "Emulator Quick Start - TTN Integration",
+          "anchor": "emulator-quick-start-ttn-integration"
+        },
+        {
+          "text": "1. Database Setup (Run in Emulator Supabase)",
+          "anchor": "1-database-setup-run-in-emulator-supabase"
+        },
+        {
+          "text": "2. Receive Sync Payload",
+          "anchor": "2-receive-sync-payload"
+        },
+        {
+          "text": "3. Simulate TTN Uplink",
+          "anchor": "3-simulate-ttn-uplink"
+        },
+        {
+          "text": "4. Test It",
+          "anchor": "4-test-it"
+        },
+        {
+          "text": "In emulator Supabase project secrets",
+          "anchor": "in-emulator-supabase-project-secrets"
+        },
+        {
+          "text": "5. Expected Sync Payload",
+          "anchor": "5-expected-sync-payload"
+        },
+        {
+          "text": "6. Troubleshooting",
+          "anchor": "6-troubleshooting"
+        },
+        {
+          "text": "Done! 🎉",
+          "anchor": "done-"
+        }
+      ]
+    },
+    {
+      "path": "EMULATOR_TTN_INTEGRATION.md",
+      "title": "Emulator TTN Integration Guide",
+      "category": "root",
+      "headings": [
+        {
+          "text": "Emulator TTN Integration Guide",
+          "anchor": "emulator-ttn-integration-guide"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Incoming Sync Payload Structure",
+          "anchor": "incoming-sync-payload-structure"
+        },
+        {
+          "text": "Database Schema for Emulator",
+          "anchor": "database-schema-for-emulator"
+        },
+        {
+          "text": "Processing Sync Payload in Emulator",
+          "anchor": "processing-sync-payload-in-emulator"
+        },
+        {
+          "text": "Using TTN Data in Emulator",
+          "anchor": "using-ttn-data-in-emulator"
+        },
+        {
+          "text": "Security Best Practices",
+          "anchor": "security-best-practices"
+        },
+        {
+          "text": "Testing",
+          "anchor": "testing"
+        },
+        {
+          "text": "Test sync endpoint",
+          "anchor": "test-sync-endpoint"
+        },
+        {
+          "text": "Simulate uplink",
+          "anchor": "simulate-uplink"
+        },
+        {
+          "text": "Troubleshooting",
+          "anchor": "troubleshooting"
+        },
+        {
+          "text": "Summary",
+          "anchor": "summary"
+        }
+      ]
+    },
+    {
+      "path": "engineering/API.md",
+      "title": "FreshTrack Pro API Documentation",
+      "category": "engineering",
+      "headings": [
+        {
+          "text": "FreshTrack Pro API Documentation",
+          "anchor": "freshtrack-pro-api-documentation"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Authentication",
+          "anchor": "authentication"
+        },
+        {
+          "text": "Data Ingestion Functions",
+          "anchor": "data-ingestion-functions"
+        },
+        {
+          "text": "Alert Processing Functions",
+          "anchor": "alert-processing-functions"
+        },
+        {
+          "text": "TTN Management Functions",
+          "anchor": "ttn-management-functions"
+        },
+        {
+          "text": "User & Data Management Functions",
+          "anchor": "user-data-management-functions"
+        },
+        {
+          "text": "Billing Functions",
+          "anchor": "billing-functions"
+        },
+        {
+          "text": "Utility Functions",
+          "anchor": "utility-functions"
+        },
+        {
+          "text": "Database RPC Functions",
+          "anchor": "database-rpc-functions"
+        },
+        {
+          "text": "Error Handling",
+          "anchor": "error-handling"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "engineering/DATA_MODEL.md",
+      "title": "FreshTrack Pro Data Model",
+      "category": "engineering",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Data Model",
+          "anchor": "freshtrack-pro-data-model"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Entity Relationships",
+          "anchor": "entity-relationships"
+        },
+        {
+          "text": "Hierarchy Tables",
+          "anchor": "hierarchy-tables"
+        },
+        {
+          "text": "Sensor Tables",
+          "anchor": "sensor-tables"
+        },
+        {
+          "text": "Alert Tables",
+          "anchor": "alert-tables"
+        },
+        {
+          "text": "Notification Tables",
+          "anchor": "notification-tables"
+        },
+        {
+          "text": "Compliance Tables",
+          "anchor": "compliance-tables"
+        },
+        {
+          "text": "TTN Tables",
+          "anchor": "ttn-tables"
+        },
+        {
+          "text": "User Tables",
+          "anchor": "user-tables"
+        },
+        {
+          "text": "Billing Tables",
+          "anchor": "billing-tables"
+        },
+        {
+          "text": "System Tables",
+          "anchor": "system-tables"
+        },
+        {
+          "text": "Enums",
+          "anchor": "enums"
+        },
+        {
+          "text": "RLS Policies",
+          "anchor": "rls-policies"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "engineering/INTEGRATIONS.md",
+      "title": "FreshTrack Pro Integrations",
+      "category": "engineering",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Integrations",
+          "anchor": "freshtrack-pro-integrations"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "The Things Network (TTN)",
+          "anchor": "the-things-network-ttn"
+        },
+        {
+          "text": "Stripe",
+          "anchor": "stripe"
+        },
+        {
+          "text": "Telnyx",
+          "anchor": "telnyx"
+        },
+        {
+          "text": "Supabase Auth",
+          "anchor": "supabase-auth"
+        },
+        {
+          "text": "Environment Variables",
+          "anchor": "environment-variables"
+        },
+        {
+          "text": "Via Supabase CLI",
+          "anchor": "via-supabase-cli"
+        },
+        {
+          "text": "List secrets",
+          "anchor": "list-secrets"
+        },
+        {
+          "text": "TBD Items",
+          "anchor": "tbd-items"
+        }
+      ]
+    },
+    {
+      "path": "engineering/OBSERVABILITY.md",
+      "title": "FreshTrack Pro Observability",
+      "category": "engineering",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Observability",
+          "anchor": "freshtrack-pro-observability"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Logging Strategy",
+          "anchor": "logging-strategy"
+        },
+        {
+          "text": "Error Handling",
+          "anchor": "error-handling"
+        },
+        {
+          "text": "Debugging Workflows",
+          "anchor": "debugging-workflows"
+        },
+        {
+          "text": "Health Monitoring",
+          "anchor": "health-monitoring"
+        },
+        {
+          "text": "Known Failure Scenarios",
+          "anchor": "known-failure-scenarios"
+        },
+        {
+          "text": "Incident Playbooks",
+          "anchor": "incident-playbooks"
+        },
+        {
+          "text": "Audit Trail",
+          "anchor": "audit-trail"
+        },
+        {
+          "text": "Metrics to Track",
+          "anchor": "metrics-to-track"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "executive/FAQ.md",
+      "title": "FreshTrack Pro: Frequently Asked Questions",
+      "category": "executive",
+      "headings": [
+        {
+          "text": "FreshTrack Pro: Frequently Asked Questions",
+          "anchor": "freshtrack-pro-frequently-asked-questions"
+        },
+        {
+          "text": "General Questions",
+          "anchor": "general-questions"
+        },
+        {
+          "text": "Security & Data Protection",
+          "anchor": "security-data-protection"
+        },
+        {
+          "text": "Reliability & Uptime",
+          "anchor": "reliability-uptime"
+        },
+        {
+          "text": "Implementation & Deployment",
+          "anchor": "implementation-deployment"
+        },
+        {
+          "text": "Costs & Pricing",
+          "anchor": "costs-pricing"
+        },
+        {
+          "text": "Compliance & Reporting",
+          "anchor": "compliance-reporting"
+        },
+        {
+          "text": "Support & Maintenance",
+          "anchor": "support-maintenance"
+        },
+        {
+          "text": "Technical Questions (Non-Technical Answers)",
+          "anchor": "technical-questions-non-technical-answers"
+        },
+        {
+          "text": "Competitive Questions",
+          "anchor": "competitive-questions"
+        },
+        {
+          "text": "Getting Started",
+          "anchor": "getting-started"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "executive/OVERVIEW.md",
+      "title": "FreshTrack Pro Overview",
+      "category": "executive",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Overview",
+          "anchor": "freshtrack-pro-overview"
+        },
+        {
+          "text": "What is FreshTrack Pro?",
+          "anchor": "what-is-freshtrack-pro"
+        },
+        {
+          "text": "The Problem We Solve",
+          "anchor": "the-problem-we-solve"
+        },
+        {
+          "text": "Who Uses FreshTrack Pro?",
+          "anchor": "who-uses-freshtrack-pro"
+        },
+        {
+          "text": "Key Capabilities",
+          "anchor": "key-capabilities"
+        },
+        {
+          "text": "At a Glance",
+          "anchor": "at-a-glance"
+        },
+        {
+          "text": "What FreshTrack Pro Is NOT",
+          "anchor": "what-freshtrack-pro-is-not"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        }
+      ]
+    },
+    {
+      "path": "executive/SYSTEM_AT_A_GLANCE.md",
+      "title": "FreshTrack Pro: System at a Glance",
+      "category": "executive",
+      "headings": [
+        {
+          "text": "FreshTrack Pro: System at a Glance",
+          "anchor": "freshtrack-pro-system-at-a-glance"
+        },
+        {
+          "text": "How It Works (The Simple Version)",
+          "anchor": "how-it-works-the-simple-version"
+        },
+        {
+          "text": "The Three Parts of FreshTrack Pro",
+          "anchor": "the-three-parts-of-freshtrack-pro"
+        },
+        {
+          "text": "The Alert Flow",
+          "anchor": "the-alert-flow"
+        },
+        {
+          "text": "Your Organization Structure",
+          "anchor": "your-organization-structure"
+        },
+        {
+          "text": "What Gets Tracked",
+          "anchor": "what-gets-tracked"
+        },
+        {
+          "text": "The Dashboard at a Glance",
+          "anchor": "the-dashboard-at-a-glance"
+        },
+        {
+          "text": "Security & Reliability",
+          "anchor": "security-reliability"
+        },
+        {
+          "text": "Integration Points",
+          "anchor": "integration-points"
+        },
+        {
+          "text": "Summary",
+          "anchor": "summary"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "executive/USER_JOURNEYS.md",
+      "title": "FreshTrack Pro User Journeys",
+      "category": "executive",
+      "headings": [
+        {
+          "text": "FreshTrack Pro User Journeys",
+          "anchor": "freshtrack-pro-user-journeys"
+        },
+        {
+          "text": "Meet Your Team",
+          "anchor": "meet-your-team"
+        },
+        {
+          "text": "Journey 1: Getting Started (Onboarding)",
+          "anchor": "journey-1-getting-started-onboarding"
+        },
+        {
+          "text": "Journey 2: A Normal Day (Daily Monitoring)",
+          "anchor": "journey-2-a-normal-day-daily-monitoring"
+        },
+        {
+          "text": "Journey 3: Responding to an Alert",
+          "anchor": "journey-3-responding-to-an-alert"
+        },
+        {
+          "text": "Journey 4: Health Inspection Day",
+          "anchor": "journey-4-health-inspection-day"
+        },
+        {
+          "text": "Journey 5: Multi-Location Oversight",
+          "anchor": "journey-5-multi-location-oversight"
+        },
+        {
+          "text": "Journey 6: Long-Term Insights",
+          "anchor": "journey-6-long-term-insights"
+        },
+        {
+          "text": "Summary: The FreshTrack Pro Difference",
+          "anchor": "summary-the-freshtrack-pro-difference"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "executive/VALUE_PROPOSITION.md",
+      "title": "FreshTrack Pro Value Proposition",
+      "category": "executive",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Value Proposition",
+          "anchor": "freshtrack-pro-value-proposition"
+        },
+        {
+          "text": "The Bottom Line",
+          "anchor": "the-bottom-line"
+        },
+        {
+          "text": "Business Value",
+          "anchor": "business-value"
+        },
+        {
+          "text": "Competitive Differentiators",
+          "anchor": "competitive-differentiators"
+        },
+        {
+          "text": "Pricing That Makes Sense",
+          "anchor": "pricing-that-makes-sense"
+        },
+        {
+          "text": "Who Benefits?",
+          "anchor": "who-benefits"
+        },
+        {
+          "text": "The Cost of NOT Acting",
+          "anchor": "the-cost-of-not-acting"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "GLOSSARY.md",
+      "title": "FreshTrack Pro Glossary",
+      "category": "root",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Glossary",
+          "anchor": "freshtrack-pro-glossary"
+        },
+        {
+          "text": "Quick Navigation",
+          "anchor": "quick-navigation"
+        },
+        {
+          "text": "Architecture",
+          "anchor": "architecture"
+        },
+        {
+          "text": "Product",
+          "anchor": "product"
+        },
+        {
+          "text": "IoT Hardware",
+          "anchor": "iot-hardware"
+        },
+        {
+          "text": "Alert System",
+          "anchor": "alert-system"
+        },
+        {
+          "text": "Monitoring",
+          "anchor": "monitoring"
+        },
+        {
+          "text": "Security",
+          "anchor": "security"
+        },
+        {
+          "text": "Data",
+          "anchor": "data"
+        },
+        {
+          "text": "Integration",
+          "anchor": "integration"
+        },
+        {
+          "text": "Development",
+          "anchor": "development"
+        },
+        {
+          "text": "General",
+          "anchor": "general"
+        },
+        {
+          "text": "Adding Terms",
+          "anchor": "adding-terms"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "INDEX.md",
+      "title": "FreshTrack Pro Documentation Index",
+      "category": "root",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Documentation Index",
+          "anchor": "freshtrack-pro-documentation-index"
+        },
+        {
+          "text": "Quick Links",
+          "anchor": "quick-links"
+        },
+        {
+          "text": "Executive Summary",
+          "anchor": "executive-summary"
+        },
+        {
+          "text": "Architecture",
+          "anchor": "architecture"
+        },
+        {
+          "text": "Product",
+          "anchor": "product"
+        },
+        {
+          "text": "Engineering",
+          "anchor": "engineering"
+        },
+        {
+          "text": "Onboarding",
+          "anchor": "onboarding"
+        },
+        {
+          "text": "Quality Assurance",
+          "anchor": "quality-assurance"
+        },
+        {
+          "text": "Security",
+          "anchor": "security"
+        },
+        {
+          "text": "Operations",
+          "anchor": "operations"
+        },
+        {
+          "text": "Diagrams",
+          "anchor": "diagrams"
+        },
+        {
+          "text": "Charts",
+          "anchor": "charts"
+        },
+        {
+          "text": "Architecture Decision Records",
+          "anchor": "architecture-decision-records"
+        },
+        {
+          "text": "General",
+          "anchor": "general"
+        },
+        {
+          "text": "Document Relationships",
+          "anchor": "document-relationships"
+        },
+        {
+          "text": "Documentation Pipeline",
+          "anchor": "documentation-pipeline"
+        }
+      ]
+    },
+    {
+      "path": "onboarding/COMMON_TASKS.md",
+      "title": "Common Development Tasks",
+      "category": "onboarding",
+      "headings": [
+        {
+          "text": "Common Development Tasks",
+          "anchor": "common-development-tasks"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Adding a New Page",
+          "anchor": "adding-a-new-page"
+        },
+        {
+          "text": "Adding a New Component",
+          "anchor": "adding-a-new-component"
+        },
+        {
+          "text": "Fetching Data from Supabase",
+          "anchor": "fetching-data-from-supabase"
+        },
+        {
+          "text": "Adding a New Edge Function",
+          "anchor": "adding-a-new-edge-function"
+        },
+        {
+          "text": "Deploy to Supabase",
+          "anchor": "deploy-to-supabase"
+        },
+        {
+          "text": "Creating a Database Migration",
+          "anchor": "creating-a-database-migration"
+        },
+        {
+          "text": "Creates: supabase/migrations/YYYYMMDDHHMMSS_add_my_table.sql",
+          "anchor": "creates-supabasemigrationsyyyymmddhhmmssaddmytablesql"
+        },
+        {
+          "text": "Locally",
+          "anchor": "locally"
+        },
+        {
+          "text": "Remote (careful!)",
+          "anchor": "remote-careful"
+        },
+        {
+          "text": "Adding a New Alert Type",
+          "anchor": "adding-a-new-alert-type"
+        },
+        {
+          "text": "Modifying the TTN Integration",
+          "anchor": "modifying-the-ttn-integration"
+        },
+        {
+          "text": "Working with the Settings Wizard",
+          "anchor": "working-with-the-settings-wizard"
+        },
+        {
+          "text": "Adding Role-Based Access",
+          "anchor": "adding-role-based-access"
+        },
+        {
+          "text": "Testing Your Changes",
+          "anchor": "testing-your-changes"
+        },
+        {
+          "text": "Run Vitest",
+          "anchor": "run-vitest"
+        },
+        {
+          "text": "Watch mode",
+          "anchor": "watch-mode"
+        },
+        {
+          "text": "Start function server",
+          "anchor": "start-function-server"
+        },
+        {
+          "text": "Test with curl",
+          "anchor": "test-with-curl"
+        },
+        {
+          "text": "Reset local database (applies all migrations)",
+          "anchor": "reset-local-database-applies-all-migrations"
+        },
+        {
+          "text": "Check RLS policies work",
+          "anchor": "check-rls-policies-work"
+        },
+        {
+          "text": "1. Sign in as a user",
+          "anchor": "1-sign-in-as-a-user"
+        },
+        {
+          "text": "2. Try to access data from another org",
+          "anchor": "2-try-to-access-data-from-another-org"
+        },
+        {
+          "text": "3. Should get no results (not an error)",
+          "anchor": "3-should-get-no-results-not-an-error"
+        },
+        {
+          "text": "Quick Reference",
+          "anchor": "quick-reference"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        }
+      ]
+    },
+    {
+      "path": "onboarding/DEBUGGING_GUIDE.md",
+      "title": "Debugging Guide",
+      "category": "onboarding",
+      "headings": [
+        {
+          "text": "Debugging Guide",
+          "anchor": "debugging-guide"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Debugging Philosophy",
+          "anchor": "debugging-philosophy"
+        },
+        {
+          "text": "Quick Diagnosis Checklist",
+          "anchor": "quick-diagnosis-checklist"
+        },
+        {
+          "text": "Check if frontend is running",
+          "anchor": "check-if-frontend-is-running"
+        },
+        {
+          "text": "Check if Supabase is running",
+          "anchor": "check-if-supabase-is-running"
+        },
+        {
+          "text": "Check function logs",
+          "anchor": "check-function-logs"
+        },
+        {
+          "text": "Check database connection",
+          "anchor": "check-database-connection"
+        },
+        {
+          "text": "Frontend Debugging",
+          "anchor": "frontend-debugging"
+        },
+        {
+          "text": "Backend Debugging",
+          "anchor": "backend-debugging"
+        },
+        {
+          "text": "Stream logs in real-time (local)",
+          "anchor": "stream-logs-in-real-time-local"
+        },
+        {
+          "text": "View logs in Supabase Dashboard (remote)",
+          "anchor": "view-logs-in-supabase-dashboard-remote"
+        },
+        {
+          "text": "Go to: Project → Edge Functions → Logs",
+          "anchor": "go-to-project-edge-functions-logs"
+        },
+        {
+          "text": "Serve all functions",
+          "anchor": "serve-all-functions"
+        },
+        {
+          "text": "Test with curl",
+          "anchor": "test-with-curl"
+        },
+        {
+          "text": "Database Debugging",
+          "anchor": "database-debugging"
+        },
+        {
+          "text": "Connect to local database",
+          "anchor": "connect-to-local-database"
+        },
+        {
+          "text": "Or use Supabase Studio",
+          "anchor": "or-use-supabase-studio"
+        },
+        {
+          "text": "See migration status",
+          "anchor": "see-migration-status"
+        },
+        {
+          "text": "Reset and reapply all migrations",
+          "anchor": "reset-and-reapply-all-migrations"
+        },
+        {
+          "text": "Check for SQL errors",
+          "anchor": "check-for-sql-errors"
+        },
+        {
+          "text": "TTN Integration Issues",
+          "anchor": "ttn-integration-issues"
+        },
+        {
+          "text": "Alert System Issues",
+          "anchor": "alert-system-issues"
+        },
+        {
+          "text": "Check function logs",
+          "anchor": "check-function-logs"
+        },
+        {
+          "text": "Manually trigger for a unit",
+          "anchor": "manually-trigger-for-a-unit"
+        },
+        {
+          "text": "Common Error Patterns",
+          "anchor": "common-error-patterns"
+        },
+        {
+          "text": "Performance Issues",
+          "anchor": "performance-issues"
+        },
+        {
+          "text": "Known Sharp Edges",
+          "anchor": "known-sharp-edges"
+        },
+        {
+          "text": "Debugging Toolkit",
+          "anchor": "debugging-toolkit"
+        },
+        {
+          "text": "Frontend",
+          "anchor": "frontend"
+        },
+        {
+          "text": "Backend",
+          "anchor": "backend"
+        },
+        {
+          "text": "Database",
+          "anchor": "database"
+        },
+        {
+          "text": "Getting Help",
+          "anchor": "getting-help"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "onboarding/GETTING_STARTED.md",
+      "title": "Getting Started with FreshTrack Pro",
+      "category": "onboarding",
+      "headings": [
+        {
+          "text": "Getting Started with FreshTrack Pro",
+          "anchor": "getting-started-with-freshtrack-pro"
+        },
+        {
+          "text": "What This System Does",
+          "anchor": "what-this-system-does"
+        },
+        {
+          "text": "The Mental Model",
+          "anchor": "the-mental-model"
+        },
+        {
+          "text": "How to Think About This App",
+          "anchor": "how-to-think-about-this-app"
+        },
+        {
+          "text": "Key Concepts You'll Encounter",
+          "anchor": "key-concepts-youll-encounter"
+        },
+        {
+          "text": "What You'll Be Working On",
+          "anchor": "what-youll-be-working-on"
+        },
+        {
+          "text": "Your First Day Checklist",
+          "anchor": "your-first-day-checklist"
+        },
+        {
+          "text": "Key Files to Bookmark",
+          "anchor": "key-files-to-bookmark"
+        },
+        {
+          "text": "Terminology Quick Reference",
+          "anchor": "terminology-quick-reference"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        }
+      ]
+    },
+    {
+      "path": "onboarding/LOCAL_DEV.md",
+      "title": "Local Development Setup",
+      "category": "onboarding",
+      "headings": [
+        {
+          "text": "Local Development Setup",
+          "anchor": "local-development-setup"
+        },
+        {
+          "text": "Prerequisites",
+          "anchor": "prerequisites"
+        },
+        {
+          "text": "Quick Start",
+          "anchor": "quick-start"
+        },
+        {
+          "text": "1. Clone the repository",
+          "anchor": "1-clone-the-repository"
+        },
+        {
+          "text": "2. Install dependencies",
+          "anchor": "2-install-dependencies"
+        },
+        {
+          "text": "3. Set up environment variables (see below)",
+          "anchor": "3-set-up-environment-variables-see-below"
+        },
+        {
+          "text": "4. Start the development server",
+          "anchor": "4-start-the-development-server"
+        },
+        {
+          "text": "Environment Variables",
+          "anchor": "environment-variables"
+        },
+        {
+          "text": "Supabase Connection (required)",
+          "anchor": "supabase-connection-required"
+        },
+        {
+          "text": "Feature flags",
+          "anchor": "feature-flags"
+        },
+        {
+          "text": "Stripe (for payment testing)",
+          "anchor": "stripe-for-payment-testing"
+        },
+        {
+          "text": "NPM Scripts",
+          "anchor": "npm-scripts"
+        },
+        {
+          "text": "Development",
+          "anchor": "development"
+        },
+        {
+          "text": "Code Quality",
+          "anchor": "code-quality"
+        },
+        {
+          "text": "Testing",
+          "anchor": "testing"
+        },
+        {
+          "text": "Running Supabase Locally",
+          "anchor": "running-supabase-locally"
+        },
+        {
+          "text": "Start all Supabase services",
+          "anchor": "start-all-supabase-services"
+        },
+        {
+          "text": "This will output local URLs:",
+          "anchor": "this-will-output-local-urls"
+        },
+        {
+          "text": "- API URL: http://localhost:54321",
+          "anchor": "-api-url-httplocalhost54321"
+        },
+        {
+          "text": "- Studio URL: http://localhost:54323",
+          "anchor": "-studio-url-httplocalhost54323"
+        },
+        {
+          "text": "- Anon Key: eyJhb...",
+          "anchor": "-anon-key-eyjhb"
+        },
+        {
+          "text": "Apply all migrations to local database",
+          "anchor": "apply-all-migrations-to-local-database"
+        },
+        {
+          "text": "This runs all migrations in /supabase/migrations/",
+          "anchor": "this-runs-all-migrations-in-supabasemigrations"
+        },
+        {
+          "text": "Open Supabase Studio in browser",
+          "anchor": "open-supabase-studio-in-browser"
+        },
+        {
+          "text": "Or connect directly with psql",
+          "anchor": "or-connect-directly-with-psql"
+        },
+        {
+          "text": "Running Edge Functions Locally",
+          "anchor": "running-edge-functions-locally"
+        },
+        {
+          "text": "Example: Call the health check function",
+          "anchor": "example-call-the-health-check-function"
+        },
+        {
+          "text": "Create a .env file for functions",
+          "anchor": "create-a-env-file-for-functions"
+        },
+        {
+          "text": "Add function-specific secrets",
+          "anchor": "add-function-specific-secrets"
+        },
+        {
+          "text": "Project Structure for Development",
+          "anchor": "project-structure-for-development"
+        },
+        {
+          "text": "IDE Setup",
+          "anchor": "ide-setup"
+        },
+        {
+          "text": "Common Setup Problems",
+          "anchor": "common-setup-problems"
+        },
+        {
+          "text": "Verify your env vars are loaded",
+          "anchor": "verify-your-env-vars-are-loaded"
+        },
+        {
+          "text": "Check browser console for connection errors",
+          "anchor": "check-browser-console-for-connection-errors"
+        },
+        {
+          "text": "Find and kill the process",
+          "anchor": "find-and-kill-the-process"
+        },
+        {
+          "text": "Or use a different port",
+          "anchor": "or-use-a-different-port"
+        },
+        {
+          "text": "Regenerate Supabase types",
+          "anchor": "regenerate-supabase-types"
+        },
+        {
+          "text": "Increase file watcher limit (Linux)",
+          "anchor": "increase-file-watcher-limit-linux"
+        },
+        {
+          "text": "Clear Vite cache",
+          "anchor": "clear-vite-cache"
+        },
+        {
+          "text": "Development Workflow",
+          "anchor": "development-workflow"
+        },
+        {
+          "text": "Connecting to Remote Environments",
+          "anchor": "connecting-to-remote-environments"
+        },
+        {
+          "text": "Use read-only access only",
+          "anchor": "use-read-only-access-only"
+        },
+        {
+          "text": "Troubleshooting Checklist",
+          "anchor": "troubleshooting-checklist"
+        },
+        {
+          "text": "Getting Help",
+          "anchor": "getting-help"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        }
+      ]
+    },
+    {
+      "path": "onboarding/REPO_TOUR.md",
+      "title": "Repository Tour",
+      "category": "onboarding",
+      "headings": [
+        {
+          "text": "Repository Tour",
+          "anchor": "repository-tour"
+        },
+        {
+          "text": "Top-Level Structure",
+          "anchor": "top-level-structure"
+        },
+        {
+          "text": "`/src` — Frontend Application",
+          "anchor": "src-frontend-application"
+        },
+        {
+          "text": "`/supabase` — Backend",
+          "anchor": "supabase-backend"
+        },
+        {
+          "text": "`/docs` — Documentation",
+          "anchor": "docs-documentation"
+        },
+        {
+          "text": "`/public` — Static Assets",
+          "anchor": "public-static-assets"
+        },
+        {
+          "text": "Key Files to Know",
+          "anchor": "key-files-to-know"
+        },
+        {
+          "text": "Where to Find Things",
+          "anchor": "where-to-find-things"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        }
+      ]
+    },
+    {
+      "path": "operations/ALERTING.md",
+      "title": "Alerting",
+      "category": "operations",
+      "headings": [
+        {
+          "text": "Alerting",
+          "anchor": "alerting"
+        },
+        {
+          "text": "Alert Types Overview",
+          "anchor": "alert-types-overview"
+        },
+        {
+          "text": "Alert Lifecycle",
+          "anchor": "alert-lifecycle"
+        },
+        {
+          "text": "Severity Levels",
+          "anchor": "severity-levels"
+        },
+        {
+          "text": "Alert Conditions",
+          "anchor": "alert-conditions"
+        },
+        {
+          "text": "Escalation Paths",
+          "anchor": "escalation-paths"
+        },
+        {
+          "text": "Notification Channels",
+          "anchor": "notification-channels"
+        },
+        {
+          "text": "Alert Processing",
+          "anchor": "alert-processing"
+        },
+        {
+          "text": "Operational Alerts (Recommended)",
+          "anchor": "operational-alerts-recommended"
+        },
+        {
+          "text": "Alert Configuration",
+          "anchor": "alert-configuration"
+        },
+        {
+          "text": "Silencing and Suppression",
+          "anchor": "silencing-and-suppression"
+        },
+        {
+          "text": "Alert Auditing",
+          "anchor": "alert-auditing"
+        },
+        {
+          "text": "Troubleshooting Alerts",
+          "anchor": "troubleshooting-alerts"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "operations/DASHBOARDS.md",
+      "title": "Dashboards",
+      "category": "operations",
+      "headings": [
+        {
+          "text": "Dashboards",
+          "anchor": "dashboards"
+        },
+        {
+          "text": "Dashboard Architecture",
+          "anchor": "dashboard-architecture"
+        },
+        {
+          "text": "Existing Dashboards",
+          "anchor": "existing-dashboards"
+        },
+        {
+          "text": "Supabase Dashboard",
+          "anchor": "supabase-dashboard"
+        },
+        {
+          "text": "Recommended Dashboards",
+          "anchor": "recommended-dashboards"
+        },
+        {
+          "text": "Dashboard Access Matrix",
+          "anchor": "dashboard-access-matrix"
+        },
+        {
+          "text": "Dashboard URLs",
+          "anchor": "dashboard-urls"
+        },
+        {
+          "text": "Monitoring Best Practices",
+          "anchor": "monitoring-best-practices"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "operations/LOGGING.md",
+      "title": "Logging",
+      "category": "operations",
+      "headings": [
+        {
+          "text": "Logging",
+          "anchor": "logging"
+        },
+        {
+          "text": "Log Sources Overview",
+          "anchor": "log-sources-overview"
+        },
+        {
+          "text": "Client-Side Logging",
+          "anchor": "client-side-logging"
+        },
+        {
+          "text": "Server-Side Logging",
+          "anchor": "server-side-logging"
+        },
+        {
+          "text": "Stream logs (requires Supabase CLI)",
+          "anchor": "stream-logs-requires-supabase-cli"
+        },
+        {
+          "text": "View recent logs",
+          "anchor": "view-recent-logs"
+        },
+        {
+          "text": "Database Logging",
+          "anchor": "database-logging"
+        },
+        {
+          "text": "Log Retention",
+          "anchor": "log-retention"
+        },
+        {
+          "text": "Debugging Procedures",
+          "anchor": "debugging-procedures"
+        },
+        {
+          "text": "Find webhook errors",
+          "anchor": "find-webhook-errors"
+        },
+        {
+          "text": "Find device matching",
+          "anchor": "find-device-matching"
+        },
+        {
+          "text": "Find processing times",
+          "anchor": "find-processing-times"
+        },
+        {
+          "text": "Find specific device",
+          "anchor": "find-specific-device"
+        },
+        {
+          "text": "Support Snapshot",
+          "anchor": "support-snapshot"
+        },
+        {
+          "text": "Log Analysis",
+          "anchor": "log-analysis"
+        },
+        {
+          "text": "Best Practices",
+          "anchor": "best-practices"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "operations/METRICS_OVERVIEW.md",
+      "title": "Metrics Overview",
+      "category": "operations",
+      "headings": [
+        {
+          "text": "Metrics Overview",
+          "anchor": "metrics-overview"
+        },
+        {
+          "text": "Metric Categories",
+          "anchor": "metric-categories"
+        },
+        {
+          "text": "System Health Metrics",
+          "anchor": "system-health-metrics"
+        },
+        {
+          "text": "Via health check endpoint",
+          "anchor": "via-health-check-endpoint"
+        },
+        {
+          "text": "Response structure",
+          "anchor": "response-structure"
+        },
+        {
+          "text": "Application Health Indicators",
+          "anchor": "application-health-indicators"
+        },
+        {
+          "text": "Integration Health Metrics",
+          "anchor": "integration-health-metrics"
+        },
+        {
+          "text": "Sensor and Gateway Metrics",
+          "anchor": "sensor-and-gateway-metrics"
+        },
+        {
+          "text": "Business Metrics",
+          "anchor": "business-metrics"
+        },
+        {
+          "text": "Metric Collection Points",
+          "anchor": "metric-collection-points"
+        },
+        {
+          "text": "Thresholds Summary",
+          "anchor": "thresholds-summary"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "operations/RUNBOOKS.md",
+      "title": "Runbooks",
+      "category": "operations",
+      "headings": [
+        {
+          "text": "Runbooks",
+          "anchor": "runbooks"
+        },
+        {
+          "text": "Runbook Index",
+          "anchor": "runbook-index"
+        },
+        {
+          "text": "RB-001: Health Check Failure",
+          "anchor": "rb-001-health-check-failure"
+        },
+        {
+          "text": "1. Check health endpoint directly",
+          "anchor": "1-check-health-endpoint-directly"
+        },
+        {
+          "text": "2. Note which checks are failing",
+          "anchor": "2-note-which-checks-are-failing"
+        },
+        {
+          "text": "Response format:",
+          "anchor": "response-format"
+        },
+        {
+          "text": "RB-002: TTN Webhook Not Receiving",
+          "anchor": "rb-002-ttn-webhook-not-receiving"
+        },
+        {
+          "text": "1. Check TTN webhook logs",
+          "anchor": "1-check-ttn-webhook-logs"
+        },
+        {
+          "text": "2. Look for patterns:",
+          "anchor": "2-look-for-patterns"
+        },
+        {
+          "text": "- \"Webhook received\" = Reaching our endpoint",
+          "anchor": "-webhook-received-reaching-our-endpoint"
+        },
+        {
+          "text": "- \"Unknown device\" = DevEUI not matched",
+          "anchor": "-unknown-device-deveui-not-matched"
+        },
+        {
+          "text": "- \"Invalid secret\" = Auth failure",
+          "anchor": "-invalid-secret-auth-failure"
+        },
+        {
+          "text": "- No logs = Webhook not reaching us",
+          "anchor": "-no-logs-webhook-not-reaching-us"
+        },
+        {
+          "text": "Send test payload (replace values)",
+          "anchor": "send-test-payload-replace-values"
+        },
+        {
+          "text": "RB-003: Sensor Offline",
+          "anchor": "rb-003-sensor-offline"
+        },
+        {
+          "text": "RB-004: Gateway Offline",
+          "anchor": "rb-004-gateway-offline"
+        },
+        {
+          "text": "RB-005: Alert Processing Failure",
+          "anchor": "rb-005-alert-processing-failure"
+        },
+        {
+          "text": "Check function logs",
+          "anchor": "check-function-logs"
+        },
+        {
+          "text": "Look for errors or processing messages",
+          "anchor": "look-for-errors-or-processing-messages"
+        },
+        {
+          "text": "Invoke manually (if scheduled via cron)",
+          "anchor": "invoke-manually-if-scheduled-via-cron"
+        },
+        {
+          "text": "RB-006: Notification Delivery Failure",
+          "anchor": "rb-006-notification-delivery-failure"
+        },
+        {
+          "text": "Check escalation function logs",
+          "anchor": "check-escalation-function-logs"
+        },
+        {
+          "text": "Send manual email via Resend API",
+          "anchor": "send-manual-email-via-resend-api"
+        },
+        {
+          "text": "RB-007: Database Latency High",
+          "anchor": "rb-007-database-latency-high"
+        },
+        {
+          "text": "RB-008: Stripe Webhook Failure",
+          "anchor": "rb-008-stripe-webhook-failure"
+        },
+        {
+          "text": "Check webhook logs",
+          "anchor": "check-webhook-logs"
+        },
+        {
+          "text": "Test with correct secret",
+          "anchor": "test-with-correct-secret"
+        },
+        {
+          "text": "RB-009: Simulator Not Running",
+          "anchor": "rb-009-simulator-not-running"
+        },
+        {
+          "text": "Trigger heartbeat manually",
+          "anchor": "trigger-heartbeat-manually"
+        },
+        {
+          "text": "RB-010: User Cannot Login",
+          "anchor": "rb-010-user-cannot-login"
+        },
+        {
+          "text": "RB-011: TTN Provisioning Failure",
+          "anchor": "rb-011-ttn-provisioning-failure"
+        },
+        {
+          "text": "Check provisioning logs",
+          "anchor": "check-provisioning-logs"
+        },
+        {
+          "text": "RB-012: Data Ingestion Backlog",
+          "anchor": "rb-012-data-ingestion-backlog"
+        },
+        {
+          "text": "Look for slow processing",
+          "anchor": "look-for-slow-processing"
+        },
+        {
+          "text": "Check for timeouts",
+          "anchor": "check-for-timeouts"
+        },
+        {
+          "text": "Emergency Contacts",
+          "anchor": "emergency-contacts"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "product/PAGES.md",
+      "title": "FreshTrack Pro Pages Documentation",
+      "category": "product",
+      "headings": [
+        {
+          "text": "FreshTrack Pro Pages Documentation",
+          "anchor": "freshtrack-pro-pages-documentation"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Route Overview",
+          "anchor": "route-overview"
+        },
+        {
+          "text": "Public Pages",
+          "anchor": "public-pages"
+        },
+        {
+          "text": "Authentication Pages",
+          "anchor": "authentication-pages"
+        },
+        {
+          "text": "Core Application Pages",
+          "anchor": "core-application-pages"
+        },
+        {
+          "text": "Admin Pages",
+          "anchor": "admin-pages"
+        },
+        {
+          "text": "Utility Pages",
+          "anchor": "utility-pages"
+        },
+        {
+          "text": "Page Diagrams Reference",
+          "anchor": "page-diagrams-reference"
+        }
+      ]
+    },
+    {
+      "path": "product/USER_FLOWS.md",
+      "title": "FreshTrack Pro User Flows",
+      "category": "product",
+      "headings": [
+        {
+          "text": "FreshTrack Pro User Flows",
+          "anchor": "freshtrack-pro-user-flows"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Authentication Flows",
+          "anchor": "authentication-flows"
+        },
+        {
+          "text": "Setup & Onboarding Flows",
+          "anchor": "setup-onboarding-flows"
+        },
+        {
+          "text": "Monitoring Flows",
+          "anchor": "monitoring-flows"
+        },
+        {
+          "text": "Alert Management Flows",
+          "anchor": "alert-management-flows"
+        },
+        {
+          "text": "Configuration Flows",
+          "anchor": "configuration-flows"
+        },
+        {
+          "text": "Compliance Flows",
+          "anchor": "compliance-flows"
+        },
+        {
+          "text": "Flow Diagrams Reference",
+          "anchor": "flow-diagrams-reference"
+        }
+      ]
+    },
+    {
+      "path": "qa/COVERAGE_MAP.md",
+      "title": "Coverage Map",
+      "category": "qa",
+      "headings": [
+        {
+          "text": "Coverage Map",
+          "anchor": "coverage-map"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Pages",
+          "anchor": "pages"
+        },
+        {
+          "text": "Components by Feature Area",
+          "anchor": "components-by-feature-area"
+        },
+        {
+          "text": "Hooks",
+          "anchor": "hooks"
+        },
+        {
+          "text": "Library Functions (src/lib/)",
+          "anchor": "library-functions-srclib"
+        },
+        {
+          "text": "Edge Functions (supabase/functions/)",
+          "anchor": "edge-functions-supabasefunctions"
+        },
+        {
+          "text": "Database (Migrations & RLS)",
+          "anchor": "database-migrations-rls"
+        },
+        {
+          "text": "External Integrations",
+          "anchor": "external-integrations"
+        },
+        {
+          "text": "Feature Coverage Summary",
+          "anchor": "feature-coverage-summary"
+        },
+        {
+          "text": "Test File Inventory",
+          "anchor": "test-file-inventory"
+        },
+        {
+          "text": "Priority Matrix",
+          "anchor": "priority-matrix"
+        },
+        {
+          "text": "How to Read This Map",
+          "anchor": "how-to-read-this-map"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "qa/E2E_SCENARIOS.md",
+      "title": "End-to-End Test Scenarios",
+      "category": "qa",
+      "headings": [
+        {
+          "text": "End-to-End Test Scenarios",
+          "anchor": "end-to-end-test-scenarios"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Scenario 1: New Customer Onboarding (P0)",
+          "anchor": "scenario-1-new-customer-onboarding-p0"
+        },
+        {
+          "text": "Scenario 2: Temperature Excursion Alert Lifecycle (P0)",
+          "anchor": "scenario-2-temperature-excursion-alert-lifecycle-p0"
+        },
+        {
+          "text": "Scenario 3: Alert Escalation Chain (P0)",
+          "anchor": "scenario-3-alert-escalation-chain-p0"
+        },
+        {
+          "text": "Scenario 4: Offline Manual Logging with Sync (P1)",
+          "anchor": "scenario-4-offline-manual-logging-with-sync-p1"
+        },
+        {
+          "text": "Scenario 5: Multi-Location Monitoring (P1)",
+          "anchor": "scenario-5-multi-location-monitoring-p1"
+        },
+        {
+          "text": "Scenario 6: Device Failure and Recovery (P1)",
+          "anchor": "scenario-6-device-failure-and-recovery-p1"
+        },
+        {
+          "text": "Scenario 7: Health Inspection Report (P1)",
+          "anchor": "scenario-7-health-inspection-report-p1"
+        },
+        {
+          "text": "Scenario 8: Billing and Plan Upgrade (P2)",
+          "anchor": "scenario-8-billing-and-plan-upgrade-p2"
+        },
+        {
+          "text": "Scenario 9: User Role and Permission Changes (P2)",
+          "anchor": "scenario-9-user-role-and-permission-changes-p2"
+        },
+        {
+          "text": "Scenario 10: Data Integrity Under Load (P2)",
+          "anchor": "scenario-10-data-integrity-under-load-p2"
+        },
+        {
+          "text": "Test Session Log Template",
+          "anchor": "test-session-log-template"
+        },
+        {
+          "text": "E2E Test Session",
+          "anchor": "e2e-test-session"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "qa/KNOWN_GAPS.md",
+      "title": "Known Test Coverage Gaps",
+      "category": "qa",
+      "headings": [
+        {
+          "text": "Known Test Coverage Gaps",
+          "anchor": "known-test-coverage-gaps"
+        },
+        {
+          "text": "Executive Summary",
+          "anchor": "executive-summary"
+        },
+        {
+          "text": "Critical Gaps (P0 - Immediate Risk)",
+          "anchor": "critical-gaps-p0-immediate-risk"
+        },
+        {
+          "text": "High-Priority Gaps (P1 - Significant Risk)",
+          "anchor": "high-priority-gaps-p1-significant-risk"
+        },
+        {
+          "text": "Medium-Priority Gaps (P2)",
+          "anchor": "medium-priority-gaps-p2"
+        },
+        {
+          "text": "Low-Priority Gaps (P3)",
+          "anchor": "low-priority-gaps-p3"
+        },
+        {
+          "text": "Risk Matrix",
+          "anchor": "risk-matrix"
+        },
+        {
+          "text": "Immediate Action Items",
+          "anchor": "immediate-action-items"
+        },
+        {
+          "text": "Testing Debt Tracking",
+          "anchor": "testing-debt-tracking"
+        },
+        {
+          "text": "Appendix: Test Infrastructure Improvements",
+          "anchor": "appendix-test-infrastructure-improvements"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "qa/MANUAL_TESTING.md",
+      "title": "Manual Testing Guide",
+      "category": "qa",
+      "headings": [
+        {
+          "text": "Manual Testing Guide",
+          "anchor": "manual-testing-guide"
+        },
+        {
+          "text": "How to Use This Guide",
+          "anchor": "how-to-use-this-guide"
+        },
+        {
+          "text": "Section 1: Authentication & Onboarding",
+          "anchor": "section-1-authentication-onboarding"
+        },
+        {
+          "text": "Section 2: TTN Configuration",
+          "anchor": "section-2-ttn-configuration"
+        },
+        {
+          "text": "Section 3: Device Management",
+          "anchor": "section-3-device-management"
+        },
+        {
+          "text": "Section 4: Alert Configuration",
+          "anchor": "section-4-alert-configuration"
+        },
+        {
+          "text": "Section 5: Dashboard & Monitoring",
+          "anchor": "section-5-dashboard-monitoring"
+        },
+        {
+          "text": "Section 6: Alert Handling",
+          "anchor": "section-6-alert-handling"
+        },
+        {
+          "text": "Section 7: Manual Temperature Logging",
+          "anchor": "section-7-manual-temperature-logging"
+        },
+        {
+          "text": "Section 8: Reports",
+          "anchor": "section-8-reports"
+        },
+        {
+          "text": "Section 9: Mobile Responsiveness",
+          "anchor": "section-9-mobile-responsiveness"
+        },
+        {
+          "text": "Section 10: Role-Based Access",
+          "anchor": "section-10-role-based-access"
+        },
+        {
+          "text": "Section 11: Browser Compatibility",
+          "anchor": "section-11-browser-compatibility"
+        },
+        {
+          "text": "Section 12: Performance Checks",
+          "anchor": "section-12-performance-checks"
+        },
+        {
+          "text": "Test Session Template",
+          "anchor": "test-session-template"
+        },
+        {
+          "text": "Test Session Report",
+          "anchor": "test-session-report"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "qa/TEST_STRATEGY.md",
+      "title": "Test Strategy",
+      "category": "qa",
+      "headings": [
+        {
+          "text": "Test Strategy",
+          "anchor": "test-strategy"
+        },
+        {
+          "text": "Executive Summary",
+          "anchor": "executive-summary"
+        },
+        {
+          "text": "Testing Philosophy",
+          "anchor": "testing-philosophy"
+        },
+        {
+          "text": "Testing Layers",
+          "anchor": "testing-layers"
+        },
+        {
+          "text": "Testing Responsibilities",
+          "anchor": "testing-responsibilities"
+        },
+        {
+          "text": "Test Environments",
+          "anchor": "test-environments"
+        },
+        {
+          "text": "Start local Supabase",
+          "anchor": "start-local-supabase"
+        },
+        {
+          "text": "Run frontend tests",
+          "anchor": "run-frontend-tests"
+        },
+        {
+          "text": "Run edge function tests",
+          "anchor": "run-edge-function-tests"
+        },
+        {
+          "text": "Test Data Management",
+          "anchor": "test-data-management"
+        },
+        {
+          "text": "Critical Path Coverage",
+          "anchor": "critical-path-coverage"
+        },
+        {
+          "text": "Quality Gates",
+          "anchor": "quality-gates"
+        },
+        {
+          "text": "Metrics and Goals",
+          "anchor": "metrics-and-goals"
+        },
+        {
+          "text": "Running Tests",
+          "anchor": "running-tests"
+        },
+        {
+          "text": "Run all tests",
+          "anchor": "run-all-tests"
+        },
+        {
+          "text": "Run in watch mode",
+          "anchor": "run-in-watch-mode"
+        },
+        {
+          "text": "Run with UI",
+          "anchor": "run-with-ui"
+        },
+        {
+          "text": "Run specific file",
+          "anchor": "run-specific-file"
+        },
+        {
+          "text": "Run with coverage (when configured)",
+          "anchor": "run-with-coverage-when-configured"
+        },
+        {
+          "text": "Navigate to function",
+          "anchor": "navigate-to-function"
+        },
+        {
+          "text": "Run tests",
+          "anchor": "run-tests"
+        },
+        {
+          "text": "Run specific test file",
+          "anchor": "run-specific-test-file"
+        },
+        {
+          "text": "Run with permissions",
+          "anchor": "run-with-permissions"
+        },
+        {
+          "text": "Adding Tests (For Developers)",
+          "anchor": "adding-tests-for-developers"
+        },
+        {
+          "text": "Unit tests - co-located with source",
+          "anchor": "unit-tests-co-located-with-source"
+        },
+        {
+          "text": "Edge function tests",
+          "anchor": "edge-function-tests"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "README.md",
+      "title": "FreshTrack Pro (FrostGuard)",
+      "category": "root",
+      "headings": [
+        {
+          "text": "FreshTrack Pro (FrostGuard)",
+          "anchor": "freshtrack-pro-frostguard"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Goals & Use Cases",
+          "anchor": "goals-use-cases"
+        },
+        {
+          "text": "Tech Stack",
+          "anchor": "tech-stack"
+        },
+        {
+          "text": "Repository Structure",
+          "anchor": "repository-structure"
+        },
+        {
+          "text": "Running Locally",
+          "anchor": "running-locally"
+        },
+        {
+          "text": "Clone the repository",
+          "anchor": "clone-the-repository"
+        },
+        {
+          "text": "Install dependencies",
+          "anchor": "install-dependencies"
+        },
+        {
+          "text": "or: bun install",
+          "anchor": "or-bun-install"
+        },
+        {
+          "text": "Set up environment variables",
+          "anchor": "set-up-environment-variables"
+        },
+        {
+          "text": "Edit .env with your Supabase credentials",
+          "anchor": "edit-env-with-your-supabase-credentials"
+        },
+        {
+          "text": "Start development server",
+          "anchor": "start-development-server"
+        },
+        {
+          "text": "or: bun dev",
+          "anchor": "or-bun-dev"
+        },
+        {
+          "text": "Start local Supabase",
+          "anchor": "start-local-supabase"
+        },
+        {
+          "text": "Run migrations",
+          "anchor": "run-migrations"
+        },
+        {
+          "text": "Start edge functions",
+          "anchor": "start-edge-functions"
+        },
+        {
+          "text": "Build & Deployment",
+          "anchor": "build-deployment"
+        },
+        {
+          "text": "Build for production",
+          "anchor": "build-for-production"
+        },
+        {
+          "text": "or: bun run build",
+          "anchor": "or-bun-run-build"
+        },
+        {
+          "text": "Preview production build",
+          "anchor": "preview-production-build"
+        },
+        {
+          "text": "High-Level System Overview",
+          "anchor": "high-level-system-overview"
+        },
+        {
+          "text": "Documentation Index",
+          "anchor": "documentation-index"
+        },
+        {
+          "text": "Contributing",
+          "anchor": "contributing"
+        },
+        {
+          "text": "License",
+          "anchor": "license"
+        }
+      ]
+    },
+    {
+      "path": "security/AUTH_MODEL.md",
+      "title": "Authentication & Authorization Model",
+      "category": "security",
+      "headings": [
+        {
+          "text": "Authentication & Authorization Model",
+          "anchor": "authentication-authorization-model"
+        },
+        {
+          "text": "Authentication Architecture",
+          "anchor": "authentication-architecture"
+        },
+        {
+          "text": "Password Security",
+          "anchor": "password-security"
+        },
+        {
+          "text": "Authorization Model",
+          "anchor": "authorization-model"
+        },
+        {
+          "text": "Organization/User Separation",
+          "anchor": "organizationuser-separation"
+        },
+        {
+          "text": "Session and Token Security",
+          "anchor": "session-and-token-security"
+        },
+        {
+          "text": "JWT Verification in Edge Functions",
+          "anchor": "jwt-verification-in-edge-functions"
+        },
+        {
+          "text": "API Authentication Methods",
+          "anchor": "api-authentication-methods"
+        },
+        {
+          "text": "Security Events Logged",
+          "anchor": "security-events-logged"
+        },
+        {
+          "text": "Security Recommendations",
+          "anchor": "security-recommendations"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "security/DATA_PROTECTION.md",
+      "title": "Data Protection",
+      "category": "security",
+      "headings": [
+        {
+          "text": "Data Protection",
+          "anchor": "data-protection"
+        },
+        {
+          "text": "Data Classification",
+          "anchor": "data-classification"
+        },
+        {
+          "text": "Encryption at Rest",
+          "anchor": "encryption-at-rest"
+        },
+        {
+          "text": "Encryption in Transit",
+          "anchor": "encryption-in-transit"
+        },
+        {
+          "text": "Secrets Management",
+          "anchor": "secrets-management"
+        },
+        {
+          "text": ".env - VITE_ prefix exposes to browser",
+          "anchor": "env-vite-prefix-exposes-to-browser"
+        },
+        {
+          "text": "Edge function secrets (never exposed to browser)",
+          "anchor": "edge-function-secrets-never-exposed-to-browser"
+        },
+        {
+          "text": "CI/CD Security",
+          "anchor": "cicd-security"
+        },
+        {
+          "text": "Secrets - NEVER commit",
+          "anchor": "secrets-never-commit"
+        },
+        {
+          "text": "Supabase local",
+          "anchor": "supabase-local"
+        },
+        {
+          "text": "Sensitive Data Handling",
+          "anchor": "sensitive-data-handling"
+        },
+        {
+          "text": "Database Security",
+          "anchor": "database-security"
+        },
+        {
+          "text": "Backup and Recovery",
+          "anchor": "backup-and-recovery"
+        },
+        {
+          "text": "Audit and Compliance",
+          "anchor": "audit-and-compliance"
+        },
+        {
+          "text": "Security Monitoring",
+          "anchor": "security-monitoring"
+        },
+        {
+          "text": "Security Hardening Checklist",
+          "anchor": "security-hardening-checklist"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "security/INCIDENT_RESPONSE.md",
+      "title": "Incident Response",
+      "category": "security",
+      "headings": [
+        {
+          "text": "Incident Response",
+          "anchor": "incident-response"
+        },
+        {
+          "text": "Document Information",
+          "anchor": "document-information"
+        },
+        {
+          "text": "Incident Classification",
+          "anchor": "incident-classification"
+        },
+        {
+          "text": "Response Team",
+          "anchor": "response-team"
+        },
+        {
+          "text": "Phase 1: Detection",
+          "anchor": "phase-1-detection"
+        },
+        {
+          "text": "Triage Checklist",
+          "anchor": "triage-checklist"
+        },
+        {
+          "text": "Phase 2: Containment",
+          "anchor": "phase-2-containment"
+        },
+        {
+          "text": "API keys - via Supabase Dashboard",
+          "anchor": "api-keys-via-supabase-dashboard"
+        },
+        {
+          "text": "Settings → API → Regenerate Keys",
+          "anchor": "settings-api-regenerate-keys"
+        },
+        {
+          "text": "JWT secret rotation - Contact Supabase Support",
+          "anchor": "jwt-secret-rotation-contact-supabase-support"
+        },
+        {
+          "text": "This invalidates ALL sessions",
+          "anchor": "this-invalidates-all-sessions"
+        },
+        {
+          "text": "Phase 3: Eradication",
+          "anchor": "phase-3-eradication"
+        },
+        {
+          "text": "Root Cause Template",
+          "anchor": "root-cause-template"
+        },
+        {
+          "text": "Remediation Checklist",
+          "anchor": "remediation-checklist"
+        },
+        {
+          "text": "Phase 4: Recovery",
+          "anchor": "phase-4-recovery"
+        },
+        {
+          "text": "Recovery Checklist",
+          "anchor": "recovery-checklist"
+        },
+        {
+          "text": "Phase 5: Postmortem",
+          "anchor": "phase-5-postmortem"
+        },
+        {
+          "text": "Security Incident Postmortem",
+          "anchor": "security-incident-postmortem"
+        },
+        {
+          "text": "Incident Summary",
+          "anchor": "incident-summary"
+        },
+        {
+          "text": "What Happened",
+          "anchor": "what-happened"
+        },
+        {
+          "text": "Timeline",
+          "anchor": "timeline"
+        },
+        {
+          "text": "Impact",
+          "anchor": "impact"
+        },
+        {
+          "text": "Root Cause",
+          "anchor": "root-cause"
+        },
+        {
+          "text": "What Went Well",
+          "anchor": "what-went-well"
+        },
+        {
+          "text": "What Went Poorly",
+          "anchor": "what-went-poorly"
+        },
+        {
+          "text": "Action Items",
+          "anchor": "action-items"
+        },
+        {
+          "text": "Lessons Learned",
+          "anchor": "lessons-learned"
+        },
+        {
+          "text": "Communication Templates",
+          "anchor": "communication-templates"
+        },
+        {
+          "text": "Tabletop Exercises",
+          "anchor": "tabletop-exercises"
+        },
+        {
+          "text": "Metrics and Improvement",
+          "anchor": "metrics-and-improvement"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "security/SECURITY_OVERVIEW.md",
+      "title": "Security Overview",
+      "category": "security",
+      "headings": [
+        {
+          "text": "Security Overview",
+          "anchor": "security-overview"
+        },
+        {
+          "text": "Executive Summary",
+          "anchor": "executive-summary"
+        },
+        {
+          "text": "Security Principles",
+          "anchor": "security-principles"
+        },
+        {
+          "text": "Trust Boundaries",
+          "anchor": "trust-boundaries"
+        },
+        {
+          "text": "High-Level Security Controls",
+          "anchor": "high-level-security-controls"
+        },
+        {
+          "text": "Security Architecture by Layer",
+          "anchor": "security-architecture-by-layer"
+        },
+        {
+          "text": "Compliance Considerations",
+          "anchor": "compliance-considerations"
+        },
+        {
+          "text": "Security Responsibilities",
+          "anchor": "security-responsibilities"
+        },
+        {
+          "text": "Known Security Considerations",
+          "anchor": "known-security-considerations"
+        },
+        {
+          "text": "Security Contacts",
+          "anchor": "security-contacts"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "security/THREAT_MODEL.md",
+      "title": "Threat Model",
+      "category": "security",
+      "headings": [
+        {
+          "text": "Threat Model",
+          "anchor": "threat-model"
+        },
+        {
+          "text": "Document Information",
+          "anchor": "document-information"
+        },
+        {
+          "text": "Assets",
+          "anchor": "assets"
+        },
+        {
+          "text": "Threat Actors",
+          "anchor": "threat-actors"
+        },
+        {
+          "text": "Attack Surfaces",
+          "anchor": "attack-surfaces"
+        },
+        {
+          "text": "Threat Analysis (STRIDE)",
+          "anchor": "threat-analysis-stride"
+        },
+        {
+          "text": "Attack Scenarios",
+          "anchor": "attack-scenarios"
+        },
+        {
+          "text": "Risk Assessment (DREAD)",
+          "anchor": "risk-assessment-dread"
+        },
+        {
+          "text": "Mitigation Controls",
+          "anchor": "mitigation-controls"
+        },
+        {
+          "text": "Security Testing Recommendations",
+          "anchor": "security-testing-recommendations"
+        },
+        {
+          "text": "Residual Risks",
+          "anchor": "residual-risks"
+        },
+        {
+          "text": "Threat Model Maintenance",
+          "anchor": "threat-model-maintenance"
+        },
+        {
+          "text": "Related Documents",
+          "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "system-map.md",
+      "title": "FrostGuard System Map",
+      "category": "root",
+      "headings": [
+        {
+          "text": "FrostGuard System Map",
+          "anchor": "frostguard-system-map"
+        },
+        {
+          "text": "Data Flow Diagram",
+          "anchor": "data-flow-diagram"
+        },
+        {
+          "text": "Canonical Modules / Functions",
+          "anchor": "canonical-modules-functions"
+        },
+        {
+          "text": "Database Tables by Stage",
+          "anchor": "database-tables-by-stage"
+        },
+        {
+          "text": "Shared Configuration Objects",
+          "anchor": "shared-configuration-objects"
+        },
+        {
+          "text": "Important Invariants",
+          "anchor": "important-invariants"
+        }
+      ]
+    },
+    {
+      "path": "TTN_PRODUCTION_SETUP.md",
+      "title": "TTN Production Secrets Setup",
+      "category": "root",
+      "headings": [
+        {
+          "text": "TTN Production Secrets Setup",
+          "anchor": "ttn-production-secrets-setup"
+        },
+        {
+          "text": "Your TTN Credentials",
+          "anchor": "your-ttn-credentials"
+        },
+        {
+          "text": "Option 1: Using the Setup Script (Recommended)",
+          "anchor": "option-1-using-the-setup-script-recommended"
+        },
+        {
+          "text": "Option 2: Using Supabase CLI Manually",
+          "anchor": "option-2-using-supabase-cli-manually"
+        },
+        {
+          "text": "Set TTN User ID",
+          "anchor": "set-ttn-user-id"
+        },
+        {
+          "text": "Set TTN Admin API Key",
+          "anchor": "set-ttn-admin-api-key"
+        },
+        {
+          "text": "Option 3: Using Supabase Dashboard (If CLI is not available)",
+          "anchor": "option-3-using-supabase-dashboard-if-cli-is-not-available"
+        },
+        {
+          "text": "Verify Configuration",
+          "anchor": "verify-configuration"
+        },
+        {
+          "text": "Security Note",
+          "anchor": "security-note"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        },
+        {
+          "text": "Troubleshooting",
+          "anchor": "troubleshooting"
+        },
+        {
+          "text": "or",
+          "anchor": "or"
+        },
+        {
+          "text": "Support",
+          "anchor": "support"
+        }
+      ]
+    },
+    {
+      "path": "TTN_SETUP.md",
+      "title": "The Things Network (TTN) Setup Guide",
+      "category": "root",
+      "headings": [
+        {
+          "text": "The Things Network (TTN) Setup Guide",
+          "anchor": "the-things-network-ttn-setup-guide"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Prerequisites",
+          "anchor": "prerequisites"
+        },
+        {
+          "text": "Step 1: Create a TTN Admin API Key",
+          "anchor": "step-1-create-a-ttn-admin-api-key"
+        },
+        {
+          "text": "Step 2: Get Your TTN User ID",
+          "anchor": "step-2-get-your-ttn-user-id"
+        },
+        {
+          "text": "Step 3: Configure Supabase Secrets",
+          "anchor": "step-3-configure-supabase-secrets"
+        },
+        {
+          "text": "Set TTN Admin API Key",
+          "anchor": "set-ttn-admin-api-key"
+        },
+        {
+          "text": "Set TTN User ID",
+          "anchor": "set-ttn-user-id"
+        },
+        {
+          "text": "Step 4: Verify Configuration",
+          "anchor": "step-4-verify-configuration"
+        },
+        {
+          "text": "Step 5: Test Provisioning",
+          "anchor": "step-5-test-provisioning"
+        },
+        {
+          "text": "Troubleshooting",
+          "anchor": "troubleshooting"
+        },
+        {
+          "text": "TTN Architecture Details",
+          "anchor": "ttn-architecture-details"
+        },
+        {
+          "text": "Regional Servers",
+          "anchor": "regional-servers"
+        },
+        {
+          "text": "Next Steps",
+          "anchor": "next-steps"
+        },
+        {
+          "text": "Support",
+          "anchor": "support"
+        }
+      ]
+    }
+  ]
+}

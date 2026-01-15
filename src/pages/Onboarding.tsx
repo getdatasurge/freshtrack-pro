@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useSlugAvailability } from "@/hooks/useSlugAvailability";
 import { 
   Thermometer, 
   Building2, 
@@ -98,7 +99,14 @@ const Onboarding = () => {
   const [currentStep, setCurrentStep] = useState<Step>("organization");
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingOrg, setIsCheckingOrg] = useState(true);
-  const [hasCheckedOrg, setHasCheckedOrg] = useState(false);
+  const [ttnStatus, setTtnStatus] = useState<{
+    status: 'idle' | 'provisioning' | 'ready' | 'failed' | 'skipped';
+    error?: string;
+    step?: string;
+    retryable?: boolean;
+    attemptCount?: number;
+    lastHeartbeat?: string;
+  }>({ status: 'idle' });
   const [createdIds, setCreatedIds] = useState<{
     orgId?: string;
     siteId?: string;
@@ -115,61 +123,11 @@ const Onboarding = () => {
     gateway: { name: "", eui: "" },
   });
 
-  // Slug availability state
-  const [slugStatus, setSlugStatus] = useState<{
-    isChecking: boolean;
-    available: boolean | null;
-    suggestions: string[];
-  }>({ isChecking: false, available: null, suggestions: [] });
+  // Use the slug availability hook
+  const { status: slugStatus } = useSlugAvailability(data.organization.slug);
 
-  // Debounced slug check
-  const checkSlugAvailability = useCallback(async (slug: string) => {
-    if (!slug || slug.length < 2) {
-      setSlugStatus({ isChecking: false, available: null, suggestions: [] });
-      return;
-    }
-
-    setSlugStatus(prev => ({ ...prev, isChecking: true }));
-
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/check-slug-available?slug=${encodeURIComponent(slug)}`,
-        { method: "GET", headers: { "Content-Type": "application/json" } }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        setSlugStatus({
-          isChecking: false,
-          available: result.available,
-          suggestions: result.suggestions || [],
-        });
-      } else {
-        // On error, don't block user
-        setSlugStatus({ isChecking: false, available: null, suggestions: [] });
-      }
-    } catch (error) {
-      console.error("Error checking slug:", error);
-      setSlugStatus({ isChecking: false, available: null, suggestions: [] });
-    }
-  }, []);
-
-  // Debounce slug check
+  // Check if user already has an organization
   useEffect(() => {
-    const slug = data.organization.slug;
-    if (!slug) return;
-
-    const timer = setTimeout(() => {
-      checkSlugAvailability(slug);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [data.organization.slug, checkSlugAvailability]);
-
-  // Check if user already has an organization - only once
-  useEffect(() => {
-    if (hasCheckedOrg) return;
-    
     const checkExistingOrg = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -184,21 +142,19 @@ const Onboarding = () => {
           .eq("user_id", user.id)
           .maybeSingle();
 
-        setHasCheckedOrg(true);
         setIsCheckingOrg(false);
 
-        // Only redirect if profile has an org - don't redirect on error
+        // Redirect to callback if profile has an org
         if (!error && profile?.organization_id) {
-          navigate("/dashboard", { replace: true });
+          navigate("/auth/callback", { replace: true });
         }
       } catch (err) {
         console.error("Error checking org:", err);
         setIsCheckingOrg(false);
-        setHasCheckedOrg(true);
       }
     };
     checkExistingOrg();
-  }, [navigate, hasCheckedOrg]);
+  }, [navigate]);
 
   const generateSlug = (name: string) => {
     return name
@@ -223,6 +179,91 @@ const Onboarding = () => {
         ...prev,
         organization: { ...prev.organization, slug: generateSlug(value) },
       }));
+    }
+  };
+
+  // TTN Provisioning function with polling for status updates
+  const provisionTTN = async (orgId: string): Promise<boolean> => {
+    const POLL_INTERVAL_MS = 3000; // Poll every 3 seconds
+    const MAX_POLL_TIME_MS = 90000; // Give up polling after 90 seconds
+    
+    setTtnStatus({ status: 'provisioning', step: 'Starting...' });
+    
+    try {
+      // Kick off provisioning (non-blocking)
+      const { error: provisionError } = await supabase.functions.invoke(
+        'ttn-provision-org',
+        {
+          body: {
+            action: 'provision',
+            organization_id: orgId,
+            // Default to eu1 - Identity Server is always on eu1
+            ttn_region: 'eu1',
+          },
+        }
+      );
+      
+      if (provisionError) {
+        console.error('[Onboarding] TTN provisioning error:', provisionError);
+        setTtnStatus({ 
+          status: 'failed', 
+          error: provisionError.message || 'Provisioning failed',
+          retryable: true 
+        });
+        return false;
+      }
+      
+      // Poll for status updates
+      const startTime = Date.now();
+      while (Date.now() - startTime < MAX_POLL_TIME_MS) {
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+        
+        const { data: statusResult } = await supabase.functions.invoke(
+          'ttn-provision-org',
+          {
+            body: {
+              action: 'status',
+              organization_id: orgId,
+            },
+          }
+        );
+        
+        if (statusResult) {
+          const status = statusResult.provisioning_status;
+          setTtnStatus({
+            status: status === 'completed' ? 'ready' : status,
+            step: statusResult.provisioning_step || statusResult.provisioning_last_step,
+            error: statusResult.provisioning_error,
+            retryable: statusResult.provisioning_can_retry ?? true,
+            attemptCount: statusResult.provisioning_attempt_count,
+            lastHeartbeat: statusResult.provisioning_last_heartbeat_at,
+          });
+          
+          if (status === 'ready' || status === 'completed') {
+            return true;
+          }
+          if (status === 'failed') {
+            return false;
+          }
+        }
+      }
+      
+      // Polling timed out - user can continue, retry from Settings
+      setTtnStatus({
+        status: 'failed',
+        error: 'Provisioning is taking longer than expected. You can continue and retry from Settings.',
+        retryable: true,
+      });
+      return false;
+      
+    } catch (err) {
+      console.error('[Onboarding] TTN provisioning exception:', err);
+      setTtnStatus({ 
+        status: 'failed', 
+        error: 'Provisioning failed unexpectedly. You can retry from Settings.',
+        retryable: true 
+      });
+      return false;
     }
   };
 
@@ -262,42 +303,94 @@ const Onboarding = () => {
 
     setIsLoading(true);
     try {
-      const { data: orgId, error } = await supabase.rpc("create_organization_with_owner", {
+      const { data: result, error } = await supabase.rpc("create_organization_with_owner", {
         p_name: (nameResult as { success: true; data: string }).data,
         p_slug: (slugResult as { success: true; data: string }).data,
         p_timezone: data.organization.timezone,
       });
 
-      if (error) throw error;
-
-      setCreatedIds((prev) => ({ ...prev, orgId }));
-      toast({ title: "Organization created!" });
-      setCurrentStep("site");
-    } catch (error: any) {
-      const errorMessage = error.message || "";
-      
-      // Handle slug conflicts with friendly message and trigger re-check
-      if (errorMessage.includes("organizations_slug_key") || 
-          errorMessage.includes("unique constraint") ||
-          errorMessage.includes("organizations_slug_active_key")) {
-        // Re-check slug to get suggestions
-        await checkSlugAvailability(slugToUse);
+      // Handle RPC transport errors
+      if (error) {
         toast({ 
-          title: "URL Already Taken", 
-          description: "This URL is already in use. Please choose a different one or select from suggestions below.", 
+          title: "Could not create organization", 
+          description: "A server error occurred. Please try again.", 
           variant: "destructive" 
         });
-      } else if (errorMessage.includes("already belongs to an organization")) {
-        toast({ 
-          title: "Already Registered", 
-          description: "Your account is already associated with an organization.", 
-          variant: "destructive" 
-        });
-        // Redirect after delay
-        setTimeout(() => navigate("/dashboard", { replace: true }), 2000);
-      } else {
-        toast({ title: "Error", description: errorMessage, variant: "destructive" });
+        setIsLoading(false);
+        return;
       }
+
+      // Parse structured response from the RPC
+      const response = result as { 
+        ok: boolean; 
+        organization_id?: string; 
+        slug?: string;
+        code?: string; 
+        message?: string; 
+        suggestions?: string[];
+      };
+
+      if (response.ok && response.organization_id) {
+        setCreatedIds((prev) => ({ ...prev, orgId: response.organization_id }));
+        toast({ title: "Organization created!" });
+        
+        // Trigger TTN provisioning in background (non-blocking)
+        // Don't await - let it run while user continues onboarding
+        provisionTTN(response.organization_id).then((success) => {
+          if (success) {
+            console.log('[Onboarding] TTN provisioning completed successfully');
+          } else {
+            console.warn('[Onboarding] TTN provisioning failed, user can retry from Settings');
+          }
+        });
+        
+        setCurrentStep("site");
+      } else {
+        // Handle specific error codes
+        switch (response.code) {
+          case "SLUG_TAKEN":
+            toast({ 
+              title: "URL Already Taken", 
+              description: response.suggestions?.length 
+                ? `Try: ${response.suggestions.slice(0, 3).join(", ")}`
+                : "Please choose a different URL.",
+              variant: "destructive" 
+            });
+            break;
+          case "ALREADY_IN_ORG":
+            toast({ 
+              title: "Already Registered", 
+              description: "Your account is already associated with an organization.", 
+              variant: "destructive" 
+            });
+            setTimeout(() => navigate("/auth/callback", { replace: true }), 2000);
+            break;
+          case "AUTH_REQUIRED":
+            toast({ title: "Please sign in", variant: "destructive" });
+            navigate("/auth", { replace: true });
+            break;
+          case "VALIDATION_ERROR":
+            toast({ 
+              title: "Invalid Input", 
+              description: response.message || "Please check your input.", 
+              variant: "destructive" 
+            });
+            break;
+          default:
+            toast({ 
+              title: "Could not create organization", 
+              description: response.message || "Please try again.", 
+              variant: "destructive" 
+            });
+        }
+      }
+    } catch (err: unknown) {
+      // Network/unexpected errors - never show "slug taken" for these
+      toast({ 
+        title: "Could not create organization", 
+        description: "A server error occurred. Please try again.", 
+        variant: "destructive" 
+      });
     }
     setIsLoading(false);
   };
@@ -934,10 +1027,46 @@ const Onboarding = () => {
                   <h2 className="text-2xl font-bold text-foreground mb-2">
                     You're All Set!
                   </h2>
-                  <p className="text-muted-foreground mb-8 max-w-md mx-auto">
+                  <p className="text-muted-foreground mb-4 max-w-md mx-auto">
                     Your organization, site, area, {createdIds.gatewayId ? "gateway, " : ""}and first unit have been created. 
                     You can now start monitoring temperatures.
                   </p>
+                  
+                  {/* TTN Status Banner */}
+                  {ttnStatus.status === 'provisioning' && (
+                    <div className="mb-6 p-3 rounded-lg bg-muted/50 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Setting up IoT connection{ttnStatus.step ? `: ${ttnStatus.step}` : '...'}</span>
+                    </div>
+                  )}
+                  
+                  {ttnStatus.status === 'failed' && (
+                    <div className="mb-6 p-3 rounded-lg bg-warning/10 border border-warning/20">
+                      <div className="flex items-center justify-center gap-2 text-sm text-warning mb-2">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>IoT setup needs attention</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-2">{ttnStatus.error}</p>
+                      {ttnStatus.retryable && createdIds.orgId && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => provisionTTN(createdIds.orgId!)}
+                          className="text-xs"
+                        >
+                          Retry Setup
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                  
+                  {ttnStatus.status === 'ready' && (
+                    <div className="mb-6 p-3 rounded-lg bg-safe/10 flex items-center justify-center gap-2 text-sm text-safe">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>IoT connection ready</span>
+                    </div>
+                  )}
+                  
                   <div className="flex flex-col items-center gap-3">
                     <Button
                       onClick={() => navigate("/settings?tab=sensors&action=add")}

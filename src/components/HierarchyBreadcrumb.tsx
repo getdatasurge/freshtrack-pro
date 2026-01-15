@@ -31,12 +31,15 @@ export function HierarchyBreadcrumb({ items, actions, className }: HierarchyBrea
   const navigate = useNavigate();
 
   return (
-    <div className={cn("flex items-center justify-between gap-4 mb-4", className)}>
-      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm min-w-0 overflow-hidden">
+    <div className={cn("flex items-center justify-between gap-4 mb-4 w-full", className)}>
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm min-w-0 flex-1">
         {items.map((item, index) => (
           <div key={index} className="flex items-center gap-2 shrink-0">
             {index > 0 && (
-              <span className="text-muted-foreground/60 select-none">|</span>
+              <span 
+                className="w-0.5 h-4 rounded-full bg-muted-foreground/40 select-none" 
+                aria-hidden="true"
+              />
             )}
             
             {item.isCurrentPage && item.siblings && item.siblings.length > 0 ? (

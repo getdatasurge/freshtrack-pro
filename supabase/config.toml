@@ -12,6 +12,10 @@ verify_jwt = false
 [functions.manage-ttn-settings]
 verify_jwt = false
 
+# TTN settings sync from Emulator - uses API key auth only
+[functions.sync-ttn-settings]
+verify_jwt = false
+
 [functions.check-password-breach]
 verify_jwt = false
 
@@ -56,6 +60,10 @@ verify_jwt = false
 [functions.send-sms-alert]
 verify_jwt = false
 
+# Telnyx webhook configuration - user-facing, requires JWT
+[functions.telnyx-configure-webhook]
+verify_jwt = false
+
 # TTN provisioning functions - internal, use service role key
 [functions.ttn-manage-application]
 verify_jwt = false
@@ -77,4 +85,56 @@ verify_jwt = false
 
 # TTN list devices - handles CORS preflight and custom JWT verification
 [functions.ttn-list-devices]
+verify_jwt = false
+
+# TTN gateway provisioning - handles CORS preflight
+[functions.ttn-provision-gateway]
+verify_jwt = false
+
+# TTN bootstrap - handles CORS preflight and custom JWT verification
+[functions.ttn-bootstrap]
+verify_jwt = false
+
+# TTN gateway preflight - validates API key type and gateway permissions
+[functions.ttn-gateway-preflight]
+verify_jwt = false
+
+# Org state API - pull-based sync for Emulator, uses API key auth
+[functions.org-state-api]
+verify_jwt = false
+
+# Sensor assignment endpoint for Emulator - uses API key auth
+[functions.update-sensor-assignment]
+verify_jwt = false
+
+# Health check - public endpoint for system monitoring
+[functions.health-check]
+verify_jwt = false
+
+# Update TTN webhook - handles CORS preflight and custom JWT verification
+[functions.update-ttn-webhook]
+verify_jwt = false
+
+# TTN provisioning worker - scheduled job, uses service role key
+[functions.ttn-provision-worker]
+verify_jwt = false
+
+# TTN device existence check - handles CORS preflight
+[functions.check-ttn-device-exists]
+verify_jwt = false
+
+# Upload public assets - internal function for compliance assets
+[functions.upload-public-asset]
+verify_jwt = false
+
+# Telnyx toll-free verification status - handles CORS preflight and custom JWT verification
+[functions.telnyx-verification-status]
+verify_jwt = false
+
+# Verify public asset URL accessibility - handles CORS preflight
+[functions.verify-public-asset]
+verify_jwt = false
+
+# Fetch org state - used by emulator, uses API key auth
+[functions.fetch-org-state]
 verify_jwt = false

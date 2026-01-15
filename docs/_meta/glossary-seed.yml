@@ -1,0 +1,68 @@
+# Glossary Seed File
+# This file defines terms and definitions for auto-generation of GLOSSARY.md
+# Format: term: definition
+
+# Architecture Terms
+RLS: Row Level Security - PostgreSQL feature that restricts data access at the row level based on user context
+Edge Function: Serverless function deployed on Supabase's edge network for low-latency API endpoints
+Multi-tenant: Architecture where a single application instance serves multiple isolated organizations
+JWT: JSON Web Token - compact, URL-safe token format used for authentication and authorization
+Service Role Key: Privileged API key that bypasses RLS policies, used only in server-side contexts
+Anon Key: Public API key with restricted access, safe for client-side use
+
+# Product Terms
+Unit: A refrigeration unit (cooler, freezer, walk-in) being monitored for temperature compliance
+Site: A physical location containing one or more units under an organization
+Excursion: A temperature reading outside the configured safe range for a unit
+Alert Rule: Configuration defining temperature thresholds and timing for generating alerts
+Check-in Interval: The configured frequency at which a sensor should report temperature readings
+Confirm Time: Delay before a temperature excursion triggers an active alarm (prevents false positives)
+
+# IoT Hardware Terms
+LoRa: Long Range - low-power wireless protocol for IoT sensor communication
+TTN: The Things Network - community and enterprise LoRaWAN network infrastructure
+DevEUI: Device Extended Unique Identifier - globally unique 64-bit identifier for LoRa devices
+Gateway: LoRaWAN gateway that receives sensor transmissions and forwards to TTN
+Join Request: LoRaWAN procedure where a device authenticates and joins the network
+Uplink: Data transmission from sensor to network (readings, status)
+Downlink: Data transmission from network to sensor (configuration, commands)
+
+# Alert System Terms
+Escalation: Process of notifying additional contacts when an alert is not acknowledged
+Notification Policy: Configuration for how and when to send alert notifications
+Quiet Hours: Time periods when non-critical notifications are suppressed
+MTTR: Mean Time To Resolution - average time from alert creation to resolution
+
+# Monitoring Terms
+Health Check: Automated system status verification across all components
+Degraded: System state where functionality is impaired but not completely failed
+Debug Terminal: Developer tool displaying real-time application logs and events
+Event Log: Timestamped record of system and business events for auditing
+
+# Security Terms
+RBAC: Role-Based Access Control - permission system based on user roles within organizations
+Organization Context: The tenant boundary that determines data access scope
+Session Token: Time-limited authentication credential stored after user login
+MFA: Multi-Factor Authentication - requiring multiple verification methods for login
+
+# Data Terms
+Sensor Reading: Individual temperature measurement with timestamp and metadata
+Reading Buffer: Temporary storage for sensor readings before database persistence
+Soft Delete: Marking records as deleted without physical removal (preserves audit trail)
+Cascade: Automatic propagation of database operations to related records
+
+# Integration Terms
+Webhook: HTTP callback triggered by external events (TTN data, Stripe payments, Telnyx delivery status)
+API Endpoint: URL path that accepts requests and returns responses
+Idempotency: Property where repeated operations produce the same result
+Rate Limiting: Restricting the number of requests within a time window
+Messaging Profile: Telnyx configuration grouping phone numbers, webhooks, and message settings under a named profile
+Toll-Free Verification: Regulatory process requiring business verification before sending SMS from toll-free numbers
+Ed25519 Signature: Cryptographic signature algorithm used by Telnyx to verify webhook authenticity
+Opt-In Asset: Image or document proving customer consent for SMS communications
+
+# Development Terms
+Supabase: Backend-as-a-service platform providing PostgreSQL, Auth, and Edge Functions
+Vite: Modern frontend build tool for development and production bundling
+React Query: Data fetching and caching library for React applications
+Zustand: Lightweight state management library for React

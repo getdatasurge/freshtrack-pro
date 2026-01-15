@@ -64,7 +64,7 @@ const Auth = () => {
         return;
       }
       if (session?.user) {
-        navigate("/dashboard");
+        navigate("/auth/callback", { replace: true });
       }
     });
 
@@ -75,7 +75,7 @@ const Auth = () => {
         return;
       }
       if (session?.user) {
-        navigate("/dashboard");
+        navigate("/auth/callback", { replace: true });
       }
     });
 
@@ -248,7 +248,7 @@ const Auth = () => {
       return;
     }
     
-    const redirectUrl = `${window.location.origin}/dashboard`;
+    const redirectUrl = `${window.location.origin}/auth/callback`;
 
     const { error } = await supabase.auth.signUp({
       email: signUpForm.email,
@@ -297,7 +297,7 @@ const Auth = () => {
       type: 'signup',
       email: pendingEmail,
       options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
     if (error) {
