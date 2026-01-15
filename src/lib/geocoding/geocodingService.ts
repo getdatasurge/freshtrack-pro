@@ -94,6 +94,9 @@ export async function searchAddress(query: string): Promise<GeocodingResult[]> {
     );
     
     if (!response.ok) {
+      if (response.status === 429) {
+        throw new Error("Too many requests. Please wait a moment and try again.");
+      }
       throw new Error(`Geocoding request failed: ${response.status}`);
     }
     

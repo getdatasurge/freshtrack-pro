@@ -106,9 +106,18 @@ export interface EntityDashboardProps {
     at: string | null;
     source: "sensor" | "manual" | null;
   };
-  site?: { id: string; name: string; organization_id: string };
+  site?: { 
+    id: string; 
+    name: string; 
+    organization_id: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    timezone?: string;
+  };
   areas?: Array<{ id: string; name: string; unitsCount: number }>;
   totalUnits?: number;
+  /** Callback to refetch site data after location changes */
+  onSiteLocationChange?: () => void;
 }
 
 function computeDateRange(state: TimelineState): { from: Date; to: Date } {
@@ -144,6 +153,7 @@ export function EntityDashboard({
   site,
   areas = [],
   totalUnits = 0,
+  onSiteLocationChange,
 }: EntityDashboardProps) {
   const { state, actions } = useLayoutManager(entityType, entityId, organizationId, userId);
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
@@ -211,13 +221,14 @@ export function EntityDashboard({
       totalUnits,
       recentlyAddedWidgetId,
       onClearRecentlyAdded: handleClearRecentlyAdded,
+      onSiteLocationChange,
     };
     const result: Record<string, Record<string, unknown>> = {};
     state.activeLayout.config.widgets.forEach((w) => {
       result[w.i] = allProps as unknown as Record<string, unknown>;
     });
     return result;
-  }, [entityType, entityId, organizationId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded]);
+  }, [entityType, entityId, organizationId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange]);
 
   const handleLayoutChange = useCallback((layout: WidgetPosition[]) => actions.updatePositions(layout), [actions]);
   const handleRestoreWidget = useCallback((widgetId: string) => actions.toggleWidgetVisibility(widgetId), [actions]);
