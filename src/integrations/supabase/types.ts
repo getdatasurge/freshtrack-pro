@@ -1871,6 +1871,33 @@ export type Database = {
           },
         ]
       }
+      platform_roles: {
+        Row: {
+          granted_at: string
+          granted_by: string | null
+          id: string
+          notes: string | null
+          role: Database["public"]["Enums"]["platform_role"]
+          user_id: string
+        }
+        Insert: {
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          notes?: string | null
+          role?: Database["public"]["Enums"]["platform_role"]
+          user_id: string
+        }
+        Update: {
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          notes?: string | null
+          role?: Database["public"]["Enums"]["platform_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -2408,6 +2435,48 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      super_admin_audit_log: {
+        Row: {
+          action: string
+          admin_user_id: string
+          created_at: string
+          details: Json | null
+          id: string
+          impersonated_user_id: string | null
+          ip_address: unknown
+          target_id: string | null
+          target_org_id: string | null
+          target_type: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          action: string
+          admin_user_id: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          impersonated_user_id?: string | null
+          ip_address?: unknown
+          target_id?: string | null
+          target_org_id?: string | null
+          target_type?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          action?: string
+          admin_user_id?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          impersonated_user_id?: string | null
+          ip_address?: unknown
+          target_id?: string | null
+          target_org_id?: string | null
+          target_type?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
       }
       telnyx_webhook_config: {
         Row: {
@@ -3295,6 +3364,19 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_current_user_super_admin: { Args: never; Returns: boolean }
+      is_super_admin: { Args: { check_user_id: string }; Returns: boolean }
+      log_super_admin_action: {
+        Args: {
+          p_action: string
+          p_details?: Json
+          p_impersonated_user_id?: string
+          p_target_id?: string
+          p_target_org_id?: string
+          p_target_type?: string
+        }
+        Returns: string
+      }
       process_sensor_cleanup_queue: { Args: never; Returns: Json }
       soft_delete_organization: {
         Args: { p_org_id: string; p_user_id: string }
@@ -3349,6 +3431,7 @@ export type Database = {
         | "completed"
         | "failed"
         | "expired"
+      platform_role: "SUPER_ADMIN"
       subscription_plan: "starter" | "pro" | "haccp" | "enterprise"
       subscription_status:
         | "trial"
@@ -3532,6 +3615,7 @@ export const Constants = {
         "failed",
         "expired",
       ],
+      platform_role: ["SUPER_ADMIN"],
       subscription_plan: ["starter", "pro", "haccp", "enterprise"],
       subscription_status: [
         "trial",
