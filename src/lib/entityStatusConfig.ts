@@ -25,12 +25,12 @@ export const SENSOR_STATUS_CONFIG: Record<string, EntityStatusConfig> = {
     }
   },
   joining: {
-    label: "Joining...",
+    label: "Awaiting Uplink",
     variant: "outline",
-    className: "border-yellow-500 text-yellow-600",
+    className: "border-accent text-accent",
     tooltip: {
-      meaning: "Device has been registered but has not yet completed LoRaWAN join",
-      systemState: "Waiting for device to power on and join the network",
+      meaning: "Device is provisioned in TTN but hasn't sent data yet",
+      systemState: "Device is registered and ready to communicate",
       userAction: "Ensure device is powered and in range of a gateway"
     }
   },
