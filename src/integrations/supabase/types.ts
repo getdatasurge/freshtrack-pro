@@ -3189,6 +3189,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_manage_annotations: {
+        Args: { _org_id: string; _user_id: string }
+        Returns: boolean
+      }
       can_view_all_audit_logs: {
         Args: { _org_id: string; _user_id: string }
         Returns: boolean

@@ -25,6 +25,7 @@ export interface RolePermissions {
   canRestoreEntities: boolean;
   canPermanentlyDelete: boolean;
   canCustomizeDashboard: boolean;
+  canManageAnnotations: boolean;
 }
 
 // Define permissions for each role
@@ -44,6 +45,7 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canRestoreEntities: true,
     canPermanentlyDelete: true,
     canCustomizeDashboard: true,
+    canManageAnnotations: true,
   },
   admin: {
     canLogTemps: true,
@@ -60,6 +62,7 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canRestoreEntities: true,
     canPermanentlyDelete: true,
     canCustomizeDashboard: true,
+    canManageAnnotations: true,
   },
   manager: {
     canLogTemps: true,
@@ -76,6 +79,7 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canRestoreEntities: false,
     canPermanentlyDelete: false,
     canCustomizeDashboard: true,
+    canManageAnnotations: true,
   },
   staff: {
     canLogTemps: true,
@@ -92,6 +96,7 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canRestoreEntities: false,
     canPermanentlyDelete: false,
     canCustomizeDashboard: false,
+    canManageAnnotations: false,
   },
   viewer: {
     canLogTemps: false,
@@ -108,6 +113,7 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canRestoreEntities: false,
     canPermanentlyDelete: false,
     canCustomizeDashboard: false,
+    canManageAnnotations: false,
   },
   inspector: {
     canLogTemps: false,
@@ -124,6 +130,7 @@ const rolePermissions: Record<AppRole, RolePermissions> = {
     canRestoreEntities: false,
     canPermanentlyDelete: false,
     canCustomizeDashboard: false,
+    canManageAnnotations: false,
   },
 };
 
@@ -195,6 +202,7 @@ export function getPermissions(role: AppRole | null): RolePermissions {
       canRestoreEntities: false,
       canPermanentlyDelete: false,
       canCustomizeDashboard: false,
+      canManageAnnotations: false,
     };
   }
   return rolePermissions[role];
