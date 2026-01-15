@@ -310,7 +310,7 @@ const GatewaySiteSelector = ({
       }}
     >
       <SelectTrigger className={cn(
-        "w-[180px] h-8",
+        "w-full min-w-[100px] max-w-[140px] h-8",
         !gateway.site_id && "text-muted-foreground border-dashed"
       )}>
         <SelectValue>
@@ -511,7 +511,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                       <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.name} />
                     </span>
                   </TableHead>
-                  <TableHead>
+                  <TableHead className="hidden sm:table-cell">
                     <span className="inline-flex items-center">
                       Gateway EUI
                       <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.gatewayEui} />
@@ -523,7 +523,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                       <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.site} />
                     </span>
                   </TableHead>
-                  <TableHead>
+                  <TableHead className="hidden lg:table-cell">
                     <span className="inline-flex items-center">
                       Status
                       <ColumnHeaderTooltip content={GATEWAY_COLUMN_TOOLTIPS.status} />
@@ -531,11 +531,10 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                   </TableHead>
                   <TableHead>
                     <span className="inline-flex items-center">
-                      TTN
-                      <ColumnHeaderTooltip content="The Things Network registration status. Provision gateways to TTN to receive sensor data." />
+                      Actions
+                      <ColumnHeaderTooltip content="TTN registration status and edit actions" />
                     </span>
                   </TableHead>
-                  {canEdit && <TableHead className="w-[100px]">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -544,7 +543,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                   return (
                     <TableRow key={gateway.id}>
                       <TableCell className="font-medium">{gateway.name}</TableCell>
-                      <TableCell className="font-mono text-sm">
+                      <TableCell className="hidden sm:table-cell font-mono text-sm">
                         {formatEUI(gateway.gateway_eui)}
                       </TableCell>
                       <TableCell>
@@ -559,43 +558,47 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                           siteName || <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden lg:table-cell">
                         <GatewayStatusBadgeWithTooltip 
                           status={gateway.status} 
                           siteName={siteName} 
                         />
                       </TableCell>
                       <TableCell>
-                        <GatewayProvisionButton
-                          gateway={gateway as Gateway & { ttn_gateway_id?: string | null; ttn_last_error?: string | null }}
-                          ttnConfig={ttnConfig}
-                          isProvisioning={provisionGateway.isProvisioning(gateway.id)}
-                          onProvision={() => provisionGateway.mutate({ 
-                            gatewayId: gateway.id, 
-                            organizationId 
-                          })}
-                        />
+                        <div className="flex flex-col gap-2">
+                          {/* TTN status */}
+                          <GatewayProvisionButton
+                            gateway={gateway as Gateway & { ttn_gateway_id?: string | null; ttn_last_error?: string | null }}
+                            ttnConfig={ttnConfig}
+                            isProvisioning={provisionGateway.isProvisioning(gateway.id)}
+                            onProvision={() => provisionGateway.mutate({ 
+                              gatewayId: gateway.id, 
+                              organizationId 
+                            })}
+                          />
+                          {/* Edit actions */}
+                          {canEdit && (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => setEditGateway(gateway)}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => setDeleteGateway(gateway)}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
-                      {canEdit && (
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setEditGateway(gateway)}
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setDeleteGateway(gateway)}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      )}
                     </TableRow>
                   );
                 })}

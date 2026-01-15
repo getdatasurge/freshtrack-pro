@@ -158,7 +158,7 @@ const SensorSiteSelector = ({
       onValueChange={(value) => onSiteChange(sensor, value === "unassigned" ? null : value)}
     >
       <SelectTrigger className={cn(
-        "h-8 w-[160px]",
+        "h-8 w-full min-w-[100px] max-w-[140px]",
         !sensor.site_id && "border-dashed text-muted-foreground"
       )}>
         <div className="flex items-center gap-1.5">
@@ -243,7 +243,7 @@ const SensorUnitSelector = ({
       onValueChange={(value) => onUnitChange(sensor, value === "unassigned" ? null : value)}
     >
       <SelectTrigger className={cn(
-        "h-8 w-[160px]",
+        "h-8 w-full min-w-[100px] max-w-[140px]",
         !sensor.unit_id && "border-dashed text-muted-foreground"
       )}>
         <div className="flex items-center gap-1.5">
@@ -366,19 +366,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     return unit?.name || "Unknown Unit";
   };
 
-  const getLocationDisplay = (sensor: LoraSensor) => {
-    const siteName = getSiteName(sensor.site_id);
-    const unitName = getUnitName(sensor.unit_id);
-    
-    if (unitName && siteName) {
-      return `${siteName} → ${unitName}`;
-    } else if (siteName) {
-      return siteName;
-    } else if (unitName) {
-      return unitName;
-    }
-    return "—";
-  };
+  // Note: getLocationDisplay was removed as columns are now consolidated
 
   const getSensorTypeLabel = (type: LoraSensorType) => {
     switch (type) {
@@ -690,11 +678,11 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                   </TableHead>
                   <TableHead>
                     <span className="inline-flex items-center">
-                      DevEUI / TTN Device ID
+                      DevEUI
                       <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.devEui} />
                     </span>
                   </TableHead>
-                  <TableHead>
+                  <TableHead className="hidden lg:table-cell">
                     <span className="inline-flex items-center">
                       Type
                       <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.type} />
@@ -702,23 +690,17 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                   </TableHead>
                   <TableHead>
                     <span className="inline-flex items-center">
-                      Location
-                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.location} />
+                      Assignment
+                      <ColumnHeaderTooltip content="Site and unit this sensor is assigned to" />
                     </span>
                   </TableHead>
-                  <TableHead>
-                    <span className="inline-flex items-center">
-                      Unit
-                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.unit} />
-                    </span>
-                  </TableHead>
-                  <TableHead>
+                  <TableHead className="hidden sm:table-cell">
                     <span className="inline-flex items-center">
                       Status
                       <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.status} />
                     </span>
                   </TableHead>
-                  <TableHead>
+                  <TableHead className="hidden xl:table-cell">
                     <span className="inline-flex items-center">
                       Last Uplink
                       <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.lastUplink} />
@@ -726,11 +708,10 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                   </TableHead>
                   <TableHead>
                     <span className="inline-flex items-center">
-                      TTN Status
-                      <ColumnHeaderTooltip content="Whether this device exists in The Things Network. Use 'Check TTN' to detect, then Provision or Unprovision as needed." />
+                      Actions
+                      <ColumnHeaderTooltip content="TTN status, provisioning, and edit actions" />
                     </span>
                   </TableHead>
-                  {canEdit && <TableHead className="w-[100px]">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -738,9 +719,10 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                   const ttnDeviceId = sensor.ttn_device_id || generateTtnDeviceId(sensor.dev_eui);
                   return (
                   <TableRow key={sensor.id}>
+                    {/* Name + badges */}
                     <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <span>{sensor.name}</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="whitespace-nowrap">{sensor.name}</span>
                         {!sensor.app_key && !sensor.ttn_device_id && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -771,143 +753,139 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                         )}
                       </div>
                     </TableCell>
+                    
+                    {/* DevEUI - compact, tooltip for TTN Device ID */}
                     <TableCell>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1">
-                          <span className="font-mono text-xs">{formatEUI(sensor.dev_eui)}</span>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-5 w-5"
-                                onClick={() => handleCopy(sensor.dev_eui.toLowerCase().replace(/[:\-\s]/g, ''), "DevEUI")}
-                              >
-                                {copiedId === sensor.dev_eui.toLowerCase().replace(/[:\-\s]/g, '') ? (
-                                  <Check className="h-3 w-3 text-green-600" />
-                                ) : (
-                                  <Copy className="h-3 w-3 text-muted-foreground" />
-                                )}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Copy DevEUI</TooltipContent>
-                          </Tooltip>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="font-mono text-xs text-muted-foreground">{ttnDeviceId}</span>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-5 w-5"
-                                onClick={() => handleCopy(ttnDeviceId, "TTN Device ID")}
-                              >
-                                {copiedId === ttnDeviceId ? (
-                                  <Check className="h-3 w-3 text-green-600" />
-                                ) : (
-                                  <Copy className="h-3 w-3 text-muted-foreground" />
-                                )}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Copy TTN Device ID</TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-xs">{formatEUI(sensor.dev_eui)}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5"
+                              onClick={() => handleCopy(sensor.dev_eui.toLowerCase().replace(/[:\-\s]/g, ''), "DevEUI")}
+                            >
+                              {copiedId === sensor.dev_eui.toLowerCase().replace(/[:\-\s]/g, '') ? (
+                                <Check className="h-3 w-3 text-green-600" />
+                              ) : (
+                                <Copy className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </Button>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="font-mono text-xs">
+                          <p>TTN Device ID: {ttnDeviceId}</p>
+                        </TooltipContent>
+                      </Tooltip>
                     </TableCell>
-                    <TableCell>
+                    
+                    {/* Type - hidden on smaller screens */}
+                    <TableCell className="hidden lg:table-cell">
                       <div className="flex items-center gap-2">
                         {getSensorTypeIcon(sensor.sensor_type)}
-                        <span>{getSensorTypeLabel(sensor.sensor_type)}</span>
+                        <span className="whitespace-nowrap">{getSensorTypeLabel(sensor.sensor_type)}</span>
                       </div>
                     </TableCell>
+                    
+                    {/* Assignment - Site + Unit stacked */}
                     <TableCell>
                       {canEdit ? (
-                        <SensorSiteSelector
-                          sensor={sensor}
-                          sites={sites}
-                          getSiteName={getSiteName}
-                          onSiteChange={handleSiteChange}
-                          isUpdating={updatingSensorId === sensor.id}
-                        />
+                        <div className="space-y-1">
+                          <SensorSiteSelector
+                            sensor={sensor}
+                            sites={sites}
+                            getSiteName={getSiteName}
+                            onSiteChange={handleSiteChange}
+                            isUpdating={updatingSensorId === sensor.id}
+                          />
+                          <SensorUnitSelector
+                            sensor={sensor}
+                            units={units}
+                            getUnitName={getUnitName}
+                            onUnitChange={handleUnitChange}
+                            isUpdating={updatingUnitSensorId === sensor.id}
+                          />
+                        </div>
                       ) : (
-                        getSiteName(sensor.site_id) || "—"
+                        <div className="text-sm">
+                          <div>{getSiteName(sensor.site_id) || "—"}</div>
+                          <div className="text-muted-foreground">{getUnitName(sensor.unit_id) || "—"}</div>
+                        </div>
                       )}
                     </TableCell>
-                    <TableCell>
-                      {canEdit ? (
-                        <SensorUnitSelector
-                          sensor={sensor}
-                          units={units}
-                          getUnitName={getUnitName}
-                          onUnitChange={handleUnitChange}
-                          isUpdating={updatingUnitSensorId === sensor.id}
-                        />
-                      ) : (
-                        getUnitName(sensor.unit_id) || "—"
-                      )}
-                    </TableCell>
-                    <TableCell>
+                    
+                    {/* Status - hidden on mobile */}
+                    <TableCell className="hidden sm:table-cell">
                       <StatusBadgeWithTooltip status={getEffectiveStatus(sensor)} />
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    
+                    {/* Last Uplink - hidden on smaller screens */}
+                    <TableCell className="hidden xl:table-cell text-sm text-muted-foreground">
                       {formatLastUplink(sensor.last_seen_at, sensor.status)}
                     </TableCell>
+                    
+                    {/* Actions - TTN status + edit/delete combined */}
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <TtnProvisioningStatusBadge
-                          state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
-                          lastCheckAt={sensor.last_provision_check_at}
-                          lastError={sensor.last_provision_check_error}
-                        />
-                        <TtnActions
-                          state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
-                          isCheckingTtn={checkingSensorId === sensor.id || (checkTtnStatus.isPending && checkingSensorId === null)}
-                          isProvisioning={provisionSensor.isProvisioning(sensor.id)}
-                          onCheckTtn={() => handleCheckTtn(sensor.id)}
-                          onProvision={() => handleProvision(sensor)}
-                          onUnprovision={() => handleUnprovision(sensor)}
-                          canEdit={canEdit}
-                        />
+                      <div className="flex flex-col gap-2">
+                        {/* TTN Status row */}
+                        <div className="flex items-center gap-1">
+                          <TtnProvisioningStatusBadge
+                            state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
+                            lastCheckAt={sensor.last_provision_check_at}
+                            lastError={sensor.last_provision_check_error}
+                          />
+                          <TtnActions
+                            state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
+                            isCheckingTtn={checkingSensorId === sensor.id || (checkTtnStatus.isPending && checkingSensorId === null)}
+                            isProvisioning={provisionSensor.isProvisioning(sensor.id)}
+                            onCheckTtn={() => handleCheckTtn(sensor.id)}
+                            onProvision={() => handleProvision(sensor)}
+                            onUnprovision={() => handleUnprovision(sensor)}
+                            canEdit={canEdit}
+                          />
+                        </div>
+                        {/* Edit actions row */}
+                        {canEdit && (
+                          <div className="flex items-center gap-1">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => setViewRawSensor(sensor)}
+                                >
+                                  <Code className="h-4 w-4 text-muted-foreground" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>View Raw JSON</TooltipContent>
+                            </Tooltip>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => setEditSensor(sensor)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => setDeleteSensor(sensor)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Archive sensor</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        )}
                       </div>
                     </TableCell>
-                    {canEdit && (
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setViewRawSensor(sensor)}
-                              >
-                                <Code className="h-4 w-4 text-muted-foreground" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>View Raw JSON</TooltipContent>
-                          </Tooltip>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setEditSensor(sensor)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setDeleteSensor(sensor)}
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Archive sensor</TooltipContent>
-                          </Tooltip>
-                        </div>
-                      </TableCell>
-                    )}
                   </TableRow>
                 )})}
               </TableBody>
