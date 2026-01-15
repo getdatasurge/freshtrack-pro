@@ -115,29 +115,21 @@ export function StaticMapPreview({
         </div>
       )}
 
-      {/* Map tile - we show a 3x3 grid for better context */}
-      <div
-        className="relative w-full h-full"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 256px)",
-          gridTemplateRows: "repeat(3, 256px)",
-          transform: `translate(${-offsetX - 256 + 128}px, ${-offsetY - 256 + 64}px)`,
-        }}
-      >
-        {[-1, 0, 1].map((dy) =>
-          [-1, 0, 1].map((dx) => (
-            <img
-              key={`${dx}-${dy}`}
-              src={`https://tile.openstreetmap.org/${zoom}/${x + dx}/${y + dy}.png`}
-              alt=""
-              className="w-[256px] h-[256px] object-cover"
-              onLoad={() => setImageLoaded(true)}
-              onError={() => setImageError(true)}
-              crossOrigin="anonymous"
-            />
-          ))
-        )}
+      {/* Map tile - single centered tile with overflow hidden to prevent modal overflow */}
+      <div className="absolute inset-0 overflow-hidden">
+        <img
+          src={tileUrl}
+          alt=""
+          className="absolute w-[256px] h-[256px] object-cover"
+          style={{
+            left: "50%",
+            top: "50%",
+            transform: `translate(calc(-50% - ${offsetX - 128}px), calc(-50% - ${offsetY - 128}px))`,
+          }}
+          onLoad={() => setImageLoaded(true)}
+          onError={() => setImageError(true)}
+          crossOrigin="anonymous"
+        />
       </div>
 
       {/* Pin marker - centered */}

@@ -194,8 +194,8 @@ export function SiteLocationModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <MapPin className="h-5 w-5" />
             Set Site Location
@@ -206,121 +206,126 @@ export function SiteLocationModal({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {/* Address Search */}
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2 text-sm font-medium">
-                <Search className="w-4 h-4 text-muted-foreground" />
-                Search Address
-              </Label>
-              <AddressSearchInput
-                onSelect={handleAddressSelect}
-                placeholder="Search city, address, or ZIP..."
-              />
-              <p className="text-xs text-muted-foreground">
-                Search for an address to auto-fill coordinates
-              </p>
-            </div>
-
-            {/* Lat/Lon Fields */}
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="latitude"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Latitude</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="any"
-                        placeholder="40.7128"
-                        {...field}
-                        onChange={(e) =>
-                          field.onChange(
-                            e.target.value ? parseFloat(e.target.value) : undefined
-                          )
-                        }
-                        value={field.value ?? ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="longitude"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Longitude</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        step="any"
-                        placeholder="-74.0060"
-                        {...field}
-                        onChange={(e) =>
-                          field.onChange(
-                            e.target.value ? parseFloat(e.target.value) : undefined
-                          )
-                        }
-                        value={field.value ?? ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Timezone */}
-            <FormField
-              control={form.control}
-              name="timezone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-muted-foreground" />
-                    Timezone
-                  </FormLabel>
-                  <Select
-                    value={field.value}
-                    onValueChange={field.onChange}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select timezone" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {timezones.map((tz) => (
-                        <SelectItem key={tz.value} value={tz.value}>
-                          {tz.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Map Preview */}
-            {hasValidCoordinates && (
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">
-                  Location Preview
+          <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+            {/* Scrollable form body */}
+            <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-4 pr-1">
+              {/* Address Search */}
+              <div className="space-y-2 min-w-0">
+                <Label className="flex items-center gap-2 text-sm font-medium">
+                  <Search className="w-4 h-4 text-muted-foreground" />
+                  Search Address
                 </Label>
-                <StaticMapPreview
-                  latitude={watchedLatitude}
-                  longitude={watchedLongitude}
-                  className="h-32"
+                <AddressSearchInput
+                  onSelect={handleAddressSelect}
+                  placeholder="Search city, address, or ZIP..."
+                />
+                <p className="text-xs text-muted-foreground">
+                  Search for an address to auto-fill coordinates
+                </p>
+              </div>
+
+              {/* Lat/Lon Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="latitude"
+                  render={({ field }) => (
+                    <FormItem className="min-w-0">
+                      <FormLabel>Latitude</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="any"
+                          placeholder="40.7128"
+                          className="w-full"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value ? parseFloat(e.target.value) : undefined
+                            )
+                          }
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="longitude"
+                  render={({ field }) => (
+                    <FormItem className="min-w-0">
+                      <FormLabel>Longitude</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="any"
+                          placeholder="-74.0060"
+                          className="w-full"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(
+                              e.target.value ? parseFloat(e.target.value) : undefined
+                            )
+                          }
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
               </div>
-            )}
 
-            <DialogFooter className="flex-col sm:flex-row gap-2">
+              {/* Timezone */}
+              <FormField
+                control={form.control}
+                name="timezone"
+                render={({ field }) => (
+                  <FormItem className="min-w-0">
+                    <FormLabel className="flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-muted-foreground" />
+                      Timezone
+                    </FormLabel>
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select timezone" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {timezones.map((tz) => (
+                          <SelectItem key={tz.value} value={tz.value}>
+                            {tz.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Map Preview */}
+              {hasValidCoordinates && (
+                <div className="space-y-2 min-w-0">
+                  <Label className="text-xs text-muted-foreground">
+                    Location Preview
+                  </Label>
+                  <StaticMapPreview
+                    latitude={watchedLatitude}
+                    longitude={watchedLongitude}
+                    className="h-32 w-full"
+                  />
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="flex-shrink-0 flex-col sm:flex-row gap-2 pt-4">
               <Button
                 type="button"
                 variant="ghost"

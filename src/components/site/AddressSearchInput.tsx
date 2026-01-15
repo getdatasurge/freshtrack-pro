@@ -117,8 +117,9 @@ export function AddressSearchInput({
         </div>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[--radix-popover-trigger-width] p-0"
+        className="w-[--radix-popover-trigger-width] p-0 max-h-60 overflow-hidden"
         align="start"
+        sideOffset={4}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <Command>
