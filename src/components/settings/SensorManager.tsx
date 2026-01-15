@@ -314,14 +314,31 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     }
   };
 
+  // Determine if TTN is configured NOW (regardless of sensor's stored state)
+  const isTtnConfiguredNow = Boolean(
+    ttnConfig?.isEnabled && 
+    ttnConfig?.hasApiKey && 
+    ttnConfig?.applicationId
+  );
+
+  // Helper to check if a sensor can be checked NOW
+  const canCheckSensorNow = (sensor: LoraSensor) => 
+    isTtnConfiguredNow && !!sensor.dev_eui;
+
   const handleCheckAllTtn = async () => {
     if (!sensors?.length) return;
+    
+    // Use current TTN config eligibility, not stored provisioning_state
     const sensorIds = sensors
-      .filter(s => s.dev_eui && (s.provisioning_state as TtnProvisioningState) !== 'not_configured')
+      .filter(s => canCheckSensorNow(s))
       .map(s => s.id);
     
     if (sensorIds.length === 0) {
-      toast.info("No sensors eligible for TTN check");
+      if (!isTtnConfiguredNow) {
+        toast.info("TTN integration is not fully configured");
+      } else {
+        toast.info("No sensors with DevEUI available to check");
+      }
       return;
     }
     
@@ -852,6 +869,14 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                             onProvision={() => handleProvision(sensor)}
                             onUnprovision={() => handleUnprovision(sensor)}
                             canEdit={canEdit}
+                            canCheckNow={canCheckSensorNow(sensor)}
+                            checkUnavailableReason={
+                              !sensor.dev_eui 
+                                ? "Add DevEUI to enable TTN detection" 
+                                : !isTtnConfiguredNow 
+                                  ? "TTN integration not fully configured" 
+                                  : undefined
+                            }
                           />
                         </div>
                         {/* Edit actions row */}

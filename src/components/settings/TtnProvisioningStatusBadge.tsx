@@ -60,6 +60,10 @@ interface TtnActionsProps {
   onProvision: () => void;
   onUnprovision: () => void;
   canEdit: boolean;
+  /** Whether TTN is configured NOW and sensor has DevEUI - allows check even if state is not_configured */
+  canCheckNow?: boolean;
+  /** Reason why check is not available (for tooltip) */
+  checkUnavailableReason?: string;
 }
 
 export function TtnActions({
@@ -70,18 +74,50 @@ export function TtnActions({
   onProvision,
   onUnprovision,
   canEdit,
+  canCheckNow = false,
+  checkUnavailableReason,
 }: TtnActionsProps) {
   if (!canEdit) return null;
 
-  // Not configured - just show compact icon
+  // Not configured - show check button if TTN is now configured, otherwise show info icon
   if (state === "not_configured") {
+    // If TTN is configured NOW and sensor has DevEUI, allow checking
+    if (canCheckNow) {
+      return (
+        <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 gap-1 text-muted-foreground border-muted-foreground/30"
+                onClick={onCheckTtn}
+                disabled={isCheckingTtn}
+              >
+                {isCheckingTtn ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Search className="h-3.5 w-3.5" />
+                )}
+                <span className="text-xs">Detect</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Check if device exists in TTN (stored state may be outdated)
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      );
+    }
+    
+    // TTN not configured or missing DevEUI - show info icon with reason
     return (
       <Tooltip>
         <TooltipTrigger asChild>
           <AlertCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
         </TooltipTrigger>
         <TooltipContent>
-          Configure TTN and add DevEUI to enable provisioning
+          {checkUnavailableReason || "Configure TTN and add DevEUI to enable provisioning"}
         </TooltipContent>
       </Tooltip>
     );

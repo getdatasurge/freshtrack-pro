@@ -1,5 +1,7 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const BUILD_VERSION = "check-ttn-device-exists-v2.0-deveui-lookup-20260115";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -26,11 +28,21 @@ interface TTNConfig {
   cluster: string;
 }
 
+interface TTNDeviceListItem {
+  ids?: {
+    device_id?: string;
+    dev_eui?: string;
+  };
+}
+
 // Type alias for Supabase client in edge functions
 // deno-lint-ignore no-explicit-any
 type SupabaseAnyClient = SupabaseClient<any, any, any>;
 
 Deno.serve(async (req) => {
+  const requestId = crypto.randomUUID().slice(0, 8);
+  console.log(`[check-ttn-device-exists] [${requestId}] Build: ${BUILD_VERSION}`);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -38,7 +50,11 @@ Deno.serve(async (req) => {
 
   // Health check
   if (req.method === "GET") {
-    return new Response(JSON.stringify({ status: "ok", function: "check-ttn-device-exists" }), {
+    return new Response(JSON.stringify({ 
+      status: "ok", 
+      function: "check-ttn-device-exists",
+      version: BUILD_VERSION,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -66,7 +82,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[check-ttn-device-exists] Checking ${sensorIds.length} sensor(s)`);
+    console.log(`[check-ttn-device-exists] [${requestId}] Checking ${sensorIds.length} sensor(s)`);
 
     // Fetch sensors with their org info
     const { data: sensors, error: sensorsError } = await supabase
@@ -76,7 +92,7 @@ Deno.serve(async (req) => {
       .is("deleted_at", null);
 
     if (sensorsError) {
-      console.error("[check-ttn-device-exists] Error fetching sensors:", sensorsError);
+      console.error(`[check-ttn-device-exists] [${requestId}] Error fetching sensors:`, sensorsError);
       throw new Error(`Failed to fetch sensors: ${sensorsError.message}`);
     }
 
@@ -89,6 +105,7 @@ Deno.serve(async (req) => {
 
     // Get unique org IDs
     const orgIds = [...new Set(sensors.map((s) => s.organization_id))];
+    console.log(`[check-ttn-device-exists] [${requestId}] Unique orgs: ${orgIds.length}`);
 
     // Fetch TTN configs for all orgs from ttn_connections table
     const { data: ttnConfigs, error: configError } = await supabase
@@ -98,12 +115,12 @@ Deno.serve(async (req) => {
       .eq("is_enabled", true);
 
     if (configError) {
-      console.error("[check-ttn-device-exists] Error fetching TTN configs:", configError);
+      console.error(`[check-ttn-device-exists] [${requestId}] Error fetching TTN configs:`, configError);
     }
 
-    console.log(`[check-ttn-device-exists] Found ${ttnConfigs?.length || 0} TTN configs for ${orgIds.length} org(s)`);
+    console.log(`[check-ttn-device-exists] [${requestId}] Found ${ttnConfigs?.length || 0} TTN configs`);
 
-    // Build org -> config map
+    // Build org -> config map with deobfuscated keys
     const configMap = new Map<string, TTNConfig>();
     for (const cfg of ttnConfigs || []) {
       if (cfg.ttn_api_key_encrypted && cfg.ttn_application_id && cfg.ttn_region) {
@@ -125,7 +142,7 @@ Deno.serve(async (req) => {
             apiKey = new TextDecoder().decode(resultBytes);
           }
         } catch (e) {
-          console.warn(`[check-ttn-device-exists] Failed to deobfuscate key for org ${cfg.organization_id}, using as-is`);
+          console.warn(`[check-ttn-device-exists] [${requestId}] Failed to deobfuscate key for org ${cfg.organization_id}, using as-is`);
         }
         
         configMap.set(cfg.organization_id, {
@@ -136,100 +153,136 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Group sensors by organization for efficient TTN lookups
+    const sensorsByOrg = new Map<string, typeof sensors>();
+    for (const sensor of sensors) {
+      const orgSensors = sensorsByOrg.get(sensor.organization_id) || [];
+      orgSensors.push(sensor);
+      sensorsByOrg.set(sensor.organization_id, orgSensors);
+    }
+
     const results: CheckResult[] = [];
     const now = new Date().toISOString();
 
-    // Process sensors with concurrency limit
-    const CONCURRENCY = 3;
-    const chunks: typeof sensors[] = [];
-    for (let i = 0; i < sensors.length; i += CONCURRENCY) {
-      chunks.push(sensors.slice(i, i + CONCURRENCY));
-    }
-
-    for (const chunk of chunks) {
-      const chunkResults = await Promise.all(
-        chunk.map(async (sensor) => {
+    // Process each org: list all devices once, then match by DevEUI
+    for (const [orgId, orgSensors] of sensorsByOrg.entries()) {
+      const config = configMap.get(orgId);
+      
+      if (!config) {
+        // No TTN config for this org - mark all sensors as not_configured
+        for (const sensor of orgSensors) {
           const result: CheckResult = {
             sensor_id: sensor.id,
-            provisioning_state: "unknown",
+            provisioning_state: sensor.dev_eui ? "not_configured" : "not_configured",
+            error: "TTN not configured for organization",
             checked_at: now,
           };
+          await updateSensor(supabase, sensor.id, result);
+          results.push(result);
+        }
+        continue;
+      }
 
-          try {
-            // Check if sensor has dev_eui
-            if (!sensor.dev_eui) {
-              result.provisioning_state = "not_configured";
-              result.error = "Sensor missing DevEUI";
-              await updateSensor(supabase, sensor.id, result);
-              return result;
+      console.log(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: Listing devices from TTN app ${config.application_id}`);
+
+      // List all devices from TTN for this application (single API call per org)
+      let ttnDeviceMap: Map<string, string> | null = null; // normalized_dev_eui -> device_id
+      let listError: string | null = null;
+
+      try {
+        const listUrl = `https://${config.cluster}.cloud.thethings.network/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui`;
+        
+        const listResponse = await fetch(listUrl, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${config.api_key}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (listResponse.ok) {
+          const listData = await listResponse.json();
+          const devices = (listData.end_devices || []) as TTNDeviceListItem[];
+          
+          ttnDeviceMap = new Map();
+          for (const device of devices) {
+            if (device.ids?.dev_eui && device.ids?.device_id) {
+              const normalizedDevEui = device.ids.dev_eui.toLowerCase().replace(/[:\-\s]/g, '');
+              ttnDeviceMap.set(normalizedDevEui, device.ids.device_id);
             }
-
-            // Get TTN config for this org
-            const config = configMap.get(sensor.organization_id);
-            if (!config) {
-              result.provisioning_state = "not_configured";
-              result.error = "TTN not configured for organization";
-              await updateSensor(supabase, sensor.id, result);
-              return result;
-            }
-
-            // Determine device ID to check
-            // Priority: existing ttn_device_id > sensor-{dev_eui}
-            const deviceIdToCheck = sensor.ttn_device_id || `sensor-${sensor.dev_eui.toLowerCase()}`;
-
-            console.log(`[check-ttn-device-exists] Checking ${sensor.name} (${deviceIdToCheck}) in ${config.application_id}`);
-
-            // Call TTN API
-            const ttnUrl = `https://${config.cluster}.cloud.thethings.network/api/v3/applications/${config.application_id}/devices/${deviceIdToCheck}`;
-            
-            const ttnResponse = await fetch(ttnUrl, {
-              method: "GET",
-              headers: {
-                Authorization: `Bearer ${config.api_key}`,
-                "Content-Type": "application/json",
-              },
-            });
-
-            if (ttnResponse.ok) {
-              // Device exists in TTN
-              result.provisioning_state = "exists_in_ttn";
-              result.ttn_device_id = deviceIdToCheck;
-              result.ttn_app_id = config.application_id;
-              result.ttn_cluster = config.cluster;
-              console.log(`[check-ttn-device-exists] ${sensor.name}: exists_in_ttn`);
-            } else if (ttnResponse.status === 404) {
-              // Device not found in TTN
-              result.provisioning_state = "missing_in_ttn";
-              result.ttn_cluster = config.cluster;
-              result.ttn_app_id = config.application_id;
-              console.log(`[check-ttn-device-exists] ${sensor.name}: missing_in_ttn`);
-            } else {
-              // Some other error
-              const errorText = await ttnResponse.text();
-              result.provisioning_state = "error";
-              result.error = `TTN API error ${ttnResponse.status}: ${errorText.substring(0, 200)}`;
-              console.error(`[check-ttn-device-exists] ${sensor.name}: error - ${result.error}`);
-            }
-
-            await updateSensor(supabase, sensor.id, result);
-          } catch (err) {
-            result.provisioning_state = "error";
-            result.error = err instanceof Error ? err.message : String(err);
-            console.error(`[check-ttn-device-exists] Error checking ${sensor.name}:`, err);
-            await updateSensor(supabase, sensor.id, result);
           }
+          
+          console.log(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: Found ${ttnDeviceMap.size} devices with DevEUI in TTN`);
+        } else {
+          listError = `TTN API error ${listResponse.status}: ${await listResponse.text().then(t => t.substring(0, 200))}`;
+          console.error(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: ${listError}`);
+        }
+      } catch (err) {
+        listError = err instanceof Error ? err.message : String(err);
+        console.error(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: List devices error:`, err);
+      }
 
-          return result;
-        })
-      );
+      // Process each sensor in this org
+      for (const sensor of orgSensors) {
+        const result: CheckResult = {
+          sensor_id: sensor.id,
+          provisioning_state: "unknown",
+          ttn_app_id: config.application_id,
+          ttn_cluster: config.cluster,
+          checked_at: now,
+        };
 
-      results.push(...chunkResults);
+        // Check if sensor has dev_eui
+        if (!sensor.dev_eui) {
+          result.provisioning_state = "not_configured";
+          result.error = "Sensor missing DevEUI";
+          await updateSensor(supabase, sensor.id, result);
+          results.push(result);
+          continue;
+        }
+
+        // If we failed to list devices, mark as error
+        if (listError) {
+          result.provisioning_state = "error";
+          result.error = listError;
+          await updateSensor(supabase, sensor.id, result);
+          results.push(result);
+          continue;
+        }
+
+        // Look up sensor's DevEUI in the TTN device map
+        const normalizedDevEui = sensor.dev_eui.toLowerCase().replace(/[:\-\s]/g, '');
+        const ttnDeviceId = ttnDeviceMap?.get(normalizedDevEui);
+
+        if (ttnDeviceId) {
+          result.provisioning_state = "exists_in_ttn";
+          result.ttn_device_id = ttnDeviceId;
+          console.log(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: exists_in_ttn (${ttnDeviceId})`);
+        } else {
+          result.provisioning_state = "missing_in_ttn";
+          console.log(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: missing_in_ttn`);
+        }
+
+        await updateSensor(supabase, sensor.id, result);
+        results.push(result);
+      }
     }
+
+    // Summary logging
+    const summary = {
+      total: results.length,
+      exists_in_ttn: results.filter(r => r.provisioning_state === "exists_in_ttn").length,
+      missing_in_ttn: results.filter(r => r.provisioning_state === "missing_in_ttn").length,
+      not_configured: results.filter(r => r.provisioning_state === "not_configured").length,
+      error: results.filter(r => r.provisioning_state === "error").length,
+    };
+    console.log(`[check-ttn-device-exists] [${requestId}] Summary:`, summary);
 
     return new Response(
       JSON.stringify({
         success: true,
         checked_count: results.length,
+        summary,
         results,
       }),
       {
@@ -237,7 +290,7 @@ Deno.serve(async (req) => {
       }
     );
   } catch (err) {
-    console.error("[check-ttn-device-exists] Unhandled error:", err);
+    console.error(`[check-ttn-device-exists] [${requestId}] Unhandled error:`, err);
     return new Response(
       JSON.stringify({
         error: err instanceof Error ? err.message : "Unknown error",
