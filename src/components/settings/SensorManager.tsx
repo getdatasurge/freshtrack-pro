@@ -929,13 +929,18 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                           >
                             <Pencil className="h-4 w-4" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setDeleteSensor(sensor)}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setDeleteSensor(sensor)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Archive sensor</TooltipContent>
+                          </Tooltip>
                         </div>
                       </TableCell>
                     )}
@@ -981,9 +986,9 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
         <AlertDialog open={!!deleteSensor_} onOpenChange={(open) => !open && setDeleteSensor(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Sensor</AlertDialogTitle>
+              <AlertDialogTitle>Archive Sensor</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete "{deleteSensor_?.name}"? This action cannot be undone.
+                Are you sure you want to archive "{deleteSensor_?.name}"? The sensor will be moved to Recently Deleted and can be restored by an admin. All reading history will be preserved.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -995,7 +1000,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                 {deleteSensor.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  "Delete"
+                  "Archive"
                 )}
               </AlertDialogAction>
             </AlertDialogFooter>

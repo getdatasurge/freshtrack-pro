@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { logEvent } from "@/lib/eventLogger";
 import { toast } from "sonner";
 
-export type SoftDeleteEntityType = "unit" | "area" | "site" | "device";
+export type SoftDeleteEntityType = "unit" | "area" | "site" | "device" | "sensor";
 
 interface SoftDeleteResult {
   success: boolean;
@@ -109,6 +109,66 @@ async function getDeviceInfo(deviceId: string): Promise<EntityInfo | null> {
     areaId: data.unit.area.id,
     unitId: data.unit.id,
   };
+}
+
+async function getSensorInfo(sensorId: string): Promise<EntityInfo | null> {
+  const { data, error } = await supabase
+    .from("lora_sensors")
+    .select("name, organization_id, site_id, unit_id")
+    .eq("id", sensorId)
+    .single();
+
+  if (error || !data) return null;
+  
+  return {
+    name: data.name,
+    organizationId: data.organization_id,
+    siteId: data.site_id,
+    unitId: data.unit_id,
+  };
+}
+
+export async function softDeleteSensor(
+  sensorId: string,
+  userId: string
+): Promise<SoftDeleteResult> {
+  try {
+    const info = await getSensorInfo(sensorId);
+    if (!info) return { success: false, error: "Sensor not found" };
+
+    const now = new Date().toISOString();
+
+    // Soft delete the sensor - TTN deprovision trigger will fire
+    const { error } = await supabase
+      .from("lora_sensors")
+      .update({
+        deleted_at: now,
+        deleted_by: userId,
+      })
+      .eq("id", sensorId);
+
+    if (error) throw error;
+
+    await logEvent({
+      event_type: "sensor_deleted",
+      category: "settings",
+      severity: "warning",
+      title: `Sensor Deleted: ${info.name}`,
+      organization_id: info.organizationId,
+      site_id: info.siteId,
+      unit_id: info.unitId,
+      actor_id: userId,
+      actor_type: "user",
+      event_data: { entity_type: "sensor", entity_name: info.name },
+    });
+
+    toast.success(`Sensor "${info.name}" has been archived`);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to archive sensor:", error);
+    toast.error("Failed to archive sensor");
+    return { success: false, error: String(error) };
+  }
 }
 
 export async function softDeleteUnit(
@@ -586,6 +646,46 @@ export async function restoreDevice(
   } catch (error) {
     console.error("Failed to restore device:", error);
     toast.error("Failed to restore device");
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function restoreSensor(
+  sensorId: string,
+  userId: string
+): Promise<SoftDeleteResult> {
+  try {
+    const info = await getSensorInfo(sensorId);
+    if (!info) return { success: false, error: "Sensor not found" };
+
+    const { error } = await supabase
+      .from("lora_sensors")
+      .update({
+        deleted_at: null,
+        deleted_by: null,
+      })
+      .eq("id", sensorId);
+
+    if (error) throw error;
+
+    await logEvent({
+      event_type: "sensor_restored",
+      category: "settings",
+      severity: "info",
+      title: `Sensor Restored: ${info.name}`,
+      organization_id: info.organizationId,
+      site_id: info.siteId,
+      unit_id: info.unitId,
+      actor_id: userId,
+      actor_type: "user",
+      event_data: { entity_type: "sensor", entity_name: info.name },
+    });
+
+    toast.success(`Sensor "${info.name}" has been restored`);
+    return { success: true };
+  } catch (error) {
+    console.error("Failed to restore sensor:", error);
+    toast.error("Failed to restore sensor");
     return { success: false, error: String(error) };
   }
 }

@@ -1173,6 +1173,8 @@ export type Database = {
           battery_level: number | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           description: string | null
           dev_eui: string
           firmware_version: string | null
@@ -1199,6 +1201,8 @@ export type Database = {
           battery_level?: number | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           dev_eui: string
           firmware_version?: string | null
@@ -1225,6 +1229,8 @@ export type Database = {
           battery_level?: number | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           dev_eui?: string
           firmware_version?: string | null

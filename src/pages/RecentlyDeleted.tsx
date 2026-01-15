@@ -9,6 +9,7 @@ import {
   restoreArea,
   restoreSite,
   restoreDevice,
+  restoreSensor,
   permanentlyDeleteUnit,
   permanentlyDeleteArea,
   permanentlyDeleteSite,
@@ -42,6 +43,7 @@ import {
   Thermometer,
   Wifi,
   RefreshCw,
+  Radio,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
@@ -60,6 +62,7 @@ const entityTypeIcons: Record<DeleteEntityType, React.ReactNode> = {
   area: <LayoutGrid className="h-4 w-4" />,
   unit: <Thermometer className="h-4 w-4" />,
   device: <Wifi className="h-4 w-4" />,
+  sensor: <Radio className="h-4 w-4" />,
 };
 
 const entityTypeLabels: Record<DeleteEntityType, string> = {
@@ -67,6 +70,7 @@ const entityTypeLabels: Record<DeleteEntityType, string> = {
   area: "Area",
   unit: "Unit",
   device: "Device",
+  sensor: "Sensor",
 };
 
 const RecentlyDeleted = () => {
@@ -194,6 +198,29 @@ const RecentlyDeleted = () => {
         }
       }
 
+      // Load deleted sensors
+      const { data: sensors } = await supabase
+        .from("lora_sensors")
+        .select("id, name, deleted_at, deleted_by, site:sites(name), unit:units(name)")
+        .not("deleted_at", "is", null)
+        .order("deleted_at", { ascending: false });
+
+      if (sensors) {
+        for (const sensor of sensors) {
+          const siteName = sensor.site?.name || "";
+          const unitName = sensor.unit?.name || "";
+          allItems.push({
+            id: sensor.id,
+            name: sensor.name,
+            entityType: "sensor",
+            deletedAt: sensor.deleted_at!,
+            deletedBy: sensor.deleted_by,
+            deletedByName: null,
+            parentPath: unitName ? `${siteName} > ${unitName}` : siteName || "Unassigned",
+          });
+        }
+      }
+
       // Sort all items by deleted_at descending
       allItems.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
 
@@ -222,6 +249,9 @@ const RecentlyDeleted = () => {
         break;
       case "device":
         result = await restoreDevice(item.id, userId);
+        break;
+      case "sensor":
+        result = await restoreSensor(item.id, userId);
         break;
     }
 
@@ -296,6 +326,7 @@ const RecentlyDeleted = () => {
               <TabsTrigger value="area">Areas ({items.filter(i => i.entityType === "area").length})</TabsTrigger>
               <TabsTrigger value="unit">Units ({items.filter(i => i.entityType === "unit").length})</TabsTrigger>
               <TabsTrigger value="device">Devices ({items.filter(i => i.entityType === "device").length})</TabsTrigger>
+              <TabsTrigger value="sensor">Sensors ({items.filter(i => i.entityType === "sensor").length})</TabsTrigger>
             </TabsList>
 
             <TabsContent value={activeTab} className="mt-0">
@@ -355,21 +386,21 @@ const RecentlyDeleted = () => {
                                 )}
                                 Restore
                               </DropdownMenuItem>
-                              {canPermanentlyDelete && item.entityType !== "device" && (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    className="text-destructive focus:text-destructive"
-                                    onClick={() => {
-                                      setSelectedItem(item);
-                                      setDeleteDialogOpen(true);
-                                    }}
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    Delete Permanently
-                                  </DropdownMenuItem>
-                                </>
-                              )}
+                                {canPermanentlyDelete && item.entityType !== "device" && item.entityType !== "sensor" && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-destructive focus:text-destructive"
+                                      onClick={() => {
+                                        setSelectedItem(item);
+                                        setDeleteDialogOpen(true);
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete Permanently
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>

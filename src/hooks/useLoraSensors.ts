@@ -17,6 +17,7 @@ export function useLoraSensors(orgId: string | null) {
         .from("lora_sensors")
         .select("*")
         .eq("organization_id", orgId)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -96,6 +97,7 @@ export function useLoraSensorsByUnit(unitId: string | null) {
         .from("lora_sensors")
         .select("*")
         .eq("unit_id", unitId)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -186,19 +188,26 @@ export function useUpdateLoraSensor() {
 }
 
 /**
- * Hook to delete a LoRa sensor
- * TTN de-provisioning is now handled by the database trigger which enqueues a job
+ * Hook to archive (soft delete) a LoRa sensor
+ * TTN de-provisioning is handled by the database trigger 'trg_enqueue_deprovision_on_archive'
  */
 export function useDeleteLoraSensor() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ id, orgId }: { id: string; orgId: string }): Promise<void> => {
-      // Delete from database - the database trigger 'trg_enqueue_deprovision'
+      // Get current user for deleted_by field
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+
+      // Soft delete - the database trigger 'trg_enqueue_deprovision_on_archive'
       // automatically creates a deprovisioning job for TTN cleanup
       const { error } = await supabase
         .from("lora_sensors")
-        .delete()
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: userId || null,
+        })
         .eq("id", id);
 
       if (error) throw error;
@@ -206,10 +215,10 @@ export function useDeleteLoraSensor() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["lora-sensors", variables.orgId] });
       queryClient.invalidateQueries({ queryKey: ["ttn-deprovision-jobs"] });
-      toast.success("Sensor deleted. TTN cleanup will run in the background.");
+      toast.success("Sensor archived. TTN cleanup will run in the background.");
     },
     onError: (error: Error) => {
-      toast.error(`Failed to delete LoRa sensor: ${error.message}`);
+      toast.error(`Failed to archive sensor: ${error.message}`);
     },
   });
 }
