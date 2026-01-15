@@ -1,10 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 // Support mode timeout (30 minutes in milliseconds)
 const SUPPORT_MODE_TIMEOUT_MS = 30 * 60 * 1000;
 const SUPPORT_MODE_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+
+// Role load status state machine
+export type RoleLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 interface ImpersonationState {
   isImpersonating: boolean;
@@ -22,9 +25,12 @@ interface ViewingOrgState {
 }
 
 interface SuperAdminContextType {
-  // Super admin status
+  // Super admin status with explicit state machine
   isSuperAdmin: boolean;
-  isLoadingSuperAdmin: boolean;
+  isLoadingSuperAdmin: boolean; // derived: status === 'loading'
+  rolesLoaded: boolean; // derived: status === 'loaded' || status === 'error'
+  roleLoadStatus: RoleLoadStatus;
+  roleLoadError: string | null;
 
   // Support mode
   isSupportModeActive: boolean;
@@ -65,10 +71,17 @@ interface SuperAdminProviderProps {
 export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
   const { toast } = useToast();
 
-  // Super admin status
+  // Super admin status with explicit state machine
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [isLoadingSuperAdmin, setIsLoadingSuperAdmin] = useState(true);
-
+  const [roleLoadStatus, setRoleLoadStatus] = useState<RoleLoadStatus>('idle');
+  const [roleLoadError, setRoleLoadError] = useState<string | null>(null);
+  
+  // Derived states for backward compatibility
+  const isLoadingSuperAdmin = roleLoadStatus === 'loading';
+  const rolesLoaded = roleLoadStatus === 'loaded' || roleLoadStatus === 'error';
+  
+  // Track previous status for logging transitions
+  const prevStatusRef = useRef<RoleLoadStatus>('idle');
   // Support mode state
   const [isSupportModeActive, setIsSupportModeActive] = useState(false);
   const [supportModeStartedAt, setSupportModeStartedAt] = useState<Date | null>(null);
@@ -103,15 +116,30 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     }
   }, [shouldLogRbac]);
 
+  // Helper to update status with logging
+  const updateRoleStatus = useCallback((newStatus: RoleLoadStatus, error?: string | null) => {
+    const prevStatus = prevStatusRef.current;
+    if (prevStatus !== newStatus) {
+      rbacLog('status transition:', prevStatus, '→', newStatus);
+      prevStatusRef.current = newStatus;
+    }
+    setRoleLoadStatus(newStatus);
+    if (error !== undefined) {
+      setRoleLoadError(error);
+    }
+  }, [rbacLog]);
+
   // Check super admin status
   const checkSuperAdminStatus = useCallback(async () => {
     try {
+      updateRoleStatus('loading', null);
       rbacLog('role fetch start');
+      
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         rbacLog('no authenticated user');
         setIsSuperAdmin(false);
-        setIsLoadingSuperAdmin(false);
+        updateRoleStatus('loaded', null);
         return;
       }
 
@@ -124,19 +152,21 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
         rbacLog('role fetch error:', error.message);
         console.error('Error checking super admin status:', error);
         setIsSuperAdmin(false);
+        updateRoleStatus('error', error.message);
       } else {
         rbacLog('isSuperAdmin result:', data);
         setIsSuperAdmin(data === true);
+        updateRoleStatus('loaded', null);
       }
-      rbacLog('role fetch end, isSuperAdmin:', data === true);
+      rbacLog('role fetch complete:', { status: 'loaded', isSuperAdmin: data === true });
     } catch (err) {
-      rbacLog('role fetch exception:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      rbacLog('role fetch exception:', errorMessage);
       console.error('Error checking super admin status:', err);
       setIsSuperAdmin(false);
-    } finally {
-      setIsLoadingSuperAdmin(false);
+      updateRoleStatus('error', errorMessage);
     }
-  }, [rbacLog]);
+  }, [rbacLog, updateRoleStatus]);
 
   // Initial load and auth state changes
   useEffect(() => {
@@ -377,6 +407,9 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
   const value: SuperAdminContextType = {
     isSuperAdmin,
     isLoadingSuperAdmin,
+    rolesLoaded,
+    roleLoadStatus,
+    roleLoadError,
     isSupportModeActive,
     supportModeStartedAt,
     supportModeExpiresAt,

@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { 
   LogOut,
   MapPin,
@@ -56,7 +57,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
-  const { isSuperAdmin, isSupportModeActive, impersonation } = useSuperAdmin();
+  const { isSuperAdmin, isLoadingSuperAdmin, rolesLoaded, isSupportModeActive, impersonation } = useSuperAdmin();
   const [session, setSession] = useState<Session | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
@@ -307,7 +308,13 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 </Button>
               </Link>
             )}
-            {isSuperAdmin && (
+            {/* Platform Admin Link - Desktop */}
+            {isLoadingSuperAdmin && (
+              <div className="mt-2 px-1">
+                <Skeleton className="h-10 w-full rounded-md" />
+              </div>
+            )}
+            {rolesLoaded && isSuperAdmin && (
               <Link to="/platform">
                 <Button
                   variant={location.pathname.startsWith("/platform") ? "secondary" : "ghost"}
@@ -405,7 +412,13 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                     </Button>
                   </Link>
                 )}
-                {isSuperAdmin && (
+                {/* Platform Admin Link - Mobile */}
+                {isLoadingSuperAdmin && (
+                  <div className="mt-2 px-1">
+                    <Skeleton className="h-10 w-full rounded-md" />
+                  </div>
+                )}
+                {rolesLoaded && isSuperAdmin && (
                   <Link
                     to="/platform"
                     onClick={() => setMobileNavOpen(false)}
