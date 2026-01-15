@@ -131,8 +131,80 @@ async function logEvent(
   }
 }
 
+/**
+ * Try to delete a device from TTN using multi-endpoint fallback
+ * Handles "Other cluster" devices by trying NS, AS, JS endpoints
+ */
+async function tryDeleteFromTtn(
+  ttnConfig: { identityBaseUrl: string; regionalBaseUrl: string; apiKey: string },
+  targetAppId: string,
+  deviceId: string
+): Promise<{ success: boolean; alreadyDeleted: boolean; error?: string; statusCode?: number }> {
+  const headers = {
+    "Authorization": `Bearer ${ttnConfig.apiKey}`,
+    "Content-Type": "application/json",
+  };
+
+  // Endpoints to try in order:
+  // 1. Identity Server (IS) - main device registry
+  // 2. Network Server (NS) - handles device sessions
+  // 3. Application Server (AS) - handles application data
+  // 4. Join Server (JS) - handles join keys
+  const endpoints = [
+    { name: "IS", url: `${ttnConfig.identityBaseUrl}/api/v3/applications/${targetAppId}/devices/${deviceId}` },
+    { name: "NS", url: `${ttnConfig.regionalBaseUrl}/api/v3/ns/applications/${targetAppId}/devices/${deviceId}` },
+    { name: "AS", url: `${ttnConfig.regionalBaseUrl}/api/v3/as/applications/${targetAppId}/devices/${deviceId}` },
+    { name: "JS", url: `${ttnConfig.identityBaseUrl}/api/v3/js/applications/${targetAppId}/devices/${deviceId}` },
+  ];
+
+  let lastError = "";
+  let lastStatusCode = 0;
+  let successCount = 0;
+  let notFoundCount = 0;
+
+  for (const endpoint of endpoints) {
+    try {
+      console.log(`[ttn-deprovision-worker] DELETE ${endpoint.name}: ${endpoint.url}`);
+      const response = await fetch(endpoint.url, { method: "DELETE", headers });
+      
+      if (response.ok) {
+        console.log(`[ttn-deprovision-worker] ${endpoint.name} delete succeeded`);
+        successCount++;
+      } else if (response.status === 404) {
+        console.log(`[ttn-deprovision-worker] ${endpoint.name} returned 404 (not found/already deleted)`);
+        notFoundCount++;
+      } else {
+        const errorText = await response.text();
+        console.log(`[ttn-deprovision-worker] ${endpoint.name} failed: ${response.status} - ${errorText}`);
+        lastError = errorText;
+        lastStatusCode = response.status;
+        
+        // If 403 permission error, don't try other endpoints - same key won't work
+        if (response.status === 403) {
+          return { success: false, alreadyDeleted: false, error: errorText, statusCode: 403 };
+        }
+      }
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "Unknown error";
+      console.log(`[ttn-deprovision-worker] ${endpoint.name} error: ${errMsg}`);
+      lastError = errMsg;
+    }
+  }
+
+  // Success if we deleted from at least one endpoint or all returned 404
+  if (successCount > 0) {
+    return { success: true, alreadyDeleted: false };
+  }
+  
+  if (notFoundCount === endpoints.length) {
+    return { success: true, alreadyDeleted: true };
+  }
+
+  return { success: false, alreadyDeleted: false, error: lastError, statusCode: lastStatusCode };
+}
+
 serve(async (req) => {
-  const BUILD_VERSION = "deprovision-worker-v3-per-org-app-20260115";
+  const BUILD_VERSION = "deprovision-worker-v4-multi-endpoint-20260115";
   console.log(`[ttn-deprovision-worker] Build: ${BUILD_VERSION}`);
   
   if (req.method === "OPTIONS") {
@@ -233,30 +305,29 @@ serve(async (req) => {
       }
       
       try {
-        // Delete from TTN Identity Server using per-org application ID
-        const deleteUrl = `${ttnConfig.identityBaseUrl}/api/v3/applications/${targetAppId}/devices/${deviceId}`;
-        console.log(`[ttn-deprovision-worker] DELETE ${deleteUrl} (app: ${targetAppId})`);
+        // Use multi-endpoint fallback to handle "Other cluster" devices
+        console.log(`[ttn-deprovision-worker] Deleting device ${deviceId} from app ${targetAppId}`);
         
-        const response = await fetch(deleteUrl, {
-          method: "DELETE",
-          headers: {
-            "Authorization": `Bearer ${ttnConfig.apiKey}`,
-            "Content-Type": "application/json",
+        const deleteResult = await tryDeleteFromTtn(
+          {
+            identityBaseUrl: ttnConfig.identityBaseUrl,
+            regionalBaseUrl: ttnConfig.regionalBaseUrl,
+            apiKey: ttnConfig.apiKey,
           },
-        });
+          targetAppId,
+          deviceId
+        );
 
-        if (response.ok || response.status === 404) {
+        if (deleteResult.success) {
           // Success - device deleted or already gone
-          const isAlreadyDeleted = response.status === 404;
-          
           await supabase
             .from("ttn_deprovision_jobs")
             .update({
               status: "SUCCEEDED",
               completed_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              last_error_code: isAlreadyDeleted ? "NOT_FOUND" : null,
-              last_error_message: isAlreadyDeleted ? "Device was already deleted from TTN" : null,
+              last_error_code: deleteResult.alreadyDeleted ? "NOT_FOUND" : null,
+              last_error_message: deleteResult.alreadyDeleted ? "Device was already deleted from TTN" : null,
             })
             .eq("id", job.id);
 
@@ -265,14 +336,13 @@ serve(async (req) => {
           results.push({ 
             job_id: job.id, 
             status: "SUCCEEDED",
-            error: isAlreadyDeleted ? "Device was already deleted" : undefined
+            error: deleteResult.alreadyDeleted ? "Device was already deleted" : undefined
           });
           
           console.log(`[ttn-deprovision-worker] Job ${job.id} succeeded`);
         } else {
           // Handle error
-          const errorText = await response.text();
-          const classification = classifyError(response.status, errorText);
+          const classification = classifyError(deleteResult.statusCode || 500, deleteResult.error || "Unknown error");
           
           const newAttempts = job.attempts + 1;
           const maxAttempts = job.max_attempts || 5;
@@ -298,7 +368,7 @@ serve(async (req) => {
               next_retry_at: nextRetryAt,
               last_error_code: classification.error_code,
               last_error_message: classification.error_message,
-              last_error_payload: { status: response.status, body: errorText },
+              last_error_payload: { status: deleteResult.statusCode, body: deleteResult.error },
               completed_at: newStatus === "FAILED" || newStatus === "BLOCKED" 
                 ? new Date().toISOString() 
                 : null,
