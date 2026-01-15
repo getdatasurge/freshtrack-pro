@@ -24,6 +24,8 @@ import BrandedLogo from "@/components/BrandedLogo";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import { clearOfflineStorage } from "@/lib/offlineStorage";
 import { usePermissions } from "@/hooks/useUserRole";
+import { useSuperAdmin } from "@/contexts/SuperAdminContext";
+import { SupportModeBanner, ImpersonationBanner } from "@/components/platform/SupportModeBanner";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -53,6 +55,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
+  const { isSuperAdmin, isSupportModeActive, impersonation } = useSuperAdmin();
   const [session, setSession] = useState<Session | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
@@ -158,6 +161,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Support Mode Banner for Super Admins */}
+      <SupportModeBanner />
+      <ImpersonationBanner />
+
       {/* Header */}
       <header className="sticky top-0 z-50 glass border-b border-border/50">
         <div className="flex h-16">
@@ -299,13 +306,28 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 </Button>
               </Link>
             )}
+            {isSuperAdmin && (
+              <Link to="/platform">
+                <Button
+                  variant={location.pathname.startsWith("/platform") ? "secondary" : "ghost"}
+                  className={cn(
+                    "w-full justify-start gap-3 mt-2",
+                    !canDeleteEntities && "mt-4 pt-4 border-t border-border/50",
+                    location.pathname.startsWith("/platform") && "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+                  )}
+                >
+                  <Shield className="w-5 h-5" />
+                  Platform Admin
+                </Button>
+              </Link>
+            )}
           </nav>
         </aside>
 
         {/* Mobile Nav Overlay */}
         {mobileNavOpen && (
           <div className="fixed inset-0 z-40 lg:hidden">
-            <div 
+            <div
               className="absolute inset-0 bg-background/80 backdrop-blur-sm"
               onClick={() => setMobileNavOpen(false)}
             />
@@ -366,7 +388,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 })}
 
                 {canDeleteEntities && !permissionsLoading && (
-                  <Link 
+                  <Link
                     to="/admin/recently-deleted"
                     onClick={() => setMobileNavOpen(false)}
                   >
@@ -379,6 +401,24 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                     >
                       <Trash2 className="w-5 h-5" />
                       Recently Deleted
+                    </Button>
+                  </Link>
+                )}
+                {isSuperAdmin && (
+                  <Link
+                    to="/platform"
+                    onClick={() => setMobileNavOpen(false)}
+                  >
+                    <Button
+                      variant={location.pathname.startsWith("/platform") ? "secondary" : "ghost"}
+                      className={cn(
+                        "w-full justify-start gap-3 mt-2",
+                        !canDeleteEntities && "mt-4 pt-4 border-t border-border/50",
+                        location.pathname.startsWith("/platform") && "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+                      )}
+                    >
+                      <Shield className="w-5 h-5" />
+                      Platform Admin
                     </Button>
                   </Link>
                 )}

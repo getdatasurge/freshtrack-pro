@@ -33,6 +33,13 @@ import UploadTelnyxImage from "./pages/UploadTelnyxImage";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsConditions from "./pages/TermsConditions";
 import NotFound from "./pages/NotFound";
+// Platform Admin pages (Super Admin only)
+import PlatformOrganizations from "./pages/platform/PlatformOrganizations";
+import PlatformOrganizationDetail from "./pages/platform/PlatformOrganizationDetail";
+import PlatformUsers from "./pages/platform/PlatformUsers";
+import PlatformUserDetail from "./pages/platform/PlatformUserDetail";
+import PlatformAuditLog from "./pages/platform/PlatformAuditLog";
+import PlatformDeveloperTools from "./pages/platform/PlatformDeveloperTools";
 
 const queryClient = new QueryClient();
 
