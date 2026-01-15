@@ -134,3 +134,7 @@ verify_jwt = false
 # Verify public asset URL accessibility - handles CORS preflight
 [functions.verify-public-asset]
 verify_jwt = false
+
+# Fetch org state - used by emulator, uses API key auth
+[functions.fetch-org-state]
+verify_jwt = false
