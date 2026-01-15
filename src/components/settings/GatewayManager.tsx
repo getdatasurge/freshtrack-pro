@@ -96,7 +96,7 @@ const GatewayStatusBadgeWithTooltip = ({
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge className="bg-primary/15 text-primary border-primary/30 cursor-help">
+          <Badge className="bg-primary/15 text-primary border-primary/30 cursor-help max-w-[160px] truncate">
             Linked to {siteName}
           </Badge>
         </TooltipTrigger>
@@ -502,6 +502,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
             />
           )}
           {gateways && gateways.length > 0 ? (
+            <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -542,7 +543,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                   const siteName = getSiteName(gateway.site_id);
                   return (
                     <TableRow key={gateway.id}>
-                      <TableCell className="font-medium">{gateway.name}</TableCell>
+                      <TableCell className="font-medium py-3">{gateway.name}</TableCell>
                       <TableCell className="hidden sm:table-cell font-mono text-sm">
                         {formatEUI(gateway.gateway_eui)}
                       </TableCell>
@@ -564,7 +565,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                           siteName={siteName} 
                         />
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="py-3">
                         <div className="flex flex-col gap-2">
                           {/* TTN status */}
                           <GatewayProvisionButton
@@ -604,6 +605,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                 })}
               </TableBody>
             </Table>
+            </div>
           ) : (
             <div className="text-center py-12 text-muted-foreground">
               <Radio className="w-12 h-12 mx-auto mb-4 opacity-50" />

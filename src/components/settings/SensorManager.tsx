@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -597,73 +598,81 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <Card>
+        <CardContent className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
     );
   }
 
   return (
     <TooltipProvider>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-lg font-medium">LoRa Sensors</h3>
-            <p className="text-sm text-muted-foreground">
-              Register and manage your LoRaWAN temperature sensors
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {canEdit && sensors && sensors.length > 0 && (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Thermometer className="w-5 h-5" />
+                LoRa Sensors
+              </CardTitle>
+              <CardDescription>
+                Register and manage your LoRaWAN temperature sensors
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {canEdit && sensors && sensors.length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCheckAllTtn}
+                      disabled={checkTtnStatus.isPending}
+                    >
+                      {checkTtnStatus.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4 mr-2" />
+                      )}
+                      Check All TTN
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Check if all sensors exist in TTN</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="outline"
-                    size="sm"
-                    onClick={handleCheckAllTtn}
-                    disabled={checkTtnStatus.isPending}
+                    size="icon"
+                    onClick={handleForceRefresh}
+                    disabled={isRefreshing}
                   >
-                    {checkTtnStatus.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4 mr-2" />
-                    )}
-                    Check All TTN
+                    <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Check if all sensors exist in TTN</p>
+                  <p>Force Refresh</p>
+                  {dataUpdatedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Last: {formatDistanceToNow(dataUpdatedAt, { addSuffix: true })}
+                    </p>
+                  )}
                 </TooltipContent>
               </Tooltip>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleForceRefresh}
-                  disabled={isRefreshing}
-                >
-                  <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+              {canEdit && (
+                <Button onClick={() => setAddDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Sensor
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Force Refresh</p>
-                {dataUpdatedAt && (
-                  <p className="text-xs text-muted-foreground">
-                    Last: {formatDistanceToNow(dataUpdatedAt, { addSuffix: true })}
-                  </p>
-                )}
-              </TooltipContent>
-            </Tooltip>
-            {canEdit && (
-              <Button onClick={() => setAddDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Add Sensor
-              </Button>
-            )}
+              )}
+            </div>
           </div>
-        </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
 
         {sensors && sensors.length > 0 ? (
           <div className="rounded-md border">
@@ -720,7 +729,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                   return (
                   <TableRow key={sensor.id}>
                     {/* Name + badges */}
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium py-3 min-w-[140px]">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="whitespace-nowrap">{sensor.name}</span>
                         {!sensor.app_key && !sensor.ttn_device_id && (
@@ -789,9 +798,9 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                     </TableCell>
                     
                     {/* Assignment - Site + Unit stacked */}
-                    <TableCell>
+                    <TableCell className="py-3">
                       {canEdit ? (
-                        <div className="space-y-1">
+                        <div className="space-y-2">
                           <SensorSiteSelector
                             sensor={sensor}
                             sites={sites}
@@ -826,7 +835,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                     </TableCell>
                     
                     {/* Actions - TTN status + edit/delete combined */}
-                    <TableCell>
+                    <TableCell className="py-3">
                       <div className="flex flex-col gap-2">
                         {/* TTN Status row */}
                         <div className="flex items-center gap-1">
@@ -906,6 +915,8 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
             )}
           </div>
         )}
+        </CardContent>
+      </Card>
 
         <AddSensorDialog
           open={addDialogOpen}
@@ -1050,7 +1061,6 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
             </div>
           </DialogContent>
         </Dialog>
-      </div>
     </TooltipProvider>
   );
 }
