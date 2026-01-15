@@ -2,6 +2,7 @@
  * Site Location Modal
  * 
  * Reusable modal for editing site latitude, longitude, and timezone.
+ * Features address geocoding search and static map preview.
  * Used by the External Weather widget for inline location configuration.
  */
 
@@ -9,7 +10,7 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { MapPin, Globe, ExternalLink, Info } from "lucide-react";
+import { MapPin, Globe, ExternalLink, Info, Search } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,9 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useSiteLocationMutation } from "@/hooks/useSiteLocationMutation";
 import { Link } from "react-router-dom";
+import { AddressSearchInput } from "./AddressSearchInput";
+import { StaticMapPreview } from "./StaticMapPreview";
+import { GeocodingResult } from "@/lib/geocoding/geocodingService";
 
 const timezones = [
   { value: "America/New_York", label: "Eastern Time (ET)" },
@@ -52,6 +56,25 @@ const timezones = [
   { value: "Asia/Tokyo", label: "Tokyo (JST)" },
   { value: "Australia/Sydney", label: "Sydney (AEST)" },
 ];
+
+/**
+ * Simple timezone estimation based on longitude
+ * Returns a reasonable timezone for the given longitude
+ */
+function estimateTimezoneFromLongitude(longitude: number): string {
+  // Rough timezone zones by longitude
+  if (longitude >= -180 && longitude < -150) return "Pacific/Honolulu";
+  if (longitude >= -150 && longitude < -135) return "America/Anchorage";
+  if (longitude >= -135 && longitude < -115) return "America/Los_Angeles";
+  if (longitude >= -115 && longitude < -100) return "America/Denver";
+  if (longitude >= -100 && longitude < -85) return "America/Chicago";
+  if (longitude >= -85 && longitude < -60) return "America/New_York";
+  if (longitude >= -10 && longitude < 5) return "Europe/London";
+  if (longitude >= 5 && longitude < 30) return "Europe/Paris";
+  if (longitude >= 120 && longitude < 150) return "Asia/Tokyo";
+  if (longitude >= 150 && longitude <= 180) return "Australia/Sydney";
+  return "America/New_York"; // Default fallback
+}
 
 const locationSchema = z.object({
   latitude: z
@@ -99,6 +122,15 @@ export function SiteLocationModal({
     },
   });
 
+  // Watch form values for map preview
+  const watchedLatitude = form.watch("latitude");
+  const watchedLongitude = form.watch("longitude");
+  const hasValidCoordinates =
+    typeof watchedLatitude === "number" &&
+    typeof watchedLongitude === "number" &&
+    !isNaN(watchedLatitude) &&
+    !isNaN(watchedLongitude);
+
   // Reset form when modal opens with new values
   useEffect(() => {
     if (open) {
@@ -110,8 +142,16 @@ export function SiteLocationModal({
     }
   }, [open, currentLatitude, currentLongitude, currentTimezone, form]);
 
+  const handleAddressSelect = (result: GeocodingResult) => {
+    form.setValue("latitude", result.latitude, { shouldValidate: true });
+    form.setValue("longitude", result.longitude, { shouldValidate: true });
+    
+    // Auto-suggest timezone based on longitude
+    const suggestedTimezone = estimateTimezoneFromLongitude(result.longitude);
+    form.setValue("timezone", suggestedTimezone);
+  };
+
   const onSubmit = async (data: LocationFormData) => {
-    // The form validation ensures these fields exist
     await mutation.mutateAsync({
       latitude: data.latitude,
       longitude: data.longitude,
@@ -154,28 +194,35 @@ export function SiteLocationModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <MapPin className="h-5 w-5" />
             Set Site Location
           </DialogTitle>
           <DialogDescription>
-            Enter coordinates for weather data. You can find coordinates using{" "}
-            <a
-              href="https://www.google.com/maps"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:underline"
-            >
-              Google Maps
-            </a>
-            .
+            Search for an address or enter coordinates manually.
           </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {/* Address Search */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-sm font-medium">
+                <Search className="w-4 h-4 text-muted-foreground" />
+                Search Address
+              </Label>
+              <AddressSearchInput
+                onSelect={handleAddressSelect}
+                placeholder="Search city, address, or ZIP..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Search for an address to auto-fill coordinates
+              </p>
+            </div>
+
+            {/* Lat/Lon Fields */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -227,6 +274,7 @@ export function SiteLocationModal({
               />
             </div>
 
+            {/* Timezone */}
             <FormField
               control={form.control}
               name="timezone"
@@ -257,6 +305,20 @@ export function SiteLocationModal({
                 </FormItem>
               )}
             />
+
+            {/* Map Preview */}
+            {hasValidCoordinates && (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">
+                  Location Preview
+                </Label>
+                <StaticMapPreview
+                  latitude={watchedLatitude}
+                  longitude={watchedLongitude}
+                  className="h-32"
+                />
+              </div>
+            )}
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button
