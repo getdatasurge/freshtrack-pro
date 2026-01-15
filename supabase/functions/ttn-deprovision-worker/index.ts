@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getTtnConfigForOrg, getGlobalApplicationId } from "../_shared/ttnConfig.ts";
+import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -132,7 +132,7 @@ async function logEvent(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "deprovision-worker-v2-global-app-20251231";
+  const BUILD_VERSION = "deprovision-worker-v3-per-org-app-20260115";
   console.log(`[ttn-deprovision-worker] Build: ${BUILD_VERSION}`);
   
   if (req.method === "OPTIONS") {
@@ -142,18 +142,6 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    // Get global TTN Application ID
-    let globalAppId: string;
-    try {
-      globalAppId = getGlobalApplicationId();
-    } catch {
-      console.error("[ttn-deprovision-worker] TTN_APPLICATION_ID not configured");
-      return new Response(
-        JSON.stringify({ error: "TTN credentials not configured", processed: 0 }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
     
@@ -223,10 +211,31 @@ serve(async (req) => {
       // Build device ID if not stored
       const deviceId = job.ttn_device_id || `sensor-${job.dev_eui.toLowerCase()}`;
       
+      // Use per-org application ID: prefer job's stored value, fallback to org config
+      const targetAppId = job.ttn_application_id || ttnConfig.applicationId;
+      
+      if (!targetAppId) {
+        // No application ID available - block the job
+        await supabase
+          .from("ttn_deprovision_jobs")
+          .update({
+            status: "BLOCKED",
+            updated_at: new Date().toISOString(),
+            last_error_code: "NO_APP_ID",
+            last_error_message: "No TTN Application ID available for this sensor or organization",
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", job.id);
+
+        await logEvent(supabase, "blocked", job, false, "NO_APP_ID", "No TTN Application ID available");
+        results.push({ job_id: job.id, status: "BLOCKED", error: "No Application ID" });
+        continue;
+      }
+      
       try {
-        // Delete from TTN Identity Server using global app ID
-        const deleteUrl = `${ttnConfig.identityBaseUrl}/api/v3/applications/${globalAppId}/devices/${deviceId}`;
-        console.log(`[ttn-deprovision-worker] DELETE ${deleteUrl}`);
+        // Delete from TTN Identity Server using per-org application ID
+        const deleteUrl = `${ttnConfig.identityBaseUrl}/api/v3/applications/${targetAppId}/devices/${deviceId}`;
+        console.log(`[ttn-deprovision-worker] DELETE ${deleteUrl} (app: ${targetAppId})`);
         
         const response = await fetch(deleteUrl, {
           method: "DELETE",
