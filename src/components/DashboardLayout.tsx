@@ -14,6 +14,7 @@ import {
   X,
   ChevronLeft,
   Trash2,
+  Shield,
 } from "lucide-react";
 import { SidebarSitesAccordion, SidebarUnitsAccordion } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";

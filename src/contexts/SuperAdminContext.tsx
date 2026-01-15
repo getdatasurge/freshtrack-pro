@@ -211,12 +211,12 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
 
     try {
       await supabase.rpc('log_super_admin_action', {
-        p_action_type: actionType,
+        p_action: actionType,
         p_target_type: targetType || null,
         p_target_id: targetId || null,
-        p_target_organization_id: targetOrgId || null,
+        p_target_org_id: targetOrgId || null,
         p_impersonated_user_id: impersonation.impersonatedUserId || null,
-        p_metadata: metadata || {},
+        p_details: JSON.parse(JSON.stringify(metadata || {})),
       });
     } catch (err) {
       console.error('Error logging super admin action:', err);

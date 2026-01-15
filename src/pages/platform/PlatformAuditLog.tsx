@@ -38,16 +38,16 @@ import { format } from 'date-fns';
 
 interface AuditLogEntry {
   id: string;
-  actor_user_id: string;
+  admin_user_id: string;
   actor_email?: string;
   impersonated_user_id: string | null;
   impersonated_email?: string;
-  action_type: string;
+  action: string;
   target_type: string | null;
   target_id: string | null;
-  target_organization_id: string | null;
+  target_org_id: string | null;
   target_org_name?: string;
-  metadata: Record<string, unknown>;
+  details: Record<string, unknown>;
   created_at: string;
 }
 
@@ -89,12 +89,12 @@ export default function PlatformAuditLog() {
       if (error) throw error;
 
       // Enrich with user emails
-      const actorIds = [...new Set(data?.map(e => e.actor_user_id) || [])];
+      const actorIds = [...new Set(data?.map(e => e.admin_user_id) || [])];
       const impersonatedIds = [...new Set(
         data?.filter(e => e.impersonated_user_id).map(e => e.impersonated_user_id!) || []
       )];
       const orgIds = [...new Set(
-        data?.filter(e => e.target_organization_id).map(e => e.target_organization_id!) || []
+        data?.filter(e => e.target_org_id).map(e => e.target_org_id!) || []
       )];
 
       // Get actor emails
@@ -121,12 +121,13 @@ export default function PlatformAuditLog() {
 
       const enrichedEntries: AuditLogEntry[] = (data || []).map(entry => ({
         ...entry,
-        actor_email: actorMap.get(entry.actor_user_id),
+        details: (entry.details || {}) as Record<string, unknown>,
+        actor_email: actorMap.get(entry.admin_user_id),
         impersonated_email: entry.impersonated_user_id
           ? impersonatedMap.get(entry.impersonated_user_id)
           : undefined,
-        target_org_name: entry.target_organization_id
-          ? orgMap.get(entry.target_organization_id)
+        target_org_name: entry.target_org_id
+          ? orgMap.get(entry.target_org_id)
           : undefined,
       }));
 
@@ -151,7 +152,7 @@ export default function PlatformAuditLog() {
   };
 
   const filteredEntries = entries.filter(entry => {
-    if (actionTypeFilter !== 'all' && entry.action_type !== actionTypeFilter) {
+    if (actionTypeFilter !== 'all' && entry.action !== actionTypeFilter) {
       return false;
     }
     if (!searchQuery) return true;
@@ -160,11 +161,11 @@ export default function PlatformAuditLog() {
       entry.actor_email?.toLowerCase().includes(query) ||
       entry.impersonated_email?.toLowerCase().includes(query) ||
       entry.target_org_name?.toLowerCase().includes(query) ||
-      entry.action_type.toLowerCase().includes(query)
+      entry.action.toLowerCase().includes(query)
     );
   });
 
-  const uniqueActionTypes = [...new Set(entries.map(e => e.action_type))];
+  const uniqueActionTypes = [...new Set(entries.map(e => e.action))];
 
   return (
     <PlatformLayout title="Audit Log">
@@ -188,7 +189,7 @@ export default function PlatformAuditLog() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-600">
-              {entries.filter(e => e.action_type === 'SUPPORT_MODE_ENTERED').length}
+              {entries.filter(e => e.action === 'SUPPORT_MODE_ENTERED').length}
             </div>
           </CardContent>
         </Card>
@@ -200,7 +201,7 @@ export default function PlatformAuditLog() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">
-              {entries.filter(e => e.action_type === 'IMPERSONATION_STARTED').length}
+              {entries.filter(e => e.action === 'IMPERSONATION_STARTED').length}
             </div>
           </CardContent>
         </Card>
@@ -283,7 +284,7 @@ export default function PlatformAuditLog() {
               ) : (
                 filteredEntries.map((entry) => {
                   const isExpanded = expandedEntries.has(entry.id);
-                  const actionConfig = ACTION_TYPE_LABELS[entry.action_type];
+                  const actionConfig = ACTION_TYPE_LABELS[entry.action];
 
                   return (
                     <>
@@ -314,7 +315,7 @@ export default function PlatformAuditLog() {
                             variant="secondary"
                             className={actionConfig?.color || 'bg-gray-100 text-gray-800'}
                           >
-                            {actionConfig?.label || entry.action_type}
+                            {actionConfig?.label || entry.action}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -332,8 +333,8 @@ export default function PlatformAuditLog() {
                           )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {entry.metadata && Object.keys(entry.metadata).length > 0
-                            ? `${Object.keys(entry.metadata).length} fields`
+                          {entry.details && Object.keys(entry.details).length > 0
+                            ? `${Object.keys(entry.details).length} fields`
                             : '-'}
                         </TableCell>
                       </TableRow>
@@ -350,7 +351,7 @@ export default function PlatformAuditLog() {
                                   </div>
                                   <div className="flex">
                                     <dt className="w-32 text-muted-foreground">Actor ID:</dt>
-                                    <dd className="font-mono text-xs">{entry.actor_user_id}</dd>
+                                    <dd className="font-mono text-xs">{entry.admin_user_id}</dd>
                                   </div>
                                   {entry.impersonated_user_id && (
                                     <div className="flex">
@@ -372,11 +373,11 @@ export default function PlatformAuditLog() {
                                   )}
                                 </dl>
                               </div>
-                              {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+                              {entry.details && Object.keys(entry.details).length > 0 && (
                                 <div>
-                                  <div className="font-medium mb-2">Metadata</div>
+                                  <div className="font-medium mb-2">Details</div>
                                   <pre className="bg-background p-2 rounded text-xs overflow-auto max-h-32">
-                                    {JSON.stringify(entry.metadata, null, 2)}
+                                    {JSON.stringify(entry.details, null, 2)}
                                   </pre>
                                 </div>
                               )}
