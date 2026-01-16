@@ -183,17 +183,11 @@ Deno.serve(async (req) => {
       // If device has dev_eui, also create corresponding lora_sensor
       if (device.dev_eui) {
         try {
-          // Multi-layer sensor type inference for device-created sensors
-          const explicitType = device.sensor_type;
-          const modelInferredType = inferSensorTypeFromModel(device.model);
-          const finalType = explicitType || modelInferredType || "temperature";
-          
-          console.log(`[emulator-sync] Auto-sensor type inference: model=${device.model}, explicit=${explicitType}, model_inferred=${modelInferredType}, final=${finalType}`);
-          
-          const sensorResult = await upsertSensor(supabase, payload.org_id, {
+          // Let upsertSensor handle all type inference via its multi-layer chain
+          // Only pass sensor_type if explicitly provided - don't pre-determine!
+          const sensorData: EmulatorSensorInput = {
             dev_eui: device.dev_eui,
             name: device.name || `Sensor ${device.serial_number}`,
-            sensor_type: finalType as EmulatorSensorInput["sensor_type"],
             model: device.model || null,
             manufacturer: device.manufacturer || null,
             status: "pending",
@@ -201,9 +195,20 @@ Deno.serve(async (req) => {
             site_id: null,
             // Pass unit_name for fallback model extraction
             unit_name: device.name || null,
-          });
+            // Pass decoded_payload for payload-based type inference
+            decoded_payload: (device as { decoded_payload?: Record<string, unknown> }).decoded_payload || null,
+          };
+
+          // Only include sensor_type if explicitly provided by device
+          if (device.sensor_type) {
+            sensorData.sensor_type = device.sensor_type;
+          }
+
+          console.log(`[emulator-sync] Auto-sensor from device ${device.serial_number}: explicit_type=${device.sensor_type || 'none'}, model=${device.model || 'none'}, has_payload=${!!(device as { decoded_payload?: Record<string, unknown> }).decoded_payload}`);
+
+          const sensorResult = await upsertSensor(supabase, payload.org_id, sensorData);
           counts.sensors[sensorResult]++;
-          console.log(`[emulator-sync] Auto-created sensor for device ${device.serial_number}: ${sensorResult}, type=${finalType}`);
+          console.log(`[emulator-sync] Auto-created sensor for device ${device.serial_number}: ${sensorResult}`);
         } catch (sensorErr) {
           const msg = `Auto-sensor for ${device.serial_number}: ${sensorErr instanceof Error ? sensorErr.message : String(sensorErr)}`;
           warnings.push(msg);

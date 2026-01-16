@@ -19,6 +19,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeDevEui, formatDevEuiForDisplay, lookupOrgByWebhookSecret } from "../_shared/ttnConfig.ts";
+import { inferSensorTypeFromPayload, inferModelFromPayload, extractModelFromUnitId } from "../_shared/payloadRegistry.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,6 +74,7 @@ interface LoraSensor {
   sensor_type: string;
   name: string;
   is_primary: boolean;
+  model: string | null;
 }
 
 interface LegacyDevice {
@@ -239,7 +241,7 @@ Deno.serve(async (req) => {
     if (deviceId) {
       const { data: sensorByDeviceId } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model')
         .eq('ttn_device_id', deviceId)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -254,7 +256,7 @@ Deno.serve(async (req) => {
     if (!loraSensor) {
       const { data: sensorByDevEui } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model')
         .or(`dev_eui.eq.${devEuiLower},dev_eui.eq.${devEuiUpper},dev_eui.eq.${devEuiColonUpper},dev_eui.eq.${devEuiColonLower}`)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -372,6 +374,33 @@ async function handleLoraSensor(
 
   if (battery !== undefined) sensorUpdate.battery_level = battery;
   if (rssi !== undefined) sensorUpdate.signal_strength = rssi;
+
+  // ========================================
+  // SELF-HEALING: Infer sensor_type from payload
+  // If sensor was misclassified (e.g., defaulted to "temperature"),
+  // correct it based on actual payload fields
+  // ========================================
+  const payloadInferredType = inferSensorTypeFromPayload(decoded);
+  const currentType = sensor.sensor_type;
+
+  // Only update if we can infer a type AND it's different from current
+  // AND the current type is a likely default (temperature)
+  if (payloadInferredType && payloadInferredType !== currentType) {
+    // If current is "temperature" but payload shows it's a door sensor, fix it
+    if (currentType === 'temperature' || !currentType) {
+      sensorUpdate.sensor_type = payloadInferredType;
+      console.log(`[TTN-WEBHOOK] ${requestId} | Correcting sensor type: ${currentType} -> ${payloadInferredType} (based on payload keys: ${Object.keys(decoded).join(', ')})`);
+    }
+  }
+
+  // Also try to infer and set model if missing
+  const payloadInferredModel = inferModelFromPayload(decoded);
+  const nameInferredModel = extractModelFromUnitId(sensor.name);
+  if (!sensor.model && (payloadInferredModel || nameInferredModel)) {
+    const inferredModel = payloadInferredModel || nameInferredModel;
+    sensorUpdate.model = inferredModel;
+    console.log(`[TTN-WEBHOOK] ${requestId} | Setting model: ${inferredModel}`);
+  }
 
   await supabase.from('lora_sensors').update(sensorUpdate).eq('id', sensor.id);
 
