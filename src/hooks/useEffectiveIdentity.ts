@@ -61,7 +61,7 @@ export function useEffectiveIdentity(): EffectiveIdentity {
   const [realUserId, setRealUserId] = useState<string | null>(null);
   const [realOrgId, setRealOrgId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [realIdentityLoaded, setRealIdentityLoaded] = useState(false);
   const [impersonationChecked, setImpersonationChecked] = useState(false);
   
   // Server-validated impersonation state
@@ -74,6 +74,16 @@ export function useEffectiveIdentity(): EffectiveIdentity {
     targetOrgName: string | null;
     expiresAt: Date;
   } | null>(null);
+  
+  // Compute isInitialized: wait for impersonation check when in support mode
+  // This prevents race conditions where effectiveOrgId is null before impersonation loads
+  const isInitialized = (() => {
+    if (!rolesLoaded) return false;
+    if (!realIdentityLoaded) return false;
+    // In support mode, we MUST wait for impersonation check to complete
+    if (isSupportModeActive && !impersonationChecked) return false;
+    return true;
+  })();
 
   // Load real user identity
   const loadRealIdentity = useCallback(async () => {
@@ -181,15 +191,21 @@ export function useEffectiveIdentity(): EffectiveIdentity {
   const refresh = useCallback(async () => {
     setIsLoading(true);
     setImpersonationChecked(false);
+    setRealIdentityLoaded(false);
     try {
       await loadRealIdentity();
+      setRealIdentityLoaded(true);
+      
       if (rolesLoaded && isSuperAdmin && isSupportModeActive) {
         await validateServerImpersonation();
       }
+      setImpersonationChecked(true);
+    } catch (err) {
+      console.error('Error in refresh:', err);
+      setRealIdentityLoaded(true);
+      setImpersonationChecked(true);
     } finally {
       setIsLoading(false);
-      setIsInitialized(true);
-      setImpersonationChecked(true); // Mark impersonation check as complete
     }
   }, [loadRealIdentity, validateServerImpersonation, rolesLoaded, isSuperAdmin, isSupportModeActive]);
 
