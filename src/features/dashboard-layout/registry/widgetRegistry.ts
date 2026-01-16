@@ -74,6 +74,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: LineChart,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "sensor",
   },
   
   current_temp: {
@@ -91,6 +92,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Thermometer,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "sensor",
   },
   
   device_status: {
@@ -108,6 +110,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Activity,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "sensor",
   },
   
   // =========================================================================
@@ -129,6 +132,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: AlertTriangle,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "system",
   },
   
   temp_limits: {
@@ -146,6 +150,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Gauge,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "system",
   },
   
   readings_count: {
@@ -163,6 +168,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Hash,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "calculated",
   },
   
   device_readiness: {
@@ -180,6 +186,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: CheckCircle2,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "system",
   },
   
   last_known_good: {
@@ -197,6 +204,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: ShieldCheck,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "calculated",
   },
   
   connected_sensors: {
@@ -214,6 +222,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Radio,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "sensor",
   },
   
   battery_health: {
@@ -231,6 +240,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Battery,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "sensor",
   },
 
   // =========================================================================
@@ -252,6 +262,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: BarChart3,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "calculated",
   },
   
   temperature_trend: {
@@ -269,6 +280,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: TrendingUp,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "calculated",
   },
   
   temperature_excursion: {
@@ -286,6 +298,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: TrendingDown,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "calculated",
   },
   
   door_activity: {
@@ -303,6 +316,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: DoorOpen,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "sensor",
   },
   
   humidity_chart: {
@@ -320,6 +334,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Droplets,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "sensor",
   },
   
   manual_log_status: {
@@ -337,6 +352,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: ClipboardList,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "manual",
   },
   
   alert_history: {
@@ -354,6 +370,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: History,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "system",
   },
   
   sensor_signal_trend: {
@@ -371,6 +388,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Signal,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "sensor",
   },
   
   quick_actions: {
@@ -388,6 +406,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Zap,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "system",
   },
   
   event_timeline: {
@@ -405,6 +424,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Clock,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "system",
   },
   
   unit_compliance_score: {
@@ -422,6 +442,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Target,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "calculated",
   },
   
   maintenance_forecast: {
@@ -439,6 +460,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Wrench,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "calculated",
   },
   
   temperature_vs_external: {
@@ -456,6 +478,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: CloudSun,
     supportsTimeline: true,
     entityTypes: ["unit"],
+    dataCategory: "external",
   },
   
   annotations: {
@@ -473,6 +496,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: MessageSquare,
     supportsTimeline: false,
     entityTypes: ["unit"],
+    dataCategory: "manual",
   },
   
   // =========================================================================
@@ -494,6 +518,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Building2,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "calculated",
   },
   
   units_status_grid: {
@@ -511,6 +536,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Grid,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "sensor",
   },
   
   // =========================================================================
@@ -532,6 +558,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: AlertTriangle,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "system",
   },
   
   compliance_summary: {
@@ -549,6 +576,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: ClipboardCheck,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "calculated",
   },
 
   // =========================================================================
@@ -570,6 +598,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: LayoutGrid,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "sensor",
   },
   
   alerts_trend: {
@@ -587,6 +616,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: BarChart3,
     supportsTimeline: true,
     entityTypes: ["site"],
+    dataCategory: "calculated",
   },
   
   compliance_scoreboard: {
@@ -604,6 +634,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Target,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "calculated",
   },
   
   area_breakdown: {
@@ -621,6 +652,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Users,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "calculated",
   },
   
   recent_events_feed: {
@@ -638,6 +670,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: ListChecks,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "system",
   },
   
   unit_comparison: {
@@ -655,6 +688,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: BarChart3,
     supportsTimeline: true,
     entityTypes: ["site"],
+    dataCategory: "sensor",
   },
   
   problem_units: {
@@ -672,6 +706,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: AlertTriangle,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "system",
   },
   
   manual_log_overview: {
@@ -689,6 +724,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: ClipboardList,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "manual",
   },
   
   site_activity_graph: {
@@ -706,6 +742,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Activity,
     supportsTimeline: true,
     entityTypes: ["site"],
+    dataCategory: "sensor",
   },
   
   external_weather: {
@@ -723,6 +760,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: CloudSun,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "external",
   },
   
   maintenance_calendar: {
@@ -740,6 +778,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Calendar,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "calculated",
   },
   
   downtime_tracker: {
@@ -757,6 +796,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Timer,
     supportsTimeline: true,
     entityTypes: ["site"],
+    dataCategory: "calculated",
   },
   
   quick_stats_cards: {
@@ -774,6 +814,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: LayoutGrid,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "calculated",
   },
   
   unit_type_distribution: {
@@ -791,6 +832,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: PieChart,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "calculated",
   },
   
   gateway_health: {
@@ -808,6 +850,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     icon: Server,
     supportsTimeline: false,
     entityTypes: ["site"],
+    dataCategory: "gateway",
   },
 };
 

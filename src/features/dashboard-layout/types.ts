@@ -330,6 +330,17 @@ export interface WidgetProps {
 }
 
 /**
+ * Data source category for a widget.
+ */
+export type WidgetDataCategory =
+  | "sensor"      // Data from LoRa sensors
+  | "gateway"     // Data from LoRa gateways
+  | "system"      // System-generated data (alerts, events)
+  | "calculated"  // Derived/computed metrics
+  | "manual"      // User-entered data
+  | "external";   // External APIs (weather)
+
+/**
  * Widget definition in the registry.
  */
 export interface WidgetDefinition {
@@ -361,6 +372,8 @@ export interface WidgetDefinition {
   supportsTimeline: boolean;
   /** Entity types this widget is available for (undefined = all) */
   entityTypes?: EntityType[];
+  /** Data source category for the widget */
+  dataCategory?: WidgetDataCategory;
 }
 
 // ============================================================================
