@@ -7,9 +7,10 @@
 
 import { useMemo } from "react";
 import { differenceInMinutes, differenceInHours } from "date-fns";
-import type { WidgetStateInfo, WidgetHealthStatus } from "../types/widgetState";
+import type { WidgetStateInfo, WidgetHealthStatus, FailingLayer } from "../types/widgetState";
 import type { WidgetProps } from "../types";
-import { Settings, Radio, Calendar, RefreshCw, ExternalLink, Thermometer, Wifi } from "lucide-react";
+import { Settings, Radio, Calendar, RefreshCw, ExternalLink, Thermometer, Wifi, Lock, AlertTriangle } from "lucide-react";
+import { translateError } from "@/lib/errors/userFriendlyErrors";
 
 /**
  * Thresholds for determining staleness (in minutes).
@@ -107,10 +108,18 @@ function getDefaultMessage(status: WidgetHealthStatus): string {
   switch (status) {
     case "healthy":
       return "Data is up to date";
+    case "degraded":
+      return "Some data issues detected";
     case "stale":
       return "No recent data";
     case "error":
       return "Data unavailable";
+    case "no_data":
+      return "No data available";
+    case "misconfigured":
+      return "Widget configuration error";
+    case "permission_denied":
+      return "Access denied";
     case "not_configured":
       return "Setup required";
     case "loading":
@@ -466,14 +475,22 @@ export function createLoadingState(): WidgetStateInfo {
 }
 
 /**
- * Helper to create an error state.
+ * Helper to create an error state with user-friendly translation.
  */
-export function createErrorState(error: Error | string, lastUpdated?: Date | null): WidgetStateInfo {
-  const message = typeof error === "string" ? error : error.message;
+export function createErrorState(
+  error: Error | string, 
+  lastUpdated?: Date | null,
+  failingLayer?: FailingLayer
+): WidgetStateInfo {
+  const errorString = typeof error === "string" ? error : error.message;
+  const translated = translateError(errorString);
+  
   return {
     status: "error",
-    message: "Failed to load data",
-    rootCause: message,
+    message: translated.user,
+    rootCause: translated.suggestion || errorString,
+    failingLayer,
+    technicalDetails: translated.technical,
     action: {
       label: "Retry",
       icon: RefreshCw,
@@ -517,6 +534,62 @@ export function createNotConfiguredState(
       href: actionHref,
       icon: Settings,
     },
+    lastUpdated: null,
+  };
+}
+
+/**
+ * Helper to create a degraded state.
+ */
+export function createDegradedState(
+  message: string,
+  rootCause?: string,
+  failingLayer?: FailingLayer,
+  lastUpdated?: Date | null
+): WidgetStateInfo {
+  return {
+    status: "degraded",
+    message,
+    rootCause,
+    failingLayer,
+    lastUpdated: lastUpdated ?? null,
+  };
+}
+
+/**
+ * Helper to create a permission denied state.
+ */
+export function createPermissionDeniedState(resource?: string): WidgetStateInfo {
+  return {
+    status: "permission_denied",
+    message: "Access denied",
+    rootCause: resource ? `You don't have permission to view ${resource}` : "Contact your administrator for access",
+    action: {
+      label: "Request Access",
+      icon: Lock,
+    },
+    lastUpdated: null,
+  };
+}
+
+/**
+ * Helper to create a misconfigured state.
+ */
+export function createMisconfiguredState(
+  message: string,
+  suggestion: string,
+  actionLabel?: string,
+  actionHref?: string
+): WidgetStateInfo {
+  return {
+    status: "misconfigured",
+    message,
+    rootCause: suggestion,
+    action: actionLabel ? {
+      label: actionLabel,
+      href: actionHref,
+      icon: AlertTriangle,
+    } : undefined,
     lastUpdated: null,
   };
 }

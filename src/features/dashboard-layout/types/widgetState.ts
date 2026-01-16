@@ -16,12 +16,28 @@ export type { WidgetDataCategory } from "../types";
  * Determines the color coding and messaging shown to users.
  */
 export type WidgetHealthStatus =
-  | "healthy"         // Green - data flowing normally
-  | "stale"           // Yellow - no recent data but not an error
-  | "error"           // Red - expected data missing or failed to load
-  | "not_configured"  // Grey - feature not set up (no sensor, not enabled)
-  | "loading"         // Loading state
-  | "empty";          // No data in selected range (not an error condition)
+  | "healthy"           // Green - data flowing normally
+  | "degraded"          // Yellow-Orange - partial data, some issues
+  | "stale"             // Yellow - no recent data but not an error
+  | "error"             // Red - expected data missing or failed to load
+  | "no_data"           // Grey - zero data points available
+  | "misconfigured"     // Orange - widget config is invalid
+  | "permission_denied" // Red - user lacks access
+  | "not_configured"    // Grey - feature not set up (no sensor, not enabled)
+  | "loading"           // Loading state
+  | "empty";            // No data in selected range (not an error condition)
+
+/**
+ * Pipeline layer where an issue was detected.
+ */
+export type FailingLayer = 
+  | 'sensor' 
+  | 'gateway' 
+  | 'ttn' 
+  | 'decoder' 
+  | 'webhook' 
+  | 'database'
+  | 'external_api';
 
 /**
  * Complete state information for a widget.
@@ -42,6 +58,12 @@ export interface WidgetStateInfo {
   
   /** When the widget data was last updated */
   lastUpdated?: Date | null;
+  
+  /** Which pipeline layer is causing the issue (for diagnostics) */
+  failingLayer?: FailingLayer;
+  
+  /** Technical details (only shown to admins in debug mode) */
+  technicalDetails?: string;
 }
 
 /**
@@ -91,6 +113,12 @@ export const STATUS_BADGE_CONFIG: Record<WidgetHealthStatus, Omit<StatusBadgeCon
     textColor: "text-safe",
     borderColor: "border-safe/30",
   },
+  degraded: {
+    label: "Degraded",
+    bgColor: "bg-warning/20",
+    textColor: "text-warning",
+    borderColor: "border-warning/30",
+  },
   stale: {
     label: "Stale",
     bgColor: "bg-warning/20",
@@ -99,6 +127,24 @@ export const STATUS_BADGE_CONFIG: Record<WidgetHealthStatus, Omit<StatusBadgeCon
   },
   error: {
     label: "Error",
+    bgColor: "bg-alarm/20",
+    textColor: "text-alarm",
+    borderColor: "border-alarm/30",
+  },
+  no_data: {
+    label: "No Data",
+    bgColor: "bg-muted",
+    textColor: "text-muted-foreground",
+    borderColor: "border-muted",
+  },
+  misconfigured: {
+    label: "Misconfigured",
+    bgColor: "bg-warning/20",
+    textColor: "text-warning",
+    borderColor: "border-warning/30",
+  },
+  permission_denied: {
+    label: "Access Denied",
     bgColor: "bg-alarm/20",
     textColor: "text-alarm",
     borderColor: "border-alarm/30",
