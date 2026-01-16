@@ -2,15 +2,19 @@
  * Temperature Trend Widget
  * 
  * Shows rising, falling, or stable trend with rate of change.
+ * Uses WidgetEmptyState for all non-healthy states.
  */
 
 import { useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import type { WidgetProps } from "../types";
 import { cn } from "@/lib/utils";
+import { createNotConfiguredState, createEmptyState, createHealthyState } from "../hooks/useWidgetState";
+import { WidgetEmptyState } from "../components/WidgetEmptyState";
 
-export function TemperatureTrendWidget({ readings = [] }: WidgetProps) {
+export function TemperatureTrendWidget({ readings = [], sensor, loraSensors }: WidgetProps) {
+  const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
+  
   const trend = useMemo(() => {
     if (!readings || readings.length < 2) {
       return { direction: "stable" as const, rate: 0, confidence: "low" as const };
@@ -48,6 +52,35 @@ export function TemperatureTrendWidget({ readings = [] }: WidgetProps) {
     return { direction, rate: ratePerHour, confidence };
   }, [readings]);
 
+  // Determine widget state
+  const widgetState = useMemo(() => {
+    if (!primarySensor) {
+      return createNotConfiguredState(
+        "No sensor assigned to this unit.",
+        "Assign a temperature sensor to enable trend analysis.",
+        "Assign Sensor",
+        "/settings/devices"
+      );
+    }
+    
+    if (!readings || readings.length === 0) {
+      return createEmptyState(
+        "Waiting for sensor readings...",
+        "Data collection in progress"
+      );
+    }
+    
+    if (readings.length < 2) {
+      return createEmptyState(
+        "Need at least 2 readings for trend analysis.",
+        "Data collection in progress"
+      );
+    }
+    
+    const lastDate = readings[0]?.recorded_at ? new Date(readings[0].recorded_at) : undefined;
+    return createHealthyState(lastDate);
+  }, [primarySensor, readings]);
+
   const trendConfig = {
     rising: {
       icon: TrendingUp,
@@ -63,8 +96,8 @@ export function TemperatureTrendWidget({ readings = [] }: WidgetProps) {
     },
     stable: {
       icon: Minus,
-      color: "text-green-500",
-      bgColor: "bg-green-500/10",
+      color: "text-safe",
+      bgColor: "bg-safe/10",
       label: "Stable",
     },
   };
@@ -72,31 +105,32 @@ export function TemperatureTrendWidget({ readings = [] }: WidgetProps) {
   const config = trendConfig[trend.direction];
   const Icon = config.icon;
 
-  if (readings.length < 2) {
+  // Show empty state for non-healthy conditions
+  if (widgetState.status !== "healthy") {
     return (
-      <Card className="h-full">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
+      <div className="h-full flex flex-col">
+        <div className="flex-shrink-0 p-4 pb-2">
+          <h3 className="flex items-center gap-2 text-base font-semibold">
+            <TrendingUp className="w-4 h-4" />
             Temperature Trend
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center justify-center text-muted-foreground text-sm py-4">
-          Insufficient data for trend analysis
-        </CardContent>
-      </Card>
+          </h3>
+        </div>
+        <div className="flex-1 min-h-0 flex items-center justify-center p-4">
+          <WidgetEmptyState state={widgetState} compact />
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <TrendingUp className="h-4 w-4" />
+    <div className="h-full flex flex-col">
+      <div className="flex-shrink-0 p-4 pb-2">
+        <h3 className="flex items-center gap-2 text-base font-semibold">
+          <TrendingUp className="w-4 h-4" />
           Temperature Trend
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
+        </h3>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
         <div className="flex items-center justify-center gap-4">
           <div className={cn("p-3 rounded-full", config.bgColor)}>
             <Icon className={cn("h-8 w-8", config.color)} />
@@ -111,7 +145,7 @@ export function TemperatureTrendWidget({ readings = [] }: WidgetProps) {
         <p className="text-xs text-muted-foreground text-center mt-3 capitalize">
           {trend.confidence} confidence
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -37,19 +37,19 @@ interface DiscriminatorEntry {
 const DISCRIMINATOR_MATRIX: Record<string, DiscriminatorEntry> = {
   // Door sensors - very distinctive (highest priority)
   "door_status": {
-    payloadType: "door",
+    payloadType: "door_v1",
     sensorType: "door",
     models: ["LDS02", "EM300-MCS"],
     priority: 100,
   },
   "door": {
-    payloadType: "door",
+    payloadType: "door_v1",
     sensorType: "door",
     models: ["R311A"],
     priority: 100,
   },
   "open_close": {
-    payloadType: "door",
+    payloadType: "door_v1",
     sensorType: "door",
     models: ["DS3604"],
     priority: 100,
@@ -57,13 +57,13 @@ const DISCRIMINATOR_MATRIX: Record<string, DiscriminatorEntry> = {
   
   // Leak detection - safety critical (high priority)
   "water_leak": {
-    payloadType: "leak",
+    payloadType: "leak_v1",
     sensorType: "leak",
     models: ["LDDS75"],
     priority: 95,
   },
   "leak": {
-    payloadType: "leak",
+    payloadType: "leak_v1",
     sensorType: "leak",
     models: ["R718WA2"],
     priority: 95,
@@ -71,13 +71,13 @@ const DISCRIMINATOR_MATRIX: Record<string, DiscriminatorEntry> = {
   
   // Motion sensors (high priority)
   "motion": {
-    payloadType: "motion",
+    payloadType: "motion_v1",
     sensorType: "motion",
     models: ["TBMS100"],
     priority: 90,
   },
   "occupancy": {
-    payloadType: "motion",
+    payloadType: "motion_v1",
     sensorType: "motion",
     models: [],
     priority: 90,
@@ -85,20 +85,20 @@ const DISCRIMINATOR_MATRIX: Record<string, DiscriminatorEntry> = {
   
   // Air quality - distinctive combo fields (higher than basic temp)
   "co2+tvoc": {
-    payloadType: "air_quality",
+    payloadType: "air_quality_v1",
     sensorType: "air_quality",
     models: ["AM319"],
     priority: 85,
     requiredFields: ["co2", "tvoc"],
   },
   "co2": {
-    payloadType: "air_quality",
+    payloadType: "air_quality_v1",
     sensorType: "air_quality",
     models: ["AM103", "ERS-CO2"],
     priority: 80,
   },
   "tvoc": {
-    payloadType: "air_quality",
+    payloadType: "air_quality_v1",
     sensorType: "air_quality",
     models: ["AM319"],
     priority: 80,
@@ -106,13 +106,13 @@ const DISCRIMINATOR_MATRIX: Record<string, DiscriminatorEntry> = {
   
   // GPS/Location
   "gps": {
-    payloadType: "gps",
+    payloadType: "gps_v1",
     sensorType: "gps",
     models: ["TBS220"],
     priority: 85,
   },
   "latitude+longitude": {
-    payloadType: "gps",
+    payloadType: "gps_v1",
     sensorType: "gps",
     models: ["LT-22222-L"],
     priority: 85,
@@ -121,13 +121,13 @@ const DISCRIMINATOR_MATRIX: Record<string, DiscriminatorEntry> = {
   
   // Metering/Pulse counting
   "pulse_count": {
-    payloadType: "metering",
+    payloadType: "metering_v1",
     sensorType: "metering",
     models: ["KONA Pulse Counter"],
     priority: 75,
   },
   "counter": {
-    payloadType: "metering",
+    payloadType: "metering_v1",
     sensorType: "metering",
     models: ["EM500-PP"],
     priority: 75,
@@ -135,7 +135,7 @@ const DISCRIMINATOR_MATRIX: Record<string, DiscriminatorEntry> = {
   
   // Temperature + Humidity combo (medium priority)
   "temperature+humidity": {
-    payloadType: "temperature_humidity",
+    payloadType: "temp_rh_v1",
     sensorType: "temperature",
     models: ["EM300-TH", "ERS"],
     priority: 60,
@@ -144,7 +144,7 @@ const DISCRIMINATOR_MATRIX: Record<string, DiscriminatorEntry> = {
   
   // Basic temperature (lowest priority - most common)
   "temperature": {
-    payloadType: "temperature",
+    payloadType: "temperature_v1",
     sensorType: "temperature",
     models: ["EM500-PT100"],
     priority: 40,
@@ -388,7 +388,7 @@ export function inferPayloadType(
     ));
     
     return {
-      payloadType: "multi_sensor",
+      payloadType: "multi_sensor_v1",
       model: multiSensor.model,
       sensorType: "temperature", // Primary function
       confidence: 0.95,
