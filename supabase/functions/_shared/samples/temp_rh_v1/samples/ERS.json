@@ -1,0 +1,15 @@
+{
+  "model": "ERS",
+  "manufacturer": "Elsys",
+  "description": "Elsys ERS LoRaWAN Sensor",
+  "samples": [
+    {
+      "description": "Room temperature",
+      "decoded_payload": {
+        "temperature": 21.5,
+        "humidity": 50.0,
+        "battery_level": 100
+      }
+    }
+  ]
+}

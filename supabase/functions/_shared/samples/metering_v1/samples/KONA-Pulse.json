@@ -1,0 +1,14 @@
+{
+  "model": "KONA Pulse Counter",
+  "manufacturer": "KONA",
+  "description": "KONA Pulse Counter",
+  "samples": [
+    {
+      "description": "Pulse and total",
+      "decoded_payload": {
+        "pulse_count": 1234,
+        "total_count": 5678
+      }
+    }
+  ]
+}

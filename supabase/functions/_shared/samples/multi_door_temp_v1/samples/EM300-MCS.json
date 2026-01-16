@@ -1,0 +1,25 @@
+{
+  "model": "EM300-MCS",
+  "manufacturer": "Milesight",
+  "description": "Milesight EM300-MCS Multi-Sensor (Door + Temperature + Humidity)",
+  "samples": [
+    {
+      "description": "Door closed with temperature",
+      "decoded_payload": {
+        "temperature": 22.0,
+        "humidity": 50,
+        "door_status": "closed",
+        "battery_level": 85
+      }
+    },
+    {
+      "description": "Door open with temperature",
+      "decoded_payload": {
+        "temperature": 23.5,
+        "humidity": 48,
+        "door_status": "open",
+        "battery_level": 82
+      }
+    }
+  ]
+}

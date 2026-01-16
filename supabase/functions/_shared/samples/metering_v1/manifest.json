@@ -1,0 +1,31 @@
+{
+  "payloadType": "metering_v1",
+  "version": "1.0.0",
+  "displayName": "Pulse Counter/Metering",
+  "description": "Pulse counting and metering devices",
+  "sensorType": "metering",
+  "capabilities": ["pulse", "battery"],
+  "schema": {
+    "type": "object",
+    "properties": {
+      "pulse_count": { "type": "integer", "minimum": 0 },
+      "counter": { "type": "integer", "minimum": 0 },
+      "total_count": { "type": "integer", "minimum": 0 },
+      "battery_level": { "type": "integer", "minimum": 0, "maximum": 100 }
+    },
+    "oneOf": [
+      { "required": ["pulse_count"] },
+      { "required": ["counter"] }
+    ]
+  },
+  "discriminators": {
+    "primary": ["pulse_count", "counter"],
+    "secondary": ["total_count"],
+    "priority": 100
+  },
+  "fieldNormalization": {
+    "pulse_count": "count",
+    "counter": "count"
+  },
+  "knownModels": ["EM500-PP", "KONA Pulse Counter"]
+}

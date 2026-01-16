@@ -1,0 +1,23 @@
+{
+  "model": "EM300-TH",
+  "manufacturer": "Milesight",
+  "description": "Milesight EM300-TH Temperature & Humidity Sensor",
+  "samples": [
+    {
+      "description": "Normal reading",
+      "decoded_payload": {
+        "temperature": 22.1,
+        "humidity": 45.3,
+        "battery_level": 95
+      }
+    },
+    {
+      "description": "Cold storage reading",
+      "decoded_payload": {
+        "temperature": -18.5,
+        "humidity": 30.0,
+        "battery_level": 88
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "payloadType": "air_quality_co2_v1",
+  "version": "1.0.0",
+  "displayName": "CO2 Air Quality Sensor",
+  "description": "Air quality sensors with CO2 monitoring",
+  "sensorType": "air_quality",
+  "capabilities": ["co2", "temperature", "humidity", "battery"],
+  "schema": {
+    "type": "object",
+    "required": ["co2"],
+    "properties": {
+      "co2": { "type": "number", "minimum": 0, "maximum": 10000 },
+      "temperature": { "type": "number", "minimum": -100, "maximum": 200 },
+      "humidity": { "type": "number", "minimum": 0, "maximum": 100 },
+      "battery_level": { "type": "integer", "minimum": 0, "maximum": 100 }
+    }
+  },
+  "discriminators": {
+    "primary": ["co2"],
+    "secondary": ["temperature", "humidity"],
+    "priority": 110
+  },
+  "fieldNormalization": {},
+  "knownModels": ["ERS-CO2", "AM103"]
+}

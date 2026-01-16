@@ -1,0 +1,34 @@
+{
+  "payloadType": "leak_v1",
+  "version": "1.0.0",
+  "displayName": "Water Leak Sensor",
+  "description": "Water leak detection sensors",
+  "sensorType": "leak",
+  "capabilities": ["leak", "battery"],
+  "schema": {
+    "type": "object",
+    "properties": {
+      "water_leak": { "type": "boolean" },
+      "leak": { "type": "boolean" },
+      "flood": { "type": "boolean" },
+      "battery_level": { "type": "integer", "minimum": 0, "maximum": 100 },
+      "battery_voltage": { "type": "number", "minimum": 0, "maximum": 5 }
+    },
+    "oneOf": [
+      { "required": ["water_leak"] },
+      { "required": ["leak"] },
+      { "required": ["flood"] }
+    ]
+  },
+  "discriminators": {
+    "primary": ["water_leak", "leak", "flood"],
+    "secondary": [],
+    "priority": 100
+  },
+  "fieldNormalization": {
+    "water_leak": "leak_detected",
+    "leak": "leak_detected",
+    "flood": "leak_detected"
+  },
+  "knownModels": ["LDDS75", "R718WA2"]
+}

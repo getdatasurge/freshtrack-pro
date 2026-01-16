@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://freshtrack.io/schemas/payload-type.schema.json",
+  "title": "Payload Type Manifest",
+  "description": "Schema for payload type manifest files that define payload classification rules",
+  "type": "object",
+  "required": ["payloadType", "version", "displayName", "sensorType", "capabilities", "schema", "discriminators"],
+  "properties": {
+    "payloadType": {
+      "type": "string",
+      "pattern": "^[a-z_]+_v[0-9]+$",
+      "description": "Versioned payload type identifier (e.g., door_v1, temp_rh_v1)"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic version of this manifest"
+    },
+    "displayName": {
+      "type": "string",
+      "description": "Human-readable name for this payload type"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of sensors that produce this payload type"
+    },
+    "sensorType": {
+      "type": "string",
+      "enum": ["temperature", "door", "air_quality", "leak", "motion", "gps", "metering", "multi_sensor", "unknown"],
+      "description": "Maps to lora_sensor_type enum value"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["temperature", "humidity", "door", "motion", "leak", "co2", "tvoc", "pm", "gps", "pulse", "battery"]
+      },
+      "minItems": 1,
+      "description": "Capabilities provided by this payload type"
+    },
+    "schema": {
+      "type": "object",
+      "description": "JSON Schema for validating payloads of this type"
+    },
+    "discriminators": {
+      "type": "object",
+      "required": ["primary"],
+      "properties": {
+        "primary": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Primary discriminator fields (any one present indicates this type)"
+        },
+        "secondary": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Secondary fields that increase confidence"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "default": 100,
+          "description": "Priority for resolution when multiple types match (higher wins)"
+        }
+      }
+    },
+    "fieldNormalization": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Maps variant field names to canonical names"
+    },
+    "knownModels": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Known device models that produce this payload type"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "payloadType": "multi_door_temp_v1",
+  "version": "1.0.0",
+  "displayName": "Multi-Sensor (Door + Temp)",
+  "description": "Multi-function sensors with door + temperature/humidity",
+  "sensorType": "multi_sensor",
+  "capabilities": ["door", "temperature", "humidity", "battery"],
+  "schema": {
+    "type": "object",
+    "required": ["temperature"],
+    "properties": {
+      "temperature": { "type": "number", "minimum": -100, "maximum": 200 },
+      "humidity": { "type": "number", "minimum": 0, "maximum": 100 },
+      "door_status": { "type": "string", "enum": ["open", "closed"] },
+      "door": { "type": "boolean" },
+      "battery_level": { "type": "integer", "minimum": 0, "maximum": 100 }
+    },
+    "anyOf": [
+      { "required": ["door_status"] },
+      { "required": ["door"] }
+    ]
+  },
+  "discriminators": {
+    "primary": ["temperature", "door_status"],
+    "secondary": ["humidity", "door"],
+    "priority": 150
+  },
+  "fieldNormalization": {
+    "door_status": "door_state",
+    "door": "door_state"
+  },
+  "knownModels": ["EM300-MCS"]
+}

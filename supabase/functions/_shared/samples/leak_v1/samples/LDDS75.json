@@ -1,0 +1,21 @@
+{
+  "model": "LDDS75",
+  "manufacturer": "Dragino",
+  "description": "Dragino LDDS75 Leak Detection Sensor",
+  "samples": [
+    {
+      "description": "Leak detected",
+      "decoded_payload": {
+        "water_leak": true,
+        "battery_level": 80
+      }
+    },
+    {
+      "description": "No leak",
+      "decoded_payload": {
+        "water_leak": false,
+        "battery_level": 85
+      }
+    }
+  ]
+}

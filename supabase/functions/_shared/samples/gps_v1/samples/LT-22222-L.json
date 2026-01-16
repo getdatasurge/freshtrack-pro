@@ -1,0 +1,15 @@
+{
+  "model": "LT-22222-L",
+  "manufacturer": "Dragino",
+  "description": "Dragino LT-22222-L GPS Tracker",
+  "samples": [
+    {
+      "description": "Position fix",
+      "decoded_payload": {
+        "latitude": 40.7128,
+        "longitude": -74.0060,
+        "battery_level": 75
+      }
+    }
+  ]
+}

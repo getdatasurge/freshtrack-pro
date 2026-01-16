@@ -1,0 +1,26 @@
+{
+  "payloadType": "air_quality_tvoc_v1",
+  "version": "1.0.0",
+  "displayName": "TVOC Air Quality Sensor",
+  "description": "Advanced air quality sensors with TVOC monitoring",
+  "sensorType": "air_quality",
+  "capabilities": ["co2", "tvoc", "temperature", "humidity", "battery"],
+  "schema": {
+    "type": "object",
+    "required": ["tvoc"],
+    "properties": {
+      "tvoc": { "type": "number", "minimum": 0 },
+      "co2": { "type": "number", "minimum": 0, "maximum": 10000 },
+      "temperature": { "type": "number", "minimum": -100, "maximum": 200 },
+      "humidity": { "type": "number", "minimum": 0, "maximum": 100 },
+      "battery_level": { "type": "integer", "minimum": 0, "maximum": 100 }
+    }
+  },
+  "discriminators": {
+    "primary": ["tvoc"],
+    "secondary": ["co2", "temperature", "humidity"],
+    "priority": 120
+  },
+  "fieldNormalization": {},
+  "knownModels": ["AM319"]
+}

@@ -1,0 +1,21 @@
+{
+  "model": "TBMS100",
+  "manufacturer": "Milesight",
+  "description": "Milesight TBMS100 Motion Sensor",
+  "samples": [
+    {
+      "description": "Motion detected",
+      "decoded_payload": {
+        "motion": true,
+        "battery_level": 85
+      }
+    },
+    {
+      "description": "No motion",
+      "decoded_payload": {
+        "motion": false,
+        "battery_level": 85
+      }
+    }
+  ]
+}
