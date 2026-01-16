@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 // Support mode timeout (30 minutes in milliseconds)
 const SUPPORT_MODE_TIMEOUT_MS = 30 * 60 * 1000;
 const SUPPORT_MODE_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+const SUPPORT_MODE_STORAGE_KEY = 'ftp_support_mode';
 
 // Role load status state machine
 export type RoleLoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
@@ -168,6 +169,45 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     }
   }, [rbacLog, updateRoleStatus]);
 
+  // Restore Support Mode from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SUPPORT_MODE_STORAGE_KEY);
+      if (stored) {
+        const { active, startedAt, expiresAt } = JSON.parse(stored);
+        const expireDate = new Date(expiresAt);
+        
+        // Only restore if still valid
+        if (active && expireDate > new Date()) {
+          rbacLog('Restoring Support Mode from localStorage');
+          setIsSupportModeActive(true);
+          setSupportModeStartedAt(new Date(startedAt));
+          setSupportModeExpiresAt(expireDate);
+          setLastActivityTime(new Date());
+        } else {
+          // Clean up expired state
+          localStorage.removeItem(SUPPORT_MODE_STORAGE_KEY);
+        }
+      }
+    } catch (err) {
+      console.error('Error restoring Support Mode:', err);
+      localStorage.removeItem(SUPPORT_MODE_STORAGE_KEY);
+    }
+  }, [rbacLog]);
+
+  // Persist Support Mode state to localStorage
+  useEffect(() => {
+    if (isSupportModeActive && supportModeStartedAt && supportModeExpiresAt) {
+      localStorage.setItem(SUPPORT_MODE_STORAGE_KEY, JSON.stringify({
+        active: true,
+        startedAt: supportModeStartedAt.toISOString(),
+        expiresAt: supportModeExpiresAt.toISOString()
+      }));
+    } else {
+      localStorage.removeItem(SUPPORT_MODE_STORAGE_KEY);
+    }
+  }, [isSupportModeActive, supportModeStartedAt, supportModeExpiresAt]);
+
   // Initial load and auth state changes
   useEffect(() => {
     checkSuperAdminStatus();
@@ -183,6 +223,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
         setIsSupportModeActive(false);
         setSupportModeStartedAt(null);
         setSupportModeExpiresAt(null);
+        localStorage.removeItem(SUPPORT_MODE_STORAGE_KEY);
         setImpersonation({
           isImpersonating: false,
           impersonatedUserId: null,
