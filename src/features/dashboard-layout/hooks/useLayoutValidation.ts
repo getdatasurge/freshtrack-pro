@@ -3,7 +3,7 @@
  * 
  * Validates layout configuration before saving, checking for:
  * - Missing mandatory widgets
- * - Widget data binding issues (e.g., door_activity without door sensor)
+ * - Widget data binding issues (capability-based validation)
  * - Missing required data sources
  */
 
@@ -11,6 +11,12 @@ import { useMemo } from "react";
 import { WIDGET_REGISTRY, getMandatoryWidgets } from "../registry/widgetRegistry";
 import type { LayoutConfig } from "../types";
 import type { EntityType } from "../hooks/useEntityLayoutStorage";
+import type { DeviceCapability } from "@/lib/registry/capabilityRegistry";
+import { 
+  checkWidgetCompatibility, 
+  checkWidgetCompatibilityBySensorType,
+  type CompatibilityResult 
+} from "../utils/compatibilityMatrix";
 
 export type ValidationSeverity = "error" | "warning" | "info";
 
@@ -35,62 +41,116 @@ export interface LayoutValidationResult {
   warningCount: number;
 }
 
+/**
+ * Extended validation context with capability support.
+ */
 interface ValidationContext {
+  // Capability-based validation (preferred)
+  unitCapabilities?: DeviceCapability[];
+  payloadType?: string;
+  bindingConfidence?: number;
+  
+  // Legacy support
   hasSensor: boolean;
   sensorType?: string;
-  hasDoorSensor: boolean;
-  hasHumiditySensor: boolean;
+  
+  // Other context
   hasLocationConfigured: boolean;
   hasManualLoggingEnabled: boolean;
 }
 
 /**
- * Check if a widget's required data source is available
+ * Convert capability compatibility result to validation issue.
  */
-function validateWidgetDataBinding(
+function capabilityResultToIssue(
+  widgetId: string,
+  widgetName: string,
+  result: CompatibilityResult
+): ValidationIssue | null {
+  if (result.compatible && !result.partial) {
+    return null;
+  }
+  
+  if (!result.compatible) {
+    return {
+      id: `capability-${widgetId}`,
+      widgetId,
+      widgetName,
+      severity: "warning",
+      message: result.reason ?? "Missing required capabilities",
+      action: { label: "Configure Sensor", href: "#sensors" },
+    };
+  }
+  
+  // Partial compatibility
+  if (result.partial && result.reason) {
+    return {
+      id: `capability-partial-${widgetId}`,
+      widgetId,
+      widgetName,
+      severity: "info",
+      message: result.reason,
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * Validate widget using capability-based approach.
+ */
+function validateWidgetCapabilities(
+  widgetId: string,
+  context: ValidationContext
+): ValidationIssue | null {
+  const widgetDef = WIDGET_REGISTRY[widgetId];
+  if (!widgetDef) return null;
+  
+  // If widget has no capability requirements, skip validation
+  if (!widgetDef.requiredCapabilities || widgetDef.requiredCapabilities.length === 0) {
+    return null;
+  }
+  
+  // Use capability-based validation if capabilities are available
+  if (context.unitCapabilities && context.unitCapabilities.length > 0) {
+    const result = checkWidgetCompatibility(widgetId, context.unitCapabilities);
+    return capabilityResultToIssue(widgetId, widgetDef.name, result);
+  }
+  
+  // Fallback to sensor type-based validation
+  if (context.sensorType) {
+    const result = checkWidgetCompatibilityBySensorType(widgetId, context.sensorType);
+    return capabilityResultToIssue(widgetId, widgetDef.name, result);
+  }
+  
+  // No sensor assigned at all
+  if (!context.hasSensor) {
+    return {
+      id: `no-sensor-${widgetId}`,
+      widgetId,
+      widgetName: widgetDef.name,
+      severity: "warning",
+      message: "No sensor assigned to this unit",
+      action: { label: "Assign Sensor", href: "#sensors" },
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * Legacy validation for non-capability requirements (weather, manual log).
+ */
+function validateLegacyDataSource(
   widgetId: string,
   context: ValidationContext
 ): ValidationIssue | null {
   const widgetDef = WIDGET_REGISTRY[widgetId];
   if (!widgetDef?.requiredDataSource) return null;
 
-  const { type, sensorTypes, message } = widgetDef.requiredDataSource;
+  const { type, message } = widgetDef.requiredDataSource;
 
   switch (type) {
-    case "sensor":
-      if (!context.hasSensor) {
-        return {
-          id: `binding-${widgetId}`,
-          widgetId,
-          widgetName: widgetDef.name,
-          severity: "warning",
-          message: message || "Requires a sensor to be assigned",
-          action: { label: "Assign Sensor", href: "#sensors" },
-        };
-      }
-      // Check specific sensor types
-      if (sensorTypes?.includes("door") && !context.hasDoorSensor) {
-        return {
-          id: `binding-${widgetId}-door`,
-          widgetId,
-          widgetName: widgetDef.name,
-          severity: "warning",
-          message: message || "Requires a door/contact sensor",
-          action: { label: "Configure Sensor", href: "#sensors" },
-        };
-      }
-      if (sensorTypes?.includes("humidity") && !context.hasHumiditySensor) {
-        return {
-          id: `binding-${widgetId}-humidity`,
-          widgetId,
-          widgetName: widgetDef.name,
-          severity: "warning",
-          message: message || "Requires a sensor that reports humidity",
-          action: { label: "Check Sensor", href: "#sensors" },
-        };
-      }
-      break;
-
     case "weather":
       if (!context.hasLocationConfigured) {
         return {
@@ -117,23 +177,31 @@ function validateWidgetDataBinding(
       break;
 
     case "gateway":
-      // Gateway widgets don't need specific validation currently
-      break;
-
     case "none":
-      // No data source required
+      // No validation needed
+      break;
+      
+    case "sensor":
+      // Handled by capability validation
       break;
   }
 
   return null;
 }
 
+/**
+ * Hook for validating layout configuration.
+ * Uses capability-based validation when available, falls back to legacy sensor type.
+ */
 export function useLayoutValidation(
   config: LayoutConfig,
   entityType: EntityType,
   context: {
     hasSensor?: boolean;
     sensorType?: string;
+    unitCapabilities?: DeviceCapability[];
+    payloadType?: string;
+    bindingConfidence?: number;
     hasLocationConfigured?: boolean;
   } = {}
 ): LayoutValidationResult {
@@ -144,8 +212,9 @@ export function useLayoutValidation(
     const validationContext: ValidationContext = {
       hasSensor: context.hasSensor ?? false,
       sensorType: context.sensorType,
-      hasDoorSensor: context.sensorType === "door" || context.sensorType === "contact",
-      hasHumiditySensor: context.sensorType === "humidity" || context.sensorType === "temperature_humidity",
+      unitCapabilities: context.unitCapabilities,
+      payloadType: context.payloadType,
+      bindingConfidence: context.bindingConfidence,
       hasLocationConfigured: context.hasLocationConfigured ?? false,
       hasManualLoggingEnabled: true, // Assume enabled for now
     };
@@ -171,11 +240,22 @@ export function useLayoutValidation(
       }
     }
 
-    // 2. Check widget data bindings for all visible widgets
+    // 2. Check widget capabilities for all visible widgets
     for (const widgetPos of config.widgets) {
-      const bindingIssue = validateWidgetDataBinding(widgetPos.i, validationContext);
-      if (bindingIssue) {
-        issues.push(bindingIssue);
+      // Capability-based validation (primary)
+      const capabilityIssue = validateWidgetCapabilities(widgetPos.i, validationContext);
+      if (capabilityIssue) {
+        issues.push(capabilityIssue);
+      }
+      
+      // Legacy validation for non-sensor requirements
+      const legacyIssue = validateLegacyDataSource(widgetPos.i, validationContext);
+      if (legacyIssue) {
+        // Don't duplicate issues
+        const isDuplicate = issues.some(i => i.widgetId === legacyIssue.widgetId && i.id !== legacyIssue.id);
+        if (!isDuplicate) {
+          issues.push(legacyIssue);
+        }
       }
     }
 
@@ -191,5 +271,50 @@ export function useLayoutValidation(
       errorCount,
       warningCount,
     };
-  }, [config, entityType, context.hasSensor, context.sensorType, context.hasLocationConfigured]);
+  }, [
+    config, 
+    entityType, 
+    context.hasSensor, 
+    context.sensorType, 
+    context.unitCapabilities,
+    context.payloadType,
+    context.bindingConfidence,
+    context.hasLocationConfigured,
+  ]);
+}
+
+/**
+ * Check if a specific widget can be added to layout based on capabilities.
+ */
+export function canAddWidget(
+  widgetId: string,
+  unitCapabilities?: DeviceCapability[],
+  sensorType?: string
+): { canAdd: boolean; reason: string | null } {
+  if (unitCapabilities && unitCapabilities.length > 0) {
+    const result = checkWidgetCompatibility(widgetId, unitCapabilities);
+    return {
+      canAdd: result.compatible,
+      reason: result.reason,
+    };
+  }
+  
+  if (sensorType) {
+    const result = checkWidgetCompatibilityBySensorType(widgetId, sensorType);
+    return {
+      canAdd: result.compatible,
+      reason: result.reason,
+    };
+  }
+  
+  // No sensor info - check if widget requires capabilities
+  const widget = WIDGET_REGISTRY[widgetId];
+  if (widget?.requiredCapabilities && widget.requiredCapabilities.length > 0) {
+    return {
+      canAdd: false,
+      reason: "No sensor assigned",
+    };
+  }
+  
+  return { canAdd: true, reason: null };
 }

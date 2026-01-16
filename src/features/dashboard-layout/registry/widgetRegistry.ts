@@ -75,6 +75,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredCapabilities: ["temperature"],
+    optionalCapabilities: ["humidity"],
   },
   
   current_temp: {
@@ -93,6 +95,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredCapabilities: ["temperature"],
   },
   
   device_status: {
@@ -241,6 +244,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredCapabilities: ["battery"],
   },
 
   // =========================================================================
@@ -263,6 +267,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "calculated",
+    requiredCapabilities: ["temperature"],
   },
   
   temperature_trend: {
@@ -281,6 +286,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "calculated",
+    requiredCapabilities: ["temperature"],
   },
   
   temperature_excursion: {
@@ -299,6 +305,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "calculated",
+    requiredCapabilities: ["temperature"],
   },
   
   door_activity: {
@@ -317,6 +324,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredCapabilities: ["door"],
+    optionalCapabilities: ["battery"],
     requiredDataSource: {
       type: "sensor",
       sensorTypes: ["door"],
@@ -340,6 +349,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredCapabilities: ["humidity"],
+    optionalCapabilities: ["temperature"],
     requiredDataSource: {
       type: "sensor",
       sensorTypes: ["humidity"],
@@ -403,6 +414,8 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredCapabilities: [],
+    optionalCapabilities: ["battery"],
   },
   
   quick_actions: {
@@ -475,6 +488,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "calculated",
+    requiredCapabilities: ["battery"],
   },
   
   temperature_vs_external: {

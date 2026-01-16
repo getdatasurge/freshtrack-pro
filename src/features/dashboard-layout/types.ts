@@ -5,7 +5,7 @@
  */
 
 import type { LucideIcon } from "lucide-react";
-
+import type { DeviceCapability } from "@/lib/registry/capabilityRegistry";
 // ============================================================================
 // Layout Configuration
 // ============================================================================
@@ -397,8 +397,12 @@ export interface WidgetDefinition {
   entityTypes?: EntityType[];
   /** Data source category for the widget */
   dataCategory?: WidgetDataCategory;
-  /** Required data source for the widget (for validation) */
+  /** Required data source for the widget (for validation) - DEPRECATED: use requiredCapabilities */
   requiredDataSource?: WidgetRequiredDataSource;
+  /** Required capabilities for this widget to function (capability-based validation) */
+  requiredCapabilities?: DeviceCapability[];
+  /** Optional capabilities that enhance widget functionality */
+  optionalCapabilities?: DeviceCapability[];
 }
 
 // ============================================================================
