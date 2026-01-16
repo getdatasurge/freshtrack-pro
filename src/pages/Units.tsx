@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
+import { useSuperAdmin } from "@/contexts/SuperAdminContext";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -40,7 +41,8 @@ interface UnitWithHierarchy {
 }
 
 const Units = () => {
-  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
+  const { effectiveOrgId, isInitialized, isImpersonating } = useEffectiveIdentity();
+  const { isSupportModeActive } = useSuperAdmin();
   const [isLoading, setIsLoading] = useState(true);
   const [units, setUnits] = useState<UnitWithHierarchy[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -52,14 +54,33 @@ const Units = () => {
     if (stored) setLastViewedUnitId(stored);
   }, []);
 
+  // Debug logging for impersonation context
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[Units] Context state:', {
+        isInitialized,
+        effectiveOrgId,
+        isSupportModeActive,
+        isImpersonating,
+      });
+    }
+  }, [isInitialized, effectiveOrgId, isSupportModeActive, isImpersonating]);
+
+  useEffect(() => {
+    // Guard: In support mode, wait until we have a valid effectiveOrgId
+    if (isSupportModeActive && !effectiveOrgId && isInitialized) {
+      // Still waiting for impersonation context - stay in loading state
+      return;
+    }
+    
     if (isInitialized && effectiveOrgId) {
       loadUnits();
-    } else if (isInitialized && !effectiveOrgId) {
+    } else if (isInitialized && !effectiveOrgId && !isSupportModeActive) {
+      // Only show empty state for non-support mode with no org
       setUnits([]);
       setIsLoading(false);
     }
-  }, [isInitialized, effectiveOrgId]);
+  }, [isInitialized, effectiveOrgId, isSupportModeActive]);
 
   const loadUnits = async () => {
     if (!effectiveOrgId) return;

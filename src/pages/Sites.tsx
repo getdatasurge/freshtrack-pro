@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
+import { useSuperAdmin } from "@/contexts/SuperAdminContext";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,7 +38,8 @@ interface Site {
 
 const Sites = () => {
   const { toast } = useToast();
-  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
+  const { effectiveOrgId, isInitialized, isImpersonating } = useEffectiveIdentity();
+  const { isSupportModeActive } = useSuperAdmin();
   const [sites, setSites] = useState<Site[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -50,14 +52,34 @@ const Sites = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Debug logging for impersonation context
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[Sites] Context state:', {
+        isInitialized,
+        effectiveOrgId,
+        isSupportModeActive,
+        isImpersonating,
+      });
+    }
+  }, [isInitialized, effectiveOrgId, isSupportModeActive, isImpersonating]);
+
+  useEffect(() => {
+    // Guard: In support mode, wait until we have a valid effectiveOrgId
+    // This prevents showing "No sites" before impersonation context loads
+    if (isSupportModeActive && !effectiveOrgId && isInitialized) {
+      // Still waiting for impersonation context - stay in loading state
+      return;
+    }
+    
     if (isInitialized && effectiveOrgId) {
       loadSites();
-    } else if (isInitialized && !effectiveOrgId) {
+    } else if (isInitialized && !effectiveOrgId && !isSupportModeActive) {
+      // Only show empty state for non-support mode with no org
       setSites([]);
       setIsLoading(false);
     }
-  }, [isInitialized, effectiveOrgId]);
+  }, [isInitialized, effectiveOrgId, isSupportModeActive]);
 
   const loadSites = async () => {
     if (!effectiveOrgId) return;
