@@ -51,39 +51,34 @@ export default function PlatformOrganizations() {
   const loadOrganizations = async () => {
     setIsLoading(true);
     try {
-      // Get organizations with counts
-      // Note: In a real app, you'd create an RPC function for this
-      // For now, we'll make separate queries
+      // Get organizations
       const { data: orgs, error, count } = await supabase
         .from('organizations')
         .select('*', { count: 'exact' })
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(100);
 
       if (error) throw error;
 
-      // Get user counts for each org
-      const orgsWithCounts = await Promise.all(
-        (orgs || []).map(async (org) => {
-          const [userResult, siteResult] = await Promise.all([
-            supabase
-              .from('user_roles')
-              .select('*', { count: 'exact', head: true })
-              .eq('organization_id', org.id),
-            supabase
-              .from('sites')
-              .select('*', { count: 'exact', head: true })
-              .eq('organization_id', org.id)
-              .is('deleted_at', null),
-          ]);
+      // Get counts via RPC (bypasses RLS, Super Admin only)
+      const { data: stats, error: statsError } = await supabase
+        .rpc('get_platform_organization_stats');
 
-          return {
-            ...org,
-            user_count: userResult.count || 0,
-            site_count: siteResult.count || 0,
-          };
-        })
+      if (statsError) {
+        console.error('Stats RPC error:', statsError);
+      }
+
+      // Merge counts into orgs
+      const statsMap = new Map(
+        (stats || []).map((s: { org_id: string; user_count: number; site_count: number }) => [s.org_id, s])
       );
+
+      const orgsWithCounts = (orgs || []).map((org) => ({
+        ...org,
+        user_count: statsMap.get(org.id)?.user_count || 0,
+        site_count: statsMap.get(org.id)?.site_count || 0,
+      }));
 
       setOrganizations(orgsWithCounts);
       setTotalCount(count || 0);

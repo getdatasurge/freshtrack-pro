@@ -120,8 +120,22 @@ export default function PlatformLayout({ children, title, showBack, backHref }: 
           isSupportModeActive ? "top-10" : "top-0"
         )}
       >
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+        <div className="flex h-16">
+          {/* Left section - fixed width matching sidebar on desktop */}
+          <div className="hidden lg:flex items-center w-64 px-4 shrink-0">
+            <Link to="/platform" className="flex items-center gap-3">
+              <BrandedLogo showText={true} size="md" />
+              <div className="flex items-center gap-2 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 rounded-md">
+                <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                  Platform Admin
+                </span>
+              </div>
+            </Link>
+          </div>
+
+          {/* Right section - full-width with matching gutters */}
+          <div className="flex-1 flex items-center justify-between px-4 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
               {showBack && backHref ? (
                 <Link to={backHref}>
@@ -139,9 +153,11 @@ export default function PlatformLayout({ children, title, showBack, backHref }: 
                   {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </Button>
               )}
-              <Link to="/platform" className="flex items-center gap-3">
+
+              {/* Mobile logo - only show on mobile */}
+              <Link to="/platform" className="flex lg:hidden items-center gap-3">
                 <BrandedLogo showText={true} size="md" />
-                <div className="flex items-center gap-2 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 rounded-md">
+                <div className="hidden sm:flex items-center gap-2 px-2 py-1 bg-purple-100 dark:bg-purple-900/30 rounded-md">
                   <Shield className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                   <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
                     Platform Admin
@@ -307,11 +323,11 @@ export default function PlatformLayout({ children, title, showBack, backHref }: 
         {/* Main Content */}
         <main
           className={cn(
-            "flex-1 lg:ml-64",
+            "flex-1 lg:ml-64 min-w-0 overflow-x-hidden",
             isSupportModeActive && "pt-10"
           )}
         >
-          <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
             {title && (
               <h1 className="text-2xl font-bold text-foreground mb-6">{title}</h1>
             )}
