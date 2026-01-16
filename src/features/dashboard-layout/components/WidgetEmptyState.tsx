@@ -40,14 +40,22 @@ function getStatusIcon(status: WidgetHealthStatus): LucideIcon {
     case "healthy":
       return Info;
     case "stale":
+    case "partial_payload":
       return AlertTriangle;
     case "error":
+    case "offline":
+    case "decoder_error":
+    case "schema_failed":
       return AlertCircle;
+    case "mismatch":
+      return AlertTriangle;
     case "not_configured":
+    case "misconfigured":
       return Settings;
     case "loading":
       return Loader2;
     case "empty":
+    case "no_data":
       return CircleOff;
     default:
       return HelpCircle;
@@ -70,18 +78,29 @@ function getStatusStyles(status: WidgetHealthStatus): {
         textColor: "text-foreground",
       };
     case "stale":
+    case "partial_payload":
+    case "mismatch":
       return {
         iconBg: "bg-warning/10",
         iconColor: "text-warning",
         textColor: "text-warning",
       };
     case "error":
+    case "decoder_error":
+    case "schema_failed":
       return {
         iconBg: "bg-alarm/10",
         iconColor: "text-alarm",
         textColor: "text-alarm",
       };
+    case "offline":
+      return {
+        iconBg: "bg-offline/10",
+        iconColor: "text-offline",
+        textColor: "text-offline",
+      };
     case "not_configured":
+    case "misconfigured":
       return {
         iconBg: "bg-muted",
         iconColor: "text-muted-foreground",
@@ -94,6 +113,7 @@ function getStatusStyles(status: WidgetHealthStatus): {
         textColor: "text-muted-foreground",
       };
     case "empty":
+    case "no_data":
       return {
         iconBg: "bg-muted",
         iconColor: "text-muted-foreground",

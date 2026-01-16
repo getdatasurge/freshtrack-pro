@@ -126,6 +126,17 @@ function getDefaultMessage(status: WidgetHealthStatus): string {
       return "Loading...";
     case "empty":
       return "No data in selected period";
+    // Epic 3: New states
+    case "offline":
+      return "Sensor offline";
+    case "mismatch":
+      return "Payload type mismatch";
+    case "decoder_error":
+      return "Decoder error";
+    case "schema_failed":
+      return "Invalid data format";
+    case "partial_payload":
+      return "Missing data fields";
     default:
       return "Unknown state";
   }
@@ -167,9 +178,10 @@ function getWidgetSpecificState(
 
       if (hoursAgo >= ERROR_THRESHOLDS.sensor) {
         return {
-          status: "error",
+          status: "offline",  // Epic 3: Use new "offline" state instead of "error"
           message: "Sensor offline",
           rootCause: `Last reading was ${hoursAgo} hours ago`,
+          failingLayer: "sensor",
           action: {
             label: "Check Gateway",
             href: "/settings?tab=gateways",
@@ -340,9 +352,10 @@ function getWidgetSpecificState(
 
     if (offlineCount === loraSensors.length) {
       return {
-        status: "error",
+        status: "offline",  // Epic 3: Use new "offline" state
         message: "All sensors offline",
         rootCause: `${offlineCount} sensor(s) have not reported recently`,
+        failingLayer: "sensor",
         action: {
           label: "Check Gateway",
           href: "/settings?tab=gateways",
@@ -591,5 +604,114 @@ export function createMisconfiguredState(
       icon: AlertTriangle,
     } : undefined,
     lastUpdated: null,
+  };
+}
+
+// ============================================================================
+// Epic 3: NEW STATE HELPERS
+// ============================================================================
+
+/**
+ * Helper to create an offline state.
+ */
+export function createOfflineState(
+  message: string,
+  rootCause: string,
+  lastUpdated?: Date | null
+): WidgetStateInfo {
+  return {
+    status: "offline",
+    message,
+    rootCause,
+    failingLayer: "sensor",
+    action: {
+      label: "Check Gateway",
+      href: "/settings?tab=gateways",
+      icon: Radio,
+    },
+    lastUpdated: lastUpdated ?? null,
+  };
+}
+
+/**
+ * Helper to create a payload type mismatch state.
+ */
+export function createMismatchState(
+  expectedType: string,
+  receivedType: string,
+  lastUpdated?: Date | null
+): WidgetStateInfo {
+  return {
+    status: "mismatch",
+    message: "Payload type mismatch",
+    rootCause: `Expected "${expectedType}" but received "${receivedType}"`,
+    failingLayer: "decoder",
+    technicalDetails: `Widget requires payload type "${expectedType}" but sensor is sending "${receivedType}". Update the sensor binding or switch to a compatible widget.`,
+    action: {
+      label: "View Sensor",
+      href: "/settings?tab=sensors",
+      icon: Settings,
+    },
+    lastUpdated: lastUpdated ?? null,
+  };
+}
+
+/**
+ * Helper to create a decoder error state.
+ */
+export function createDecoderErrorState(
+  errorMessage: string,
+  lastUpdated?: Date | null
+): WidgetStateInfo {
+  return {
+    status: "decoder_error",
+    message: "Decoder error",
+    rootCause: errorMessage,
+    failingLayer: "decoder",
+    technicalDetails: "The TTN decoder returned an error or invalid data. Check the decoder configuration in The Things Network console.",
+    action: {
+      label: "View Documentation",
+      href: "https://docs.lovable.dev/features/security",
+      icon: ExternalLink,
+    },
+    lastUpdated: lastUpdated ?? null,
+  };
+}
+
+/**
+ * Helper to create a schema validation failed state.
+ */
+export function createSchemaFailedState(
+  missingFields: string[],
+  lastUpdated?: Date | null
+): WidgetStateInfo {
+  return {
+    status: "schema_failed",
+    message: "Invalid data format",
+    rootCause: `Missing required fields: ${missingFields.join(", ")}`,
+    failingLayer: "webhook",
+    technicalDetails: "The payload does not match the expected schema. Ensure the decoder is outputting all required fields.",
+    action: {
+      label: "View Diagnostics",
+      icon: AlertTriangle,
+    },
+    lastUpdated: lastUpdated ?? null,
+  };
+}
+
+/**
+ * Helper to create a partial payload state.
+ */
+export function createPartialPayloadState(
+  missingOptional: string[],
+  lastUpdated?: Date | null
+): WidgetStateInfo {
+  return {
+    status: "partial_payload",
+    message: "Missing optional data",
+    rootCause: `Missing fields: ${missingOptional.join(", ")}`,
+    failingLayer: "decoder",
+    technicalDetails: "Some optional fields are missing from the payload. Widget functionality may be limited.",
+    lastUpdated: lastUpdated ?? null,
   };
 }
