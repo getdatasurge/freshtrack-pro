@@ -14,6 +14,23 @@ export type { WidgetDataCategory } from "../types";
 /**
  * Health status of a widget's data.
  * Determines the color coding and messaging shown to users.
+ * 
+ * State Machine (15 states):
+ * - healthy: Data flowing normally
+ * - degraded: Partial data, some issues
+ * - stale: No recent data but not an error
+ * - error: Expected data missing or failed to load
+ * - no_data: Zero data points available
+ * - misconfigured: Widget config is invalid
+ * - permission_denied: User lacks access
+ * - not_configured: Feature not set up
+ * - loading: Currently loading data
+ * - empty: No data in selected range
+ * - offline: Sensor confirmed offline (>24h no data)
+ * - mismatch: Expected vs received payload type mismatch
+ * - decoder_error: TTN decoder returned error or invalid data
+ * - schema_failed: Payload failed schema validation
+ * - partial_payload: Some expected fields missing from payload
  */
 export type WidgetHealthStatus =
   | "healthy"           // Green - data flowing normally
@@ -25,7 +42,13 @@ export type WidgetHealthStatus =
   | "permission_denied" // Red - user lacks access
   | "not_configured"    // Grey - feature not set up (no sensor, not enabled)
   | "loading"           // Loading state
-  | "empty";            // No data in selected range (not an error condition)
+  | "empty"             // No data in selected range (not an error condition)
+  // Epic 3: Enhanced states for pipeline diagnostics
+  | "offline"           // Red - Sensor confirmed offline (error threshold passed)
+  | "mismatch"          // Orange - Expected vs received payload type mismatch
+  | "decoder_error"     // Red - TTN decoder failure
+  | "schema_failed"     // Red - Schema validation failed
+  | "partial_payload";  // Yellow - Missing expected fields but partial data
 
 /**
  * Pipeline layer where an issue was detected.
@@ -166,6 +189,37 @@ export const STATUS_BADGE_CONFIG: Record<WidgetHealthStatus, Omit<StatusBadgeCon
     bgColor: "bg-muted",
     textColor: "text-muted-foreground",
     borderColor: "border-muted",
+  },
+  // Epic 3: New states for pipeline diagnostics
+  offline: {
+    label: "Offline",
+    bgColor: "bg-offline/20",
+    textColor: "text-offline",
+    borderColor: "border-offline/30",
+  },
+  mismatch: {
+    label: "Type Mismatch",
+    bgColor: "bg-warning/20",
+    textColor: "text-warning",
+    borderColor: "border-warning/30",
+  },
+  decoder_error: {
+    label: "Decoder Error",
+    bgColor: "bg-alarm/20",
+    textColor: "text-alarm",
+    borderColor: "border-alarm/30",
+  },
+  schema_failed: {
+    label: "Invalid Schema",
+    bgColor: "bg-alarm/20",
+    textColor: "text-alarm",
+    borderColor: "border-alarm/30",
+  },
+  partial_payload: {
+    label: "Partial Data",
+    bgColor: "bg-warning/20",
+    textColor: "text-warning",
+    borderColor: "border-warning/30",
   },
 };
 
