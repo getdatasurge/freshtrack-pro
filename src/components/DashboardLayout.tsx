@@ -71,17 +71,22 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
     // Wait for roles, effective identity, and impersonation check to complete
     if (!rolesLoaded || !isInitialized || !impersonationChecked) return;
     
-    // Allow main app access if:
-    // 1. Not a super admin (regular user)
-    // 2. Support mode is active (viewing as org)
-    // 3. Actively impersonating a user
-    // 4. Viewing an org (even without full impersonation)
-    const hasOrgContext = isImpersonating || impersonation.isImpersonating || isSupportModeActive || viewingOrg.orgId;
-    
-    if (isSuperAdmin && !hasOrgContext) {
-      // Super admin accessing main app without any org context → redirect to platform
-      navigate("/platform", { replace: true });
-    }
+    // Add a small delay to allow impersonation state to propagate after navigation
+    const timeoutId = setTimeout(() => {
+      // Allow main app access if:
+      // 1. Not a super admin (regular user)
+      // 2. Support mode is active (viewing as org)
+      // 3. Actively impersonating a user
+      // 4. Viewing an org (even without full impersonation)
+      const hasOrgContext = isImpersonating || impersonation.isImpersonating || isSupportModeActive || viewingOrg.orgId;
+      
+      if (isSuperAdmin && !hasOrgContext) {
+        // Super admin accessing main app without any org context → redirect to platform
+        navigate("/platform", { replace: true });
+      }
+    }, 50);
+
+    return () => clearTimeout(timeoutId);
   }, [rolesLoaded, isSuperAdmin, isImpersonating, impersonation.isImpersonating, isSupportModeActive, viewingOrg.orgId, isInitialized, impersonationChecked, navigate]);
 
   useEffect(() => {

@@ -42,7 +42,7 @@ interface SuperAdminContextType {
 
   // Impersonation
   impersonation: ImpersonationState;
-  startImpersonation: (userId: string, userEmail: string, userName: string, orgId: string, orgName: string) => Promise<void>;
+  startImpersonation: (userId: string, userEmail: string, userName: string, orgId: string, orgName: string) => Promise<boolean>;
   stopImpersonation: () => Promise<void>;
 
   // Org viewing (without impersonation)
@@ -393,14 +393,14 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     userName: string,
     orgId: string,
     orgName: string
-  ) => {
+  ): Promise<boolean> => {
     if (!isSuperAdmin || !isSupportModeActive) {
       toast({
         title: 'Access Denied',
         description: 'Impersonation requires active Support Mode.',
         variant: 'destructive',
       });
-      return;
+      return false;
     }
 
     try {
@@ -418,7 +418,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
           description: error.message || 'Could not start impersonation session.',
           variant: 'destructive',
         });
-        return;
+        return false;
       }
 
       const sessionData = data as {
@@ -457,6 +457,8 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
         title: 'Impersonation Started',
         description: `Now viewing as ${sessionData.target_user_name || sessionData.target_user_email || userEmail}`,
       });
+
+      return true;
     } catch (err) {
       console.error('Error in startImpersonation:', err);
       toast({
@@ -464,6 +466,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
         description: 'An unexpected error occurred.',
         variant: 'destructive',
       });
+      return false;
     }
   }, [isSuperAdmin, isSupportModeActive, toast]);
 

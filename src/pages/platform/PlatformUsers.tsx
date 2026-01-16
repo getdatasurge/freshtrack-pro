@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useSuperAdmin } from '@/contexts/SuperAdminContext';
+import { useImpersonateAndNavigate } from '@/hooks/useImpersonateAndNavigate';
 import PlatformLayout from '@/components/platform/PlatformLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +17,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   Search,
   User,
   Building2,
@@ -23,6 +30,7 @@ import {
   RefreshCw,
   Eye,
   Shield,
+  Loader2,
 } from 'lucide-react';
 
 interface PlatformUser {
@@ -38,11 +46,8 @@ interface PlatformUser {
 }
 
 export default function PlatformUsers() {
-  const {
-    logSuperAdminAction,
-    isSupportModeActive,
-    startImpersonation
-  } = useSuperAdmin();
+  const { logSuperAdminAction, isSuperAdmin } = useSuperAdmin();
+  const { impersonateAndNavigate, isNavigating, canImpersonate } = useImpersonateAndNavigate();
 
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -125,15 +130,15 @@ export default function PlatformUsers() {
   }, [users, searchQuery]);
 
   const handleViewAsUser = async (user: PlatformUser) => {
-    if (!isSupportModeActive || !user.organization_id || !user.organization_name) return;
+    if (!user.organization_id || !user.organization_name) return;
 
-    await startImpersonation(
-      user.user_id,
-      user.email,
-      user.full_name || user.email,
-      user.organization_id,
-      user.organization_name
-    );
+    await impersonateAndNavigate({
+      user_id: user.user_id,
+      email: user.email,
+      full_name: user.full_name,
+      organization_id: user.organization_id,
+      organization_name: user.organization_name,
+    });
   };
 
   const superAdminCount = users.filter(u => u.is_super_admin).length;
@@ -270,15 +275,33 @@ export default function PlatformUsers() {
                             <ChevronRight className="w-4 h-4" />
                           </Button>
                         </Link>
-                        {isSupportModeActive && user.organization_id && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleViewAsUser(user)}
-                            title="View as this user"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
+                        {canImpersonate && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleViewAsUser(user)}
+                                    disabled={!user.organization_id || isNavigating}
+                                    className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 disabled:opacity-50"
+                                  >
+                                    {isNavigating ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Eye className="w-4 h-4" />
+                                    )}
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {user.organization_id 
+                                  ? 'View app as this user' 
+                                  : 'No organization membership'}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         )}
                       </div>
                     </TableCell>

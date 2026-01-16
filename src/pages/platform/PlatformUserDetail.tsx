@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useSuperAdmin } from '@/contexts/SuperAdminContext';
+import { useImpersonateAndNavigate } from '@/hooks/useImpersonateAndNavigate';
 import PlatformLayout from '@/components/platform/PlatformLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +17,7 @@ import {
   Eye,
   ExternalLink,
   Activity,
+  Loader2,
 } from 'lucide-react';
 
 interface UserDetails {
@@ -33,11 +35,8 @@ interface UserDetails {
 
 export default function PlatformUserDetail() {
   const { userId } = useParams<{ userId: string }>();
-  const {
-    logSuperAdminAction,
-    isSupportModeActive,
-    startImpersonation
-  } = useSuperAdmin();
+  const { logSuperAdminAction } = useSuperAdmin();
+  const { impersonateAndNavigate, isNavigating, canImpersonate } = useImpersonateAndNavigate();
 
   const [user, setUser] = useState<UserDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -142,15 +141,15 @@ export default function PlatformUserDetail() {
   };
 
   const handleViewAsUser = async () => {
-    if (!isSupportModeActive || !user || !user.organization_id || !user.organization_name) return;
+    if (!user || !user.organization_id || !user.organization_name) return;
 
-    await startImpersonation(
-      user.user_id,
-      user.email,
-      user.full_name || user.email,
-      user.organization_id,
-      user.organization_name
-    );
+    await impersonateAndNavigate({
+      user_id: user.user_id,
+      email: user.email,
+      full_name: user.full_name,
+      organization_id: user.organization_id,
+      organization_name: user.organization_name,
+    });
   };
 
   if (isLoading || !user) {
@@ -257,14 +256,19 @@ export default function PlatformUserDetail() {
                   </Badge>
                 </div>
 
-                {isSupportModeActive && (
+                {canImpersonate && (
                   <div className="pt-4 border-t">
                     <Button
                       variant="outline"
                       onClick={handleViewAsUser}
-                      className="w-full"
+                      disabled={isNavigating}
+                      className="w-full text-orange-600 border-orange-200 hover:bg-orange-50 hover:text-orange-700"
                     >
-                      <Eye className="w-4 h-4 mr-2" />
+                      {isNavigating ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Eye className="w-4 h-4 mr-2" />
+                      )}
                       View App as This User
                     </Button>
                   </div>

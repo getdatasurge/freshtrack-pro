@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useSuperAdmin } from '@/contexts/SuperAdminContext';
-import { Input } from '@/components/ui/input';
+import { useImpersonateAndNavigate } from '@/hooks/useImpersonateAndNavigate';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -42,9 +42,9 @@ export function GlobalUserSearch() {
   const {
     isSuperAdmin,
     isSupportModeActive,
-    startImpersonation,
     logSuperAdminAction
   } = useSuperAdmin();
+  const { impersonateAndNavigate, isNavigating } = useImpersonateAndNavigate();
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -129,13 +129,13 @@ export function GlobalUserSearch() {
     setOpen(false);
     setQuery('');
 
-    await startImpersonation(
-      user.user_id,
-      user.email,
-      user.full_name || user.email,
-      user.organization_id,
-      user.organization_name
-    );
+    await impersonateAndNavigate({
+      user_id: user.user_id,
+      email: user.email,
+      full_name: user.full_name,
+      organization_id: user.organization_id,
+      organization_name: user.organization_name,
+    });
   };
 
   // Only show for super admins in support mode
@@ -230,9 +230,14 @@ export function GlobalUserSearch() {
                           size="icon"
                           className="h-7 w-7 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
                           onClick={(e) => handleImpersonate(user, e)}
-                          title="Impersonate user"
+                          disabled={isNavigating}
+                          title="View app as this user"
                         >
-                          <Eye className="w-3.5 h-3.5" />
+                          {isNavigating ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5" />
+                          )}
                         </Button>
                       )}
                     </div>
