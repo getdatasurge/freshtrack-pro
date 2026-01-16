@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useSuperAdmin } from '@/contexts/SuperAdminContext';
-import { useImpersonateAndNavigate } from '@/hooks/useImpersonateAndNavigate';
+import { useImpersonateAndNavigate, ImpersonationTarget } from '@/hooks/useImpersonateAndNavigate';
+import { ConfirmSpoofingModal } from '@/components/platform/ConfirmSpoofingModal';
 import PlatformLayout from '@/components/platform/PlatformLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -36,7 +37,14 @@ interface UserDetails {
 export default function PlatformUserDetail() {
   const { userId } = useParams<{ userId: string }>();
   const { logSuperAdminAction } = useSuperAdmin();
-  const { impersonateAndNavigate, isNavigating, canImpersonate } = useImpersonateAndNavigate();
+  const { 
+    requestImpersonation,
+    cancelRequest,
+    confirmAndNavigate,
+    pendingTarget,
+    isNavigating, 
+    canImpersonate 
+  } = useImpersonateAndNavigate();
 
   const [user, setUser] = useState<UserDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -140,10 +148,10 @@ export default function PlatformUserDetail() {
     }
   };
 
-  const handleViewAsUser = async () => {
+  const handleViewAsUser = () => {
     if (!user || !user.organization_id || !user.organization_name) return;
 
-    await impersonateAndNavigate({
+    requestImpersonation({
       user_id: user.user_id,
       email: user.email,
       full_name: user.full_name,
@@ -152,18 +160,41 @@ export default function PlatformUserDetail() {
     });
   };
 
+  const handleConfirmImpersonation = async (target: ImpersonationTarget, reason?: string): Promise<boolean> => {
+    return confirmAndNavigate(target, reason);
+  };
+
+  const isModalOpen = pendingTarget !== null;
+
   if (isLoading || !user) {
     return (
-      <PlatformLayout title="User Details" showBack backHref="/platform/users">
-        <div className="flex items-center justify-center py-12">
-          <div className="text-muted-foreground">Loading user details...</div>
-        </div>
-      </PlatformLayout>
+      <>
+        <ConfirmSpoofingModal
+          target={pendingTarget}
+          isOpen={isModalOpen}
+          onClose={cancelRequest}
+          onConfirm={handleConfirmImpersonation}
+          isLoading={isNavigating}
+        />
+        <PlatformLayout title="User Details" showBack backHref="/platform/users">
+          <div className="flex items-center justify-center py-12">
+            <div className="text-muted-foreground">Loading user details...</div>
+          </div>
+        </PlatformLayout>
+      </>
     );
   }
 
   return (
-    <PlatformLayout
+    <>
+      <ConfirmSpoofingModal
+        target={pendingTarget}
+        isOpen={isModalOpen}
+        onClose={cancelRequest}
+        onConfirm={handleConfirmImpersonation}
+        isLoading={isNavigating}
+      />
+      <PlatformLayout
       title={user.full_name || user.email}
       showBack
       backHref="/platform/users"
@@ -329,6 +360,7 @@ export default function PlatformUserDetail() {
           </CardContent>
         </Card>
       )}
-    </PlatformLayout>
+      </PlatformLayout>
+    </>
   );
 }

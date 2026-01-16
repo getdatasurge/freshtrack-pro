@@ -5,10 +5,13 @@
  * When a Super Admin is impersonating a user, this returns the impersonated user's
  * identity. Otherwise, returns the real authenticated user's identity.
  * 
+ * CRITICAL: This hook initializes impersonation state synchronously from localStorage
+ * to prevent race conditions where effectiveOrgId is null during navigation.
+ * 
  * This hook should be used by all data-fetching components to ensure proper scoping.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useSuperAdmin } from '@/contexts/SuperAdminContext';
 
@@ -50,6 +53,32 @@ interface StoredImpersonation {
   expiresAt: string;
 }
 
+/**
+ * Read impersonation from localStorage synchronously.
+ * This ensures we have impersonation data IMMEDIATELY on mount,
+ * preventing the race condition where effectiveOrgId is null.
+ */
+function getStoredImpersonation(): StoredImpersonation | null {
+  try {
+    const stored = localStorage.getItem(IMPERSONATION_STORAGE_KEY);
+    if (stored) {
+      const parsed: StoredImpersonation = JSON.parse(stored);
+      const expiresAt = new Date(parsed.expiresAt);
+      // Only use if not expired
+      if (expiresAt > new Date()) {
+        return parsed;
+      } else {
+        // Clean up expired session
+        localStorage.removeItem(IMPERSONATION_STORAGE_KEY);
+      }
+    }
+  } catch (e) {
+    console.warn('[useEffectiveIdentity] Failed to read stored impersonation:', e);
+    localStorage.removeItem(IMPERSONATION_STORAGE_KEY);
+  }
+  return null;
+}
+
 export function useEffectiveIdentity(): EffectiveIdentity {
   const { 
     isSuperAdmin, 
@@ -64,7 +93,8 @@ export function useEffectiveIdentity(): EffectiveIdentity {
   const [realIdentityLoaded, setRealIdentityLoaded] = useState(false);
   const [impersonationChecked, setImpersonationChecked] = useState(false);
   
-  // Server-validated impersonation state
+  // Server-validated impersonation state - Initialize SYNCHRONOUSLY from localStorage
+  // This is critical to prevent the race condition where effectiveOrgId is null
   const [serverImpersonation, setServerImpersonation] = useState<{
     sessionId: string;
     targetUserId: string;
@@ -73,17 +103,38 @@ export function useEffectiveIdentity(): EffectiveIdentity {
     targetUserName: string | null;
     targetOrgName: string | null;
     expiresAt: Date;
-  } | null>(null);
+  } | null>(() => {
+    const stored = getStoredImpersonation();
+    if (stored) {
+      return {
+        ...stored,
+        expiresAt: new Date(stored.expiresAt),
+      };
+    }
+    return null;
+  });
   
-  // Compute isInitialized: wait for impersonation check when in support mode
-  // This prevents race conditions where effectiveOrgId is null before impersonation loads
-  const isInitialized = (() => {
+  // Determine if we have a valid impersonation from any source
+  const hasStoredImpersonation = serverImpersonation !== null;
+  const hasContextImpersonation = impersonation?.isImpersonating && impersonation?.impersonatedOrgId;
+  
+  // Compute isInitialized: For Super Admins in support mode, we're initialized when:
+  // 1. Real identity has been loaded, AND
+  // 2. Either we have valid impersonation data (localStorage or context) OR server check is complete
+  const isInitialized = useMemo(() => {
     if (!rolesLoaded) return false;
     if (!realIdentityLoaded) return false;
-    // In support mode, we MUST wait for impersonation check to complete
-    if (isSupportModeActive && !impersonationChecked) return false;
+    
+    // In support mode, we need impersonation data OR confirmation that there's none
+    if (isSupportModeActive) {
+      // If we have cached impersonation, we're ready immediately
+      if (hasStoredImpersonation || hasContextImpersonation) return true;
+      // Otherwise wait for server check
+      return impersonationChecked;
+    }
+    
     return true;
-  })();
+  }, [rolesLoaded, realIdentityLoaded, isSupportModeActive, hasStoredImpersonation, hasContextImpersonation, impersonationChecked]);
 
   // Load real user identity
   const loadRealIdentity = useCallback(async () => {
@@ -163,29 +214,7 @@ export function useEffectiveIdentity(): EffectiveIdentity {
     }
   }, [isSuperAdmin, isSupportModeActive]);
 
-  // Restore from localStorage on mount (before server validation)
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(IMPERSONATION_STORAGE_KEY);
-      if (stored) {
-        const parsed: StoredImpersonation = JSON.parse(stored);
-        const expiresAt = new Date(parsed.expiresAt);
-        
-        // Only restore if not expired
-        if (expiresAt > new Date()) {
-          setServerImpersonation({
-            ...parsed,
-            expiresAt,
-          });
-        } else {
-          localStorage.removeItem(IMPERSONATION_STORAGE_KEY);
-        }
-      }
-    } catch (err) {
-      console.error('Error restoring impersonation from storage:', err);
-      localStorage.removeItem(IMPERSONATION_STORAGE_KEY);
-    }
-  }, []);
+  // No need for separate localStorage restore effect - it's done synchronously in useState initializer
 
   // Initialize identity
   const refresh = useCallback(async () => {
