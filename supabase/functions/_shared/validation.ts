@@ -182,6 +182,9 @@ export const emulatorSensorSchema = z.object({
   // TTN registration info
   ttn_device_id: z.string().max(100, "TTN Device ID too long").optional().nullable(),
   ttn_application_id: z.string().max(100, "TTN Application ID too long").optional().nullable(),
+  // Payload-based inference fields
+  decoded_payload: z.record(z.unknown()).optional().nullable(),
+  unit_name: z.string().max(200, "Unit name too long").optional().nullable(),
 });
 
 export const emulatorSyncPayloadSchema = z.object({

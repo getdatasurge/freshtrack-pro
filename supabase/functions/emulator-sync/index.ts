@@ -5,6 +5,13 @@
  * Validates payload, enforces org tenancy, and upserts data atomically.
  * 
  * Authentication: EMULATOR_SYNC_API_KEY via Authorization: Bearer or X-Emulator-Sync-Key header
+ * 
+ * Sensor Type Inference Priority:
+ * 1. Explicit sensor_type from emulator (highest priority)
+ * 2. Infer from decoded_payload field keys (most reliable for real sensors)
+ * 3. Infer from model name via device registry
+ * 4. Extract model from unit_name naming convention
+ * 5. Default to "temperature" (last resort)
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -18,6 +25,11 @@ import {
   type EmulatorSensorInput,
 } from "../_shared/validation.ts";
 import { inferSensorTypeFromModel, isKnownModel } from "../_shared/deviceRegistry.ts";
+import { 
+  inferSensorTypeFromPayload, 
+  inferModelFromPayload,
+  extractModelFromUnitId 
+} from "../_shared/payloadRegistry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -171,11 +183,12 @@ Deno.serve(async (req) => {
       // If device has dev_eui, also create corresponding lora_sensor
       if (device.dev_eui) {
         try {
-          // Infer sensor type from model if not explicitly provided
-          const inferredType = inferSensorTypeFromModel(device.model);
-          const finalType = device.sensor_type || inferredType || "temperature";
+          // Multi-layer sensor type inference for device-created sensors
+          const explicitType = device.sensor_type;
+          const modelInferredType = inferSensorTypeFromModel(device.model);
+          const finalType = explicitType || modelInferredType || "temperature";
           
-          console.log(`[emulator-sync] Auto-sensor type inference: model=${device.model}, explicit=${device.sensor_type}, inferred=${inferredType}, final=${finalType}`);
+          console.log(`[emulator-sync] Auto-sensor type inference: model=${device.model}, explicit=${explicitType}, model_inferred=${modelInferredType}, final=${finalType}`);
           
           const sensorResult = await upsertSensor(supabase, payload.org_id, {
             dev_eui: device.dev_eui,
@@ -186,6 +199,8 @@ Deno.serve(async (req) => {
             status: "pending",
             unit_id: device.unit_id || null,
             site_id: null,
+            // Pass unit_name for fallback model extraction
+            unit_name: device.name || null,
           });
           counts.sensors[sensorResult]++;
           console.log(`[emulator-sync] Auto-created sensor for device ${device.serial_number}: ${sensorResult}, type=${finalType}`);
@@ -363,7 +378,7 @@ async function upsertSensor(
   // Check if sensor exists by org + dev_eui
   const { data: existing } = await supabase
     .from("lora_sensors")
-    .select("id, updated_at, status, ttn_device_id, app_key")
+    .select("id, updated_at, status, ttn_device_id, app_key, model")
     .eq("organization_id", orgId)
     .eq("dev_eui", sensor.dev_eui)
     .single();
@@ -385,16 +400,52 @@ async function upsertSensor(
   // Only use incoming status if it's more advanced
   const finalStatus = existingPriority >= incomingPriority ? existingStatus : incomingStatus;
   
-  // Intelligent sensor type inference:
-  // 1. Explicit type from emulator takes priority
-  // 2. If not provided, infer from model
-  // 3. Only fallback to "temperature" if truly unknown
-  const explicitType = sensor.sensor_type;
-  const inferredType = inferSensorTypeFromModel(sensor.model);
-  const finalType = explicitType || inferredType || "temperature";
+  // ============= Multi-Layer Sensor Type & Model Inference =============
+  // Priority order for sensor_type:
+  // 1. Explicit type from emulator (highest)
+  // 2. Infer from decoded_payload field keys (most reliable for real sensors)
+  // 3. Infer from model name via device registry
+  // 4. Default to "temperature" (last resort)
   
-  const modelKnown = isKnownModel(sensor.model);
-  console.log(`[emulator-sync] Sensor ${sensor.dev_eui} type inference: model=${sensor.model}, known=${modelKnown}, explicit=${explicitType}, inferred=${inferredType}, final=${finalType}`);
+  // Extract payload if provided
+  const payload = sensor.decoded_payload || {};
+  
+  // Step 1: Check for explicit sensor_type
+  const explicitType = sensor.sensor_type;
+  
+  // Step 2: Infer type from decoded payload field keys
+  const payloadInferredType = inferSensorTypeFromPayload(payload as Record<string, unknown>);
+  
+  // Step 3: Infer model from payload structure
+  const payloadInferredModel = inferModelFromPayload(payload as Record<string, unknown>);
+  
+  // Step 4: Extract model from unit naming convention (fallback)
+  const unitIdModel = extractModelFromUnitId(sensor.unit_name || sensor.name);
+  
+  // Step 5: Determine final model: explicit > payload-inferred > unit-based > existing
+  const finalModel = sensor.model || payloadInferredModel || unitIdModel || existing?.model || null;
+  
+  // Step 6: Infer type from final model via registry
+  const modelInferredType = inferSensorTypeFromModel(finalModel);
+  
+  // Step 7: Determine final type: explicit > payload > model > default
+  const finalType = explicitType || payloadInferredType || modelInferredType || "temperature";
+  
+  const modelKnown = isKnownModel(finalModel);
+  
+  // Enhanced logging for debugging inference chain
+  console.log(`[emulator-sync] Sensor ${sensor.dev_eui} inference chain:`, {
+    explicit_type: explicitType || null,
+    payload_type: payloadInferredType,
+    model_type: modelInferredType,
+    final_type: finalType,
+    explicit_model: sensor.model || null,
+    payload_model: payloadInferredModel,
+    unit_model: unitIdModel,
+    final_model: finalModel,
+    model_known: modelKnown,
+    payload_keys: Object.keys(payload),
+  });
 
   // deno-lint-ignore no-explicit-any
   const upsertData: Record<string, any> = {
@@ -406,7 +457,7 @@ async function upsertSensor(
     unit_id: sensor.unit_id || null,
     site_id: sensor.site_id || null,
     manufacturer: sensor.manufacturer || null,
-    model: sensor.model || null,
+    model: finalModel,
     updated_at: new Date().toISOString(),
   };
   
