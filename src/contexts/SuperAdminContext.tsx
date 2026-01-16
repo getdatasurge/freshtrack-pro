@@ -195,6 +195,37 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     }
   }, [rbacLog]);
 
+  // Restore Impersonation from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('ftp_impersonation_session');
+      if (stored && isSupportModeActive) {
+        const parsed = JSON.parse(stored);
+        const expiresAt = new Date(parsed.expiresAt);
+        
+        // Only restore if not expired
+        if (expiresAt > new Date()) {
+          rbacLog('Restoring Impersonation from localStorage');
+          setImpersonation({
+            isImpersonating: true,
+            impersonatedUserId: parsed.targetUserId,
+            impersonatedUserEmail: parsed.targetUserEmail,
+            impersonatedUserName: parsed.targetUserName,
+            impersonatedOrgId: parsed.targetOrgId,
+            impersonatedOrgName: parsed.targetOrgName,
+            startedAt: new Date(),
+          });
+        } else {
+          // Clean up expired impersonation
+          localStorage.removeItem('ftp_impersonation_session');
+        }
+      }
+    } catch (err) {
+      console.error('Error restoring Impersonation:', err);
+      localStorage.removeItem('ftp_impersonation_session');
+    }
+  }, [isSupportModeActive, rbacLog]);
+
   // Persist Support Mode state to localStorage
   useEffect(() => {
     if (isSupportModeActive && supportModeStartedAt && supportModeExpiresAt) {
@@ -355,7 +386,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     await logSuperAdminAction('SUPPORT_MODE_EXITED');
   }, [impersonation.isImpersonating, logSuperAdminAction]);
 
-  // Start impersonation
+  // Start impersonation with server-side session
   const startImpersonation = useCallback(async (
     userId: string,
     userEmail: string,
@@ -372,47 +403,85 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
       return;
     }
 
-    setImpersonation({
-      isImpersonating: true,
-      impersonatedUserId: userId,
-      impersonatedUserEmail: userEmail,
-      impersonatedUserName: userName,
-      impersonatedOrgId: orgId,
-      impersonatedOrgName: orgName,
-      startedAt: new Date(),
-    });
+    try {
+      // Create server-side impersonation session
+      const { data, error } = await supabase.rpc('start_impersonation', {
+        p_target_user_id: userId,
+        p_target_org_id: orgId,
+        p_duration_minutes: 60,
+      });
 
-    await logSuperAdminAction(
-      'IMPERSONATION_STARTED',
-      'user',
-      userId,
-      orgId,
-      { impersonated_email: userEmail, impersonated_name: userName }
-    );
+      if (error) {
+        console.error('Error starting impersonation:', error);
+        toast({
+          title: 'Impersonation Failed',
+          description: error.message || 'Could not start impersonation session.',
+          variant: 'destructive',
+        });
+        return;
+      }
 
-    toast({
-      title: 'Impersonation Started',
-      description: `Now viewing as ${userName || userEmail}`,
-    });
-  }, [isSuperAdmin, isSupportModeActive, logSuperAdminAction, toast]);
+      const sessionData = data as {
+        session_id: string;
+        target_user_id: string;
+        target_org_id: string;
+        target_user_email: string;
+        target_user_name: string;
+        target_org_name: string;
+        expires_at: string;
+      };
 
-  // Stop impersonation
+      // Update local state
+      setImpersonation({
+        isImpersonating: true,
+        impersonatedUserId: userId,
+        impersonatedUserEmail: sessionData.target_user_email || userEmail,
+        impersonatedUserName: sessionData.target_user_name || userName,
+        impersonatedOrgId: orgId,
+        impersonatedOrgName: sessionData.target_org_name || orgName,
+        startedAt: new Date(),
+      });
+
+      // Persist to localStorage for page refresh
+      localStorage.setItem('ftp_impersonation_session', JSON.stringify({
+        sessionId: sessionData.session_id,
+        targetUserId: userId,
+        targetOrgId: orgId,
+        targetUserEmail: sessionData.target_user_email || userEmail,
+        targetUserName: sessionData.target_user_name || userName,
+        targetOrgName: sessionData.target_org_name || orgName,
+        expiresAt: sessionData.expires_at,
+      }));
+
+      toast({
+        title: 'Impersonation Started',
+        description: `Now viewing as ${sessionData.target_user_name || sessionData.target_user_email || userEmail}`,
+      });
+    } catch (err) {
+      console.error('Error in startImpersonation:', err);
+      toast({
+        title: 'Impersonation Failed',
+        description: 'An unexpected error occurred.',
+        variant: 'destructive',
+      });
+    }
+  }, [isSuperAdmin, isSupportModeActive, toast]);
+
+  // Stop impersonation with server-side session cleanup
   const stopImpersonation = useCallback(async () => {
-    if (impersonation.isImpersonating) {
-      await logSuperAdminAction(
-        'IMPERSONATION_ENDED',
-        'user',
-        impersonation.impersonatedUserId || undefined,
-        impersonation.impersonatedOrgId || undefined,
-        {
-          impersonated_email: impersonation.impersonatedUserEmail,
-          duration_seconds: impersonation.startedAt
-            ? Math.floor((new Date().getTime() - impersonation.startedAt.getTime()) / 1000)
-            : 0
-        }
-      );
+    try {
+      // End server-side session
+      const { error } = await supabase.rpc('stop_impersonation');
+      
+      if (error) {
+        console.error('Error stopping impersonation:', error);
+        // Continue with local cleanup even if server call fails
+      }
+    } catch (err) {
+      console.error('Error in stopImpersonation:', err);
     }
 
+    // Clear local state
     setImpersonation({
       isImpersonating: false,
       impersonatedUserId: null,
@@ -423,11 +492,14 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
       startedAt: null,
     });
 
+    // Clear localStorage
+    localStorage.removeItem('ftp_impersonation_session');
+
     toast({
       title: 'Impersonation Ended',
       description: 'Returned to your admin view.',
     });
-  }, [impersonation, logSuperAdminAction, toast]);
+  }, [toast]);
 
   // Set viewing org (for browsing without impersonation)
   const setViewingOrg = useCallback((orgId: string | null, orgName: string | null) => {

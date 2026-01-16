@@ -28,6 +28,7 @@ import { Session } from "@supabase/supabase-js";
 import { formatDistanceToNow } from "date-fns";
 import { computeUnitStatus, UnitStatusInfo } from "@/hooks/useUnitStatus";
 import { useUnitAlerts, ComputedAlert } from "@/hooks/useUnitAlerts";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 interface DashboardStats {
   totalUnits: number;
@@ -52,6 +53,9 @@ const Dashboard = () => {
   const [units, setUnits] = useState<(UnitStatusInfo & { computed: ReturnType<typeof computeUnitStatus> })[]>([]);
   const [unitsRequiringAction, setUnitsRequiringAction] = useState<(UnitStatusInfo & { computed: ReturnType<typeof computeUnitStatus> })[]>([]);
   
+  // Use effective identity for impersonation support
+  const { effectiveOrgId, isImpersonating, isInitialized } = useEffectiveIdentity();
+  
   // Log temp modal state
   const [selectedUnit, setSelectedUnit] = useState<LogTempUnit | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -74,16 +78,24 @@ const Dashboard = () => {
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  // Load dashboard data when effective org changes (supports impersonation)
   useEffect(() => {
-    if (session?.user) {
+    if (!isInitialized) return;
+    
+    if (isImpersonating && effectiveOrgId) {
+      // Use impersonated org directly
+      setOrganizationId(effectiveOrgId);
+      loadDashboardData(effectiveOrgId);
+    } else if (session?.user) {
+      // Normal flow - fetch user's org
       loadDashboardData();
     }
-  }, [session]);
+  }, [session, isImpersonating, effectiveOrgId, isInitialized]);
 
-  const loadDashboardData = useCallback(async () => {
-    if (!session?.user) return;
+  const loadDashboardData = useCallback(async (overrideOrgId?: string) => {
+    if (!session?.user && !overrideOrgId) return;
     
-    let orgId = organizationId;
+    let orgId = overrideOrgId || organizationId;
     
     // Fetch org if we don't have it yet
     if (!orgId) {

@@ -1066,6 +1066,65 @@ export type Database = {
           },
         ]
       }
+      impersonation_sessions: {
+        Row: {
+          admin_user_id: string
+          created_at: string
+          end_reason: string | null
+          ended_at: string | null
+          expires_at: string
+          id: string
+          metadata: Json | null
+          started_at: string
+          status: string
+          target_org_id: string
+          target_org_name: string | null
+          target_user_email: string | null
+          target_user_id: string
+          target_user_name: string | null
+        }
+        Insert: {
+          admin_user_id: string
+          created_at?: string
+          end_reason?: string | null
+          ended_at?: string | null
+          expires_at: string
+          id?: string
+          metadata?: Json | null
+          started_at?: string
+          status?: string
+          target_org_id: string
+          target_org_name?: string | null
+          target_user_email?: string | null
+          target_user_id: string
+          target_user_name?: string | null
+        }
+        Update: {
+          admin_user_id?: string
+          created_at?: string
+          end_reason?: string | null
+          ended_at?: string | null
+          expires_at?: string
+          id?: string
+          metadata?: Json | null
+          started_at?: string
+          status?: string
+          target_org_id?: string
+          target_org_name?: string | null
+          target_user_email?: string | null
+          target_user_id?: string
+          target_user_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "impersonation_sessions_target_org_id_fkey"
+            columns: ["target_org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inspector_sessions: {
         Row: {
           allowed_site_ids: string[] | null
@@ -3333,6 +3392,19 @@ export type Database = {
           units_count: number
         }[]
       }
+      get_active_impersonation: {
+        Args: never
+        Returns: {
+          expires_at: string
+          session_id: string
+          started_at: string
+          target_org_id: string
+          target_org_name: string
+          target_user_email: string
+          target_user_id: string
+          target_user_name: string
+        }[]
+      }
       get_deprovision_job_stats: {
         Args: { p_organization_id: string }
         Returns: Json
@@ -3382,6 +3454,15 @@ export type Database = {
         Args: { p_org_id: string; p_user_id: string }
         Returns: Json
       }
+      start_impersonation: {
+        Args: {
+          p_duration_minutes?: number
+          p_target_org_id: string
+          p_target_user_id: string
+        }
+        Returns: Json
+      }
+      stop_impersonation: { Args: never; Returns: undefined }
       update_tts_provisioning_job: {
         Args: {
           p_completed_steps?: string[]
