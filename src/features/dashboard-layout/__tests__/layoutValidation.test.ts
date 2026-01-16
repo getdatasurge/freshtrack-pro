@@ -67,11 +67,10 @@ describe('Compatibility Matrix', () => {
 });
 
 describe('Widget Registry Contracts', () => {
-  it('every widget with requiredCapabilities has valid capability array', () => {
+  it('every widget MUST have requiredCapabilities defined', () => {
     Object.entries(WIDGET_REGISTRY).forEach(([id, widget]) => {
-      if (widget.requiredCapabilities) {
-        expect(Array.isArray(widget.requiredCapabilities)).toBe(true);
-      }
+      expect(widget.requiredCapabilities).toBeDefined();
+      expect(Array.isArray(widget.requiredCapabilities)).toBe(true);
     });
   });
 
