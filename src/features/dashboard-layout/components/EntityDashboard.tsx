@@ -37,6 +37,7 @@ import {
 import { toast } from "sonner";
 import { useLayoutManager } from "../hooks/useLayoutManager";
 import { useUnsavedChangesGuard } from "../hooks/useUnsavedChangesGuard";
+import { useLayoutValidation } from "../hooks/useLayoutValidation";
 import { LayoutSelector } from "./LayoutSelector";
 import { LayoutManager } from "./LayoutManager";
 import { CustomizeToggle } from "./CustomizeToggle";
@@ -45,8 +46,11 @@ import { HiddenWidgetsPanel } from "./HiddenWidgetsPanel";
 import { TimelineControls } from "./TimelineControls";
 import { AddWidgetModal } from "./AddWidgetModal";
 import { DashboardErrorBoundary } from "./DashboardErrorBoundary";
+import { LayoutValidationBanner } from "./LayoutValidationBanner";
+import { PreviewModeSelector } from "./PreviewModeSelector";
 import { WIDGET_REGISTRY } from "../registry/widgetRegistry";
-import type { TimelineState, WidgetPosition } from "../types";
+import { generatePreviewMockProps } from "../utils/previewMockData";
+import type { TimelineState, WidgetPosition, PreviewMode } from "../types";
 import type { EntityType } from "../hooks/useEntityLayoutStorage";
 
 export interface EntityDashboardProps {
@@ -159,6 +163,18 @@ export function EntityDashboard({
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [recentlyAddedWidgetId, setRecentlyAddedWidgetId] = useState<string | null>(null);
   const [createLayoutPromptOpen, setCreateLayoutPromptOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("live");
+  
+  // Validation for current layout
+  const validation = useLayoutValidation(
+    state.activeLayout.config,
+    entityType,
+    {
+      hasSensor: !!sensor,
+      sensorType: sensor?.sensor_type,
+      hasLocationConfigured: !!(site?.latitude && site?.longitude),
+    }
+  );
   
   // Derived flags for "Add Widget" CTA on Default layout
   const isDefaultLayout = state.activeLayout.isDefault;
@@ -230,6 +246,12 @@ export function EntityDashboard({
     return result;
   }, [entityType, entityId, organizationId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange]);
 
+  // Apply preview mode mock data when not in live mode
+  const effectiveWidgetProps = useMemo(() => {
+    if (previewMode === "live") return widgetProps;
+    return generatePreviewMockProps(previewMode, widgetProps, { unit, sensor, site });
+  }, [previewMode, widgetProps, unit, sensor, site]);
+
   const handleLayoutChange = useCallback((layout: WidgetPosition[]) => actions.updatePositions(layout), [actions]);
   const handleRestoreWidget = useCallback((widgetId: string) => actions.toggleWidgetVisibility(widgetId), [actions]);
   const handleRestoreAllWidgets = useCallback(() => {
@@ -249,8 +271,13 @@ export function EntityDashboard({
   }, [actions, state.activeLayout.config]);
 
   const handleSave = useCallback(async () => {
+    // Block save if there are validation errors
+    if (validation.hasErrors) {
+      toast.error("Cannot save layout with errors. Please fix the issues first.");
+      return;
+    }
     await actions.saveLayout();
-  }, [actions]);
+  }, [actions, validation.hasErrors]);
 
   const handleDiscard = useCallback(() => {
     actions.discardChanges();
@@ -374,12 +401,21 @@ export function EntityDashboard({
         isComparing={!!state.activeLayout.timelineState.compare}
         saveStatus={state.isSaving ? 'saving' : state.isDirty ? 'dirty' : 'saved'}
       />
+      {/* Validation Banner (only in customize mode) */}
+      {state.isCustomizing && validation.issues.length > 0 && (
+        <LayoutValidationBanner validation={validation} />
+      )}
+      
+      {/* Preview Mode and Hidden Widgets (only in customize mode) */}
       {state.isCustomizing && (
-        <HiddenWidgetsPanel 
-          hiddenWidgetIds={state.activeLayout.config.hiddenWidgets || []} 
-          onRestore={handleRestoreWidget} 
-          onRestoreAll={handleRestoreAllWidgets} 
-        />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <PreviewModeSelector value={previewMode} onChange={setPreviewMode} />
+          <HiddenWidgetsPanel 
+            hiddenWidgetIds={state.activeLayout.config.hiddenWidgets || []} 
+            onRestore={handleRestoreWidget} 
+            onRestoreAll={handleRestoreAllWidgets} 
+          />
+        </div>
       )}
       <div ref={containerRef} className="w-full">
         {containerWidth > 0 && (
@@ -387,7 +423,7 @@ export function EntityDashboard({
             layout={state.activeLayout.config} 
             isCustomizing={state.isCustomizing} 
             onLayoutChange={handleLayoutChange} 
-            widgetProps={widgetProps} 
+            widgetProps={effectiveWidgetProps} 
             onHideWidget={actions.toggleWidgetVisibility}
             containerWidth={containerWidth}
           />

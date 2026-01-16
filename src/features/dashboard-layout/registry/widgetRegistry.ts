@@ -317,6 +317,11 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredDataSource: {
+      type: "sensor",
+      sensorTypes: ["door"],
+      message: "Requires a door/contact sensor to display activity",
+    },
   },
   
   humidity_chart: {
@@ -335,6 +340,11 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredDataSource: {
+      type: "sensor",
+      sensorTypes: ["humidity"],
+      message: "Requires a sensor that reports humidity",
+    },
   },
   
   manual_log_status: {
@@ -353,6 +363,10 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "manual",
+    requiredDataSource: {
+      type: "manual_log",
+      message: "Works best with manual temperature logging enabled",
+    },
   },
   
   alert_history: {
@@ -479,6 +493,10 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "external",
+    requiredDataSource: {
+      type: "weather",
+      message: "Requires site location to fetch external weather data",
+    },
   },
   
   annotations: {
@@ -761,6 +779,10 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "external",
+    requiredDataSource: {
+      type: "weather",
+      message: "Requires site location to be configured for weather data",
+    },
   },
   
   maintenance_calendar: {
