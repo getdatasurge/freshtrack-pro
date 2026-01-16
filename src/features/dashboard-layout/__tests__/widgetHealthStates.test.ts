@@ -101,10 +101,26 @@ describe("Widget Health State Machine", () => {
       expect(result.confidence).toBeGreaterThan(0.5);
     });
 
-    it("returns null for empty payload", () => {
+    it("returns unclassified for empty payload (Epic 1 requirement)", () => {
       const result = inferPayloadType({});
-      expect(result.payloadType).toBeNull();
+      expect(result.payloadType).toBe("unclassified");
       expect(result.confidence).toBe(0);
+      expect(result.reasons.length).toBeGreaterThan(0);
+      expect(result.isAmbiguous).toBe(false);
+    });
+
+    it("returns unclassified for null payload", () => {
+      const result = inferPayloadType(null);
+      expect(result.payloadType).toBe("unclassified");
+      expect(result.confidence).toBe(0);
+      expect(result.reasons).toContain("No payload data available");
+    });
+
+    it("returns unclassified for unknown fields only", () => {
+      const result = inferPayloadType({ unknown_field: "test", another: 123 });
+      expect(result.payloadType).toBe("unclassified");
+      expect(result.confidence).toBe(0);
+      expect(result.reasons.some(r => r.includes("No schema matched"))).toBe(true);
     });
 
     it("handles multi_door_temp_v1 with temperature and door", () => {
@@ -422,7 +438,7 @@ describe("Widget Contracts Existence", () => {
       "healthy", "degraded", "stale", "error", "no_data",
       "misconfigured", "permission_denied", "not_configured",
       "loading", "empty", "offline", "mismatch",
-      "decoder_error", "schema_failed", "partial_payload"
+      "decoder_error", "schema_failed", "partial_payload", "out_of_order"
     ];
     
     // Import is done at test time to verify the config exists
@@ -430,5 +446,51 @@ describe("Widget Contracts Existence", () => {
     statuses.forEach(status => {
       expect(status).toBeDefined();
     });
+  });
+});
+
+describe("Out of Order Timestamp Detection", () => {
+  // Helper to detect out-of-order timestamps
+  function detectOutOfOrderTimestamps(
+    readings: Array<{ recorded_at: string }>
+  ): boolean {
+    if (readings.length < 2) return false;
+    
+    for (let i = 1; i < readings.length; i++) {
+      const prev = new Date(readings[i - 1].recorded_at).getTime();
+      const curr = new Date(readings[i].recorded_at).getTime();
+      // If sorted by recorded_at DESC, each should be older than previous
+      if (curr > prev) {
+        return true; // Out of order detected
+      }
+    }
+    return false;
+  }
+
+  it("detects out-of-order timestamps in readings array", () => {
+    const readings = [
+      { recorded_at: "2024-01-15T10:00:00Z" },
+      { recorded_at: "2024-01-15T11:00:00Z" }, // Newer than prev = out of order
+      { recorded_at: "2024-01-15T09:00:00Z" },
+    ];
+    expect(detectOutOfOrderTimestamps(readings)).toBe(true);
+  });
+
+  it("returns false for correctly ordered readings (DESC)", () => {
+    const readings = [
+      { recorded_at: "2024-01-15T11:00:00Z" },
+      { recorded_at: "2024-01-15T10:00:00Z" },
+      { recorded_at: "2024-01-15T09:00:00Z" },
+    ];
+    expect(detectOutOfOrderTimestamps(readings)).toBe(false);
+  });
+
+  it("returns false for single reading", () => {
+    const readings = [{ recorded_at: "2024-01-15T10:00:00Z" }];
+    expect(detectOutOfOrderTimestamps(readings)).toBe(false);
+  });
+
+  it("returns false for empty array", () => {
+    expect(detectOutOfOrderTimestamps([])).toBe(false);
   });
 });

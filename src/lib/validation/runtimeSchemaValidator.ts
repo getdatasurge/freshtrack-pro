@@ -211,21 +211,39 @@ export function getPayloadCapabilities(payloadType: string): DeviceCapability[] 
 }
 
 /**
- * Detect payload type from a sample payload
+ * Inference result with full reason chain (Epic 1 compliant)
  */
-export function inferPayloadType(payload: Record<string, unknown>): {
-  payloadType: string | null;
+export interface InferenceResult {
+  payloadType: string;
   confidence: number;
   matchedFields: string[];
-} {
-  if (!payload) {
-    return { payloadType: null, confidence: 0, matchedFields: [] };
+  reasons: string[];
+  isAmbiguous: boolean;
+  alternates: Array<{ type: string; score: number }>;
+}
+
+/**
+ * Detect payload type from a sample payload.
+ * Returns "unclassified" (never null) for unknown/empty payloads per Epic 1 requirements.
+ */
+export function inferPayloadType(payload: Record<string, unknown> | null | undefined): InferenceResult {
+  // Handle null/undefined/empty payloads - return "unclassified" per Epic 1
+  if (!payload || Object.keys(payload).length === 0) {
+    return {
+      payloadType: "unclassified",
+      confidence: 0,
+      matchedFields: [],
+      reasons: ["No payload data available", "Cannot classify empty or null payload"],
+      isAmbiguous: false,
+      alternates: [],
+    };
   }
 
   const payloadKeys = Object.keys(payload);
   let bestMatch: string | null = null;
   let bestScore = 0;
   let bestMatchedFields: string[] = [];
+  const candidates: Array<{ type: string; score: number; matchedFields: string[] }> = [];
 
   for (const [type, schema] of Object.entries(PAYLOAD_SCHEMAS)) {
     const requiredMatches = schema.requiredFields.filter(f => f in payload);
@@ -241,6 +259,8 @@ export function inferPayloadType(payload: Record<string, unknown>): {
     const score = (requiredMatches.length * 2 + optionalMatches.length) / 
                   (schema.requiredFields.length * 2 + schema.optionalFields.length);
     
+    candidates.push({ type, score, matchedFields });
+    
     if (score > bestScore) {
       bestScore = score;
       bestMatch = type;
@@ -248,9 +268,45 @@ export function inferPayloadType(payload: Record<string, unknown>): {
     }
   }
 
+  // No match found - return unclassified (never null per Epic 1)
+  if (!bestMatch) {
+    return {
+      payloadType: "unclassified",
+      confidence: 0,
+      matchedFields: [],
+      reasons: [
+        "No schema matched the payload",
+        `Payload fields: ${payloadKeys.join(", ")}`,
+        "None of the registered schemas matched required fields",
+      ],
+      isAmbiguous: false,
+      alternates: [],
+    };
+  }
+
+  // Check for ambiguity - multiple schemas with similar scores
+  const threshold = 0.1;
+  const alternates = candidates
+    .filter(c => c.type !== bestMatch && Math.abs(c.score - bestScore) < threshold)
+    .map(c => ({ type: c.type, score: c.score }));
+
+  const isAmbiguous = alternates.length > 0;
+
+  const reasons: string[] = [
+    `Matched schema: ${bestMatch}`,
+    `Required fields matched: ${bestMatchedFields.filter(f => PAYLOAD_SCHEMAS[bestMatch!]?.requiredFields.includes(f)).join(", ")}`,
+  ];
+
+  if (isAmbiguous) {
+    reasons.push(`Ambiguous: ${alternates.map(a => a.type).join(", ")} also matched with similar confidence`);
+  }
+
   return {
     payloadType: bestMatch,
     confidence: bestScore,
     matchedFields: bestMatchedFields,
+    reasons,
+    isAmbiguous,
+    alternates,
   };
 }
