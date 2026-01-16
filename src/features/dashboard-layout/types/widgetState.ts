@@ -48,7 +48,8 @@ export type WidgetHealthStatus =
   | "mismatch"          // Orange - Expected vs received payload type mismatch
   | "decoder_error"     // Red - TTN decoder failure
   | "schema_failed"     // Red - Schema validation failed
-  | "partial_payload";  // Yellow - Missing expected fields but partial data
+  | "partial_payload"   // Yellow - Missing expected fields but partial data
+  | "out_of_order";     // Yellow - Timestamps arriving out of sequence
 
 /**
  * Pipeline layer where an issue was detected.
@@ -217,6 +218,12 @@ export const STATUS_BADGE_CONFIG: Record<WidgetHealthStatus, Omit<StatusBadgeCon
   },
   partial_payload: {
     label: "Partial Data",
+    bgColor: "bg-warning/20",
+    textColor: "text-warning",
+    borderColor: "border-warning/30",
+  },
+  out_of_order: {
+    label: "Out of Order",
     bgColor: "bg-warning/20",
     textColor: "text-warning",
     borderColor: "border-warning/30",

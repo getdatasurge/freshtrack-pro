@@ -2,15 +2,18 @@
  * Door Activity Widget
  * 
  * Shows door open/close events with duration statistics.
+ * Uses WidgetEmptyState for all non-healthy states.
  */
 
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useState, useMemo } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { DoorOpen, DoorClosed, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { WidgetProps } from "../types";
 import { format, formatDistanceToNow } from "date-fns";
+import { createLoadingState, createNotConfiguredState, createEmptyState, createHealthyState, createMismatchState } from "../hooks/useWidgetState";
+import { WidgetEmptyState } from "../components/WidgetEmptyState";
+import type { WidgetStateInfo } from "../types/widgetState";
 
 interface DoorEvent {
   id: string;
@@ -18,9 +21,13 @@ interface DoorEvent {
   occurred_at: string;
 }
 
-export function DoorActivityWidget({ entityId }: WidgetProps) {
+export function DoorActivityWidget({ entityId, sensor, loraSensors }: WidgetProps) {
   const [events, setEvents] = useState<DoorEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
+  const isDoorSensor = primarySensor?.sensor_type === 'door';
 
   useEffect(() => {
     async function fetchDoorEvents() {
@@ -30,17 +37,18 @@ export function DoorActivityWidget({ entityId }: WidgetProps) {
       }
 
       try {
-        const { data, error } = await supabase
+        const { data, error: fetchError } = await supabase
           .from("door_events")
           .select("id, state, occurred_at")
           .eq("unit_id", entityId)
           .order("occurred_at", { ascending: false })
           .limit(20);
 
-        if (error) throw error;
+        if (fetchError) throw fetchError;
         setEvents(data || []);
       } catch (err) {
         console.error("Error fetching door events:", err);
+        setError(err instanceof Error ? err.message : "Failed to load events");
       } finally {
         setIsLoading(false);
       }
@@ -49,47 +57,84 @@ export function DoorActivityWidget({ entityId }: WidgetProps) {
     fetchDoorEvents();
   }, [entityId]);
 
-  if (isLoading) {
-    return (
-      <Card className="h-full">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <DoorOpen className="h-4 w-4" />
-            Door Activity
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center justify-center text-muted-foreground text-sm py-8">
-          Loading...
-        </CardContent>
-      </Card>
-    );
-  }
+  // Determine widget state
+  const widgetState = useMemo((): WidgetStateInfo => {
+    if (isLoading) {
+      return createLoadingState();
+    }
+    
+    if (!entityId) {
+      return createNotConfiguredState(
+        "No unit selected.",
+        "Select a unit to view door activity.",
+        "Select Unit",
+        "/units"
+      );
+    }
+    
+    if (!primarySensor) {
+      return createNotConfiguredState(
+        "No sensor assigned to this unit.",
+        "Assign a door sensor to track open/close events.",
+        "Assign Sensor",
+        "/settings/devices"
+      );
+    }
+    
+    // Check for sensor type mismatch
+    if (!isDoorSensor) {
+      return createMismatchState(
+        "door",
+        primarySensor.sensor_type || "unknown"
+      );
+    }
+    
+    if (error) {
+      return {
+        status: "error" as const,
+        message: "Failed to load door events",
+        rootCause: error,
+        action: { label: "Retry", onClick: () => window.location.reload() },
+      };
+    }
+    
+    if (events.length === 0) {
+      return createEmptyState(
+        "No door events recorded yet.",
+        "Door activity will appear here once the sensor reports open/close events."
+      );
+    }
+    
+    const lastDate = events[0]?.occurred_at ? new Date(events[0].occurred_at) : undefined;
+    return createHealthyState(lastDate);
+  }, [isLoading, entityId, primarySensor, isDoorSensor, error, events]);
 
-  if (events.length === 0) {
+  // Show empty state for non-healthy conditions
+  if (widgetState.status !== "healthy") {
     return (
-      <Card className="h-full">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <DoorOpen className="h-4 w-4" />
+      <div className="h-full flex flex-col">
+        <div className="flex-shrink-0 p-4 pb-2">
+          <h3 className="flex items-center gap-2 text-base font-semibold">
+            <DoorOpen className="w-4 h-4" />
             Door Activity
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center justify-center text-muted-foreground text-sm py-8">
-          No door events recorded
-        </CardContent>
-      </Card>
+          </h3>
+        </div>
+        <div className="flex-1 min-h-0 flex items-center justify-center p-4">
+          <WidgetEmptyState state={widgetState} compact />
+        </div>
+      </div>
     );
   }
 
   return (
-    <Card className="h-full flex flex-col">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium flex items-center gap-2">
-          <DoorOpen className="h-4 w-4" />
+    <div className="h-full flex flex-col">
+      <div className="flex-shrink-0 p-4 pb-2">
+        <h3 className="flex items-center gap-2 text-base font-semibold">
+          <DoorOpen className="w-4 h-4" />
           Door Activity
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex-1 overflow-hidden">
+        </h3>
+      </div>
+      <div className="flex-1 min-h-0 overflow-hidden px-4 pb-4">
         <ScrollArea className="h-full">
           <div className="space-y-2">
             {events.map((event) => (
@@ -98,9 +143,9 @@ export function DoorActivityWidget({ entityId }: WidgetProps) {
                 className="flex items-center gap-3 p-2 rounded-lg border border-border"
               >
                 {event.state === "open" ? (
-                  <DoorOpen className="h-5 w-5 text-orange-500" />
+                  <DoorOpen className="h-5 w-5 text-warning" />
                 ) : (
-                  <DoorClosed className="h-5 w-5 text-green-500" />
+                  <DoorClosed className="h-5 w-5 text-safe" />
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium capitalize">{event.state}</p>
@@ -116,7 +161,7 @@ export function DoorActivityWidget({ entityId }: WidgetProps) {
             ))}
           </div>
         </ScrollArea>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

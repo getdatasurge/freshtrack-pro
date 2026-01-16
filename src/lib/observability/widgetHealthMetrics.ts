@@ -63,6 +63,7 @@ function initOrgCounters(orgId: string): OrgHealthCounters {
     decoder_error: 0,
     schema_failed: 0,
     partial_payload: 0,
+    out_of_order: 0,
   };
   
   return {
