@@ -95,6 +95,12 @@ export interface TimelineState {
 export type EntityType = 'unit' | 'site';
 
 /**
+ * Preview modes for layout customization.
+ * Allows users to see how the dashboard looks in different data states.
+ */
+export type PreviewMode = "live" | "no_data" | "offline" | "alerting" | "normal";
+
+/**
  * Saved layout record from the database.
  * Note: sensorId is deprecated - use entityType + entityId instead.
  */
@@ -341,6 +347,23 @@ export type WidgetDataCategory =
   | "external";   // External APIs (weather)
 
 /**
+ * Sensor types for data binding validation.
+ */
+export type SensorTypeRequirement = "temperature" | "door" | "humidity" | "motion";
+
+/**
+ * Required data source for a widget.
+ */
+export interface WidgetRequiredDataSource {
+  /** Type of data source required */
+  type: "sensor" | "gateway" | "manual_log" | "weather" | "none";
+  /** Specific sensor types required (only for type: 'sensor') */
+  sensorTypes?: SensorTypeRequirement[];
+  /** Message to show when data source is missing */
+  message: string;
+}
+
+/**
  * Widget definition in the registry.
  */
 export interface WidgetDefinition {
@@ -374,6 +397,8 @@ export interface WidgetDefinition {
   entityTypes?: EntityType[];
   /** Data source category for the widget */
   dataCategory?: WidgetDataCategory;
+  /** Required data source for the widget (for validation) */
+  requiredDataSource?: WidgetRequiredDataSource;
 }
 
 // ============================================================================
