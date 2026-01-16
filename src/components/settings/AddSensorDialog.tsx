@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateLoraSensor } from "@/hooks/useLoraSensors";
 import { LoraSensorType } from "@/types/ttn";
+import { SENSOR_TYPE_OPTIONS, SENSOR_TYPE_VALUES } from "@/lib/sensorTypeOptions";
 import {
   Dialog,
   DialogContent,
@@ -50,7 +51,7 @@ const addSensorSchema = z.object({
     .string()
     .min(1, "AppKey is required")
     .regex(APPKEY_REGEX, "AppKey must be exactly 32 hexadecimal characters"),
-  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo", "contact"] as const),
+  sensor_type: z.enum(SENSOR_TYPE_VALUES),
   site_id: z.string().min(1, "Site is required"),
   unit_id: z.string().optional(),
   description: z.string().max(500, "Description must be less than 500 characters").optional(),
@@ -282,10 +283,14 @@ export function AddSensorDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="temperature">Temperature</SelectItem>
-                      <SelectItem value="temperature_humidity">Temperature + Humidity</SelectItem>
-                      <SelectItem value="door">Door</SelectItem>
-                      <SelectItem value="combo">Combo (Temp + Door)</SelectItem>
+                      {SENSOR_TYPE_OPTIONS.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>
+                          <div className="flex items-center gap-2">
+                            <type.icon className="h-4 w-4 text-muted-foreground" />
+                            {type.label}
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
