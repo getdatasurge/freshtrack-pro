@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useSuperAdmin } from '@/contexts/SuperAdminContext';
-import { useImpersonateAndNavigate } from '@/hooks/useImpersonateAndNavigate';
+import { useImpersonateAndNavigate, ImpersonationTarget } from '@/hooks/useImpersonateAndNavigate';
+import { ConfirmSpoofingModal } from '@/components/platform/ConfirmSpoofingModal';
 import PlatformLayout from '@/components/platform/PlatformLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,7 +48,14 @@ interface PlatformUser {
 
 export default function PlatformUsers() {
   const { logSuperAdminAction, isSuperAdmin } = useSuperAdmin();
-  const { impersonateAndNavigate, isNavigating, canImpersonate } = useImpersonateAndNavigate();
+  const { 
+    requestImpersonation, 
+    cancelRequest,
+    confirmAndNavigate,
+    pendingTarget,
+    isNavigating, 
+    canImpersonate 
+  } = useImpersonateAndNavigate();
 
   const [users, setUsers] = useState<PlatformUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,10 +137,11 @@ export default function PlatformUsers() {
     );
   }, [users, searchQuery]);
 
-  const handleViewAsUser = async (user: PlatformUser) => {
+  const handleViewAsUser = (user: PlatformUser) => {
     if (!user.organization_id || !user.organization_name) return;
 
-    await impersonateAndNavigate({
+    // This opens the confirmation modal
+    requestImpersonation({
       user_id: user.user_id,
       email: user.email,
       full_name: user.full_name,
@@ -141,10 +150,27 @@ export default function PlatformUsers() {
     });
   };
 
+  const handleConfirmImpersonation = async (target: ImpersonationTarget, reason?: string): Promise<boolean> => {
+    return confirmAndNavigate(target, reason);
+  };
+
   const superAdminCount = users.filter(u => u.is_super_admin).length;
 
+  // Check if modal should be open
+  const isModalOpen = pendingTarget !== null;
+
   return (
-    <PlatformLayout title="Users">
+    <>
+      {/* Confirmation Modal */}
+      <ConfirmSpoofingModal
+        target={pendingTarget}
+        isOpen={isModalOpen}
+        onClose={cancelRequest}
+        onConfirm={handleConfirmImpersonation}
+        isLoading={isNavigating}
+      />
+
+      <PlatformLayout title="Users">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <Card>
@@ -312,6 +338,7 @@ export default function PlatformUsers() {
           </Table>
         </CardContent>
       </Card>
-    </PlatformLayout>
+      </PlatformLayout>
+    </>
   );
 }
