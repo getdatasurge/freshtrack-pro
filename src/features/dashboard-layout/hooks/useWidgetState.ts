@@ -137,6 +137,8 @@ function getDefaultMessage(status: WidgetHealthStatus): string {
       return "Invalid data format";
     case "partial_payload":
       return "Missing data fields";
+    case "out_of_order":
+      return "Timestamps out of sequence";
     default:
       return "Unknown state";
   }
@@ -714,4 +716,49 @@ export function createPartialPayloadState(
     technicalDetails: "Some optional fields are missing from the payload. Widget functionality may be limited.",
     lastUpdated: lastUpdated ?? null,
   };
+}
+
+/**
+ * Helper to create an out-of-order timestamps state.
+ */
+export function createOutOfOrderState(
+  lastUpdated?: Date | null
+): WidgetStateInfo {
+  return {
+    status: "out_of_order",
+    message: "Timestamps out of sequence",
+    rootCause: "Readings arrived in non-chronological order",
+    failingLayer: "database",
+    technicalDetails: "Sensor readings have timestamps that are out of order. This may indicate clock sync issues or delayed message delivery.",
+    action: {
+      label: "View Diagnostics",
+      icon: AlertTriangle,
+    },
+    lastUpdated: lastUpdated ?? null,
+  };
+}
+
+// ============================================================================
+// Epic 3: OUT-OF-ORDER TIMESTAMP DETECTION
+// ============================================================================
+
+/**
+ * Detect if readings have out-of-order timestamps.
+ * Assumes readings are sorted by recorded_at DESC (newest first).
+ * Returns true if any reading has a newer timestamp than the one before it.
+ */
+export function detectOutOfOrderTimestamps(
+  readings: Array<{ recorded_at: string }> | null | undefined
+): boolean {
+  if (!readings || readings.length < 2) return false;
+  
+  for (let i = 1; i < readings.length; i++) {
+    const prev = new Date(readings[i - 1].recorded_at).getTime();
+    const curr = new Date(readings[i].recorded_at).getTime();
+    // If sorted by recorded_at DESC, each should be older than previous
+    if (curr > prev) {
+      return true; // Out of order detected
+    }
+  }
+  return false;
 }

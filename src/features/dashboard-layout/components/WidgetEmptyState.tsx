@@ -41,6 +41,7 @@ function getStatusIcon(status: WidgetHealthStatus): LucideIcon {
       return Info;
     case "stale":
     case "partial_payload":
+    case "out_of_order":
       return AlertTriangle;
     case "error":
     case "offline":
@@ -80,6 +81,7 @@ function getStatusStyles(status: WidgetHealthStatus): {
     case "stale":
     case "partial_payload":
     case "mismatch":
+    case "out_of_order":
       return {
         iconBg: "bg-warning/10",
         iconColor: "text-warning",
