@@ -3426,6 +3426,14 @@ export type Database = {
         }[]
       }
       get_org_sync_payload: { Args: { p_org_id: string }; Returns: Json }
+      get_platform_organization_stats: {
+        Args: never
+        Returns: {
+          org_id: string
+          site_count: number
+          user_count: number
+        }[]
+      }
       get_user_org_id: { Args: { _user_id: string }; Returns: string }
       hard_delete_organization: { Args: { p_org_id: string }; Returns: Json }
       has_role: {
