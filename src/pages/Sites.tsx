@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -36,6 +37,7 @@ interface Site {
 
 const Sites = () => {
   const { toast } = useToast();
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   const [sites, setSites] = useState<Site[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -49,10 +51,17 @@ const Sites = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    loadSites();
-  }, []);
+    if (isInitialized && effectiveOrgId) {
+      loadSites();
+    } else if (isInitialized && !effectiveOrgId) {
+      setSites([]);
+      setIsLoading(false);
+    }
+  }, [isInitialized, effectiveOrgId]);
 
   const loadSites = async () => {
+    if (!effectiveOrgId) return;
+    
     setIsLoading(true);
     const { data: sitesData, error } = await supabase
       .from("sites")
@@ -68,6 +77,7 @@ const Sites = () => {
           units (id)
         )
       `)
+      .eq("organization_id", effectiveOrgId)
       .eq("is_active", true)
       .order("name");
 

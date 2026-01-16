@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,8 +18,7 @@ import {
   Boxes,
   MapPin,
 } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
-import { Session } from "@supabase/supabase-js";
+import { formatDistanceToNow } from "date-fns";
 
 interface UnitWithHierarchy {
   id: string;
@@ -40,45 +40,33 @@ interface UnitWithHierarchy {
 }
 
 const Units = () => {
-  const [session, setSession] = useState<Session | null>(null);
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   const [isLoading, setIsLoading] = useState(true);
   const [units, setUnits] = useState<UnitWithHierarchy[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [lastViewedUnitId, setLastViewedUnitId] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
-    
     // Check for last viewed unit
     const stored = localStorage.getItem("lastViewedUnitId");
     if (stored) setLastViewedUnitId(stored);
   }, []);
 
   useEffect(() => {
-    if (session?.user) {
+    if (isInitialized && effectiveOrgId) {
       loadUnits();
+    } else if (isInitialized && !effectiveOrgId) {
+      setUnits([]);
+      setIsLoading(false);
     }
-  }, [session]);
+  }, [isInitialized, effectiveOrgId]);
 
   const loadUnits = async () => {
+    if (!effectiveOrgId) return;
+    
     setIsLoading(true);
     try {
-      // Get user's organization
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", session!.user.id)
-        .maybeSingle();
-
-      if (!profile?.organization_id) {
-        setUnits([]);
-        setIsLoading(false);
-        return;
-      }
-
-      // Fetch all units with hierarchy
+      // Fetch all units with hierarchy using effective org
       const { data: unitsData, error } = await supabase
         .from("units")
         .select(`
@@ -90,7 +78,7 @@ const Units = () => {
           )
         `)
         .eq("is_active", true)
-        .eq("area.site.organization_id", profile.organization_id)
+        .eq("area.site.organization_id", effectiveOrgId)
         .order("name");
 
       if (error) {
