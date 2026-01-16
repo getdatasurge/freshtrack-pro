@@ -1,0 +1,35 @@
+{
+  "model": "R718WA2",
+  "manufacturer": "Netvox",
+  "category": "leak",
+  "sensorType": "leak",
+  "payloadVersion": "1.0.0",
+  "samples": [
+    {
+      "description": "Leak detected",
+      "decoded_payload": {
+        "leak": true,
+        "battery_voltage": 3.2
+      }
+    },
+    {
+      "description": "No leak",
+      "decoded_payload": {
+        "leak": false,
+        "battery_voltage": 3.0
+      }
+    }
+  ],
+  "fieldSchema": {
+    "leak": {
+      "type": "boolean"
+    },
+    "battery_voltage": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 4.5
+    }
+  },
+  "discriminators": ["leak"],
+  "notes": "Netvox R718WA2 Wireless Water Leak Sensor"
+}

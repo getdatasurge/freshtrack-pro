@@ -1,0 +1,58 @@
+{
+  "model": "AM319",
+  "manufacturer": "Milesight",
+  "category": "air_quality",
+  "sensorType": "air_quality",
+  "payloadVersion": "1.0.0",
+  "samples": [
+    {
+      "description": "Good air quality",
+      "decoded_payload": {
+        "temperature": 23.5,
+        "humidity": 50,
+        "co2": 450,
+        "tvoc": 120
+      }
+    },
+    {
+      "description": "Poor air quality - high CO2",
+      "decoded_payload": {
+        "temperature": 24.0,
+        "humidity": 55,
+        "co2": 1200,
+        "tvoc": 350
+      }
+    },
+    {
+      "description": "High TVOC levels",
+      "decoded_payload": {
+        "temperature": 22.0,
+        "humidity": 45,
+        "co2": 600,
+        "tvoc": 800
+      }
+    }
+  ],
+  "fieldSchema": {
+    "temperature": {
+      "type": "number"
+    },
+    "humidity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "co2": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "tvoc": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 60000
+    }
+  },
+  "discriminators": ["co2", "tvoc"],
+  "notes": "Milesight AM319 Air Quality Sensor with CO2 and TVOC"
+}

@@ -1,0 +1,35 @@
+{
+  "model": "TBMS100",
+  "manufacturer": "Milesight",
+  "category": "motion",
+  "sensorType": "motion",
+  "payloadVersion": "1.0.0",
+  "samples": [
+    {
+      "description": "Motion detected",
+      "decoded_payload": {
+        "motion": true,
+        "battery_level": 85
+      }
+    },
+    {
+      "description": "No motion",
+      "decoded_payload": {
+        "motion": false,
+        "battery_level": 82
+      }
+    }
+  ],
+  "fieldSchema": {
+    "motion": {
+      "type": "boolean"
+    },
+    "battery_level": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    }
+  },
+  "discriminators": ["motion"],
+  "notes": "Milesight TBMS100 PIR Motion Sensor"
+}

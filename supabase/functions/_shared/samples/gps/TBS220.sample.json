@@ -1,0 +1,54 @@
+{
+  "model": "TBS220",
+  "manufacturer": "Milesight",
+  "category": "gps",
+  "sensorType": "gps",
+  "payloadVersion": "1.0.0",
+  "samples": [
+    {
+      "description": "GPS coordinates in nested object",
+      "decoded_payload": {
+        "gps": {
+          "lat": 40.7128,
+          "lon": -74.0060
+        },
+        "battery_level": 80
+      }
+    },
+    {
+      "description": "Different location",
+      "decoded_payload": {
+        "gps": {
+          "lat": 34.0522,
+          "lon": -118.2437
+        },
+        "battery_level": 65
+      }
+    }
+  ],
+  "fieldSchema": {
+    "gps": {
+      "type": "object",
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        }
+      },
+      "required": ["lat", "lon"]
+    },
+    "battery_level": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    }
+  },
+  "discriminators": ["gps"],
+  "notes": "Milesight TBS220 GPS Tracker. Uses nested gps object with lat/lon."
+}
