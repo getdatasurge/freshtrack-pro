@@ -32,6 +32,7 @@ export interface EffectiveIdentity {
   // Loading state
   isLoading: boolean;
   isInitialized: boolean;
+  impersonationChecked: boolean; // True after server-side impersonation check completes
   
   // Actions
   refresh: () => Promise<void>;
@@ -61,6 +62,7 @@ export function useEffectiveIdentity(): EffectiveIdentity {
   const [realOrgId, setRealOrgId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [impersonationChecked, setImpersonationChecked] = useState(false);
   
   // Server-validated impersonation state
   const [serverImpersonation, setServerImpersonation] = useState<{
@@ -178,6 +180,7 @@ export function useEffectiveIdentity(): EffectiveIdentity {
   // Initialize identity
   const refresh = useCallback(async () => {
     setIsLoading(true);
+    setImpersonationChecked(false);
     try {
       await loadRealIdentity();
       if (rolesLoaded && isSuperAdmin && isSupportModeActive) {
@@ -186,6 +189,7 @@ export function useEffectiveIdentity(): EffectiveIdentity {
     } finally {
       setIsLoading(false);
       setIsInitialized(true);
+      setImpersonationChecked(true); // Mark impersonation check as complete
     }
   }, [loadRealIdentity, validateServerImpersonation, rolesLoaded, isSuperAdmin, isSupportModeActive]);
 
@@ -249,6 +253,7 @@ export function useEffectiveIdentity(): EffectiveIdentity {
     impersonationSessionId: serverImpersonation?.sessionId || null,
     isLoading,
     isInitialized,
+    impersonationChecked,
     refresh,
   };
 }
