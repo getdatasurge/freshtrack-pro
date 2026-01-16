@@ -2,8 +2,10 @@
  * Widget Data Contract Types
  * 
  * Defines formal data contracts for widgets, specifying required fields,
- * fallback logic, and system dependencies.
+ * fallback logic, system dependencies, and capability requirements.
  */
+
+import type { DeviceCapability } from "@/lib/registry/capabilityRegistry";
 
 /**
  * Data field definition with fallback behavior.
@@ -52,6 +54,10 @@ export interface WidgetDataContract {
   widgetId: string;
   /** Schema version for migrations */
   version: string;
+  /** Required capabilities for this widget to function */
+  requiredCapabilities: DeviceCapability[];
+  /** Optional capabilities that enhance functionality */
+  optionalCapabilities?: DeviceCapability[];
   /** Field definitions */
   fields: WidgetFieldContract[];
   /** System dependencies */
@@ -63,12 +69,32 @@ export interface WidgetDataContract {
 }
 
 /**
+ * Get incompatibility reason for a widget given available capabilities.
+ */
+export function getWidgetIncompatibilityReason(
+  contract: WidgetDataContract,
+  availableCapabilities: DeviceCapability[]
+): string | null {
+  const missing = contract.requiredCapabilities.filter(
+    cap => !availableCapabilities.includes(cap)
+  );
+  
+  if (missing.length === 0) {
+    return null;
+  }
+  
+  return `Requires ${missing.join(', ')} capability${missing.length > 1 ? 'ies' : ''}`;
+}
+
+/**
  * Pre-defined widget contracts for common widget types.
  */
 export const WIDGET_CONTRACTS: Record<string, WidgetDataContract> = {
   temperature_chart: {
     widgetId: 'temperature_chart',
     version: '1.0',
+    requiredCapabilities: ['temperature'],
+    optionalCapabilities: ['humidity'],
     fields: [
       { field: 'readings', required: true, validator: (v) => Array.isArray(v) && v.length > 0 },
       { field: 'sensor_id', required: true },
@@ -88,6 +114,7 @@ export const WIDGET_CONTRACTS: Record<string, WidgetDataContract> = {
   current_temp: {
     widgetId: 'current_temp',
     version: '1.0',
+    requiredCapabilities: ['temperature'],
     fields: [
       { field: 'current_value', required: true },
       { field: 'timestamp', required: true, staleAfterMs: 60 * 60 * 1000 }, // 1 hour
@@ -102,6 +129,7 @@ export const WIDGET_CONTRACTS: Record<string, WidgetDataContract> = {
   battery_health: {
     widgetId: 'battery_health',
     version: '1.0',
+    requiredCapabilities: ['battery'],
     fields: [
       { field: 'battery_level', required: true, validator: (v) => typeof v === 'number' && v >= 0 && v <= 100 },
       { field: 'last_seen', required: false },
@@ -115,6 +143,8 @@ export const WIDGET_CONTRACTS: Record<string, WidgetDataContract> = {
   door_activity: {
     widgetId: 'door_activity',
     version: '1.0',
+    requiredCapabilities: ['door'],
+    optionalCapabilities: ['battery'],
     fields: [
       { field: 'events', required: false },
       { field: 'sensor_id', required: true },
@@ -129,6 +159,7 @@ export const WIDGET_CONTRACTS: Record<string, WidgetDataContract> = {
   external_weather: {
     widgetId: 'external_weather',
     version: '1.0',
+    requiredCapabilities: [],
     fields: [
       { field: 'temperature', required: true },
       { field: 'condition', required: true },
@@ -143,6 +174,7 @@ export const WIDGET_CONTRACTS: Record<string, WidgetDataContract> = {
   gateway_health: {
     widgetId: 'gateway_health',
     version: '1.0',
+    requiredCapabilities: [],
     fields: [
       { field: 'gateway_status', required: true },
       { field: 'last_seen', required: true, staleAfterMs: 30 * 60 * 1000 }, // 30 min
@@ -157,6 +189,8 @@ export const WIDGET_CONTRACTS: Record<string, WidgetDataContract> = {
   humidity_chart: {
     widgetId: 'humidity_chart',
     version: '1.0',
+    requiredCapabilities: ['humidity'],
+    optionalCapabilities: ['temperature'],
     fields: [
       { field: 'readings', required: true, validator: (v) => Array.isArray(v) && v.length > 0 },
       { field: 'sensor_id', required: true },
