@@ -58,24 +58,31 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
-  const { isSuperAdmin, isLoadingSuperAdmin, rolesLoaded, isSupportModeActive, impersonation } = useSuperAdmin();
-  const { effectiveOrgId, effectiveOrgName, isImpersonating, isInitialized } = useEffectiveIdentity();
+  const { isSuperAdmin, isLoadingSuperAdmin, rolesLoaded, isSupportModeActive, impersonation, viewingOrg } = useSuperAdmin();
+  const { effectiveOrgId, effectiveOrgName, isImpersonating, isInitialized, impersonationChecked } = useEffectiveIdentity();
   const [session, setSession] = useState<Session | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
   const [alertCount, setAlertCount] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Redirect platform-only super admins to /platform (only when NOT impersonating)
+  // Redirect platform-only super admins to /platform (only when NOT in support mode / impersonating)
   useEffect(() => {
-    // Wait for both roles and effective identity to be initialized
-    if (!rolesLoaded || !isInitialized) return;
+    // Wait for roles, effective identity, and impersonation check to complete
+    if (!rolesLoaded || !isInitialized || !impersonationChecked) return;
     
-    if (isSuperAdmin && !isImpersonating && !impersonation.isImpersonating) {
-      // Super admin accessing main app without impersonating → redirect to platform
+    // Allow main app access if:
+    // 1. Not a super admin (regular user)
+    // 2. Support mode is active (viewing as org)
+    // 3. Actively impersonating a user
+    // 4. Viewing an org (even without full impersonation)
+    const hasOrgContext = isImpersonating || impersonation.isImpersonating || isSupportModeActive || viewingOrg.orgId;
+    
+    if (isSuperAdmin && !hasOrgContext) {
+      // Super admin accessing main app without any org context → redirect to platform
       navigate("/platform", { replace: true });
     }
-  }, [rolesLoaded, isSuperAdmin, isImpersonating, impersonation.isImpersonating, isInitialized, navigate]);
+  }, [rolesLoaded, isSuperAdmin, isImpersonating, impersonation.isImpersonating, isSupportModeActive, viewingOrg.orgId, isInitialized, impersonationChecked, navigate]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
