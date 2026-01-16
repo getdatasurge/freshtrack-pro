@@ -454,7 +454,7 @@ async function handleLoraSensor(
 
     if (currentDoorOpen !== undefined) {
       unitUpdate.door_state = currentDoorOpen ? 'open' : 'closed';
-      unitUpdate.door_state_changed_at = receivedAt;
+      unitUpdate.door_last_changed_at = receivedAt;
 
       if (currentDoorOpen && previousDoorState !== 'open') {
         unitUpdate.door_open_since = receivedAt;
