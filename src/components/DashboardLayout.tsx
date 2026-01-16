@@ -64,6 +64,14 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const [alertCount, setAlertCount] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
+  // Redirect platform-only super admins to /platform
+  useEffect(() => {
+    if (rolesLoaded && isSuperAdmin && !impersonation.isImpersonating) {
+      // Super admin accessing main app without impersonating → redirect to platform
+      navigate("/platform", { replace: true });
+    }
+  }, [rolesLoaded, isSuperAdmin, impersonation.isImpersonating, navigate]);
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
