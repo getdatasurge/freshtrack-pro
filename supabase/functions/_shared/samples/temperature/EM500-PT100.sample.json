@@ -1,0 +1,36 @@
+{
+  "model": "EM500-PT100",
+  "manufacturer": "Milesight",
+  "category": "temperature",
+  "sensorType": "temperature",
+  "payloadVersion": "1.0.0",
+  "samples": [
+    {
+      "description": "Room temperature",
+      "decoded_payload": {
+        "temperature": 25.0
+      }
+    },
+    {
+      "description": "Hot environment",
+      "decoded_payload": {
+        "temperature": 85.5
+      }
+    },
+    {
+      "description": "Cold environment",
+      "decoded_payload": {
+        "temperature": -25.0
+      }
+    }
+  ],
+  "fieldSchema": {
+    "temperature": {
+      "type": "number",
+      "minimum": -200,
+      "maximum": 600
+    }
+  },
+  "discriminators": ["temperature"],
+  "notes": "Milesight EM500-PT100 Industrial Temperature Sensor. Temperature-only, no humidity."
+}

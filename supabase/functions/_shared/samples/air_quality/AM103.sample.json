@@ -1,0 +1,42 @@
+{
+  "model": "AM103",
+  "manufacturer": "Milesight",
+  "category": "air_quality",
+  "sensorType": "air_quality",
+  "payloadVersion": "1.0.0",
+  "samples": [
+    {
+      "description": "Normal indoor conditions",
+      "decoded_payload": {
+        "temperature": 24.0,
+        "humidity": 55,
+        "co2": 420
+      }
+    },
+    {
+      "description": "Elevated CO2",
+      "decoded_payload": {
+        "temperature": 23.5,
+        "humidity": 60,
+        "co2": 850
+      }
+    }
+  ],
+  "fieldSchema": {
+    "temperature": {
+      "type": "number"
+    },
+    "humidity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "co2": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    }
+  },
+  "discriminators": ["co2"],
+  "notes": "Milesight AM103 Indoor Air Quality Sensor. CO2 only (no TVOC)."
+}

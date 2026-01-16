@@ -1,0 +1,36 @@
+{
+  "model": "EM500-PP",
+  "manufacturer": "Milesight",
+  "category": "metering",
+  "sensorType": "metering",
+  "payloadVersion": "1.0.0",
+  "samples": [
+    {
+      "description": "Counter reading",
+      "decoded_payload": {
+        "counter": 100,
+        "battery_level": 90
+      }
+    },
+    {
+      "description": "Higher count",
+      "decoded_payload": {
+        "counter": 5432,
+        "battery_level": 85
+      }
+    }
+  ],
+  "fieldSchema": {
+    "counter": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "battery_level": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    }
+  },
+  "discriminators": ["counter"],
+  "notes": "Milesight EM500-PP Pulse Counter"
+}

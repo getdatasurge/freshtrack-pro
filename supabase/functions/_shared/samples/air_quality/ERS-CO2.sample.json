@@ -1,0 +1,42 @@
+{
+  "model": "ERS-CO2",
+  "manufacturer": "Elsys",
+  "category": "air_quality",
+  "sensorType": "air_quality",
+  "payloadVersion": "1.0.0",
+  "samples": [
+    {
+      "description": "Normal CO2 levels",
+      "decoded_payload": {
+        "temperature": 22.0,
+        "humidity": 45,
+        "co2": 500
+      }
+    },
+    {
+      "description": "High CO2 levels",
+      "decoded_payload": {
+        "temperature": 23.0,
+        "humidity": 50,
+        "co2": 1500
+      }
+    }
+  ],
+  "fieldSchema": {
+    "temperature": {
+      "type": "number"
+    },
+    "humidity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "co2": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    }
+  },
+  "discriminators": ["co2"],
+  "notes": "Elsys ERS-CO2 Sensor"
+}

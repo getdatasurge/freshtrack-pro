@@ -4,9 +4,24 @@
  * Provides functions to infer sensor type and model from decoded payload data.
  * This is the most reliable inference method since real sensors always produce
  * characteristic payload patterns.
+ * 
+ * NOTE: For full inference with confidence scoring and explainable reasons,
+ * use the new payloadInference.ts module instead.
  */
 
 import { knownSamples } from "./internalSampleDB.ts";
+
+// Re-export new inference engine for gradual migration
+export { 
+  inferPayloadType,
+  REGISTRY_VERSION,
+  type InferenceOptions,
+} from "./payloadInference.ts";
+
+export type { 
+  InferenceResult, 
+  InferenceReason 
+} from "./eventTypes.ts";
 
 /**
  * Maps decoded payload field names to sensor types.
