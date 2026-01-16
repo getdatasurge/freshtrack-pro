@@ -229,6 +229,12 @@ export function RBACDebugPanel() {
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">platform_roles rows visible:</span>
               <code className="bg-muted px-1 rounded">{platformRolesCount}</code>
+              {platformRolesCount === 0 && (
+                <Badge variant="outline" className="text-[10px]">RLS blocking</Badge>
+              )}
+              {platformRolesCount > 0 && (
+                <Badge variant="outline" className="text-[10px] bg-green-100 dark:bg-green-900/30">RLS passed</Badge>
+              )}
             </div>
           )}
         </div>
