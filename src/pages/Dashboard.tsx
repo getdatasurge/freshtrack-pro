@@ -134,8 +134,10 @@ const Dashboard = () => {
         .select("*", { count: "exact", head: true })
         .eq("organization_id", orgId);
 
-      // Fetch units with area and site info, including sensor reliability fields
-      const { data: unitsData } = await supabase
+      // Fetch units with area and site info - filter at DB level for correct impersonation scoping
+      // CRITICAL: Must filter by organization_id at DB level, not client-side, 
+      // because Super Admins bypass RLS and would otherwise get units from all orgs
+      const { data: unitsData, error: unitsError } = await supabase
         .from("units")
         .select(`
           id, name, unit_type, status, last_temp_reading, last_reading_at, 
@@ -144,11 +146,15 @@ const Dashboard = () => {
           area:areas!inner(name, site:sites!inner(name, organization_id))
         `)
         .eq("is_active", true)
-        .limit(50);
+        .eq("area.site.organization_id", orgId)  // Filter at DB level for proper impersonation support
+        .limit(100);
 
-      const filteredUnits = (unitsData || []).filter(
-        (u: any) => u.area?.site?.organization_id === orgId
-      );
+      if (unitsError) {
+        console.error("[Dashboard] Error fetching units:", unitsError);
+      }
+
+      // No client-side filtering needed - already scoped to org at DB level
+      const filteredUnits = unitsData || [];
 
       // Fetch last manual log for each unit
       const unitIds = filteredUnits.map((u: any) => u.id);
