@@ -41,6 +41,7 @@ import PlatformUsers from "./pages/platform/PlatformUsers";
 import PlatformUserDetail from "./pages/platform/PlatformUserDetail";
 import PlatformAuditLog from "./pages/platform/PlatformAuditLog";
 import PlatformDeveloperTools from "./pages/platform/PlatformDeveloperTools";
+import { PlatformGuard } from "./components/platform";
 
 const queryClient = new QueryClient();
 
@@ -84,13 +85,13 @@ const App = () => (
             <Route path="/admin/upload-telnyx-image" element={<UploadTelnyxImage />} />
             <Route path="/account-deleted" element={<AccountDeleted />} />
               {/* Platform Admin Routes (Super Admin only) */}
-              <Route path="/platform" element={<PlatformOrganizations />} />
-              <Route path="/platform/organizations" element={<PlatformOrganizations />} />
-              <Route path="/platform/organizations/:orgId" element={<PlatformOrganizationDetail />} />
-              <Route path="/platform/users" element={<PlatformUsers />} />
-              <Route path="/platform/users/:userId" element={<PlatformUserDetail />} />
-              <Route path="/platform/audit" element={<PlatformAuditLog />} />
-              <Route path="/platform/developer-tools" element={<PlatformDeveloperTools />} />
+              <Route path="/platform" element={<PlatformGuard><PlatformOrganizations /></PlatformGuard>} />
+              <Route path="/platform/organizations" element={<PlatformGuard><PlatformOrganizations /></PlatformGuard>} />
+              <Route path="/platform/organizations/:orgId" element={<PlatformGuard><PlatformOrganizationDetail /></PlatformGuard>} />
+              <Route path="/platform/users" element={<PlatformGuard><PlatformUsers /></PlatformGuard>} />
+              <Route path="/platform/users/:userId" element={<PlatformGuard><PlatformUserDetail /></PlatformGuard>} />
+              <Route path="/platform/audit" element={<PlatformGuard><PlatformAuditLog /></PlatformGuard>} />
+              <Route path="/platform/developer-tools" element={<PlatformGuard><PlatformDeveloperTools /></PlatformGuard>} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
