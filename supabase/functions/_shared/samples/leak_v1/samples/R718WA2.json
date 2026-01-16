@@ -1,0 +1,14 @@
+{
+  "model": "R718WA2",
+  "manufacturer": "Netvox",
+  "description": "Netvox R718WA2 Water Leak Sensor",
+  "samples": [
+    {
+      "description": "Leak detected",
+      "decoded_payload": {
+        "leak": true,
+        "battery_voltage": 3.2
+      }
+    }
+  ]
+}

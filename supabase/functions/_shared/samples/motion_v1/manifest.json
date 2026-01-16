@@ -1,0 +1,30 @@
+{
+  "payloadType": "motion_v1",
+  "version": "1.0.0",
+  "displayName": "Motion Sensor",
+  "description": "PIR motion/occupancy sensors",
+  "sensorType": "motion",
+  "capabilities": ["motion", "battery"],
+  "schema": {
+    "type": "object",
+    "properties": {
+      "motion": { "type": "boolean" },
+      "occupancy": { "type": "boolean" },
+      "battery_level": { "type": "integer", "minimum": 0, "maximum": 100 }
+    },
+    "oneOf": [
+      { "required": ["motion"] },
+      { "required": ["occupancy"] }
+    ]
+  },
+  "discriminators": {
+    "primary": ["motion", "occupancy"],
+    "secondary": [],
+    "priority": 100
+  },
+  "fieldNormalization": {
+    "motion": "motion_detected",
+    "occupancy": "motion_detected"
+  },
+  "knownModels": ["TBMS100"]
+}

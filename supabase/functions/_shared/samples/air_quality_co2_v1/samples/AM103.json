@@ -1,0 +1,15 @@
+{
+  "model": "AM103",
+  "manufacturer": "Milesight",
+  "description": "Milesight AM103 Indoor Air Quality Sensor",
+  "samples": [
+    {
+      "description": "Office environment",
+      "decoded_payload": {
+        "co2": 420,
+        "temperature": 24.0,
+        "humidity": 55
+      }
+    }
+  ]
+}

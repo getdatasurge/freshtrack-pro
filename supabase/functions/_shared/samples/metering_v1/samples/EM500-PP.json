@@ -1,0 +1,14 @@
+{
+  "model": "EM500-PP",
+  "manufacturer": "Milesight",
+  "description": "Milesight EM500-PP Pulse Counter",
+  "samples": [
+    {
+      "description": "Counter reading",
+      "decoded_payload": {
+        "counter": 100,
+        "battery_level": 90
+      }
+    }
+  ]
+}

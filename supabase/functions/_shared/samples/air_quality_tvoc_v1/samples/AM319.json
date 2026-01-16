@@ -1,0 +1,16 @@
+{
+  "model": "AM319",
+  "manufacturer": "Milesight",
+  "description": "Milesight AM319 Advanced Air Quality Sensor",
+  "samples": [
+    {
+      "description": "Full sensor reading",
+      "decoded_payload": {
+        "co2": 450,
+        "tvoc": 120,
+        "temperature": 23.5,
+        "humidity": 50
+      }
+    }
+  ]
+}

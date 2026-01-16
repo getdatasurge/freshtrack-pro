@@ -1,0 +1,21 @@
+{
+  "model": "DS3604",
+  "manufacturer": "Milesight",
+  "description": "Milesight DS3604 Door Sensor",
+  "samples": [
+    {
+      "description": "Door closed (0)",
+      "decoded_payload": {
+        "open_close": 0,
+        "battery_level": 95
+      }
+    },
+    {
+      "description": "Door open (1)",
+      "decoded_payload": {
+        "open_close": 1,
+        "battery_level": 92
+      }
+    }
+  ]
+}

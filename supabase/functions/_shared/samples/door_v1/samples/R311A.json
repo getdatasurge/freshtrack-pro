@@ -1,0 +1,21 @@
+{
+  "model": "R311A",
+  "manufacturer": "Netvox",
+  "description": "Netvox R311A Door/Window Sensor",
+  "samples": [
+    {
+      "description": "Door open with voltage",
+      "decoded_payload": {
+        "door": true,
+        "battery_voltage": 3.0
+      }
+    },
+    {
+      "description": "Door closed",
+      "decoded_payload": {
+        "door": false,
+        "battery_voltage": 2.9
+      }
+    }
+  ]
+}

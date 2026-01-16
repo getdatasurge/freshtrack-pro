@@ -1,0 +1,34 @@
+{
+  "payloadType": "gps_v1",
+  "version": "1.0.0",
+  "displayName": "GPS Tracker",
+  "description": "GPS location tracking devices",
+  "sensorType": "gps",
+  "capabilities": ["gps", "battery"],
+  "schema": {
+    "type": "object",
+    "properties": {
+      "latitude": { "type": "number", "minimum": -90, "maximum": 90 },
+      "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
+      "gps": {
+        "type": "object",
+        "properties": {
+          "lat": { "type": "number" },
+          "lon": { "type": "number" }
+        }
+      },
+      "battery_level": { "type": "integer", "minimum": 0, "maximum": 100 }
+    },
+    "oneOf": [
+      { "required": ["latitude", "longitude"] },
+      { "required": ["gps"] }
+    ]
+  },
+  "discriminators": {
+    "primary": ["latitude", "gps"],
+    "secondary": ["longitude"],
+    "priority": 100
+  },
+  "fieldNormalization": {},
+  "knownModels": ["LT-22222-L", "TBS220"]
+}

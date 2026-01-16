@@ -1,0 +1,19 @@
+{
+  "model": "EM500-PT100",
+  "manufacturer": "Milesight",
+  "description": "Milesight EM500-PT100 Industrial Temperature Sensor",
+  "samples": [
+    {
+      "description": "Industrial temperature reading",
+      "decoded_payload": {
+        "temperature": 25.0
+      }
+    },
+    {
+      "description": "Cold environment",
+      "decoded_payload": {
+        "temperature": -40.0
+      }
+    }
+  ]
+}

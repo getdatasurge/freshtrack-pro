@@ -1,0 +1,25 @@
+{
+  "payloadType": "temp_rh_v1",
+  "version": "1.0.0",
+  "displayName": "Temperature & Humidity Sensor",
+  "description": "Sensors reporting temperature and relative humidity",
+  "sensorType": "temperature",
+  "capabilities": ["temperature", "humidity", "battery"],
+  "schema": {
+    "type": "object",
+    "required": ["temperature", "humidity"],
+    "properties": {
+      "temperature": { "type": "number", "minimum": -100, "maximum": 200 },
+      "humidity": { "type": "number", "minimum": 0, "maximum": 100 },
+      "battery_level": { "type": "integer", "minimum": 0, "maximum": 100 },
+      "battery_voltage": { "type": "number", "minimum": 0, "maximum": 5 }
+    }
+  },
+  "discriminators": {
+    "primary": ["temperature", "humidity"],
+    "secondary": [],
+    "priority": 90
+  },
+  "fieldNormalization": {},
+  "knownModels": ["EM300-TH", "ERS", "AM307"]
+}

@@ -1,0 +1,21 @@
+{
+  "model": "LDS02",
+  "manufacturer": "Dragino",
+  "description": "Dragino LDS02 LoRaWAN Door Sensor",
+  "samples": [
+    {
+      "description": "Door closed with good battery",
+      "decoded_payload": {
+        "door_status": "closed",
+        "battery_level": 90
+      }
+    },
+    {
+      "description": "Door open",
+      "decoded_payload": {
+        "door_status": "open",
+        "battery_level": 85
+      }
+    }
+  ]
+}

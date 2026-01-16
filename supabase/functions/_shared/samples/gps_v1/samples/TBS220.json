@@ -1,0 +1,14 @@
+{
+  "model": "TBS220",
+  "manufacturer": "Milesight",
+  "description": "Milesight TBS220 GPS Tracker",
+  "samples": [
+    {
+      "description": "Nested GPS object",
+      "decoded_payload": {
+        "gps": { "lat": 40.7128, "lon": -74.0060 },
+        "battery_level": 80
+      }
+    }
+  ]
+}

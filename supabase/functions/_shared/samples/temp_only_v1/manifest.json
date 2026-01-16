@@ -1,0 +1,26 @@
+{
+  "payloadType": "temp_only_v1",
+  "version": "1.0.0",
+  "displayName": "Temperature Only Sensor",
+  "description": "Sensors reporting temperature only (no humidity)",
+  "sensorType": "temperature",
+  "capabilities": ["temperature", "battery"],
+  "schema": {
+    "type": "object",
+    "required": ["temperature"],
+    "properties": {
+      "temperature": { "type": "number", "minimum": -100, "maximum": 200 },
+      "battery_level": { "type": "integer", "minimum": 0, "maximum": 100 }
+    },
+    "not": {
+      "required": ["humidity"]
+    }
+  },
+  "discriminators": {
+    "primary": ["temperature"],
+    "secondary": [],
+    "priority": 80
+  },
+  "fieldNormalization": {},
+  "knownModels": ["EM500-PT100"]
+}

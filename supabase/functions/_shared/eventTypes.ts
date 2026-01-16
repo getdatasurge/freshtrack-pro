@@ -27,23 +27,33 @@ export interface InferenceReason {
 
 /**
  * Result of payload type inference.
+ * 
+ * IMPORTANT: payloadType is now versioned (e.g., "door_v1", "temp_rh_v1").
+ * sensorType is derived from the payload type manifest at runtime.
  */
 export interface InferenceResult {
-  /** Inferred payload type (e.g., "door", "temperature", "unclassified") */
+  /** Versioned payload type (e.g., "door_v1", "temp_rh_v1", "unclassified") */
   payloadType: string;
-  /** Inferred device model (e.g., "LDS02") */
+  
+  /** Inferred device model (e.g., "LDS02") - metadata only */
   model: string | null;
-  /** Maps to lora_sensor_type enum value */
+  
+  /** Derived sensor type (e.g., "door", "temperature") - from manifest */
   sensorType: string;
+  
   /** Overall confidence score (0-1) */
   confidence: number;
+  
   /** Explainable chain of inference reasons */
   reasons: InferenceReason[];
+  
   /** True if multiple types match with similar confidence */
   isAmbiguous: boolean;
-  /** Other possible types if ambiguous */
+  
+  /** Other possible payload types if ambiguous */
   alternates: string[];
-  /** Registry schema version used for inference */
+  
+  /** Schema version of the payload type manifest */
   schemaVersion: string;
 }
 
