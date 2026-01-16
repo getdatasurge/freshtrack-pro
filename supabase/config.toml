@@ -138,3 +138,11 @@ verify_jwt = false
 # Fetch org state - used by emulator, uses API key auth
 [functions.fetch-org-state]
 verify_jwt = false
+
+# Telnyx webhook - receives delivery status reports, uses signature verification
+[functions.telnyx-webhook]
+verify_jwt = false
+
+# Telnyx config diagnostic - super admin only, checks Telnyx API connectivity
+[functions.test-telnyx-config]
+verify_jwt = false
