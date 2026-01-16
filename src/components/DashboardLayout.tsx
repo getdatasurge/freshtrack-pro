@@ -61,10 +61,15 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const { isSuperAdmin, isLoadingSuperAdmin, rolesLoaded, isSupportModeActive, impersonation, viewingOrg } = useSuperAdmin();
   const { effectiveOrgId, effectiveOrgName, isImpersonating, isInitialized, impersonationChecked } = useEffectiveIdentity();
   const [session, setSession] = useState<Session | null>(null);
-  const [orgId, setOrgId] = useState<string | null>(null);
-  const [orgName, setOrgName] = useState("");
+  const [realOrgId, setRealOrgId] = useState<string | null>(null);
+  const [realOrgName, setRealOrgName] = useState("");
   const [alertCount, setAlertCount] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Compute the effective org ID for sidebar - prefer effectiveOrgId when impersonating
+  // This ensures sidebar updates immediately when impersonation state changes
+  const sidebarOrgId = isImpersonating ? effectiveOrgId : realOrgId;
+  const displayOrgName = isImpersonating ? (effectiveOrgName || '') : realOrgName;
 
   // Redirect platform-only super admins to /platform (only when NOT in support mode / impersonating)
   useEffect(() => {
@@ -113,18 +118,21 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  // Use effective identity for data loading (supports impersonation)
+  // Load real user's org data (for non-impersonation mode)
   useEffect(() => {
-    if (isImpersonating && effectiveOrgId) {
-      // When impersonating, use the impersonated org
-      setOrgId(effectiveOrgId);
-      setOrgName(effectiveOrgName || '');
-      loadAlertCount(effectiveOrgId);
-    } else if (session?.user && !isImpersonating) {
+    if (session?.user && !isImpersonating) {
       // Normal user - load their org data
       loadOrgData();
     }
-  }, [session, isImpersonating, effectiveOrgId, effectiveOrgName]);
+  }, [session, isImpersonating]);
+
+  // Load alert count for the effective org (works for both real and impersonated)
+  useEffect(() => {
+    const orgToUse = sidebarOrgId;
+    if (orgToUse) {
+      loadAlertCount(orgToUse);
+    }
+  }, [sidebarOrgId]);
 
   const loadAlertCount = async (targetOrgId: string) => {
     const { count } = await supabase
@@ -138,7 +146,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
   const loadOrgData = async () => {
     if (!session?.user) return;
-    
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("organization_id")
@@ -146,17 +154,15 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
       .maybeSingle();
 
     if (profile?.organization_id) {
-      setOrgId(profile.organization_id);
-      
+      setRealOrgId(profile.organization_id);
+
       const { data: org } = await supabase
         .from("organizations")
         .select("name")
         .eq("id", profile.organization_id)
         .maybeSingle();
 
-      if (org) setOrgName(org.name);
-
-      await loadAlertCount(profile.organization_id);
+      if (org) setRealOrgName(org.name);
     }
   };
 
@@ -167,10 +173,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
       
       // Clear IndexedDB offline storage
       await clearOfflineStorage();
-      
+
       // Reset component state
-      setOrgId(null);
-      setOrgName("");
+      setRealOrgId(null);
+      setRealOrgName("");
       setAlertCount(0);
       
       // Sign out from Supabase - auth listener will handle navigation
@@ -247,13 +253,13 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                   </Button>
                 </Link>
               )}
-              {orgName && (
-                <Link 
+              {displayOrgName && (
+                <Link
                   to="/organization"
                   className="text-sm text-muted-foreground font-medium truncate hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm transition-colors"
-                  title={`Go to ${orgName} overview`}
+                  title={`Go to ${displayOrgName} overview`}
                 >
-                  {orgName}
+                  {displayOrgName}
                 </Link>
               )}
             </div>
@@ -305,10 +311,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
             })}
 
             {/* Sites Accordion */}
-            <SidebarSitesAccordion organizationId={orgId} />
+            <SidebarSitesAccordion organizationId={sidebarOrgId} />
 
             {/* Units Accordion */}
-            <SidebarUnitsAccordion organizationId={orgId} />
+            <SidebarUnitsAccordion organizationId={sidebarOrgId} />
 
             {/* Nav items after accordions */}
             {navItemsAfterAccordions.map((item) => {
@@ -402,10 +408,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 })}
 
                 {/* Sites Accordion (Mobile) */}
-                <SidebarSitesAccordion organizationId={orgId} />
+                <SidebarSitesAccordion organizationId={sidebarOrgId} />
 
                 {/* Units Accordion (Mobile) */}
-                <SidebarUnitsAccordion organizationId={orgId} />
+                <SidebarUnitsAccordion organizationId={sidebarOrgId} />
 
                 {/* Nav items after accordions */}
                 {navItemsAfterAccordions.map((item) => {
