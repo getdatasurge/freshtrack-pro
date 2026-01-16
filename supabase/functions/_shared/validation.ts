@@ -138,6 +138,21 @@ export const emulatorGatewaySchema = z.object({
   description: z.string().max(500, "Description too long").optional().nullable(),
 });
 
+// Expanded sensor type enum to match device categories
+const sensorTypeEnum = z.enum([
+  "temperature", 
+  "temperature_humidity", 
+  "door", 
+  "combo", 
+  "contact",
+  "motion",
+  "leak",
+  "metering",
+  "gps",
+  "air_quality",
+  "multi_sensor"
+]);
+
 export const emulatorDeviceSchema = z.object({
   serial_number: z.string().min(1, "Serial number required").max(100, "Serial number too long"),
   unit_id: uuidSchema.optional().nullable(),
@@ -146,14 +161,16 @@ export const emulatorDeviceSchema = z.object({
   firmware_version: z.string().max(50, "Firmware version too long").optional().nullable(),
   // Optional dev_eui - if present, also creates a corresponding lora_sensor
   dev_eui: z.string().max(32, "Device EUI too long").optional().nullable(),
-  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo", "contact"]).optional(),
+  sensor_type: sensorTypeEnum.optional(),
   name: z.string().max(100, "Name too long").optional().nullable(),
+  model: z.string().max(100, "Model too long").optional().nullable(),
+  manufacturer: z.string().max(100, "Manufacturer too long").optional().nullable(),
 });
 
 export const emulatorSensorSchema = z.object({
   dev_eui: z.string().min(1, "Device EUI required").max(32, "Device EUI too long"),
   name: z.string().min(1, "Sensor name required").max(100, "Sensor name too long"),
-  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo", "contact"]).optional(),
+  sensor_type: sensorTypeEnum.optional(),
   status: z.enum(["pending", "joining", "active", "offline", "fault"]).optional(),
   unit_id: uuidSchema.optional().nullable(),
   site_id: uuidSchema.optional().nullable(),
