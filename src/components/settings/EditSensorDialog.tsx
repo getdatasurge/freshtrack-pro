@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useUpdateLoraSensor } from "@/hooks/useLoraSensors";
 import { LoraSensor, LoraSensorType } from "@/types/ttn";
+import { SENSOR_TYPE_OPTIONS, SENSOR_TYPE_VALUES } from "@/lib/sensorTypeOptions";
 import {
   Dialog,
   DialogContent,
@@ -34,7 +35,7 @@ import { Loader2, Lock } from "lucide-react";
 
 const editSensorSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
-  sensor_type: z.enum(["temperature", "temperature_humidity", "door", "combo", "contact"] as const),
+  sensor_type: z.enum(SENSOR_TYPE_VALUES),
   site_id: z.string().optional(),
   unit_id: z.string().optional(),
   description: z.string().max(500, "Description must be less than 500 characters").optional(),
@@ -218,10 +219,14 @@ export function EditSensorDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="temperature">Temperature</SelectItem>
-                      <SelectItem value="temperature_humidity">Temperature + Humidity</SelectItem>
-                      <SelectItem value="door">Door</SelectItem>
-                      <SelectItem value="combo">Combo (Temp + Door)</SelectItem>
+                      {SENSOR_TYPE_OPTIONS.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>
+                          <div className="flex items-center gap-2">
+                            <type.icon className="h-4 w-4 text-muted-foreground" />
+                            {type.label}
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
