@@ -165,6 +165,9 @@ export const emulatorDeviceSchema = z.object({
   name: z.string().max(100, "Name too long").optional().nullable(),
   model: z.string().max(100, "Model too long").optional().nullable(),
   manufacturer: z.string().max(100, "Manufacturer too long").optional().nullable(),
+  // Payload-based inference fields (same as sensor schema)
+  decoded_payload: z.record(z.unknown()).optional().nullable(),
+  unit_name: z.string().max(200, "Unit name too long").optional().nullable(),
 });
 
 export const emulatorSensorSchema = z.object({
