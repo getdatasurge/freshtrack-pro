@@ -3,6 +3,7 @@
  * 
  * Shows detailed pipeline health information for Super Admin / Support users.
  * Displays layer-by-layer status with timestamps and technical details.
+ * Includes payload binding comparison and schema validation results.
  */
 
 import { useState } from "react";
@@ -20,6 +21,10 @@ import {
   X,
   RefreshCw,
   ExternalLink,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  FileJson,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +32,36 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { PipelineHealthReport, PipelineCheckResult, PipelineLayer, LayerStatus } from "@/lib/pipeline/pipelineHealth";
 import { cn } from "@/lib/utils";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface PayloadBindingData {
+  payloadType: string;
+  schemaVersion: string;
+  confidence: number;
+  status: "active" | "review_required" | "overridden" | "pending";
+  capabilities: string[];
+  boundAt?: string;
+  source?: "auto" | "manual";
+}
+
+export interface SchemaValidationResult {
+  valid: boolean;
+  missingRequired: string[];
+  missingOptional: string[];
+  unexpectedFields: string[];
+  lastPayloadSample?: Record<string, unknown>;
+}
+
+export interface InferenceDetails {
+  inferredPayloadType: string;
+  confidence: number;
+  reasons: string[];
+  alternates?: string[];
+  isAmbiguous?: boolean;
+}
 
 interface PipelineDiagnosticOverlayProps {
   /** Pipeline health report to display */
@@ -39,7 +74,19 @@ interface PipelineDiagnosticOverlayProps {
   isRefreshing?: boolean;
   /** Unit name for display */
   unitName?: string;
+  /** Expected payload binding from sensor configuration */
+  payloadBinding?: PayloadBindingData;
+  /** Last received payload type from latest reading */
+  lastReceivedPayloadType?: string;
+  /** Schema validation result */
+  schemaValidation?: SchemaValidationResult;
+  /** Inference details from last payload */
+  inferenceDetails?: InferenceDetails;
 }
+
+// ============================================================================
+// Constants
+// ============================================================================
 
 /**
  * Icon for each pipeline layer.
@@ -66,6 +113,10 @@ const LAYER_NAMES: Record<PipelineLayer, string> = {
   database: 'Database',
   external_api: 'External API',
 };
+
+// ============================================================================
+// Helper Components
+// ============================================================================
 
 /**
  * Status badge styling.
@@ -172,12 +223,257 @@ function LayerRow({ check }: { check: PipelineCheckResult }) {
   );
 }
 
+/**
+ * Payload Binding Section - Shows expected vs received payload type
+ */
+function PayloadBindingSection({
+  payloadBinding,
+  lastReceivedPayloadType,
+  inferenceDetails,
+}: {
+  payloadBinding?: PayloadBindingData;
+  lastReceivedPayloadType?: string;
+  inferenceDetails?: InferenceDetails;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  
+  if (!payloadBinding) return null;
+
+  const typesMatch = lastReceivedPayloadType === payloadBinding.payloadType;
+  const hasInferenceDetails = !!inferenceDetails;
+
+  return (
+    <div className="border-b border-border">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger asChild>
+          <button className="w-full flex items-center gap-3 px-3 py-2 hover:bg-muted/50 transition-colors">
+            <FileJson className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs font-medium flex-1 text-left">Payload Binding</span>
+            {typesMatch ? (
+              <CheckCircle2 className="w-3.5 h-3.5 text-safe" />
+            ) : (
+              <AlertTriangle className="w-3.5 h-3.5 text-alarm" />
+            )}
+            {isOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent>
+          <div className="px-3 py-2 bg-muted/30 border-t border-border/50 space-y-2">
+            {/* Expected vs Received */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Expected Type</span>
+                <code className="font-mono text-foreground bg-muted px-1.5 py-0.5 rounded">
+                  {payloadBinding.payloadType}
+                </code>
+              </div>
+              <div>
+                <span className="text-muted-foreground block mb-0.5">Last Received</span>
+                <div className="flex items-center gap-1.5">
+                  <code className={cn(
+                    "font-mono px-1.5 py-0.5 rounded",
+                    typesMatch 
+                      ? "text-foreground bg-muted" 
+                      : "text-alarm bg-alarm/10"
+                  )}>
+                    {lastReceivedPayloadType ?? "—"}
+                  </code>
+                  {typesMatch ? (
+                    <CheckCircle2 className="w-3 h-3 text-safe" />
+                  ) : (
+                    <XCircle className="w-3 h-3 text-alarm" />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Binding Metadata */}
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Badge variant="outline" className="text-[10px] h-4">
+                Confidence: {Math.round(payloadBinding.confidence * 100)}%
+              </Badge>
+              <Badge variant="outline" className="text-[10px] h-4">
+                Status: {payloadBinding.status}
+              </Badge>
+              {payloadBinding.source && (
+                <Badge variant="outline" className="text-[10px] h-4">
+                  Source: {payloadBinding.source}
+                </Badge>
+              )}
+            </div>
+
+            {/* Capabilities */}
+            {payloadBinding.capabilities.length > 0 && (
+              <div className="text-xs">
+                <span className="text-muted-foreground">Capabilities: </span>
+                <span className="font-mono">{payloadBinding.capabilities.join(', ')}</span>
+              </div>
+            )}
+
+            {/* Inference Details */}
+            {hasInferenceDetails && inferenceDetails && (
+              <div className="pt-2 border-t border-border/50 space-y-1">
+                <span className="text-xs text-muted-foreground font-medium">Inference Result</span>
+                <div className="text-xs space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Inferred:</span>
+                    <code className="font-mono">{inferenceDetails.inferredPayloadType}</code>
+                    <span className="text-muted-foreground">
+                      ({Math.round(inferenceDetails.confidence * 100)}%)
+                    </span>
+                    {inferenceDetails.isAmbiguous && (
+                      <Badge variant="outline" className="text-[10px] h-4 text-warning border-warning/30">
+                        Ambiguous
+                      </Badge>
+                    )}
+                  </div>
+                  {inferenceDetails.reasons.length > 0 && (
+                    <div className="text-muted-foreground font-mono text-[10px]">
+                      Reasons: {inferenceDetails.reasons.join(' → ')}
+                    </div>
+                  )}
+                  {inferenceDetails.alternates && inferenceDetails.alternates.length > 0 && (
+                    <div className="text-muted-foreground font-mono text-[10px]">
+                      Alternates: {inferenceDetails.alternates.join(', ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
+}
+
+/**
+ * Schema Validation Section - Shows validation results and missing fields
+ */
+function SchemaValidationSection({
+  schemaValidation,
+}: {
+  schemaValidation?: SchemaValidationResult;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [showPayload, setShowPayload] = useState(false);
+  
+  if (!schemaValidation) return null;
+
+  const hasIssues = 
+    schemaValidation.missingRequired.length > 0 ||
+    schemaValidation.missingOptional.length > 0 ||
+    schemaValidation.unexpectedFields.length > 0;
+
+  return (
+    <div className="border-b border-border">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+        <CollapsibleTrigger asChild>
+          <button className="w-full flex items-center gap-3 px-3 py-2 hover:bg-muted/50 transition-colors">
+            <Code className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs font-medium flex-1 text-left">Schema Validation</span>
+            {schemaValidation.valid ? (
+              <CheckCircle2 className="w-3.5 h-3.5 text-safe" />
+            ) : (
+              <XCircle className="w-3.5 h-3.5 text-alarm" />
+            )}
+            {isOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+        </CollapsibleTrigger>
+
+        <CollapsibleContent>
+          <div className="px-3 py-2 bg-muted/30 border-t border-border/50 space-y-2">
+            {/* Overall Status */}
+            <div className="flex items-center gap-2 text-xs">
+              {schemaValidation.valid ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-safe" />
+                  <span className="text-safe">Validation Passed</span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-3.5 h-3.5 text-alarm" />
+                  <span className="text-alarm">Validation Failed</span>
+                </>
+              )}
+            </div>
+
+            {/* Missing Required Fields */}
+            {schemaValidation.missingRequired.length > 0 && (
+              <div className="text-xs">
+                <span className="text-alarm font-medium">Missing Required: </span>
+                <code className="font-mono text-alarm">
+                  {schemaValidation.missingRequired.join(', ')}
+                </code>
+              </div>
+            )}
+
+            {/* Missing Optional Fields */}
+            {schemaValidation.missingOptional.length > 0 && (
+              <div className="text-xs">
+                <span className="text-warning font-medium">Missing Optional: </span>
+                <code className="font-mono text-warning">
+                  {schemaValidation.missingOptional.join(', ')}
+                </code>
+              </div>
+            )}
+
+            {/* Unexpected Fields */}
+            {schemaValidation.unexpectedFields.length > 0 && (
+              <div className="text-xs">
+                <span className="text-muted-foreground font-medium">Unexpected Fields: </span>
+                <code className="font-mono text-muted-foreground">
+                  {schemaValidation.unexpectedFields.join(', ')}
+                </code>
+              </div>
+            )}
+
+            {/* No Issues */}
+            {!hasIssues && schemaValidation.valid && (
+              <p className="text-xs text-muted-foreground">
+                All required and optional fields present and valid.
+              </p>
+            )}
+
+            {/* Last Payload Sample (Collapsible) */}
+            {schemaValidation.lastPayloadSample && (
+              <div className="pt-2 border-t border-border/50">
+                <button 
+                  onClick={() => setShowPayload(!showPayload)}
+                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+                >
+                  {showPayload ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  Last Payload Sample
+                </button>
+                {showPayload && (
+                  <pre className="mt-1 p-2 bg-muted rounded text-[10px] font-mono overflow-x-auto max-h-32">
+                    {JSON.stringify(schemaValidation.lastPayloadSample, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
+}
+
+// ============================================================================
+// Main Component
+// ============================================================================
+
 export function PipelineDiagnosticOverlay({
   report,
   onClose,
   onRefresh,
   isRefreshing = false,
   unitName,
+  payloadBinding,
+  lastReceivedPayloadType,
+  schemaValidation,
+  inferenceDetails,
 }: PipelineDiagnosticOverlayProps) {
   const hasIssue = report.overallStatus === 'failed' || report.overallStatus === 'degraded';
 
@@ -232,8 +528,19 @@ export function PipelineDiagnosticOverlay({
         </div>
       </div>
 
-      {/* Layer Checks */}
+      {/* Scrollable Content */}
       <ScrollArea className="flex-1">
+        {/* Payload Binding Section */}
+        <PayloadBindingSection
+          payloadBinding={payloadBinding}
+          lastReceivedPayloadType={lastReceivedPayloadType}
+          inferenceDetails={inferenceDetails}
+        />
+
+        {/* Schema Validation Section */}
+        <SchemaValidationSection schemaValidation={schemaValidation} />
+
+        {/* Layer Checks */}
         <div className="divide-y divide-border/50">
           {report.checks.map((check) => (
             <LayerRow key={check.layer} check={check} />

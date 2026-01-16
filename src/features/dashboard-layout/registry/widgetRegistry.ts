@@ -114,6 +114,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredCapabilities: [],
   },
   
   // =========================================================================
@@ -136,6 +137,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "system",
+    requiredCapabilities: [],
   },
   
   temp_limits: {
@@ -154,6 +156,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "system",
+    requiredCapabilities: [],
   },
   
   readings_count: {
@@ -172,6 +175,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   device_readiness: {
@@ -190,6 +194,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "system",
+    requiredCapabilities: [],
   },
   
   last_known_good: {
@@ -208,6 +213,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   connected_sensors: {
@@ -226,6 +232,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "sensor",
+    requiredCapabilities: [],
   },
   
   battery_health: {
@@ -374,6 +381,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "manual",
+    requiredCapabilities: [],
     requiredDataSource: {
       type: "manual_log",
       message: "Works best with manual temperature logging enabled",
@@ -396,6 +404,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "system",
+    requiredCapabilities: [],
   },
   
   sensor_signal_trend: {
@@ -434,6 +443,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "system",
+    requiredCapabilities: [],
   },
   
   event_timeline: {
@@ -452,6 +462,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "system",
+    requiredCapabilities: [],
   },
   
   unit_compliance_score: {
@@ -470,6 +481,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   maintenance_forecast: {
@@ -507,6 +519,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["unit"],
     dataCategory: "external",
+    requiredCapabilities: ["temperature"],
     requiredDataSource: {
       type: "weather",
       message: "Requires site location to fetch external weather data",
@@ -529,6 +542,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["unit"],
     dataCategory: "manual",
+    requiredCapabilities: [],
   },
   
   // =========================================================================
@@ -551,6 +565,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   units_status_grid: {
@@ -569,6 +584,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "sensor",
+    requiredCapabilities: [],
   },
   
   // =========================================================================
@@ -591,6 +607,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "system",
+    requiredCapabilities: [],
   },
   
   compliance_summary: {
@@ -609,6 +626,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
 
   // =========================================================================
@@ -631,6 +649,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "sensor",
+    requiredCapabilities: [],
   },
   
   alerts_trend: {
@@ -649,6 +668,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["site"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   compliance_scoreboard: {
@@ -667,6 +687,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   area_breakdown: {
@@ -685,6 +706,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   recent_events_feed: {
@@ -703,6 +725,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "system",
+    requiredCapabilities: [],
   },
   
   unit_comparison: {
@@ -721,6 +744,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["site"],
     dataCategory: "sensor",
+    requiredCapabilities: [],
   },
   
   problem_units: {
@@ -739,6 +763,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "system",
+    requiredCapabilities: [],
   },
   
   manual_log_overview: {
@@ -757,6 +782,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "manual",
+    requiredCapabilities: [],
   },
   
   site_activity_graph: {
@@ -775,6 +801,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["site"],
     dataCategory: "sensor",
+    requiredCapabilities: [],
   },
   
   external_weather: {
@@ -793,6 +820,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "external",
+    requiredCapabilities: [],
     requiredDataSource: {
       type: "weather",
       message: "Requires site location to be configured for weather data",
@@ -815,6 +843,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   downtime_tracker: {
@@ -833,6 +862,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: true,
     entityTypes: ["site"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   quick_stats_cards: {
@@ -851,6 +881,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   unit_type_distribution: {
@@ -869,6 +900,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "calculated",
+    requiredCapabilities: [],
   },
   
   gateway_health: {
@@ -887,6 +919,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetDefinition> = {
     supportsTimeline: false,
     entityTypes: ["site"],
     dataCategory: "gateway",
+    requiredCapabilities: [],
   },
 };
 
