@@ -10,19 +10,22 @@ import { useAuthAndOnboarding } from "@/hooks/useAuthAndOnboarding";
  */
 const AuthCallback = () => {
   const navigate = useNavigate();
-  const { isInitializing, isAuthenticated, isOnboardingComplete } = useAuthAndOnboarding();
+  const { isInitializing, isAuthenticated, isOnboardingComplete, isSuperAdmin } = useAuthAndOnboarding();
 
   useEffect(() => {
     if (isInitializing) return;
 
     if (!isAuthenticated) {
       navigate("/auth", { replace: true });
+    } else if (isSuperAdmin) {
+      // Super admins go directly to platform admin
+      navigate("/platform", { replace: true });
     } else if (!isOnboardingComplete) {
       navigate("/onboarding", { replace: true });
     } else {
       navigate("/dashboard", { replace: true });
     }
-  }, [isInitializing, isAuthenticated, isOnboardingComplete, navigate]);
+  }, [isInitializing, isAuthenticated, isOnboardingComplete, isSuperAdmin, navigate]);
 
   return (
     <div className="min-h-screen bg-gradient-frost flex flex-col items-center justify-center p-4">

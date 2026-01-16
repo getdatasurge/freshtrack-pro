@@ -6,6 +6,7 @@ interface AuthOnboardingState {
   isInitializing: boolean;
   isAuthenticated: boolean;
   isOnboardingComplete: boolean;
+  isSuperAdmin: boolean;
   session: Session | null;
   organizationId: string | null;
 }
@@ -20,30 +21,38 @@ export function useAuthAndOnboarding() {
     isInitializing: true,
     isAuthenticated: false,
     isOnboardingComplete: false,
+    isSuperAdmin: false,
     session: null,
     organizationId: null,
   });
 
-  const checkOnboardingStatus = useCallback(async (userId: string) => {
+  const checkUserStatus = useCallback(async (userId: string) => {
     try {
-      const { data: profile, error } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", userId)
-        .maybeSingle();
+      // Check profile and super admin status in parallel
+      const [profileResult, superAdminResult] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        supabase.rpc('is_current_user_super_admin')
+      ]);
 
-      if (error) {
-        console.error("[useAuthAndOnboarding] Error checking profile:", error);
-        return { organizationId: null, isComplete: false };
+      if (profileResult.error) {
+        console.error("[useAuthAndOnboarding] Error checking profile:", profileResult.error);
       }
 
+      const isSuperAdmin = superAdminResult.data === true;
+      const organizationId = profileResult.data?.organization_id || null;
+      
       return {
-        organizationId: profile?.organization_id || null,
-        isComplete: !!profile?.organization_id,
+        organizationId,
+        isComplete: !!organizationId,
+        isSuperAdmin,
       };
     } catch (err) {
-      console.error("[useAuthAndOnboarding] Exception checking profile:", err);
-      return { organizationId: null, isComplete: false };
+      console.error("[useAuthAndOnboarding] Exception checking user status:", err);
+      return { organizationId: null, isComplete: false, isSuperAdmin: false };
     }
   }, []);
 
@@ -61,14 +70,15 @@ export function useAuthAndOnboarding() {
           isInitializing: false,
           isAuthenticated: false,
           isOnboardingComplete: false,
+          isSuperAdmin: false,
           session: null,
           organizationId: null,
         });
         return;
       }
 
-      // Session exists, check onboarding status
-      const { organizationId, isComplete } = await checkOnboardingStatus(session.user.id);
+      // Session exists, check user status (profile + super admin)
+      const { organizationId, isComplete, isSuperAdmin } = await checkUserStatus(session.user.id);
       
       if (!isMounted) return;
 
@@ -76,6 +86,7 @@ export function useAuthAndOnboarding() {
         isInitializing: false,
         isAuthenticated: true,
         isOnboardingComplete: isComplete,
+        isSuperAdmin,
         session,
         organizationId,
       });
@@ -91,15 +102,16 @@ export function useAuthAndOnboarding() {
             isInitializing: false,
             isAuthenticated: false,
             isOnboardingComplete: false,
+            isSuperAdmin: false,
             session: null,
             organizationId: null,
           });
           return;
         }
 
-        // For sign in events, check onboarding status
+        // For sign in events, check user status
         if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
-          const { organizationId, isComplete } = await checkOnboardingStatus(session.user.id);
+          const { organizationId, isComplete, isSuperAdmin } = await checkUserStatus(session.user.id);
           
           if (!isMounted) return;
 
@@ -107,6 +119,7 @@ export function useAuthAndOnboarding() {
             isInitializing: false,
             isAuthenticated: true,
             isOnboardingComplete: isComplete,
+            isSuperAdmin,
             session,
             organizationId,
           });
@@ -120,7 +133,7 @@ export function useAuthAndOnboarding() {
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [checkOnboardingStatus]);
+  }, [checkUserStatus]);
 
   return state;
 }
