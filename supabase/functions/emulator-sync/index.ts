@@ -17,6 +17,7 @@ import {
   type EmulatorDeviceInput,
   type EmulatorSensorInput,
 } from "../_shared/validation.ts";
+import { inferSensorTypeFromModel, isKnownModel } from "../_shared/deviceRegistry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -170,16 +171,24 @@ Deno.serve(async (req) => {
       // If device has dev_eui, also create corresponding lora_sensor
       if (device.dev_eui) {
         try {
+          // Infer sensor type from model if not explicitly provided
+          const inferredType = inferSensorTypeFromModel(device.model);
+          const finalType = device.sensor_type || inferredType || "temperature";
+          
+          console.log(`[emulator-sync] Auto-sensor type inference: model=${device.model}, explicit=${device.sensor_type}, inferred=${inferredType}, final=${finalType}`);
+          
           const sensorResult = await upsertSensor(supabase, payload.org_id, {
             dev_eui: device.dev_eui,
             name: device.name || `Sensor ${device.serial_number}`,
-            sensor_type: device.sensor_type || "temperature",
+            sensor_type: finalType as EmulatorSensorInput["sensor_type"],
+            model: device.model || null,
+            manufacturer: device.manufacturer || null,
             status: "pending",
             unit_id: device.unit_id || null,
             site_id: null,
           });
           counts.sensors[sensorResult]++;
-          console.log(`[emulator-sync] Auto-created sensor for device ${device.serial_number}: ${sensorResult}`);
+          console.log(`[emulator-sync] Auto-created sensor for device ${device.serial_number}: ${sensorResult}, type=${finalType}`);
         } catch (sensorErr) {
           const msg = `Auto-sensor for ${device.serial_number}: ${sensorErr instanceof Error ? sensorErr.message : String(sensorErr)}`;
           warnings.push(msg);
@@ -375,13 +384,24 @@ async function upsertSensor(
   
   // Only use incoming status if it's more advanced
   const finalStatus = existingPriority >= incomingPriority ? existingStatus : incomingStatus;
+  
+  // Intelligent sensor type inference:
+  // 1. Explicit type from emulator takes priority
+  // 2. If not provided, infer from model
+  // 3. Only fallback to "temperature" if truly unknown
+  const explicitType = sensor.sensor_type;
+  const inferredType = inferSensorTypeFromModel(sensor.model);
+  const finalType = explicitType || inferredType || "temperature";
+  
+  const modelKnown = isKnownModel(sensor.model);
+  console.log(`[emulator-sync] Sensor ${sensor.dev_eui} type inference: model=${sensor.model}, known=${modelKnown}, explicit=${explicitType}, inferred=${inferredType}, final=${finalType}`);
 
   // deno-lint-ignore no-explicit-any
   const upsertData: Record<string, any> = {
     organization_id: orgId,
     dev_eui: sensor.dev_eui,
     name: sensor.name,
-    sensor_type: sensor.sensor_type || "temperature",
+    sensor_type: finalType,
     status: finalStatus,
     unit_id: sensor.unit_id || null,
     site_id: sensor.site_id || null,

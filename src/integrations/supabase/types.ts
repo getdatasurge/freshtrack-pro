@@ -3504,6 +3504,12 @@ export type Database = {
         | "door"
         | "combo"
         | "contact"
+        | "motion"
+        | "leak"
+        | "metering"
+        | "gps"
+        | "air_quality"
+        | "multi_sensor"
       notification_channel: "push" | "email" | "sms"
       notification_status: "pending" | "sent" | "delivered" | "failed"
       pairing_status:
@@ -3686,6 +3692,12 @@ export const Constants = {
         "door",
         "combo",
         "contact",
+        "motion",
+        "leak",
+        "metering",
+        "gps",
+        "air_quality",
+        "multi_sensor",
       ],
       notification_channel: ["push", "email", "sms"],
       notification_status: ["pending", "sent", "delivered", "failed"],
