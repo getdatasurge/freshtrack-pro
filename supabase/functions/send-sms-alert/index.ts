@@ -15,6 +15,9 @@ const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 // Toll-free verification ID for checking status
 const TOLL_FREE_VERIFICATION_ID = "99ac127c-6dae-57ee-afc4-32949ac9124e";
 
+// Telnyx Phone Number ID (verified toll-free)
+const TELNYX_PHONE_NUMBER_ID = "99ac127c-6dae-57ee-afc4-32949ac9124e";
+
 // Telnyx error code mappings for user-friendly messages
 const TELNYX_ERROR_CODES: Record<string, string> = {
   "10001": "Invalid API key format",
@@ -26,6 +29,7 @@ const TELNYX_ERROR_CODES: Record<string, string> = {
   "40003": "Message blocked by carrier filter",
   "40004": "Destination country not enabled",
   "40005": "Message rejected - content policy violation",
+  "40013": "Invalid messaging source number - phone number may not be associated with messaging profile",
   "40300": "Number opted out of SMS (STOP received)",
   "40301": "Number on do-not-contact list",
   "40310": "Invalid destination phone number",
@@ -292,12 +296,26 @@ const handler = async (req: Request): Promise<Response> => {
       
       console.error(`send-sms-alert: Telnyx API error: ${fullError}`);
       
-      // Log the failed attempt
+      // Provide actionable guidance for error 40013 (source number not associated with profile)
+      if (errorCode === "40013") {
+        console.error(JSON.stringify({
+          event: "sms_config_error_40013",
+          severity: "critical",
+          configured_number: TELNYX_PHONE_NUMBER?.slice(0, 5) + "***",
+          expected_number_id: TELNYX_PHONE_NUMBER_ID,
+          messaging_profile_id: TELNYX_MESSAGING_PROFILE_ID,
+          action: "Verify TELNYX_PHONE_NUMBER matches toll-free number +18889890560 and is associated with messaging profile in Telnyx portal",
+          timestamp: new Date().toISOString(),
+        }));
+      }
+      
+      // Log the failed attempt with from_number for debugging
       const { error: insertError } = await supabase.from("sms_alert_log").insert({
         organization_id: organizationId,
         user_id: userId,
         alert_id: alertId,
         phone_number: to,
+        from_number: TELNYX_PHONE_NUMBER,
         alert_type: alertType,
         message: message,
         status: "failed",
