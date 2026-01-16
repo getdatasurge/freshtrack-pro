@@ -28,6 +28,7 @@ import { clearOfflineStorage } from "@/lib/offlineStorage";
 import { usePermissions } from "@/hooks/useUserRole";
 import { useSuperAdmin } from "@/contexts/SuperAdminContext";
 import { SupportModeBanner, ImpersonationBanner } from "@/components/platform/SupportModeBanner";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -58,19 +59,23 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const queryClient = useQueryClient();
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
   const { isSuperAdmin, isLoadingSuperAdmin, rolesLoaded, isSupportModeActive, impersonation } = useSuperAdmin();
+  const { effectiveOrgId, effectiveOrgName, isImpersonating, isInitialized } = useEffectiveIdentity();
   const [session, setSession] = useState<Session | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
   const [orgName, setOrgName] = useState("");
   const [alertCount, setAlertCount] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Redirect platform-only super admins to /platform
+  // Redirect platform-only super admins to /platform (only when NOT impersonating)
   useEffect(() => {
-    if (rolesLoaded && isSuperAdmin && !impersonation.isImpersonating) {
+    // Wait for both roles and effective identity to be initialized
+    if (!rolesLoaded || !isInitialized) return;
+    
+    if (isSuperAdmin && !isImpersonating && !impersonation.isImpersonating) {
       // Super admin accessing main app without impersonating → redirect to platform
       navigate("/platform", { replace: true });
     }
-  }, [rolesLoaded, isSuperAdmin, impersonation.isImpersonating, navigate]);
+  }, [rolesLoaded, isSuperAdmin, isImpersonating, impersonation.isImpersonating, isInitialized, navigate]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -96,17 +101,36 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
     return () => subscription.unsubscribe();
   }, [navigate]);
 
+  // Use effective identity for data loading (supports impersonation)
   useEffect(() => {
-    if (session?.user) {
+    if (isImpersonating && effectiveOrgId) {
+      // When impersonating, use the impersonated org
+      setOrgId(effectiveOrgId);
+      setOrgName(effectiveOrgName || '');
+      loadAlertCount(effectiveOrgId);
+    } else if (session?.user && !isImpersonating) {
+      // Normal user - load their org data
       loadOrgData();
     }
-  }, [session]);
+  }, [session, isImpersonating, effectiveOrgId, effectiveOrgName]);
+
+  const loadAlertCount = async (targetOrgId: string) => {
+    const { count } = await supabase
+      .from("alerts")
+      .select("id", { count: "exact" })
+      .eq("organization_id", targetOrgId)
+      .eq("status", "active")
+      .limit(0);
+    setAlertCount(count || 0);
+  };
 
   const loadOrgData = async () => {
+    if (!session?.user) return;
+    
     const { data: profile } = await supabase
       .from("profiles")
       .select("organization_id")
-      .eq("user_id", session!.user.id)
+      .eq("user_id", session.user.id)
       .maybeSingle();
 
     if (profile?.organization_id) {
@@ -120,15 +144,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
       if (org) setOrgName(org.name);
 
-      // Get alert count - use GET with limit(0) instead of HEAD to avoid CORS/RLS issues
-      const { count } = await supabase
-        .from("alerts")
-        .select("id", { count: "exact" })
-        .eq("organization_id", profile.organization_id)
-        .eq("status", "active")
-        .limit(0);
-
-      setAlertCount(count || 0);
+      await loadAlertCount(profile.organization_id);
     }
   };
 
