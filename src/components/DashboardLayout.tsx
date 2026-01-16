@@ -28,6 +28,7 @@ import { clearOfflineStorage } from "@/lib/offlineStorage";
 import { usePermissions } from "@/hooks/useUserRole";
 import { useSuperAdmin } from "@/contexts/SuperAdminContext";
 import { SupportModeBanner, ImpersonationBanner } from "@/components/platform/SupportModeBanner";
+import { SupportDiagnosticsPanel } from "@/components/platform/SupportDiagnosticsPanel";
 import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 interface DashboardLayoutProps {
@@ -492,6 +493,9 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
             {children}
           </div>
         </main>
+        
+        {/* Support Diagnostics Panel - visible only to Super Admins in support mode */}
+        <SupportDiagnosticsPanel />
       </div>
     </div>
   );
