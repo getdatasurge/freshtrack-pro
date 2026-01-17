@@ -79,54 +79,22 @@ const Dashboard = () => {
   }, [navigate]);
 
   // Load dashboard data when effective org changes (supports impersonation)
+  // @org-scope-verified: Uses effectiveOrgId directly, no profile fallback
   useEffect(() => {
     if (!isInitialized) return;
     
-    if (isImpersonating && effectiveOrgId) {
-      // Use impersonated org directly
+    // Wait for effectiveOrgId to be available
+    if (effectiveOrgId) {
       setOrganizationId(effectiveOrgId);
       loadDashboardData(effectiveOrgId);
-    } else if (session?.user) {
-      // Normal flow - fetch user's org
-      loadDashboardData();
+    } else if (isInitialized && !effectiveOrgId) {
+      // No org found - redirect to onboarding
+      navigate("/auth/callback", { replace: true });
     }
-  }, [session, isImpersonating, effectiveOrgId, isInitialized]);
+  }, [effectiveOrgId, isInitialized, navigate]);
 
-  const loadDashboardData = useCallback(async (overrideOrgId?: string) => {
-    if (!session?.user && !overrideOrgId) return;
-    
-    let orgId = overrideOrgId || organizationId;
-    
-    // Fetch org if we don't have it yet
-    if (!orgId) {
-      try {
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("organization_id")
-          .eq("user_id", session.user.id)
-          .maybeSingle();
-
-        if (profileError) {
-          console.error("Error loading profile:", profileError);
-          setIsLoading(false);
-          return;
-        }
-
-        // Redirect to callback to properly handle routing
-        if (!profile?.organization_id) {
-          setIsLoading(false);
-          navigate("/auth/callback", { replace: true });
-          return;
-        }
-        
-        orgId = profile.organization_id;
-        setOrganizationId(orgId);
-      } catch (error) {
-        console.error("Error checking organization:", error);
-        setIsLoading(false);
-        return;
-      }
-    }
+  const loadDashboardData = useCallback(async (orgId: string) => {
+    if (!orgId) return;
     
     try {
       const { count: sitesCount } = await supabase
@@ -294,7 +262,9 @@ const Dashboard = () => {
   };
 
   const handleLogSuccess = () => {
-    loadDashboardData();
+    if (organizationId) {
+      loadDashboardData(organizationId);
+    }
   };
 
   if (isLoading) {
