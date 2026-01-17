@@ -103,19 +103,28 @@ Deno.serve(async (req) => {
 
         const recordedAt = reading.recorded_at || new Date().toISOString();
 
+        // Only include door_open if explicitly provided (prevents temp sensors from polluting door data)
+        const hasDoorData = reading.door_open !== undefined;
+
         // Insert sensor reading with source tag
-        const { error: insertError } = await supabase.from("sensor_readings").insert({
+        const readingData: Record<string, unknown> = {
           unit_id: reading.unit_id,
           device_id: deviceId,
           temperature: reading.temperature,
           humidity: reading.humidity ?? null,
           battery_level: reading.battery_level ?? null,
           signal_strength: reading.signal_strength ?? null,
-          door_open: reading.door_open ?? false,
           source: reading.source,
           recorded_at: recordedAt,
           received_at: new Date().toISOString(),
-        });
+        };
+
+        // Only set door_open if explicitly provided in reading
+        if (hasDoorData) {
+          readingData.door_open = reading.door_open;
+        }
+
+        const { error: insertError } = await supabase.from("sensor_readings").insert(readingData);
 
         if (insertError) {
           console.error(`[ingest-readings] Insert error for unit ${reading.unit_id}:`, insertError);
@@ -127,21 +136,26 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Track door state changes - insert into door_events if changed
+        // Track door state changes - insert into door_events if changed OR if initial state
         if (reading.door_open !== undefined) {
           const newDoorState = reading.door_open ? "open" : "closed";
           const currentDoorState = unit.door_state || "unknown";
+          const isInitialReading = currentDoorState === "unknown" || currentDoorState === null;
+          const stateChanged = newDoorState !== currentDoorState;
           
-          if (newDoorState !== currentDoorState) {
-            // Insert door event
+          if (isInitialReading || stateChanged) {
+            // Insert door event - including initial reading to establish baseline
             await supabase.from("door_events").insert({
               unit_id: reading.unit_id,
               state: newDoorState,
               occurred_at: recordedAt,
               source: reading.source,
-              metadata: { temperature: reading.temperature },
+              metadata: { 
+                temperature: reading.temperature,
+                is_initial: isInitialReading,
+              },
             });
-            console.log(`[ingest-readings] Door state changed: ${currentDoorState} -> ${newDoorState} for unit ${reading.unit_id}`);
+            console.log(`[ingest-readings] Door event: ${currentDoorState} -> ${newDoorState} (initial: ${isInitialReading}) for unit ${reading.unit_id}`);
           }
         }
 

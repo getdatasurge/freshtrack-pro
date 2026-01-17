@@ -15,6 +15,8 @@ import { createLoadingState, createNotConfiguredState, createEmptyState, createH
 import { WidgetEmptyState } from "../components/WidgetEmptyState";
 import type { WidgetStateInfo } from "../types/widgetState";
 
+const DEBUG_DOOR_WIDGET = import.meta.env.DEV;
+
 interface DoorEvent {
   id: string;
   state: string;
@@ -26,14 +28,26 @@ export function DoorActivityWidget({ entityId, sensor, loraSensors }: WidgetProp
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
-  const isDoorSensor = primarySensor?.sensor_type === 'door';
+  // Find the door sensor specifically - don't just use primary sensor
+  const doorSensor = sensor?.sensor_type === 'door' 
+    ? sensor 
+    : loraSensors?.find(s => s.sensor_type === 'door');
+  const primarySensor = doorSensor || sensor || loraSensors?.[0];
+  const isDoorSensor = !!doorSensor;
 
   useEffect(() => {
     async function fetchDoorEvents() {
       if (!entityId) {
         setIsLoading(false);
         return;
+      }
+
+      if (DEBUG_DOOR_WIDGET) {
+        console.log('[DoorWidget] fetching', { 
+          entityId, 
+          doorSensor: doorSensor?.name,
+          sensorType: doorSensor?.sensor_type 
+        });
       }
 
       try {
@@ -45,9 +59,21 @@ export function DoorActivityWidget({ entityId, sensor, loraSensors }: WidgetProp
           .limit(20);
 
         if (fetchError) throw fetchError;
+        
+        if (DEBUG_DOOR_WIDGET) {
+          console.log('[DoorWidget] success', { 
+            eventsCount: data?.length ?? 0,
+            first3: data?.slice(0, 3).map(e => ({ id: e.id, state: e.state }))
+          });
+        }
+        
         setEvents(data || []);
       } catch (err) {
-        console.error("Error fetching door events:", err);
+        if (DEBUG_DOOR_WIDGET) {
+          console.error('[DoorWidget] error', { 
+            message: err instanceof Error ? err.message : 'Unknown error'
+          });
+        }
         setError(err instanceof Error ? err.message : "Failed to load events");
       } finally {
         setIsLoading(false);
@@ -55,7 +81,7 @@ export function DoorActivityWidget({ entityId, sensor, loraSensors }: WidgetProp
     }
 
     fetchDoorEvents();
-  }, [entityId]);
+  }, [entityId, doorSensor?.name, doorSensor?.sensor_type]);
 
   // Determine widget state
   const widgetState = useMemo((): WidgetStateInfo => {

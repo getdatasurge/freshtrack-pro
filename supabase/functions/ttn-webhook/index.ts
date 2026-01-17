@@ -420,21 +420,38 @@ async function handleLoraSensor(
     const previousDoorState = unit?.door_state;
     const currentDoorOpen = decoded.door_open as boolean | undefined;
 
+    // Only include door_open if the sensor actually has door capability
+    // This prevents temperature sensors from polluting door data
+    const hasDoorCapability = sensor.sensor_type === 'door' || 
+      sensor.sensor_type === 'combo' ||
+      decoded.door !== undefined ||
+      decoded.door_open !== undefined ||
+      decoded.door_status !== undefined ||
+      decoded.DOOR_OPEN_STATUS !== undefined ||
+      decoded.open_close !== undefined;
+
+    // Build reading data - only include door_open for door-capable sensors
+    const readingData: Record<string, unknown> = {
+      unit_id: sensor.unit_id,
+      lora_sensor_id: sensor.id,
+      device_id: null,
+      temperature: temperature ?? null,
+      humidity: decoded.humidity,
+      battery_level: battery,
+      signal_strength: rssi,
+      source: 'ttn',
+      recorded_at: receivedAt,
+    };
+
+    // Only set door_open if this is actually a door sensor
+    if (hasDoorCapability && currentDoorOpen !== undefined) {
+      readingData.door_open = currentDoorOpen;
+    }
+
     // Insert reading
     const { data: insertedReading, error: insertError } = await supabase
       .from('sensor_readings')
-      .insert({
-        unit_id: sensor.unit_id,
-        lora_sensor_id: sensor.id,
-        device_id: null,
-        temperature: temperature ?? null,
-        humidity: decoded.humidity,
-        battery_level: battery,
-        signal_strength: rssi,
-        door_open: currentDoorOpen,
-        source: 'ttn',
-        recorded_at: receivedAt,
-      })
+      .insert(readingData)
       .select('id')
       .single();
 
@@ -452,7 +469,8 @@ async function handleLoraSensor(
       unitUpdate.last_checkin_at = receivedAt;
     }
 
-    if (currentDoorOpen !== undefined) {
+    // Only process door state if sensor has door capability
+    if (hasDoorCapability && currentDoorOpen !== undefined) {
       unitUpdate.door_state = currentDoorOpen ? 'open' : 'closed';
       unitUpdate.door_state_changed_at = receivedAt;
 
@@ -462,16 +480,24 @@ async function handleLoraSensor(
         unitUpdate.door_open_since = null;
       }
 
-      // Insert door event
+      // Insert door event - including initial readings to establish baseline
       const newDoorState = currentDoorOpen ? 'open' : 'closed';
-      if (previousDoorState !== newDoorState) {
+      const isInitialReading = previousDoorState === 'unknown' || previousDoorState === null || previousDoorState === undefined;
+      const stateChanged = previousDoorState !== newDoorState;
+
+      if (isInitialReading || stateChanged) {
         await supabase.from('door_events').insert({
           unit_id: sensor.unit_id,
           state: newDoorState,
           occurred_at: receivedAt,
           source: 'ttn',
-          metadata: { sensor_id: sensor.id, sensor_name: sensor.name },
+          metadata: { 
+            sensor_id: sensor.id, 
+            sensor_name: sensor.name,
+            is_initial: isInitialReading,
+          },
         });
+        console.log(`[TTN-WEBHOOK] ${requestId} | Door event: ${previousDoorState} -> ${newDoorState} (initial: ${isInitialReading})`);
       }
     }
 
