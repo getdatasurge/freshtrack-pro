@@ -154,8 +154,17 @@ export function useNavTree(organizationId: string | null): NavTree {
     queryFn: async () => {
       if (!organizationId) return [];
 
+      // Structured debug logging for sidebar units diagnosis
       if (import.meta.env.DEV) {
-        console.log('[useNavTree] Fetching units directly for org:', organizationId);
+        console.log('[SidebarUnits] fetching', {
+          effectiveOrgId: organizationId,
+          queryFilters: {
+            unitIsActive: true,
+            areasIsActive: true,
+            sitesIsActive: true,
+            sitesOrgId: organizationId
+          }
+        });
       }
 
       const { data, error } = await supabase
@@ -186,12 +195,21 @@ export function useNavTree(organizationId: string | null): NavTree {
         .order("name");
 
       if (error) {
-        console.error("[useNavTree] Units query error:", error);
+        console.error("[SidebarUnits] error", {
+          statusCode: error.code,
+          message: error.message,
+          hint: error.hint,
+          details: error.details
+        });
         throw error;
       }
 
+      // Success logging with sample data
       if (import.meta.env.DEV) {
-        console.log('[useNavTree] Units fetched:', data?.length, 'units', data?.map(u => ({ id: u.id, name: u.name })));
+        console.log('[SidebarUnits] success', {
+          unitsCount: data?.length ?? 0,
+          first3: data?.slice(0, 3).map(u => ({ id: u.id, name: u.name }))
+        });
       }
 
       return data as unknown as RawUnit[];
