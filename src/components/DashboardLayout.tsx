@@ -67,24 +67,15 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const [alertCount, setAlertCount] = useState(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Compute the effective org ID for sidebar - prefer effectiveOrgId when impersonating
-  // This ensures sidebar updates immediately when impersonation state changes
-  const sidebarOrgId = isImpersonating ? effectiveOrgId : realOrgId;
-  const displayOrgName = isImpersonating ? (effectiveOrgName || '') : realOrgName;
+  // Use effectiveOrgId directly for sidebar - it already handles impersonation internally
+  // The hook returns impersonated org when impersonating, real org otherwise
+  const sidebarOrgId = effectiveOrgId;
+  const displayOrgName = effectiveOrgName || realOrgName;
 
   // Debug logging for impersonation state (always log for debugging)
   useEffect(() => {
-    console.warn('[DashboardLayout] Org state:', {
-      isImpersonating,
-      isInitialized,
-      effectiveOrgId,
-      realOrgId,
-      sidebarOrgId,
-      isSupportModeActive,
-      impersonationIsImpersonating: impersonation.isImpersonating,
-      impersonationOrgId: impersonation.impersonatedOrgId,
-    });
-  }, [isImpersonating, isInitialized, effectiveOrgId, realOrgId, sidebarOrgId, isSupportModeActive, impersonation]);
+    console.warn('[DashboardLayout] Sidebar org:', sidebarOrgId, 'effectiveOrgId:', effectiveOrgId, 'isImpersonating:', isImpersonating);
+  }, [sidebarOrgId, effectiveOrgId, isImpersonating]);
 
   // Redirect platform-only super admins to /platform (only when NOT in support mode / impersonating)
   useEffect(() => {
