@@ -75,17 +75,31 @@ if [ -n "$PATTERN3" ]; then
   ERRORS_FOUND=1
 fi
 
-# Pattern 4: PostgREST alias filter paths (use table names, not aliases)
-# These cause empty results because PostgREST filters need table names
-echo "Checking for incorrect PostgREST alias filter paths..."
-PATTERN4=$(grep -rn '\.eq(["\x27]area\.' src --include="*.tsx" --include="*.ts" 2>/dev/null | \
+# Pattern 4: PostgREST multi-level nested filter paths (these don't work)
+# PostgREST can't filter through multiple nested relationships like units->areas->sites->org
+# The filter is silently ignored, causing data leaks across organizations
+echo "Checking for broken multi-level PostgREST filter paths..."
+PATTERN4=$(grep -rn '\.eq(["\x27]areas\.sites\.' src --include="*.tsx" --include="*.ts" 2>/dev/null | \
   grep -v "node_modules" | \
   grep -v ".test." | \
   grep -v "// @filter-verified" || true)
 
 if [ -n "$PATTERN4" ]; then
-  echo "⚠️  Found alias-based filter paths (use 'areas.' instead of 'area.'):"
+  echo "⚠️  Found multi-level nested filter paths (PostgREST silently ignores these!):"
   echo "$PATTERN4"
+  echo ""
+  ERRORS_FOUND=1
+fi
+
+# Pattern 4b: Alias-based filter paths (also broken)
+PATTERN4B=$(grep -rn '\.eq(["\x27]area\.site\.' src --include="*.tsx" --include="*.ts" 2>/dev/null | \
+  grep -v "node_modules" | \
+  grep -v ".test." | \
+  grep -v "// @filter-verified" || true)
+
+if [ -n "$PATTERN4B" ]; then
+  echo "⚠️  Found alias-based filter paths (also broken):"
+  echo "$PATTERN4B"
   echo ""
   ERRORS_FOUND=1
 fi
@@ -98,7 +112,10 @@ if [ $ERRORS_FOUND -eq 1 ]; then
   echo "To fix:"
   echo "  1. Replace profile.organization_id lookups with useOrgScope().orgId"
   echo "  2. Replace useUserRole().organizationId with useOrgScope().orgId"
-  echo "  3. Replace .eq('area.site.X') with .eq('areas.sites.X') (use table names, not aliases)"
+  echo "  3. Multi-level filters like .eq('areas.sites.organization_id', orgId) DON'T WORK!"
+  echo "     Use a two-step approach:"
+  echo "       a) First query areas with .eq('sites.organization_id', orgId) to get areaIds"
+  echo "       b) Then query units with .in('area_id', areaIds)"
   echo "  4. If usage is intentional, add comment: // @org-scope-verified or // @filter-verified"
   echo ""
   exit 1

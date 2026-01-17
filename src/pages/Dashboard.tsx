@@ -95,34 +95,52 @@ const Dashboard = () => {
 
   const loadDashboardData = useCallback(async (orgId: string) => {
     if (!orgId) return;
-    
+
     try {
       const { count: sitesCount } = await supabase
         .from("sites")
         .select("*", { count: "exact", head: true })
         .eq("organization_id", orgId);
 
-      // Fetch units with area and site info - filter at DB level for correct impersonation scoping
-      // CRITICAL: Must filter by organization_id at DB level, not client-side, 
-      // because Super Admins bypass RLS and would otherwise get units from all orgs
-      const { data: unitsData, error: unitsError } = await supabase
-        .from("units")
-        .select(`
-          id, name, unit_type, status, last_temp_reading, last_reading_at, 
-          temp_limit_high, temp_limit_low, manual_log_cadence,
-          sensor_reliable, manual_logging_enabled, consecutive_checkins,
-          area:areas!inner(name, site:sites!inner(name, organization_id))
-        `)
+      // Step 1: Get area IDs for this organization
+      // PostgREST can't filter through multiple nested relationships (units->areas->sites->org)
+      // so we need to first get area IDs, then filter units by those
+      const { data: areasData } = await supabase
+        .from("areas")
+        .select("id, site:sites!inner(organization_id)")
         .eq("is_active", true)
-        .eq("areas.sites.organization_id", orgId)  // Filter at DB level for proper impersonation support
-        .limit(100);
+        .eq("sites.organization_id", orgId);
+
+      const areaIds = (areasData || []).map(a => a.id);
+
+      // Step 2: Fetch units filtered by those area IDs
+      // CRITICAL: Must filter by organization_id at DB level, not client-side,
+      // because Super Admins bypass RLS and would otherwise get units from all orgs
+      let unitsData: any[] = [];
+      let unitsError: any = null;
+
+      if (areaIds.length > 0) {
+        const result = await supabase
+          .from("units")
+          .select(`
+            id, name, unit_type, status, last_temp_reading, last_reading_at,
+            temp_limit_high, temp_limit_low, manual_log_cadence,
+            sensor_reliable, manual_logging_enabled, consecutive_checkins,
+            area:areas!inner(name, site:sites!inner(name, organization_id))
+          `)
+          .eq("is_active", true)
+          .in("area_id", areaIds)
+          .limit(100);
+
+        unitsData = result.data || [];
+        unitsError = result.error;
+      }
 
       if (unitsError) {
         console.error("[Dashboard] Error fetching units:", unitsError);
       }
 
-      // No client-side filtering needed - already scoped to org at DB level
-      const filteredUnits = unitsData || [];
+      const filteredUnits = unitsData;
 
       // Fetch last manual log for each unit
       const unitIds = filteredUnits.map((u: any) => u.id);

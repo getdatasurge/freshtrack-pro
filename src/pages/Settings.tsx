@@ -334,21 +334,34 @@ const Settings = () => {
       }
 
       // Load units for sensor management (through areas → sites)
-      const { data: unitsData } = await supabase
-        .from("units")
-        .select("id, name, area_id, areas!inner(site_id, sites!inner(organization_id))")
-        .eq("areas.sites.organization_id", profileData.organization_id)
-        .is("deleted_at", null)
-        .order("name");
-      
-      if (unitsData) {
-        // Extract site_id from nested join
-        const formattedUnits = unitsData.map((u: any) => ({
-          id: u.id,
-          name: u.name,
-          site_id: u.areas?.site_id || "",
-        }));
-        setUnits(formattedUnits);
+      // Step 1: Get area IDs for this organization
+      // PostgREST can't filter through multiple nested relationships (units->areas->sites->org)
+      const { data: areasForUnits } = await supabase
+        .from("areas")
+        .select("id, site:sites!inner(organization_id)")
+        .eq("sites.organization_id", profileData.organization_id);
+
+      const orgAreaIds = (areasForUnits || []).map(a => a.id);
+
+      if (orgAreaIds.length > 0) {
+        // Step 2: Query units filtered by those area IDs
+        const { data: unitsData } = await supabase
+          .from("units")
+          .select("id, name, area_id, areas!inner(site_id)")
+          .in("area_id", orgAreaIds)
+          .is("deleted_at", null)
+          .order("name");
+
+        if (unitsData) {
+          const formattedUnits = unitsData.map((u: any) => ({
+            id: u.id,
+            name: u.name,
+            site_id: u.areas?.site_id || "",
+          }));
+          setUnits(formattedUnits);
+        }
+      } else {
+        setUnits([]);
       }
 
       // Load sensor count for deletion modal

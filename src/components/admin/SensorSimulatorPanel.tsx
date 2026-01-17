@@ -116,18 +116,35 @@ export function SensorSimulatorPanel({ organizationId }: SensorSimulatorPanelPro
       setUnits([]);
       return;
     }
-    
+
     setIsLoading(true);
     try {
-      // Query units with explicit organization filter via join
+      // Step 1: Get area IDs for this organization
+      // PostgREST can't filter through multiple nested relationships (units->areas->sites->org)
+      // so we need to first get area IDs, then filter units by those
+      const { data: areasData } = await supabase
+        .from("areas")
+        .select("id, site:sites!inner(organization_id)")
+        .eq("is_active", true)
+        .eq("sites.organization_id", organizationId);
+
+      const areaIds = (areasData || []).map(a => a.id);
+
+      if (areaIds.length === 0) {
+        setUnits([]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Step 2: Query units filtered by those area IDs
       const { data, error } = await supabase
         .from("units")
         .select(`
-          id, name, unit_type, temp_limit_high, temp_limit_low, 
+          id, name, unit_type, temp_limit_high, temp_limit_low,
           last_reading_at, last_temp_reading, door_state,
           area:areas!inner(name, site:sites!inner(name, organization_id))
         `)
-        .eq("areas.sites.organization_id", organizationId)
+        .in("area_id", areaIds)
         .eq("is_active", true)
         .is("deleted_at", null)
         .order("name");
