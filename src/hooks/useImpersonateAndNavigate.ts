@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useSuperAdmin } from '@/contexts/SuperAdminContext';
 import { useEffectiveIdentity } from '@/hooks/useEffectiveIdentity';
 import { useToast } from '@/hooks/use-toast';
+import { invalidateAllOrgScopedCaches } from '@/lib/orgScopedInvalidation';
 
 // Configuration for impersonation navigation
 const IMPERSONATION_READY_POLL_INTERVAL_MS = 50;
@@ -169,16 +170,7 @@ export function useImpersonateAndNavigate() {
 
       // Step 4: Invalidate all tenant-scoped caches to ensure fresh data
       // Do this AFTER identity is confirmed to prevent stale fetches
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['sites'] }),
-        queryClient.invalidateQueries({ queryKey: ['units'] }),
-        queryClient.invalidateQueries({ queryKey: ['areas'] }),
-        queryClient.invalidateQueries({ queryKey: ['sensors'] }),
-        queryClient.invalidateQueries({ queryKey: ['organizations'] }),
-        queryClient.invalidateQueries({ queryKey: ['alerts'] }),
-        queryClient.invalidateQueries({ queryKey: ['profile'] }),
-        queryClient.invalidateQueries({ queryKey: ['navTree'] }),
-      ]);
+      await invalidateAllOrgScopedCaches(queryClient, 'startImpersonation');
 
       // Step 5: Clear pending target
       setPendingTarget(null);

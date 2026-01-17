@@ -7,6 +7,12 @@ type AppRole = Database['public']['Enums']['app_role'];
 export interface UserRoleInfo {
   role: AppRole | null;
   isLoading: boolean;
+  /**
+   * @deprecated Use useOrgScope().orgId for data queries instead.
+   * This returns the REAL user's organization, which is incorrect during impersonation.
+   * For data-fetching components, always use:
+   *   const { orgId } = useOrgScope();
+   */
   organizationId: string | null;
 }
 
