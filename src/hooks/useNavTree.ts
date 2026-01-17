@@ -187,6 +187,27 @@ export function useNavTree(organizationId: string | null): NavTree {
     staleTime: 1000 * 30,
   });
 
+  // Fetch all sites directly (so we show sites even if they have no units)
+  const { data: allSites = [], isLoading: sitesLoading } = useQuery({
+    queryKey: ["nav-tree-all-sites", organizationId],
+    queryFn: async () => {
+      if (!organizationId) return [];
+
+      const { data, error } = await supabase
+        .from("sites")
+        .select("id, name")
+        .eq("organization_id", organizationId)
+        .eq("is_active", true)
+        .is("deleted_at", null)
+        .order("name");
+
+      if (error) throw error;
+      return data as { id: string; name: string }[];
+    },
+    enabled: !!organizationId,
+    staleTime: 1000 * 30,
+  });
+
   // Fetch ALL org layouts for all entities (org-wide sharing)
   const { data: layouts = [], isLoading: layoutsLoading } = useQuery({
     queryKey: ["nav-tree-layouts", organizationId],
@@ -210,7 +231,7 @@ export function useNavTree(organizationId: string | null): NavTree {
   const sites = useMemo(() => {
     // Group units by site
     const siteMap = new Map<string, SiteNavItem>();
-    
+
     // Create sensor count map
     const sensorCountMap = new Map<string, number>();
     for (const sensor of sensors) {
@@ -222,7 +243,7 @@ export function useNavTree(organizationId: string | null): NavTree {
     // Group layouts by entity
     const unitLayoutsMap = new Map<string, RawLayout[]>();
     const siteLayoutsMap = new Map<string, RawLayout[]>();
-    
+
     for (const layout of layouts) {
       if (layout.entity_type === 'unit') {
         const existing = unitLayoutsMap.get(layout.entity_id) || [];
@@ -235,11 +256,23 @@ export function useNavTree(organizationId: string | null): NavTree {
       }
     }
 
+    // First, add all sites (even those without units)
+    for (const site of allSites) {
+      if (!siteMap.has(site.id)) {
+        siteMap.set(site.id, {
+          siteId: site.id,
+          siteName: site.name,
+          layouts: mapLayoutsToSlots(siteLayoutsMap.get(site.id) || []),
+          units: [],
+        });
+      }
+    }
+
     // Build units and group by site
     for (const unit of units) {
       const siteId = unit.area.site.id;
       const siteName = unit.area.site.name;
-      
+
       if (!siteMap.has(siteId)) {
         siteMap.set(siteId, {
           siteId,
@@ -272,12 +305,12 @@ export function useNavTree(organizationId: string | null): NavTree {
 
     // Convert to array and sort by site name
     return Array.from(siteMap.values()).sort((a, b) => a.siteName.localeCompare(b.siteName));
-  }, [units, sensors, layouts]);
+  }, [units, sensors, layouts, allSites]);
 
   return {
     sites,
     hasSingleSite: sites.length === 1,
-    isLoading: areasLoading || unitsLoading || sensorsLoading || layoutsLoading,
+    isLoading: areasLoading || unitsLoading || sensorsLoading || layoutsLoading || sitesLoading,
     error: unitsError as Error | null,
   };
 }
