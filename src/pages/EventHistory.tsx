@@ -41,6 +41,7 @@ import {
   type EventSeverity,
 } from "@/lib/eventTypeMapper";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 interface EventLog {
   id: string;
@@ -67,7 +68,8 @@ interface EventLog {
 
 const EventHistory = () => {
   const navigate = useNavigate();
-  const { role, isLoading: roleLoading, organizationId } = useUserRole();
+  const { role, isLoading: roleLoading } = useUserRole();
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   const [events, setEvents] = useState<EventLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
@@ -92,19 +94,19 @@ const EventHistory = () => {
   // Load sites for filter dropdown
   useEffect(() => {
     const loadSites = async () => {
-      if (!organizationId) return;
+      if (!effectiveOrgId) return;
       const { data } = await supabase
         .from("sites")
         .select("id, name")
-        .eq("organization_id", organizationId)
+        .eq("organization_id", effectiveOrgId)
         .order("name");
       setSites(data || []);
     };
     loadSites();
-  }, [organizationId]);
+  }, [effectiveOrgId]);
 
   const loadEvents = async (reset = false) => {
-    if (!organizationId) return;
+    if (!effectiveOrgId) return;
 
     setIsLoading(true);
     const currentPage = reset ? 0 : page;
@@ -129,7 +131,7 @@ const EventHistory = () => {
           ip_address,
           user_agent
         `)
-        .eq("organization_id", organizationId)
+        .eq("organization_id", effectiveOrgId)
         .order("recorded_at", { ascending: false })
         .range(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE - 1);
 
@@ -219,10 +221,10 @@ const EventHistory = () => {
   };
 
   useEffect(() => {
-    if (organizationId) {
+    if (isInitialized && effectiveOrgId) {
       loadEvents(true);
     }
-  }, [organizationId, categoryFilter, severityFilter, siteFilter, searchQuery]);
+  }, [isInitialized, effectiveOrgId, categoryFilter, severityFilter, siteFilter, searchQuery]);
 
   const toggleExpanded = (eventId: string) => {
     setExpandedEvents((prev) => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,43 +40,32 @@ interface OrgSummary {
 
 const OrganizationDashboard = () => {
   const navigate = useNavigate();
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   const [loading, setLoading] = useState(true);
   const [sites, setSites] = useState<SiteData[]>([]);
   const [orgSummary, setOrgSummary] = useState<OrgSummary | null>(null);
 
   useEffect(() => {
-    loadOrganizationData();
-  }, []);
+    if (isInitialized && effectiveOrgId) {
+      loadOrganizationData();
+    } else if (isInitialized && !effectiveOrgId) {
+      navigate("/onboarding");
+    }
+  }, [isInitialized, effectiveOrgId]);
 
   const loadOrganizationData = async () => {
+    if (!effectiveOrgId) return;
+    
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
-
-      // Get user's organization
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
-
-      if (!profile?.organization_id) {
-        navigate("/onboarding");
-        return;
-      }
-
-      // Get organization details
+      // Get organization details using effectiveOrgId
       const { data: org } = await supabase
         .from("organizations")
         .select("name")
-        .eq("id", profile.organization_id)
+        .eq("id", effectiveOrgId)
         .maybeSingle();
 
-      // Get all sites with their units
+      // Get all sites with their units using effectiveOrgId
       const { data: sitesData } = await supabase
         .from("sites")
         .select(`
@@ -90,7 +80,7 @@ const OrganizationDashboard = () => {
             )
           )
         `)
-        .eq("organization_id", profile.organization_id)
+        .eq("organization_id", effectiveOrgId)
         .eq("is_active", true);
 
       if (!sitesData) {

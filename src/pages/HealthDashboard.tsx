@@ -11,10 +11,11 @@ import { OverallHealthSummary } from '@/components/health/OverallHealthSummary';
 import { HealthCheckList } from '@/components/health/HealthCheckList';
 import { HealthCategory } from '@/lib/health/types';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
+import { useEffectiveIdentity } from '@/hooks/useEffectiveIdentity';
 import { formatDistanceToNow } from 'date-fns';
 
 export default function HealthDashboard() {
-  const [orgId, setOrgId] = useState<string | null>(null);
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   const [activeCategory, setActiveCategory] = useState<HealthCategory | 'all'>('all');
 
   const {
@@ -24,33 +25,14 @@ export default function HealthDashboard() {
     runCheck,
     toggleAutoRefresh,
     autoRefreshEnabled,
-  } = useHealthCheck(orgId);
-
-  useEffect(() => {
-    // Load user's org
-    const loadOrg = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('organization_id')
-          .eq('user_id', session.user.id)
-          .maybeSingle();
-
-        if (profile?.organization_id) {
-          setOrgId(profile.organization_id);
-        }
-      }
-    };
-    loadOrg();
-  }, []);
+  } = useHealthCheck(effectiveOrgId);
 
   // Run initial check when org is loaded
   useEffect(() => {
-    if (orgId && !systemHealth) {
+    if (isInitialized && effectiveOrgId && !systemHealth) {
       runCheck();
     }
-  }, [orgId]);
+  }, [isInitialized, effectiveOrgId]);
 
   return (
     <DashboardLayout title="System Health">

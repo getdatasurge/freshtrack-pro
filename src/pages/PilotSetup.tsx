@@ -26,6 +26,7 @@ import {
   Star,
   Send
 } from "lucide-react";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 interface ChecklistItem {
   id: string;
@@ -42,6 +43,7 @@ interface Site {
 
 const PilotSetup = () => {
   const navigate = useNavigate();
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   const [isLoading, setIsLoading] = useState(true);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [sites, setSites] = useState<Site[]>([]);
@@ -66,35 +68,24 @@ const PilotSetup = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (isInitialized && effectiveOrgId) {
+      loadData();
+    } else if (isInitialized && !effectiveOrgId) {
+      navigate("/onboarding");
+    }
+  }, [isInitialized, effectiveOrgId]);
 
   const loadData = async () => {
+    if (!effectiveOrgId) return;
+    
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
+      setOrganizationId(effectiveOrgId);
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
-
-      if (!profile?.organization_id) {
-        navigate("/onboarding");
-        return;
-      }
-
-      setOrganizationId(profile.organization_id);
-
-      // Get sites
+      // Get sites using effectiveOrgId
       const { data: sitesData } = await supabase
         .from("sites")
         .select("id, name")
-        .eq("organization_id", profile.organization_id)
+        .eq("organization_id", effectiveOrgId)
         .eq("is_active", true);
 
       setSites(sitesData || []);
@@ -111,7 +102,7 @@ const PilotSetup = () => {
       const { count: usersCount } = await supabase
         .from("user_roles")
         .select("id", { count: "exact", head: true })
-        .eq("organization_id", profile.organization_id);
+        .eq("organization_id", effectiveOrgId);
 
       setUserCount(usersCount || 0);
 

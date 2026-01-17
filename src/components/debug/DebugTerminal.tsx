@@ -31,6 +31,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { debugLog } from '@/lib/debugLogger';
 import { ErrorExplanationModal } from './ErrorExplanationModal';
 import { buildSupportSnapshot, downloadSnapshot } from '@/lib/snapshotBuilder';
+import { useEffectiveIdentity } from '@/hooks/useEffectiveIdentity';
 
 const LEVEL_COLORS: Record<DebugLogLevel, string> = {
   debug: 'text-muted-foreground',
@@ -219,18 +220,14 @@ export function DebugTerminal() {
   const [correlationFilter, setCorrelationFilter] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [orgId, setOrgId] = useState<string | null>(null);
+  const { effectiveOrgId } = useEffectiveIdentity();
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Fetch user info
+  // Fetch user email
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserEmail(data.user?.email || null);
-    });
-    
-    supabase.from('profiles').select('organization_id').maybeSingle().then(({ data }) => {
-      setOrgId(data?.organization_id || null);
     });
   }, []);
 
@@ -338,7 +335,7 @@ export function DebugTerminal() {
       const snapshot = await buildSupportSnapshot({
         logs: debugLog.getLogs(),
         userEmail: userEmail || undefined,
-        orgId: orgId || undefined,
+        orgId: effectiveOrgId || undefined,
         currentRoute: window.location.pathname,
       });
       downloadSnapshot(snapshot);
@@ -353,7 +350,7 @@ export function DebugTerminal() {
         variant: "destructive"
       });
     }
-  }, [userEmail, orgId, toast]);
+  }, [userEmail, effectiveOrgId, toast]);
 
   const handleFilterByCorrelation = useCallback((correlationId: string) => {
     setCorrelationFilter(correlationId);
@@ -377,7 +374,7 @@ export function DebugTerminal() {
         isOpen={!!selectedErrorForExplanation}
         onClose={hideExplanation}
         userEmail={userEmail || undefined}
-        orgId={orgId || undefined}
+        orgId={effectiveOrgId || undefined}
       />
     <div 
       className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur border-t border-border shadow-2xl"
@@ -399,9 +396,9 @@ export function DebugTerminal() {
           {userEmail && (
             <span className="text-xs text-muted-foreground">{userEmail}</span>
           )}
-          {orgId && (
+          {effectiveOrgId && (
             <span className="text-xs text-muted-foreground font-mono">
-              org:{orgId.slice(0, 8)}
+              org:{effectiveOrgId.slice(0, 8)}
             </span>
           )}
           {isPaused && (
