@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { ChevronDown, Thermometer, Search, Loader2 } from "lucide-react";
+import { ChevronDown, Thermometer, Search, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -10,6 +10,7 @@ import { useSidebarExpandState } from "@/hooks/useSidebarExpandState";
 import { useQuickCreateEntityLayout } from "@/hooks/useQuickCreateEntityLayout";
 import { LayoutLinksGroup } from "./LayoutLinksGroup";
 import { Snowflake, Refrigerator, Box } from "lucide-react";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 interface SidebarUnitsAccordionProps {
   organizationId: string | null;
@@ -35,6 +36,7 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
   const params = useParams<{ unitId?: string; layoutKey?: string }>();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
+  const { isImpersonating } = useEffectiveIdentity();
 
   const { sites, isLoading, error } = useNavTree(organizationId);
   const expandState = useSidebarExpandState();
@@ -124,10 +126,17 @@ export function SidebarUnitsAccordion({ organizationId, className }: SidebarUnit
             </div>
           )}
 
-          {error && <div className="px-3 py-2 text-xs text-destructive">Failed to load</div>}
+          {error && (
+            <div className="px-3 py-2 text-xs text-destructive flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" />
+              {isImpersonating ? "Unable to load units while impersonating" : "Failed to load units"}
+            </div>
+          )}
 
           {!isLoading && !error && allUnits.length === 0 && (
-            <div className="px-3 py-2 text-xs text-muted-foreground">No units yet</div>
+            <div className="px-3 py-2 text-xs text-muted-foreground">
+              {!organizationId ? "No organization selected" : "No units yet"}
+            </div>
           )}
 
           {!isLoading && !error && filteredUnits.length > 0 && (

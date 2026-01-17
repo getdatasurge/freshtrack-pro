@@ -23,6 +23,8 @@ export const ORG_SCOPED_QUERY_KEYS = [
   
   // Navigation & layout caches
   ["nav-tree"],
+  ["nav-tree-all-sites"],
+  ["nav-tree-areas"],
   ["nav-tree-units"],
   ["nav-tree-layouts"],
   ["nav-tree-sensors"],
