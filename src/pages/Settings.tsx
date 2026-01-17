@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 import { useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -139,6 +140,7 @@ const timezones = [
 
 const Settings = () => {
   const navigate = useNavigate();
+  const { effectiveOrgId, isImpersonating, isInitialized } = useEffectiveIdentity();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -228,45 +230,44 @@ const Settings = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (session?.user) {
-      loadSettings();
+    // Wait for effective identity to be initialized
+    if (session?.user && isInitialized && effectiveOrgId) {
+      loadSettings(effectiveOrgId);
     }
-  }, [session]);
+  }, [session, isInitialized, effectiveOrgId]);
 
-  const loadSettings = async () => {
+  // @org-scope-verified: Uses effectiveOrgId from useEffectiveIdentity for impersonation support
+  const loadSettings = async (orgId: string) => {
     try {
-      // Get profile with org
+      // Get profile for user's personal settings (not org-dependent)
       const { data: profileData } = await supabase
         .from("profiles")
         .select("*")
         .eq("user_id", session!.user.id)
         .maybeSingle();
 
-      if (!profileData?.organization_id) {
-        navigate("/onboarding");
-        return;
+      if (profileData) {
+        setProfile({
+          id: profileData.id,
+          user_id: profileData.user_id,
+          email: profileData.email,
+          full_name: profileData.full_name,
+          phone: profileData.phone,
+          notification_preferences: profileData.notification_preferences as NotificationPrefs | null,
+        });
+        setUserPhone(profileData.phone || "");
+
+        const prefs = profileData.notification_preferences as NotificationPrefs | null;
+        setNotifPush(prefs?.push ?? true);
+        setNotifEmail(prefs?.email ?? true);
+        setNotifSms(prefs?.sms ?? false);
       }
 
-      setProfile({
-        id: profileData.id,
-        user_id: profileData.user_id,
-        email: profileData.email,
-        full_name: profileData.full_name,
-        phone: profileData.phone,
-        notification_preferences: profileData.notification_preferences as NotificationPrefs | null,
-      });
-      setUserPhone(profileData.phone || "");
-      
-      const prefs = profileData.notification_preferences as NotificationPrefs | null;
-      setNotifPush(prefs?.push ?? true);
-      setNotifEmail(prefs?.email ?? true);
-      setNotifSms(prefs?.sms ?? false);
-
-      // Get organization
+      // Get organization using effectiveOrgId (supports impersonation)
       const { data: orgData } = await supabase
         .from("organizations")
         .select("*")
-        .eq("id", profileData.organization_id)
+        .eq("id", orgId)
         .maybeSingle();
 
       if (orgData) {
@@ -276,28 +277,34 @@ const Settings = () => {
         setOrgCompliance(orgData.compliance_mode);
       }
 
-      // Get current user's role
+      // Get current user's role in the effective org
       const { data: roleData, error: roleError } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", session!.user.id)
-        .eq("organization_id", profileData.organization_id)
+        .eq("organization_id", orgId)
         .maybeSingle();
 
       if (roleError) {
         console.error("[Settings] Failed to load user role:", roleError);
-        toast.error("Failed to load user permissions. Some features may be hidden.");
+        // Don't show error toast during impersonation - user may not have role in target org
+        if (!isImpersonating) {
+          toast.error("Failed to load user permissions. Some features may be hidden.");
+        }
       }
 
       if (roleData) {
         setUserRole(roleData.role);
+      } else if (isImpersonating) {
+        // During impersonation, treat as admin for UI purposes
+        setUserRole("admin");
       }
 
       // Get all users in org
       const { data: usersData } = await supabase
         .from("user_roles")
         .select("id, user_id, role, organization_id")
-        .eq("organization_id", profileData.organization_id);
+        .eq("organization_id", orgId);
 
       if (usersData) {
         // Get profiles for these users using the profiles table with proper RLS
@@ -325,10 +332,10 @@ const Settings = () => {
       const { data: sitesData } = await supabase
         .from("sites")
         .select("id, name")
-        .eq("organization_id", profileData.organization_id)
+        .eq("organization_id", orgId)
         .is("deleted_at", null)
         .order("name");
-      
+
       if (sitesData) {
         setSites(sitesData);
       }
@@ -339,7 +346,7 @@ const Settings = () => {
       const { data: areasForUnits } = await supabase
         .from("areas")
         .select("id, site:sites!inner(organization_id)")
-        .eq("sites.organization_id", profileData.organization_id);
+        .eq("sites.organization_id", orgId);
 
       const orgAreaIds = (areasForUnits || []).map(a => a.id);
 
@@ -368,14 +375,14 @@ const Settings = () => {
       const { count: sensorCountResult } = await supabase
         .from("lora_sensors")
         .select("id", { count: "exact", head: true })
-        .eq("organization_id", profileData.organization_id);
+        .eq("organization_id", orgId);
       setSensorCount(sensorCountResult || 0);
 
       // Load gateway count for deletion modal
       const { count: gatewayCountResult } = await supabase
         .from("gateways")
         .select("id", { count: "exact", head: true })
-        .eq("organization_id", profileData.organization_id);
+        .eq("organization_id", orgId);
       setGatewayCount(gatewayCountResult || 0);
 
       // Check if there are other users in the org
@@ -384,7 +391,7 @@ const Settings = () => {
       // Load TTN config for SensorManager provisioning buttons
       try {
         const { data: ttnData } = await supabase.functions.invoke("manage-ttn-settings", {
-          body: { action: "get", organization_id: profileData.organization_id }
+          body: { action: "get", organization_id: orgId }
         });
         
         if (ttnData) {
