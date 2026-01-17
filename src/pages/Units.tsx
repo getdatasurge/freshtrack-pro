@@ -99,7 +99,7 @@ const Units = () => {
           )
         `)
         .eq("is_active", true)
-        .eq("area.site.organization_id", effectiveOrgId)
+        .eq("areas.sites.organization_id", effectiveOrgId)
         .order("name");
 
       if (error) {

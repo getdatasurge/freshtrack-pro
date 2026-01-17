@@ -129,8 +129,8 @@ export function useNavTree(organizationId: string | null): NavTree {
           )
         `)
         .eq("is_active", true)
-        .eq("area.is_active", true)
-        .eq("area.site.organization_id", organizationId)
+        .eq("areas.is_active", true)
+        .eq("areas.sites.organization_id", organizationId)
         .order("name");
 
       if (error) throw error;

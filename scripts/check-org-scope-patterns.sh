@@ -75,6 +75,21 @@ if [ -n "$PATTERN3" ]; then
   ERRORS_FOUND=1
 fi
 
+# Pattern 4: PostgREST alias filter paths (use table names, not aliases)
+# These cause empty results because PostgREST filters need table names
+echo "Checking for incorrect PostgREST alias filter paths..."
+PATTERN4=$(grep -rn '\.eq(["\x27]area\.' src --include="*.tsx" --include="*.ts" 2>/dev/null | \
+  grep -v "node_modules" | \
+  grep -v ".test." | \
+  grep -v "// @filter-verified" || true)
+
+if [ -n "$PATTERN4" ]; then
+  echo "⚠️  Found alias-based filter paths (use 'areas.' instead of 'area.'):"
+  echo "$PATTERN4"
+  echo ""
+  ERRORS_FOUND=1
+fi
+
 echo ""
 
 if [ $ERRORS_FOUND -eq 1 ]; then
@@ -83,7 +98,8 @@ if [ $ERRORS_FOUND -eq 1 ]; then
   echo "To fix:"
   echo "  1. Replace profile.organization_id lookups with useOrgScope().orgId"
   echo "  2. Replace useUserRole().organizationId with useOrgScope().orgId"
-  echo "  3. If usage is intentional (audit trail), add comment: // @org-scope-verified"
+  echo "  3. Replace .eq('area.site.X') with .eq('areas.sites.X') (use table names, not aliases)"
+  echo "  4. If usage is intentional, add comment: // @org-scope-verified or // @filter-verified"
   echo ""
   exit 1
 else

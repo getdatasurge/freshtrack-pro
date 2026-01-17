@@ -127,7 +127,7 @@ export function SensorSimulatorPanel({ organizationId }: SensorSimulatorPanelPro
           last_reading_at, last_temp_reading, door_state,
           area:areas!inner(name, site:sites!inner(name, organization_id))
         `)
-        .eq("area.site.organization_id", organizationId)
+        .eq("areas.sites.organization_id", organizationId)
         .eq("is_active", true)
         .is("deleted_at", null)
         .order("name");

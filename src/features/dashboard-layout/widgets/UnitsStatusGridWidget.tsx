@@ -39,7 +39,7 @@ export function UnitsStatusGridWidget({
           id, name, unit_type, temp_limit_high, last_temp_reading, last_reading_at,
           area:areas!inner(name, site_id)
         `)
-        .eq("area.site_id", entityId)
+        .eq("areas.site_id", entityId)
         .eq("is_active", true)
         .order("name")
         .limit(50);
