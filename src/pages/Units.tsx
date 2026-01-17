@@ -84,10 +84,26 @@ const Units = () => {
 
   const loadUnits = async () => {
     if (!effectiveOrgId) return;
-    
+
     setIsLoading(true);
     try {
-      // Fetch all units with hierarchy using effective org
+      // Step 1: Get area IDs for this organization
+      // PostgREST can't filter through multiple nested relationships (units->areas->sites->org)
+      // so we need to first get area IDs, then filter units by those
+      const { data: areasData } = await supabase
+        .from("areas")
+        .select("id, site:sites!inner(organization_id)")
+        .eq("is_active", true)
+        .eq("sites.organization_id", effectiveOrgId);
+
+      const areaIds = (areasData || []).map(a => a.id);
+
+      if (areaIds.length === 0) {
+        setUnits([]);
+        return;
+      }
+
+      // Step 2: Fetch all units with hierarchy filtered by those area IDs
       const { data: unitsData, error } = await supabase
         .from("units")
         .select(`
@@ -99,7 +115,7 @@ const Units = () => {
           )
         `)
         .eq("is_active", true)
-        .eq("areas.sites.organization_id", effectiveOrgId)
+        .in("area_id", areaIds)
         .order("name");
 
       if (error) {

@@ -106,11 +106,32 @@ function mapLayoutsToSlots(layouts: RawLayout[]): LayoutSlot[] {
  * Structure: Sites > Units > Layouts
  */
 export function useNavTree(organizationId: string | null): NavTree {
-  // Fetch all active units with their hierarchy
-  const { data: units = [], isLoading: unitsLoading, error: unitsError } = useQuery({
-    queryKey: ["nav-tree-units", organizationId],
+  // First fetch area IDs for this organization
+  // PostgREST can't filter through multiple nested relationships (units->areas->sites->org)
+  // so we need to first get area IDs, then filter units by those
+  const { data: areaIds = [], isLoading: areasLoading } = useQuery({
+    queryKey: ["nav-tree-areas", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
+
+      const { data, error } = await supabase
+        .from("areas")
+        .select("id, site:sites!inner(organization_id)")
+        .eq("is_active", true)
+        .eq("sites.organization_id", organizationId);
+
+      if (error) throw error;
+      return (data || []).map(a => a.id);
+    },
+    enabled: !!organizationId,
+    staleTime: 1000 * 30,
+  });
+
+  // Fetch all active units with their hierarchy, filtered by org's area IDs
+  const { data: units = [], isLoading: unitsLoading, error: unitsError } = useQuery({
+    queryKey: ["nav-tree-units", organizationId, areaIds],
+    queryFn: async () => {
+      if (!organizationId || areaIds.length === 0) return [];
 
       const { data, error } = await supabase
         .from("units")
@@ -129,14 +150,13 @@ export function useNavTree(organizationId: string | null): NavTree {
           )
         `)
         .eq("is_active", true)
-        .eq("areas.is_active", true)
-        .eq("areas.sites.organization_id", organizationId)
+        .in("area_id", areaIds)
         .order("name");
 
       if (error) throw error;
       return data as unknown as RawUnit[];
     },
-    enabled: !!organizationId,
+    enabled: !!organizationId && areaIds.length > 0,
     staleTime: 1000 * 30, // 30 seconds
   });
 
@@ -249,7 +269,7 @@ export function useNavTree(organizationId: string | null): NavTree {
   return {
     sites,
     hasSingleSite: sites.length === 1,
-    isLoading: unitsLoading || sensorsLoading || layoutsLoading,
+    isLoading: areasLoading || unitsLoading || sensorsLoading || layoutsLoading,
     error: unitsError as Error | null,
   };
 }
