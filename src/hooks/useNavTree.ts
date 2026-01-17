@@ -125,9 +125,7 @@ export function useNavTree(organizationId: string | null): NavTree {
         throw error;
       }
 
-      if (import.meta.env.DEV) {
-        console.log("[useNavTree] Areas query for org:", organizationId, "returned:", data?.length || 0, "areas");
-      }
+      console.warn("[useNavTree] Areas query for org:", organizationId, "returned:", data?.length || 0, "areas");
 
       return (data || []).map(a => a.id);
     },
@@ -201,7 +199,12 @@ export function useNavTree(organizationId: string | null): NavTree {
         .is("deleted_at", null)
         .order("name");
 
-      if (error) throw error;
+      if (error) {
+        console.error("[useNavTree] Sites query error:", error);
+        throw error;
+      }
+
+      console.warn("[useNavTree] Sites query for org:", organizationId, "returned:", data?.length || 0, "sites");
       return data as { id: string; name: string }[];
     },
     enabled: !!organizationId,
