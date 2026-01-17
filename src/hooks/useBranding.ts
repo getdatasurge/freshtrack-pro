@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 export interface OrgBranding {
   name: string;
@@ -11,38 +12,27 @@ const DEFAULT_ACCENT = "#0097a7";
 
 /**
  * Hook to fetch organization branding settings
+ * Uses effectiveOrgId to support impersonation
  */
 export function useBranding() {
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   const [branding, setBranding] = useState<OrgBranding | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadBranding();
-  }, []);
+    if (isInitialized && effectiveOrgId) {
+      loadBranding(effectiveOrgId);
+    } else if (isInitialized && !effectiveOrgId) {
+      setLoading(false);
+    }
+  }, [isInitialized, effectiveOrgId]);
 
-  const loadBranding = async () => {
+  const loadBranding = async (orgId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setLoading(false);
-        return;
-      }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
-
-      if (!profile?.organization_id) {
-        setLoading(false);
-        return;
-      }
-
       const { data: org } = await supabase
         .from("organizations")
         .select("name, logo_url, accent_color")
-        .eq("id", profile.organization_id)
+        .eq("id", orgId)
         .maybeSingle();
 
       if (org) {

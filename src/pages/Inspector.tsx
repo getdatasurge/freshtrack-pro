@@ -25,6 +25,7 @@ import {
   Clock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 interface Site {
   id: string;
@@ -90,6 +91,7 @@ const Inspector = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const tokenFromUrl = searchParams.get("token");
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
@@ -114,8 +116,10 @@ const Inspector = () => {
   const [monitoringGaps, setMonitoringGaps] = useState<MonitoringGap[]>([]);
 
   useEffect(() => {
-    initializeInspector();
-  }, [tokenFromUrl]);
+    if (tokenFromUrl || isInitialized) {
+      initializeInspector();
+    }
+  }, [tokenFromUrl, isInitialized, effectiveOrgId]);
 
   useEffect(() => {
     if (organizationId && selectedSiteId) {
@@ -154,20 +158,19 @@ const Inspector = () => {
         setOrganizationId(session.organization_id);
         await loadOrgData(session.organization_id, session.allowed_site_ids);
       } else {
-        // Check user auth and inspector role
+        // Check user auth and inspector role - use effectiveOrgId for impersonation
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           navigate("/auth");
           return;
         }
 
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("organization_id")
-          .eq("user_id", session.user.id)
-          .maybeSingle();
+        // Wait for effective identity to be initialized
+        if (!isInitialized) {
+          return;
+        }
 
-        if (!profile?.organization_id) {
+        if (!effectiveOrgId) {
           navigate("/onboarding");
           return;
         }
@@ -177,7 +180,7 @@ const Inspector = () => {
           .from("user_roles")
           .select("role")
           .eq("user_id", session.user.id)
-          .eq("organization_id", profile.organization_id)
+          .eq("organization_id", effectiveOrgId)
           .maybeSingle();
 
         if (!role) {
@@ -186,8 +189,8 @@ const Inspector = () => {
           return;
         }
 
-        setOrganizationId(profile.organization_id);
-        await loadOrgData(profile.organization_id, null);
+        setOrganizationId(effectiveOrgId);
+        await loadOrgData(effectiveOrgId, null);
       }
     } catch (error) {
       console.error("Error initializing inspector:", error);

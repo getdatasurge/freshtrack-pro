@@ -94,10 +94,12 @@ interface UnifiedAlert {
 }
 
 import { ALERT_TYPE_CONFIG, SEVERITY_CONFIG, getAlertTypeConfig, getSeverityConfig } from "@/lib/alertConfig";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 const Alerts = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [units, setUnits] = useState<UnitStatusInfo[]>([]);
@@ -130,25 +132,16 @@ const Alerts = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (session?.user) loadAlertsAndUnits();
-  }, [session]);
+    if (isInitialized && effectiveOrgId && session?.user) {
+      loadAlertsAndUnits();
+    }
+  }, [isInitialized, effectiveOrgId, session]);
 
   const loadAlertsAndUnits = useCallback(async () => {
-    if (!session?.user) return;
+    if (!session?.user || !effectiveOrgId) return;
     setIsLoading(true);
     try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
-
-      if (!profile?.organization_id) {
-        navigate("/onboarding");
-        return;
-      }
-
-      // Load DB alerts - use direct organization_id filter
+      // Load DB alerts - use effectiveOrgId for impersonation support
       const { data: alertsData, error: alertsError } = await supabase
         .from("alerts")
         .select(`
@@ -161,7 +154,7 @@ const Alerts = () => {
             area:areas!inner(name, site:sites!inner(name))
           )
         `)
-        .eq("organization_id", profile.organization_id)
+        .eq("organization_id", effectiveOrgId)
         .order("triggered_at", { ascending: false })
         .limit(100);
 
@@ -191,7 +184,7 @@ const Alerts = () => {
         .eq("is_active", true);
 
       const filteredUnits = (unitsData || []).filter(
-        (u: any) => u.area?.site?.organization_id === profile.organization_id
+        (u: any) => u.area?.site?.organization_id === effectiveOrgId
       );
 
       const unitIds = filteredUnits.map((u: any) => u.id);

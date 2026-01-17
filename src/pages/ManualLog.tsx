@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { Session } from "@supabase/supabase-js";
 import { computeUnitStatus, UnitStatusInfo } from "@/hooks/useUnitStatus";
+import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 interface UnitForLogging extends UnitStatusInfo {}
 
@@ -28,6 +29,7 @@ const ManualLog = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isOnline, pendingCount, isSyncing, syncPendingLogs } = useOfflineSync();
+  const { effectiveOrgId, isInitialized } = useEffectiveIdentity();
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [units, setUnits] = useState<UnitForLogging[]>([]);
@@ -49,25 +51,16 @@ const ManualLog = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (session?.user) loadUnits();
-  }, [session]);
+    if (isInitialized && effectiveOrgId && session?.user) {
+      loadUnits();
+    }
+  }, [isInitialized, effectiveOrgId, session]);
 
   const loadUnits = useCallback(async () => {
-    if (!session?.user) return;
+    if (!session?.user || !effectiveOrgId) return;
     setIsLoading(true);
     try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
-
-      if (!profile?.organization_id) {
-        navigate("/onboarding");
-        return;
-      }
-
-      // Get units including sensor reliability fields
+      // Get units including sensor reliability fields using effectiveOrgId
       const { data: unitsData } = await supabase
         .from("units")
         .select(`
@@ -80,7 +73,7 @@ const ManualLog = () => {
 
       // Get most recent manual logs for each unit
       const unitIds = (unitsData || [])
-        .filter((u: any) => u.area?.site?.organization_id === profile.organization_id)
+        .filter((u: any) => u.area?.site?.organization_id === effectiveOrgId)
         .map((u: any) => u.id);
 
       const { data: recentLogs } = await supabase
@@ -97,7 +90,7 @@ const ManualLog = () => {
       });
 
       const filtered: UnitForLogging[] = (unitsData || [])
-        .filter((u: any) => u.area?.site?.organization_id === profile.organization_id)
+        .filter((u: any) => u.area?.site?.organization_id === effectiveOrgId)
         .map((u: any) => ({
           id: u.id,
           name: u.name,
