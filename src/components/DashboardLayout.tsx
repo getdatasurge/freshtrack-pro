@@ -72,6 +72,21 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   const sidebarOrgId = isImpersonating ? effectiveOrgId : realOrgId;
   const displayOrgName = isImpersonating ? (effectiveOrgName || '') : realOrgName;
 
+  // Debug logging for impersonation state
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[DashboardLayout] Org state:', {
+        isImpersonating,
+        isInitialized,
+        effectiveOrgId,
+        realOrgId,
+        sidebarOrgId,
+        isSupportModeActive,
+        impersonationState: impersonation,
+      });
+    }
+  }, [isImpersonating, isInitialized, effectiveOrgId, realOrgId, sidebarOrgId, isSupportModeActive, impersonation]);
+
   // Redirect platform-only super admins to /platform (only when NOT in support mode / impersonating)
   useEffect(() => {
     // Wait for roles, effective identity, and impersonation check to complete
