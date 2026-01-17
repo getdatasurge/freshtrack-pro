@@ -277,6 +277,9 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     return () => subscription.unsubscribe();
   }, [checkSuperAdminStatus]);
 
+  // Ref to hold the exit support mode function (avoids hoisting issues in useEffect)
+  const exitSupportModeRef = useRef<(() => Promise<void>) | null>(null);
+
   // Support mode auto-timeout
   useEffect(() => {
     if (!isSupportModeActive || !supportModeExpiresAt) return;
@@ -287,7 +290,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
 
       // Check inactivity timeout
       if (timeSinceActivity >= SUPPORT_MODE_INACTIVITY_TIMEOUT_MS) {
-        exitSupportMode();
+        exitSupportModeRef.current?.();
         toast({
           title: 'Support Mode Ended',
           description: 'Support mode has been automatically disabled due to inactivity.',
@@ -297,7 +300,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
 
       // Check absolute timeout
       if (now >= supportModeExpiresAt) {
-        exitSupportMode();
+        exitSupportModeRef.current?.();
         toast({
           title: 'Support Mode Ended',
           description: 'Support mode has reached its maximum duration.',
@@ -307,7 +310,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
 
     const interval = setInterval(checkExpiry, 60000); // Check every minute
     return () => clearInterval(interval);
-  }, [isSupportModeActive, supportModeExpiresAt, lastActivityTime]);
+  }, [isSupportModeActive, supportModeExpiresAt, lastActivityTime, toast]);
 
   // Track activity for inactivity timeout
   useEffect(() => {
@@ -377,20 +380,6 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     });
   }, [isSuperAdmin, logSuperAdminAction, toast]);
 
-  // Exit support mode
-  const exitSupportMode = useCallback(async () => {
-    // Stop impersonation first if active
-    if (impersonation.isImpersonating) {
-      await stopImpersonation();
-    }
-
-    setIsSupportModeActive(false);
-    setSupportModeStartedAt(null);
-    setSupportModeExpiresAt(null);
-    setViewingOrgState({ orgId: null, orgName: null });
-
-    await logSuperAdminAction('SUPPORT_MODE_EXITED');
-  }, [impersonation.isImpersonating, logSuperAdminAction]);
 
   // Start impersonation with server-side session
   const startImpersonation = useCallback(async (
@@ -519,7 +508,38 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     });
   }, [toast]);
 
-  // Register callback for impersonation changes (for cache invalidation)
+  // Exit support mode (defined after stopImpersonation to avoid hoisting issues)
+  const exitSupportMode = useCallback(async () => {
+    // Stop impersonation first if active
+    if (impersonation.isImpersonating) {
+      await stopImpersonation();
+    }
+
+    // Expire all server-side impersonation sessions for this admin
+    try {
+      const { data, error } = await supabase.rpc('expire_all_admin_impersonation_sessions');
+      if (error) {
+        console.error('Error expiring server sessions:', error);
+      } else if (data && data > 0) {
+        rbacLog(`Expired ${data} server-side impersonation session(s)`);
+      }
+    } catch (err) {
+      console.warn('Error expiring server sessions:', err);
+    }
+
+    setIsSupportModeActive(false);
+    setSupportModeStartedAt(null);
+    setSupportModeExpiresAt(null);
+    setViewingOrgState({ orgId: null, orgName: null });
+
+    await logSuperAdminAction('SUPPORT_MODE_EXITED');
+  }, [impersonation.isImpersonating, logSuperAdminAction, rbacLog, stopImpersonation]);
+
+  // Keep exitSupportModeRef in sync with exitSupportMode callback
+  useEffect(() => {
+    exitSupportModeRef.current = exitSupportMode;
+  }, [exitSupportMode]);
+
   const registerImpersonationCallback = useCallback(
     (callback: (isImpersonating: boolean) => void) => {
       impersonationCallbacksRef.current.add(callback);
