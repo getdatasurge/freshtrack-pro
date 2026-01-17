@@ -120,7 +120,15 @@ export function useNavTree(organizationId: string | null): NavTree {
         .eq("is_active", true)
         .eq("sites.organization_id", organizationId);
 
-      if (error) throw error;
+      if (error) {
+        console.error("[useNavTree] Areas query error:", error);
+        throw error;
+      }
+
+      if (import.meta.env.DEV) {
+        console.log("[useNavTree] Areas query for org:", organizationId, "returned:", data?.length || 0, "areas");
+      }
+
       return (data || []).map(a => a.id);
     },
     enabled: !!organizationId,
