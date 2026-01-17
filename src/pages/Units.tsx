@@ -45,6 +45,7 @@ const Units = () => {
   const { isSupportModeActive } = useSuperAdmin();
   const [isLoading, setIsLoading] = useState(true);
   const [units, setUnits] = useState<UnitWithHierarchy[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [lastViewedUnitId, setLastViewedUnitId] = useState<string | null>(null);
 
@@ -86,19 +87,41 @@ const Units = () => {
     if (!effectiveOrgId) return;
 
     setIsLoading(true);
+    setLoadError(null);
     try {
+      if (import.meta.env.DEV) {
+        console.log('[Units] Loading units for org:', effectiveOrgId, 'isImpersonating:', isImpersonating);
+      }
+
       // Step 1: Get area IDs for this organization
       // PostgREST can't filter through multiple nested relationships (units->areas->sites->org)
       // so we need to first get area IDs, then filter units by those
-      const { data: areasData } = await supabase
+      const { data: areasData, error: areasError } = await supabase
         .from("areas")
         .select("id, site:sites!inner(organization_id)")
         .eq("is_active", true)
         .eq("sites.organization_id", effectiveOrgId);
 
+      if (areasError) {
+        console.error("[Units] Areas query error:", areasError);
+        setLoadError(isImpersonating
+          ? "Unable to load areas while impersonating. This may be a permissions issue."
+          : `Failed to load areas: ${areasError.message}`
+        );
+        setUnits([]);
+        return;
+      }
+
       const areaIds = (areasData || []).map(a => a.id);
 
+      if (import.meta.env.DEV) {
+        console.log('[Units] Areas found:', areaIds.length, 'areaIds:', areaIds);
+      }
+
       if (areaIds.length === 0) {
+        if (import.meta.env.DEV) {
+          console.log('[Units] No areas found for org, showing empty state');
+        }
         setUnits([]);
         return;
       }
@@ -119,13 +142,25 @@ const Units = () => {
         .order("name");
 
       if (error) {
-        console.error("Error loading units:", error);
+        console.error("[Units] Units query error:", error);
+        setLoadError(isImpersonating
+          ? "Unable to load units while impersonating. This may be a permissions issue."
+          : `Failed to load units: ${error.message}`
+        );
         setUnits([]);
       } else {
+        if (import.meta.env.DEV) {
+          console.log('[Units] Units loaded:', unitsData?.length, 'units');
+        }
         setUnits(unitsData || []);
       }
     } catch (err) {
-      console.error("Failed to load units:", err);
+      console.error("[Units] Failed to load units:", err);
+      setLoadError(isImpersonating
+        ? "An error occurred while loading units during impersonation."
+        : "An unexpected error occurred while loading units."
+      );
+      setUnits([]);
     } finally {
       setIsLoading(false);
     }
@@ -249,8 +284,22 @@ const Units = () => {
         </div>
       )}
 
+      {/* Error State */}
+      {!isLoading && loadError && (
+        <Card className="border-destructive/50">
+          <CardContent className="py-12 text-center">
+            <AlertTriangle className="w-12 h-12 mx-auto text-destructive mb-4" />
+            <h3 className="text-lg font-medium mb-2">Unable to Load Units</h3>
+            <p className="text-muted-foreground mb-4">{loadError}</p>
+            <Button variant="outline" onClick={() => loadUnits()}>
+              Try Again
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Empty State */}
-      {!isLoading && units.length === 0 && (
+      {!isLoading && !loadError && units.length === 0 && (
         <Card className="border-dashed">
           <CardContent className="py-12 text-center">
             <Boxes className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
