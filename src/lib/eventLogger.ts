@@ -1,6 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { EventCategory, EventSeverity } from "./eventTypeMapper";
 
+export interface ImpersonationContext {
+  isImpersonating: boolean;
+  sessionId?: string | null;
+  actingUserId?: string | null;
+}
+
 export interface LogEventParams {
   event_type: string;
   category?: EventCategory;
@@ -11,15 +17,48 @@ export interface LogEventParams {
   area_id?: string | null;
   unit_id?: string | null;
   actor_id?: string | null;
-  actor_type?: "user" | "system";
+  actor_type?: "user" | "system" | "impersonated";
   event_data?: Record<string, any>;
+  /** Optional: Pass impersonation context to use server-side audited logging */
+  impersonationContext?: ImpersonationContext;
 }
 
 /**
- * Log an event to the event_logs table for audit trail
+ * Log an event to the event_logs table for audit trail.
+ * 
+ * When impersonation context is provided and active, this uses the server-side
+ * `log_impersonated_action` RPC which validates cross-tenant writes and records
+ * full audit trail including acting_user_id and impersonation_session_id.
  */
 export async function logEvent(params: LogEventParams): Promise<{ error: Error | null }> {
   try {
+    // If impersonating, use the server-side RPC for security validation
+    if (params.impersonationContext?.isImpersonating) {
+      const { error } = await supabase.rpc('log_impersonated_action', {
+        p_event_type: params.event_type,
+        p_category: params.category || 'system',
+        p_severity: params.severity || 'info',
+        p_title: params.title,
+        p_organization_id: params.organization_id,
+        p_site_id: params.site_id || null,
+        p_area_id: params.area_id || null,
+        p_unit_id: params.unit_id || null,
+        p_event_data: {
+          ...params.event_data,
+          impersonation_session_id: params.impersonationContext.sessionId,
+          acting_admin_id: params.impersonationContext.actingUserId,
+        },
+      });
+
+      if (error) {
+        console.error("Failed to log impersonated event:", error);
+        return { error: new Error(error.message) };
+      }
+
+      return { error: null };
+    }
+
+    // Regular path for non-impersonated writes
     const { error } = await supabase.from("event_logs").insert({
       event_type: params.event_type,
       category: params.category || "system",

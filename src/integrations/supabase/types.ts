@@ -863,6 +863,7 @@ export type Database = {
       }
       event_logs: {
         Row: {
+          acting_user_id: string | null
           actor_id: string | null
           actor_type: string | null
           area_id: string | null
@@ -871,6 +872,7 @@ export type Database = {
           event_hash: string | null
           event_type: string
           id: string
+          impersonation_session_id: string | null
           ip_address: string | null
           organization_id: string
           previous_hash: string | null
@@ -880,8 +882,10 @@ export type Database = {
           title: string | null
           unit_id: string | null
           user_agent: string | null
+          was_impersonated: boolean | null
         }
         Insert: {
+          acting_user_id?: string | null
           actor_id?: string | null
           actor_type?: string | null
           area_id?: string | null
@@ -890,6 +894,7 @@ export type Database = {
           event_hash?: string | null
           event_type: string
           id?: string
+          impersonation_session_id?: string | null
           ip_address?: string | null
           organization_id: string
           previous_hash?: string | null
@@ -899,8 +904,10 @@ export type Database = {
           title?: string | null
           unit_id?: string | null
           user_agent?: string | null
+          was_impersonated?: boolean | null
         }
         Update: {
+          acting_user_id?: string | null
           actor_id?: string | null
           actor_type?: string | null
           area_id?: string | null
@@ -909,6 +916,7 @@ export type Database = {
           event_hash?: string | null
           event_type?: string
           id?: string
+          impersonation_session_id?: string | null
           ip_address?: string | null
           organization_id?: string
           previous_hash?: string | null
@@ -918,6 +926,7 @@ export type Database = {
           title?: string | null
           unit_id?: string | null
           user_agent?: string | null
+          was_impersonated?: boolean | null
         }
         Relationships: [
           {
@@ -3329,6 +3338,10 @@ export type Database = {
         Args: { _target_org_id: string; _viewer_id: string }
         Returns: boolean
       }
+      check_impersonation_org_match: {
+        Args: { target_org_id: string }
+        Returns: boolean
+      }
       check_org_dirty: { Args: { p_org_id: string }; Returns: Json }
       check_slug_available:
         | { Args: { p_slug: string }; Returns: boolean }
@@ -3375,6 +3388,7 @@ export type Database = {
         Args: { p_created_by?: string; p_reason: string; p_unit_id: string }
         Returns: number
       }
+      expire_all_admin_impersonation_sessions: { Args: never; Returns: number }
       find_orphan_organizations: {
         Args: never
         Returns: {
@@ -3446,6 +3460,20 @@ export type Database = {
       }
       is_current_user_super_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: { check_user_id: string }; Returns: boolean }
+      log_impersonated_action: {
+        Args: {
+          p_area_id?: string
+          p_category?: string
+          p_event_data?: Json
+          p_event_type: string
+          p_organization_id?: string
+          p_severity?: string
+          p_site_id?: string
+          p_title?: string
+          p_unit_id?: string
+        }
+        Returns: string
+      }
       log_super_admin_action: {
         Args: {
           p_action: string
