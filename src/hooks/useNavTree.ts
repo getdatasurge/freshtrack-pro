@@ -48,18 +48,21 @@ export interface NavTree {
   error: Error | null;
 }
 
-// Raw data from DB
+// Raw data from DB - using table names for PostgREST embedded filters
 interface RawUnit {
   id: string;
   name: string;
   unit_type: string;
   status: string;
-  area: {
+  area_id: string;
+  areas: {
     id: string;
     name: string;
-    site: {
+    site_id: string;
+    sites: {
       id: string;
       name: string;
+      organization_id: string;
     };
   };
 }
@@ -144,58 +147,15 @@ export function useNavTree(organizationId: string | null): NavTree {
     staleTime: 1000 * 30,
   });
 
-  // Extract site IDs for filtering areas
-  const siteIds = allSites.map(s => s.id);
-
-  // Debug log siteIds
-  if (import.meta.env.DEV && siteIds.length > 0) {
-    console.log('[useNavTree] siteIds for areas query:', siteIds);
-  }
-
-  // Fetch area IDs using site IDs (direct column filter, not relationship filter)
-  const { data: areaIds = [], isLoading: areasLoading, error: areasError } = useQuery({
-    queryKey: ["nav-tree-areas", organizationId, siteIds],
-    queryFn: async () => {
-      if (!organizationId || siteIds.length === 0) return [];
-
-      if (import.meta.env.DEV) {
-        console.log('[useNavTree] Fetching areas for siteIds:', siteIds);
-      }
-
-      const { data, error } = await supabase
-        .from("areas")
-        .select("id")
-        .in("site_id", siteIds)
-        .eq("is_active", true);
-
-      if (error) {
-        console.error("[useNavTree] Areas query error:", error);
-        throw error;
-      }
-
-      if (import.meta.env.DEV) {
-        console.log('[useNavTree] Areas fetched:', data?.length, 'areas', data?.map(a => a.id));
-      }
-
-      return (data || []).map(a => a.id);
-    },
-    enabled: !!organizationId && siteIds.length > 0,
-    staleTime: 1000 * 30,
-  });
-
-  // Debug log areaIds
-  if (import.meta.env.DEV && areaIds.length > 0) {
-    console.log('[useNavTree] areaIds for units query:', areaIds);
-  }
-
-  // Fetch all active units with their hierarchy, filtered by org's area IDs
+  // Fetch all active units with their hierarchy using DIRECT org filter
+  // This avoids the Sites → Areas → Units chain that breaks during impersonation
   const { data: units = [], isLoading: unitsLoading, error: unitsError } = useQuery({
-    queryKey: ["nav-tree-units", organizationId, areaIds],
+    queryKey: ["nav-tree-units", organizationId],
     queryFn: async () => {
-      if (!organizationId || areaIds.length === 0) return [];
+      if (!organizationId) return [];
 
       if (import.meta.env.DEV) {
-        console.log('[useNavTree] Fetching units for areaIds:', areaIds);
+        console.log('[useNavTree] Fetching units directly for org:', organizationId);
       }
 
       const { data, error } = await supabase
@@ -205,17 +165,24 @@ export function useNavTree(organizationId: string | null): NavTree {
           name,
           unit_type,
           status,
-          area:areas!inner(
+          area_id,
+          areas!inner(
             id,
             name,
-            site:sites!inner(
+            site_id,
+            is_active,
+            sites!inner(
               id,
-              name
+              name,
+              organization_id,
+              is_active
             )
           )
         `)
         .eq("is_active", true)
-        .in("area_id", areaIds)
+        .eq("areas.is_active", true)
+        .eq("areas.sites.is_active", true)
+        .eq("areas.sites.organization_id", organizationId)
         .order("name");
 
       if (error) {
@@ -229,8 +196,8 @@ export function useNavTree(organizationId: string | null): NavTree {
 
       return data as unknown as RawUnit[];
     },
-    enabled: !!organizationId && areaIds.length > 0,
-    staleTime: 1000 * 30, // 30 seconds
+    enabled: !!organizationId,
+    staleTime: 1000 * 30,
   });
 
   // Fetch sensor counts per unit
@@ -314,8 +281,8 @@ export function useNavTree(organizationId: string | null): NavTree {
 
     // Build units and group by site
     for (const unit of units) {
-      const siteId = unit.area.site.id;
-      const siteName = unit.area.site.name;
+      const siteId = unit.areas.sites.id;
+      const siteName = unit.areas.sites.name;
 
       if (!siteMap.has(siteId)) {
         siteMap.set(siteId, {
@@ -331,8 +298,8 @@ export function useNavTree(organizationId: string | null): NavTree {
         unitName: unit.name,
         unitType: unit.unit_type,
         status: unit.status,
-        areaId: unit.area.id,
-        areaName: unit.area.name,
+        areaId: unit.areas.id,
+        areaName: unit.areas.name,
         siteId,
         siteName,
         layouts: mapLayoutsToSlots(unitLayoutsMap.get(unit.id) || []),
@@ -341,8 +308,6 @@ export function useNavTree(organizationId: string | null): NavTree {
 
       siteMap.get(siteId)!.units.push(unitItem);
     }
-
-    // Sort units within each site
     for (const site of siteMap.values()) {
       site.units.sort((a, b) => a.unitName.localeCompare(b.unitName));
     }
@@ -358,22 +323,26 @@ export function useNavTree(organizationId: string | null): NavTree {
       organizationId,
       sitesCount: sites.length,
       totalUnits,
-      isLoading: areasLoading || unitsLoading || sensorsLoading || layoutsLoading || sitesLoading,
+      isLoading: unitsLoading || sensorsLoading || layoutsLoading || sitesLoading,
       queryStates: {
         sites: { count: allSites.length, loading: sitesLoading, error: !!sitesError },
-        areas: { count: areaIds.length, loading: areasLoading, error: !!areasError },
         units: { count: units.length, loading: unitsLoading, error: !!unitsError },
       }
     });
+
+    // Explicit warning when units are empty but sites exist
+    if (allSites.length > 0 && units.length === 0 && !unitsLoading) {
+      console.warn('[useNavTree] ⚠️ Sites exist but no units returned - check RLS or org scoping');
+    }
   }
 
   // Combine errors for better diagnostics
-  const combinedError = sitesError || areasError || unitsError;
+  const combinedError = sitesError || unitsError;
 
   return {
     sites,
     hasSingleSite: sites.length === 1,
-    isLoading: areasLoading || unitsLoading || sensorsLoading || layoutsLoading || sitesLoading,
+    isLoading: unitsLoading || sensorsLoading || layoutsLoading || sitesLoading,
     error: combinedError as Error | null,
   };
 }

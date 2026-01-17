@@ -81,7 +81,7 @@ describe("Cache key coverage for impersonation", () => {
 
     criticalKeys.forEach((key) => {
       const found = ORG_SCOPED_QUERY_KEYS.some(
-        (k) => k[0] === key || k.includes(key)
+        (k) => k[0] === key || (Array.isArray(k) && k.some(item => item === key))
       );
       expect(found).toBe(true);
     });
