@@ -114,7 +114,7 @@ const Dashboard = () => {
           area:areas!inner(name, site:sites!inner(name, organization_id))
         `)
         .eq("is_active", true)
-        .eq("area.site.organization_id", orgId)  // Filter at DB level for proper impersonation support
+        .eq("areas.sites.organization_id", orgId)  // Filter at DB level for proper impersonation support
         .limit(100);
 
       if (unitsError) {

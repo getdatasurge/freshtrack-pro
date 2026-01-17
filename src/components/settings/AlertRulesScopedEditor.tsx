@@ -103,7 +103,7 @@ export function AlertRulesScopedEditor({ organizationId, canEdit }: AlertRulesSc
               site_id
             )
           `)
-          .eq("area.site_id", selectedSiteId)
+          .eq("areas.site_id", selectedSiteId)
           .order("name");
 
         const formatted: Unit[] = (data || []).map((u: any) => ({
