@@ -41,7 +41,7 @@ import PlatformUsers from "./pages/platform/PlatformUsers";
 import PlatformUserDetail from "./pages/platform/PlatformUserDetail";
 import PlatformAuditLog from "./pages/platform/PlatformAuditLog";
 import PlatformDeveloperTools from "./pages/platform/PlatformDeveloperTools";
-import { PlatformGuard } from "./components/platform";
+import { PlatformGuard, ImpersonationCacheSync } from "./components/platform";
 import { RequireImpersonationGuard } from "./components/guards/RequireImpersonationGuard";
 
 const queryClient = new QueryClient();
@@ -55,6 +55,7 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <SuperAdminProvider>
+            <ImpersonationCacheSync />
             <RouteLogger />
             <Routes>
             <Route path="/" element={<Index />} />

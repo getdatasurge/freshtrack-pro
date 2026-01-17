@@ -44,6 +44,9 @@ interface SuperAdminContextType {
   impersonation: ImpersonationState;
   startImpersonation: (userId: string, userEmail: string, userName: string, orgId: string, orgName: string) => Promise<boolean>;
   stopImpersonation: () => Promise<void>;
+  
+  // Impersonation change callback (for cache invalidation)
+  registerImpersonationCallback: (callback: (isImpersonating: boolean) => void) => () => void;
 
   // Org viewing (without impersonation)
   viewingOrg: ViewingOrgState;
@@ -105,6 +108,9 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     orgId: null,
     orgName: null,
   });
+  
+  // Impersonation change callbacks (for cache invalidation)
+  const impersonationCallbacksRef = useRef<Set<(isImpersonating: boolean) => void>>(new Set());
 
   // Helper for gated RBAC logging
   const shouldLogRbac = useCallback(() => 
@@ -498,11 +504,31 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     // Clear localStorage
     localStorage.removeItem('ftp_impersonation_session');
 
+    // Notify callbacks (for cache invalidation)
+    impersonationCallbacksRef.current.forEach(callback => {
+      try {
+        callback(false);
+      } catch (err) {
+        console.error('Error in impersonation callback:', err);
+      }
+    });
+
     toast({
       title: 'Impersonation Ended',
       description: 'Returned to your admin view.',
     });
   }, [toast]);
+
+  // Register callback for impersonation changes (for cache invalidation)
+  const registerImpersonationCallback = useCallback(
+    (callback: (isImpersonating: boolean) => void) => {
+      impersonationCallbacksRef.current.add(callback);
+      return () => {
+        impersonationCallbacksRef.current.delete(callback);
+      };
+    },
+    []
+  );
 
   // Set viewing org (for browsing without impersonation)
   const setViewingOrg = useCallback((orgId: string | null, orgName: string | null) => {
@@ -534,6 +560,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     impersonation,
     startImpersonation,
     stopImpersonation,
+    registerImpersonationCallback,
     viewingOrg,
     setViewingOrg,
     exitToplatform,
