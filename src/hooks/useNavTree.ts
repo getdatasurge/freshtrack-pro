@@ -106,30 +106,54 @@ function mapLayoutsToSlots(layouts: RawLayout[]): LayoutSlot[] {
  * Structure: Sites > Units > Layouts
  */
 export function useNavTree(organizationId: string | null): NavTree {
-  // First fetch area IDs for this organization
-  // PostgREST can't filter through multiple nested relationships (units->areas->sites->org)
-  // so we need to first get area IDs, then filter units by those
-  const { data: areaIds = [], isLoading: areasLoading } = useQuery({
-    queryKey: ["nav-tree-areas", organizationId],
+  // First fetch all sites for this organization
+  const { data: allSites = [], isLoading: sitesLoading } = useQuery({
+    queryKey: ["nav-tree-all-sites", organizationId],
     queryFn: async () => {
       if (!organizationId) return [];
 
       const { data, error } = await supabase
-        .from("areas")
-        .select("id, site:sites!inner(organization_id)")
+        .from("sites")
+        .select("id, name")
+        .eq("organization_id", organizationId)
         .eq("is_active", true)
-        .eq("sites.organization_id", organizationId);
+        .is("deleted_at", null)
+        .order("name");
+
+      if (error) {
+        console.error("[useNavTree] Sites query error:", error);
+        throw error;
+      }
+
+      return data as { id: string; name: string }[];
+    },
+    enabled: !!organizationId,
+    staleTime: 1000 * 30,
+  });
+
+  // Extract site IDs for filtering areas
+  const siteIds = allSites.map(s => s.id);
+
+  // Fetch area IDs using site IDs (direct column filter, not relationship filter)
+  const { data: areaIds = [], isLoading: areasLoading } = useQuery({
+    queryKey: ["nav-tree-areas", organizationId, siteIds],
+    queryFn: async () => {
+      if (!organizationId || siteIds.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from("areas")
+        .select("id")
+        .in("site_id", siteIds)
+        .eq("is_active", true);
 
       if (error) {
         console.error("[useNavTree] Areas query error:", error);
         throw error;
       }
 
-      console.warn("[useNavTree] Areas query for org:", organizationId, "returned:", data?.length || 0, "areas");
-
       return (data || []).map(a => a.id);
     },
-    enabled: !!organizationId,
+    enabled: !!organizationId && siteIds.length > 0,
     staleTime: 1000 * 30,
   });
 
@@ -180,32 +204,6 @@ export function useNavTree(organizationId: string | null): NavTree {
 
       if (error) throw error;
       return data as RawSensor[];
-    },
-    enabled: !!organizationId,
-    staleTime: 1000 * 30,
-  });
-
-  // Fetch all sites directly (so we show sites even if they have no units)
-  const { data: allSites = [], isLoading: sitesLoading } = useQuery({
-    queryKey: ["nav-tree-all-sites", organizationId],
-    queryFn: async () => {
-      if (!organizationId) return [];
-
-      const { data, error } = await supabase
-        .from("sites")
-        .select("id, name")
-        .eq("organization_id", organizationId)
-        .eq("is_active", true)
-        .is("deleted_at", null)
-        .order("name");
-
-      if (error) {
-        console.error("[useNavTree] Sites query error:", error);
-        throw error;
-      }
-
-      console.warn("[useNavTree] Sites query for org:", organizationId, "returned:", data?.length || 0, "sites");
-      return data as { id: string; name: string }[];
     },
     enabled: !!organizationId,
     staleTime: 1000 * 30,
