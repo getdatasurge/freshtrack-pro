@@ -478,9 +478,15 @@ async function handleLoraSensor(
     }
 
     // Only process door state if sensor has door capability
-    if (hasDoorCapability && currentDoorOpen !== undefined) {
+    // Stricter check: must be explicit door sensor type OR have door data but NOT be a temp-only sensor
+    const shouldProcessDoor = hasDoorCapability && 
+      currentDoorOpen !== undefined &&
+      sensor.sensor_type !== 'temperature' && 
+      sensor.sensor_type !== 'temperature_humidity';
+
+    if (shouldProcessDoor) {
       unitUpdate.door_state = currentDoorOpen ? 'open' : 'closed';
-      unitUpdate.door_state_changed_at = receivedAt;
+      unitUpdate.door_last_changed_at = receivedAt;  // Fixed: was door_state_changed_at (wrong column)
 
       if (currentDoorOpen && previousDoorState !== 'open') {
         unitUpdate.door_open_since = receivedAt;
@@ -494,7 +500,7 @@ async function handleLoraSensor(
       const stateChanged = previousDoorState !== newDoorState;
 
       if (isInitialReading || stateChanged) {
-        await supabase.from('door_events').insert({
+        const { error: doorEventError } = await supabase.from('door_events').insert({
           unit_id: sensor.unit_id,
           state: newDoorState,
           occurred_at: receivedAt,
@@ -505,11 +511,20 @@ async function handleLoraSensor(
             is_initial: isInitialReading,
           },
         });
-        console.log(`[TTN-WEBHOOK] ${requestId} | Door event: ${previousDoorState} -> ${newDoorState} (initial: ${isInitialReading})`);
+        if (doorEventError) {
+          console.error(`[TTN-WEBHOOK] ${requestId} | Door event insert FAILED:`, doorEventError.message);
+        } else {
+          console.log(`[TTN-WEBHOOK] ${requestId} | Door event: ${previousDoorState} -> ${newDoorState} (initial: ${isInitialReading})`);
+        }
       }
     }
 
-    await supabase.from('units').update(unitUpdate).eq('id', sensor.unit_id);
+    const { error: unitUpdateError } = await supabase.from('units').update(unitUpdate).eq('id', sensor.unit_id);
+    if (unitUpdateError) {
+      console.error(`[TTN-WEBHOOK] ${requestId} | Unit update FAILED:`, unitUpdateError.message);
+    } else {
+      console.log(`[TTN-WEBHOOK] ${requestId} | Unit updated: door_state=${unitUpdate.door_state || 'unchanged'}, temp=${unitUpdate.last_temp_reading || 'unchanged'}`);
+    }
 
     return new Response(
       JSON.stringify({
