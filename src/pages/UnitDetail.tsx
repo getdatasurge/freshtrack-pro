@@ -143,6 +143,10 @@ const UnitDetail = () => {
     at: null | string;
     source: "sensor" | "manual" | null;
   }>({ temp: null, at: null, source: null });
+  
+  // Realtime connection tracking + polling fallback
+  const [realtimeConnected, setRealtimeConnected] = useState(false);
+  const [isTabVisible, setIsTabVisible] = useState(true);
 
   // Fetch LoRa sensors linked to this unit
   const { data: loraSensors } = useLoraSensorsByUnit(unitId || null);
@@ -317,10 +321,24 @@ const UnitDetail = () => {
     }
   };
 
-  // Realtime subscription for sensor_readings
+  // Tab visibility tracking for polling
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      const visible = !document.hidden;
+      console.log(`[TAB] visibility=${visible ? 'visible' : 'hidden'}`);
+      setIsTabVisible(visible);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // Realtime subscription for sensor_readings with connection tracking
   useEffect(() => {
     if (!unitId) return;
     
+    setRealtimeConnected(false);
     console.log(`[RT] subscribing unit-readings-${unitId} filter=unit_id=eq.${unitId}`);
     
     const channel = supabase
@@ -343,12 +361,48 @@ const UnitDetail = () => {
       )
       .subscribe((status) => {
         console.log(`[RT] subscribed status=${status}`);
+        if (status === 'SUBSCRIBED') {
+          setRealtimeConnected(true);
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          setRealtimeConnected(false);
+        }
       });
 
+    // Timeout warning if not connected in 2s
+    const timeoutId = setTimeout(() => {
+      setRealtimeConnected(prev => {
+        if (!prev) {
+          console.log(`[RT] Connection timeout after 2s - polling fallback will activate`);
+        }
+        return prev;
+      });
+    }, 2000);
+
     return () => {
+      clearTimeout(timeoutId);
       supabase.removeChannel(channel);
+      setRealtimeConnected(false);
     };
   }, [unitId, queryClient, unit, doorSensor?.id]);
+
+  // Polling fallback when realtime not connected AND tab visible
+  useEffect(() => {
+    if (!unitId || realtimeConnected || !isTabVisible) {
+      return;
+    }
+    
+    console.log(`[POLL] Starting 15s polling (realtime=${realtimeConnected}, visible=${isTabVisible})`);
+    
+    const interval = setInterval(() => {
+      console.log(`[POLL] tick - refreshing unitId=${unitId}`);
+      refreshUnitData();
+    }, 15000);
+
+    return () => {
+      console.log(`[POLL] Stopping polling`);
+      clearInterval(interval);
+    };
+  }, [unitId, realtimeConnected, isTabVisible]);
 
   // Realtime subscription for lora_sensors
   useEffect(() => {
