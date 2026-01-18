@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEntityDashboardUrl } from "@/hooks/useEntityDashboardUrl";
 import { supabase } from "@/integrations/supabase/client";
+import { invalidateUnitCaches } from "@/lib/unitCacheInvalidation";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
@@ -383,9 +384,7 @@ const UnitDetail = () => {
         (payload) => {
           console.log(`[RT] sensor_readings INSERT payload id=${payload.new?.id} unit_id=${payload.new?.unit_id} recorded_at=${payload.new?.recorded_at}`);
           refreshUnitData();
-          queryClient.invalidateQueries({ 
-            queryKey: ['lora-sensors-by-unit', unitId] 
-          });
+          invalidateUnitCaches(queryClient, unitId);
         }
       )
       .subscribe((status) => {
@@ -425,6 +424,7 @@ const UnitDetail = () => {
     const interval = setInterval(() => {
       console.log(`[POLL] tick - refreshing unitId=${unitId}`);
       refreshUnitData();
+      invalidateUnitCaches(queryClient, unitId);
     }, 15000);
 
     return () => {
