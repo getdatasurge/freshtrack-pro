@@ -7,6 +7,7 @@ import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
 import { AlertRulesHistoryModal } from "@/components/settings/AlertRulesHistoryModal";
 import { useUnitAlertRules, useUnitAlertRulesOverride, useSiteAlertRules, DEFAULT_ALERT_RULES, AlertRules, AlertRulesRow } from "@/hooks/useAlertRules";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAlertRules } from "@/lib/invalidation";
 
 interface UnitAlertThresholdsSectionProps {
   unitId: string;
@@ -39,9 +40,9 @@ export default function UnitAlertThresholdsSection({
     ? { ...DEFAULT_ALERT_RULES, ...siteRules }
     : DEFAULT_ALERT_RULES;
 
-  const handleSave = () => {
-    queryClient.invalidateQueries({ queryKey: ["unit-alert-rules", unitId] });
-    queryClient.invalidateQueries({ queryKey: ["unit-alert-rules-override", unitId] });
+  const handleSave = async () => {
+    // Use centralized invalidation for alert rules
+    await invalidateAlertRules(queryClient, { unitId });
     onSettingsUpdated?.();
   };
 

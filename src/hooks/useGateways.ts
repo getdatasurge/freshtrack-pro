@@ -4,16 +4,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { Gateway, GatewayInsert } from "@/types/ttn";
 import { toast } from "sonner";
 import { debugLog } from "@/lib/debugLogger";
+import { qk } from "@/lib/queryKeys";
+import { invalidateGateways } from "@/lib/invalidation";
 
 /**
  * Hook to fetch all gateways for an organization
  */
 export function useGateways(orgId: string | null) {
   return useQuery({
-    queryKey: ["gateways", orgId],
+    queryKey: qk.org(orgId).gateways(),
     queryFn: async (): Promise<Gateway[]> => {
       if (!orgId) return [];
-      
+
       const { data, error } = await supabase
         .from("gateways")
         .select("*")
@@ -32,7 +34,7 @@ export function useGateways(orgId: string | null) {
  */
 export function useGateway(gatewayId: string | null) {
   return useQuery({
-    queryKey: ["gateway", gatewayId],
+    queryKey: qk.gateway(gatewayId).details(),
     queryFn: async (): Promise<Gateway | null> => {
       if (!gatewayId) return null;
 
@@ -72,8 +74,8 @@ export function useCreateGateway() {
       if (error) throw error;
       return data as Gateway;
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["gateways", data.organization_id] });
+    onSuccess: async (data) => {
+      await invalidateGateways(queryClient, data.organization_id);
       toast.success("Gateway created successfully");
     },
     onError: (error: Error) => {
@@ -106,9 +108,11 @@ export function useUpdateGateway() {
       if (error) throw error;
       return data as Gateway;
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["gateways", data.organization_id] });
-      queryClient.invalidateQueries({ queryKey: ["gateway", data.id] });
+    onSuccess: async (data) => {
+      await Promise.all([
+        invalidateGateways(queryClient, data.organization_id),
+        queryClient.invalidateQueries({ queryKey: qk.gateway(data.id).all }),
+      ]);
       toast.success("Gateway updated successfully");
     },
     onError: (error: Error) => {
@@ -132,8 +136,8 @@ export function useDeleteGateway() {
 
       if (error) throw error;
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["gateways", variables.orgId] });
+    onSuccess: async (_, variables) => {
+      await invalidateGateways(queryClient, variables.orgId);
       toast.success("Gateway deleted successfully");
     },
     onError: (error: Error) => {
@@ -288,8 +292,8 @@ export function useProvisionGateway() {
         setProvisioningId(null);
       }
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["gateways"] });
+    onSuccess: async (data, variables) => {
+      await invalidateGateways(queryClient, variables.organizationId);
       if (data?.already_exists) {
         toast.success("Gateway already registered in TTN - ready to use");
       } else {

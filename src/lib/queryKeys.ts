@@ -55,8 +55,19 @@ export const qk = {
     // TTN / provisioning
     ttnSettings: () => ['org', orgId, 'ttn-settings'] as const,
     ttnJobs: () => ['org', orgId, 'ttn-jobs'] as const,
+    ttnDeprovisionJobs: (statusFilter?: string[]) => ['org', orgId, 'ttn-deprovision-jobs', statusFilter] as const,
+    ttnJobStats: () => ['org', orgId, 'ttn-job-stats'] as const,
+    ttnProvisioningLogs: () => ['org', orgId, 'ttn-provisioning-logs'] as const,
     provisioning: () => ['org', orgId, 'provisioning'] as const,
-    
+
+    // SMS & Webhooks
+    smsAlertHistory: () => ['org', orgId, 'sms-alert-history'] as const,
+    telnyxWebhookConfig: () => ['org', orgId, 'telnyx-webhook-config'] as const,
+    telnyxWebhookStats: () => ['org', orgId, 'telnyx-webhook-stats'] as const,
+
+    // Alert rules history
+    alertRulesHistory: (scope?: string, limit?: number) => ['org', orgId, 'alert-rules-history', scope, limit] as const,
+
     // Health & status
     healthCheck: () => ['org', orgId, 'health-check'] as const,
     pipelineStatus: () => ['org', orgId, 'pipeline-status'] as const,
@@ -109,8 +120,16 @@ export const qk = {
     areas: () => ['site', siteId, 'areas'] as const,
     alertRules: () => ['site', siteId, 'alert-rules'] as const,
     layouts: () => ['site', siteId, 'layouts'] as const,
-    weather: (lat?: number, lon?: number) => ['site', siteId, 'weather', lat, lon] as const,
+    weather: (lat?: number, lon?: number, timezone?: string) => ['site', siteId, 'weather', lat, lon, timezone] as const,
     hubs: () => ['site', siteId, 'hubs'] as const,
+  }),
+
+  /**
+   * Gateway-specific queries (by gateway ID)
+   */
+  gateway: (gatewayId: string | null) => ({
+    all: ['gateway', gatewayId] as const,
+    details: () => ['gateway', gatewayId, 'details'] as const,
   }),
 
   /**

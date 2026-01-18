@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { qk } from "@/lib/queryKeys";
 
 export interface DeprovisionJob {
   id: string;
@@ -48,7 +49,7 @@ export interface JobStats {
  */
 export function useTTNDeprovisionJobs(orgId: string | null, statusFilter?: string[]) {
   return useQuery({
-    queryKey: ["ttn-deprovision-jobs", orgId, statusFilter],
+    queryKey: qk.org(orgId).ttnDeprovisionJobs(statusFilter),
     queryFn: async (): Promise<DeprovisionJob[]> => {
       if (!orgId) return [];
 
@@ -78,7 +79,7 @@ export function useTTNDeprovisionJobs(orgId: string | null, statusFilter?: strin
  */
 export function useTTNJobStats(orgId: string | null) {
   return useQuery({
-    queryKey: ["ttn-job-stats", orgId],
+    queryKey: qk.org(orgId).ttnJobStats(),
     queryFn: async (): Promise<JobStats> => {
       if (!orgId) return {
         pending: 0, running: 0, retrying: 0, failed: 0, blocked: 0, succeeded: 0, needs_attention: 0
@@ -158,9 +159,15 @@ export function useEnqueueOrphanCleanup() {
       if (error) throw error;
       return data?.length || 0;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ttn-deprovision-jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["ttn-job-stats"] });
+    onSuccess: async (_, variables) => {
+      // Invalidate TTN job queries for this org
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: qk.org(variables.organizationId).ttnDeprovisionJobs() }),
+        queryClient.invalidateQueries({ queryKey: qk.org(variables.organizationId).ttnJobStats() }),
+        // Legacy keys for migration
+        queryClient.invalidateQueries({ queryKey: ["ttn-deprovision-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["ttn-job-stats"] }),
+      ]);
     },
   });
 }
@@ -168,7 +175,7 @@ export function useEnqueueOrphanCleanup() {
 /**
  * Hook to retry a failed job
  */
-export function useRetryDeprovisionJob() {
+export function useRetryDeprovisionJob(orgId: string | null) {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -187,9 +194,15 @@ export function useRetryDeprovisionJob() {
 
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ttn-deprovision-jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["ttn-job-stats"] });
+    onSuccess: async () => {
+      // Invalidate TTN job queries for this org
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: qk.org(orgId).ttnDeprovisionJobs() }),
+        queryClient.invalidateQueries({ queryKey: qk.org(orgId).ttnJobStats() }),
+        // Legacy keys for migration
+        queryClient.invalidateQueries({ queryKey: ["ttn-deprovision-jobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["ttn-job-stats"] }),
+      ]);
     },
   });
 }
