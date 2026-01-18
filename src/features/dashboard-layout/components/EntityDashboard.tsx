@@ -251,6 +251,19 @@ export function EntityDashboard({
       onClearRecentlyAdded: handleClearRecentlyAdded,
       onSiteLocationChange,
     };
+
+    // STEP 4: EntityDashboard widgetProps debug logging
+    DEV && console.log('[EntityDashboard.widgetProps]', {
+      entityType,
+      entityId,
+      organizationId,
+      siteId,
+      door_state: unit?.door_state,
+      door_last_changed_at: unit?.door_last_changed_at,
+      readingsCount: readings?.length,
+      loraSensorsCount: loraSensors?.length,
+    });
+
     const result: Record<string, Record<string, unknown>> = {};
     state.activeLayout.config.widgets.forEach((w) => {
       result[w.i] = allProps as unknown as Record<string, unknown>;

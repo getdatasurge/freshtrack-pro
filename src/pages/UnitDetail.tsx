@@ -20,6 +20,7 @@ import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteUnit, getActiveChildrenCount } from "@/hooks/useSoftDelete";
 import { useLoraSensorsByUnit } from "@/hooks/useLoraSensors";
 import { EntityDashboard } from "@/features/dashboard-layout";
+import { UnitDebugBanner } from "@/components/debug";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -224,7 +225,28 @@ const UnitDetail = () => {
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      setSession(session);
+      
+      // STEP 1: Auth proof logging
+      const DEV = import.meta.env.DEV;
+      DEV && console.log('[AUTH]', { 
+        hasSession: !!session, 
+        uid: session?.user?.id 
+      });
+      
+      // RLS verification query
+      if (session) {
+        const { data: profileCheck, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .limit(1);
+        DEV && console.log('[AUTH] RLS check', { 
+          success: !!profileCheck?.length, 
+          error: profileError?.message 
+        });
+      }
+    });
   }, []);
 
   // Persist last viewed unit for quick access from Units page
@@ -476,6 +498,7 @@ const UnitDetail = () => {
 
   const loadUnitData = async () => {
     setIsLoading(true);
+    const DEV_LOAD = import.meta.env.DEV;
     try {
       // Use shared fetchUnitHeader for consistent unit data
       const unitData = await fetchUnitHeader(unitId!);
@@ -484,6 +507,16 @@ const UnitDetail = () => {
         toast({ title: "Unit not found", variant: "destructive" });
         return;
       }
+
+      // STEP 2: Unit load proof logging
+      DEV_LOAD && console.log('[UNIT LOAD]', {
+        unitId: unitData.id,
+        orgId: unitData.area?.site?.organization_id,
+        siteId: unitData.area?.site?.id,
+        areaId: unitData.area?.id,
+        door_state: unitData.door_state,
+        door_last_changed_at: unitData.door_last_changed_at,
+      });
 
       setUnit(unitData);
 
@@ -505,13 +538,32 @@ const UnitDetail = () => {
 
       const fromDate = getTimeRangeDate().toISOString();
 
-      const { data: readingsData } = await supabase
+      const { data: readingsData, error: readingsError } = await supabase
         .from("sensor_readings")
         .select("id, temperature, humidity, recorded_at")
         .eq("unit_id", unitId)
         .gte("recorded_at", fromDate)
         .order("recorded_at", { ascending: true })
         .limit(500);
+
+      // STEP 3: Telemetry query proof logging
+      DEV_LOAD && console.log('[READINGS]', {
+        unitId,
+        fromDate,
+        rows: readingsData?.length ?? 0,
+        first: readingsData?.[0],
+        last: readingsData?.[readingsData.length - 1],
+        error: readingsError?.message,
+      });
+
+      // Also run a simple all-time check to verify data exists
+      const { data: allTimeCheck } = await supabase
+        .from('sensor_readings')
+        .select('id, recorded_at')
+        .eq('unit_id', unitId)
+        .order('recorded_at', { ascending: false })
+        .limit(5);
+      DEV_LOAD && console.log('[READINGS] all-time check', { count: allTimeCheck?.length ?? 0 });
 
       setReadings(readingsData || []);
 
@@ -796,8 +848,26 @@ const UnitDetail = () => {
     toast({ title: "Link copied to clipboard" });
   };
 
+  // State for last error tracking (for debug banner)
+  const [lastError, setLastError] = useState<string | null>(null);
+
   return (
     <DashboardLayout>
+      {/* STEP 0: UnitDebugBanner - DEV ONLY diagnostic banner */}
+      {DEV && (
+        <UnitDebugBanner
+          session={session}
+          unitId={unitId}
+          orgId={unit.area.site.organization_id}
+          siteId={unit.area.site.id}
+          areaId={unit.area.id}
+          readingsCount={readings.length}
+          sensorsCount={loraSensors?.length ?? 0}
+          doorState={unit.door_state}
+          realtimeConnected={realtimeConnected}
+          lastError={lastError}
+        />
+      )}
       {/* Route indicator for debugging/verification */}
       <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
         <span className="font-mono bg-muted px-2 py-0.5 rounded">/units/{unitId}{layoutKey !== 'default' ? `/layout/${layoutKey}` : ''}</span>
