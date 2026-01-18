@@ -23,7 +23,7 @@ interface DoorEvent {
   occurred_at: string;
 }
 
-export function DoorActivityWidget({ entityId, sensor, loraSensors }: WidgetProps) {
+export function DoorActivityWidget({ entityId, sensor, loraSensors, refreshTick }: WidgetProps) {
   const [events, setEvents] = useState<DoorEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +46,8 @@ export function DoorActivityWidget({ entityId, sensor, loraSensors }: WidgetProp
         console.log('[DoorWidget] fetching', { 
           entityId, 
           doorSensor: doorSensor?.name,
-          sensorType: doorSensor?.sensor_type 
+          sensorType: doorSensor?.sensor_type,
+          refreshTick 
         });
       }
 
@@ -81,7 +82,7 @@ export function DoorActivityWidget({ entityId, sensor, loraSensors }: WidgetProp
     }
 
     fetchDoorEvents();
-  }, [entityId, doorSensor?.name, doorSensor?.sensor_type]);
+  }, [entityId, doorSensor?.name, doorSensor?.sensor_type, refreshTick]);
 
   // Determine widget state
   const widgetState = useMemo((): WidgetStateInfo => {
