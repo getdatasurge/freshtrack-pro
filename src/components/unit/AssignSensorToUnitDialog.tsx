@@ -53,7 +53,7 @@ export function AssignSensorToUnitDialog({
     if (!selectedSensorId) return;
     
     linkSensor.mutate(
-      { sensorId: selectedSensorId, unitId },
+      { sensorId: selectedSensorId, unitId, orgId: organizationId },
       {
         onSuccess: () => {
           setSelectedSensorId(null);

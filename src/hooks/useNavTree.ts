@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useMemo } from "react";
+import { qk } from "@/lib/queryKeys";
 
 /**
  * Layout slot for navigation display
@@ -107,22 +108,22 @@ function mapLayoutsToSlots(layouts: RawLayout[]): LayoutSlot[] {
 /**
  * Hook to fetch the complete navigation tree for the sidebar.
  * Structure: Sites > Units > Layouts
+ * 
+ * Uses org-scoped query keys for proper cache invalidation on impersonation switch.
  */
 export function useNavTree(organizationId: string | null): NavTree {
+  const DEV = import.meta.env.DEV;
+  
   // Debug logging for impersonation context
-  if (import.meta.env.DEV) {
-    console.log('[useNavTree] Called with organizationId:', organizationId);
-  }
+  DEV && console.log('[useNavTree] Called with organizationId:', organizationId);
 
-  // First fetch all sites for this organization
+  // Fetch all sites for this organization
   const { data: allSites = [], isLoading: sitesLoading, error: sitesError } = useQuery({
-    queryKey: ["nav-tree-all-sites", organizationId],
+    queryKey: qk.org(organizationId).sites(),
     queryFn: async () => {
       if (!organizationId) return [];
 
-      if (import.meta.env.DEV) {
-        console.log('[useNavTree] Fetching sites for org:', organizationId);
-      }
+      DEV && console.log('[useNavTree] Fetching sites for org:', organizationId);
 
       const { data, error } = await supabase
         .from("sites")
@@ -137,9 +138,7 @@ export function useNavTree(organizationId: string | null): NavTree {
         throw error;
       }
 
-      if (import.meta.env.DEV) {
-        console.log('[useNavTree] Sites fetched:', data?.length, 'sites', data?.map(s => ({ id: s.id, name: s.name })));
-      }
+      DEV && console.log('[useNavTree] Sites fetched:', data?.length, 'sites');
 
       return data as { id: string; name: string }[];
     },
@@ -148,24 +147,12 @@ export function useNavTree(organizationId: string | null): NavTree {
   });
 
   // Fetch all active units with their hierarchy using DIRECT org filter
-  // This avoids the Sites → Areas → Units chain that breaks during impersonation
   const { data: units = [], isLoading: unitsLoading, error: unitsError } = useQuery({
-    queryKey: ["nav-tree-units", organizationId],
+    queryKey: [...qk.org(organizationId).navTree(), 'units'],
     queryFn: async () => {
       if (!organizationId) return [];
 
-      // Structured debug logging for sidebar units diagnosis
-      if (import.meta.env.DEV) {
-        console.log('[SidebarUnits] fetching', {
-          effectiveOrgId: organizationId,
-          queryFilters: {
-            unitIsActive: true,
-            areasIsActive: true,
-            sitesIsActive: true,
-            sitesOrgId: organizationId
-          }
-        });
-      }
+      DEV && console.log('[SidebarUnits] fetching', { effectiveOrgId: organizationId });
 
       const { data, error } = await supabase
         .from("units")
@@ -195,22 +182,11 @@ export function useNavTree(organizationId: string | null): NavTree {
         .order("name");
 
       if (error) {
-        console.error("[SidebarUnits] error", {
-          statusCode: error.code,
-          message: error.message,
-          hint: error.hint,
-          details: error.details
-        });
+        console.error("[SidebarUnits] error", { code: error.code, message: error.message });
         throw error;
       }
 
-      // Success logging with sample data
-      if (import.meta.env.DEV) {
-        console.log('[SidebarUnits] success', {
-          unitsCount: data?.length ?? 0,
-          first3: data?.slice(0, 3).map(u => ({ id: u.id, name: u.name }))
-        });
-      }
+      DEV && console.log('[SidebarUnits] success', { unitsCount: data?.length ?? 0 });
 
       return data as unknown as RawUnit[];
     },
@@ -220,7 +196,7 @@ export function useNavTree(organizationId: string | null): NavTree {
 
   // Fetch sensor counts per unit
   const { data: sensors = [], isLoading: sensorsLoading } = useQuery({
-    queryKey: ["nav-tree-sensors", organizationId],
+    queryKey: [...qk.org(organizationId).navTree(), 'sensors'],
     queryFn: async () => {
       if (!organizationId) return [];
 
@@ -228,6 +204,7 @@ export function useNavTree(organizationId: string | null): NavTree {
         .from("lora_sensors")
         .select("id, unit_id")
         .eq("organization_id", organizationId)
+        .is("deleted_at", null)
         .not("unit_id", "is", null);
 
       if (error) throw error;
@@ -239,7 +216,7 @@ export function useNavTree(organizationId: string | null): NavTree {
 
   // Fetch ALL org layouts for all entities (org-wide sharing)
   const { data: layouts = [], isLoading: layoutsLoading } = useQuery({
-    queryKey: ["nav-tree-layouts", organizationId],
+    queryKey: [...qk.org(organizationId).navTree(), 'layouts'],
     queryFn: async () => {
       if (!organizationId) return [];
 
@@ -335,17 +312,13 @@ export function useNavTree(organizationId: string | null): NavTree {
   }, [units, sensors, layouts, allSites]);
 
   // Summary debug log
-  if (import.meta.env.DEV) {
+  if (DEV) {
     const totalUnits = sites.reduce((sum, s) => sum + s.units.length, 0);
     console.log('[useNavTree] Summary:', {
       organizationId,
       sitesCount: sites.length,
       totalUnits,
       isLoading: unitsLoading || sensorsLoading || layoutsLoading || sitesLoading,
-      queryStates: {
-        sites: { count: allSites.length, loading: sitesLoading, error: !!sitesError },
-        units: { count: units.length, loading: unitsLoading, error: !!unitsError },
-      }
     });
 
     // Explicit warning when units are empty but sites exist

@@ -3,13 +3,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { LoraSensor, LoraSensorInsert } from "@/types/ttn";
 import { toast } from "sonner";
 import { useState } from "react";
+import { debugLog } from "@/lib/debugLogger";
+import { qk } from "@/lib/queryKeys";
+import { invalidateSensorAssignment } from "@/lib/invalidation";
 
 /**
  * Hook to fetch all LoRa sensors for an organization
  */
 export function useLoraSensors(orgId: string | null) {
   return useQuery({
-    queryKey: ["lora-sensors", orgId],
+    queryKey: qk.org(orgId).loraSensors(),
     queryFn: async (): Promise<LoraSensor[]> => {
       if (!orgId) return [];
 
@@ -45,7 +48,7 @@ export function useLoraSensors(orgId: string | null) {
  */
 export function useLoraSensor(sensorId: string | null) {
   return useQuery({
-    queryKey: ["lora-sensor", sensorId],
+    queryKey: qk.sensor(sensorId).details(),
     queryFn: async (): Promise<LoraSensor | null> => {
       if (!sensorId) return null;
 
@@ -67,7 +70,7 @@ export function useLoraSensor(sensorId: string | null) {
  */
 export function useLoraSensorByDevEui(devEui: string | null) {
   return useQuery({
-    queryKey: ["lora-sensor-by-eui", devEui],
+    queryKey: qk.sensorByEui(devEui),
     queryFn: async (): Promise<LoraSensor | null> => {
       if (!devEui) return null;
 
@@ -89,7 +92,7 @@ export function useLoraSensorByDevEui(devEui: string | null) {
  */
 export function useLoraSensorsByUnit(unitId: string | null) {
   return useQuery({
-    queryKey: ["lora-sensors-by-unit", unitId],
+    queryKey: qk.unit(unitId).loraSensors(),
     queryFn: async (): Promise<LoraSensor[]> => {
       if (!unitId) return [];
 
@@ -134,13 +137,13 @@ export function useCreateLoraSensor() {
       return data as LoraSensor;
     },
     onSuccess: async (data) => {
-      queryClient.invalidateQueries({ queryKey: ["lora-sensors", data.organization_id] });
-      if (data.unit_id) {
-        queryClient.invalidateQueries({ queryKey: ["lora-sensors-by-unit", data.unit_id] });
-      }
+      await invalidateSensorAssignment(
+        queryClient,
+        data.id,
+        data.organization_id,
+        data.unit_id
+      );
       toast.success("LoRa sensor created successfully");
-
-      // Sensor registered with 'pending' status - TTN provisioning handled separately
     },
     onError: (error: Error) => {
       toast.error(`Failed to create LoRa sensor: ${error.message}`);
@@ -158,10 +161,12 @@ export function useUpdateLoraSensor() {
     mutationFn: async ({
       id,
       updates,
+      previousUnitId,
     }: {
       id: string;
       updates: Partial<LoraSensor>;
-    }): Promise<LoraSensor> => {
+      previousUnitId?: string | null;
+    }): Promise<{ sensor: LoraSensor; previousUnitId?: string | null }> => {
       const { data, error } = await supabase
         .from("lora_sensors")
         .update(updates)
@@ -170,15 +175,16 @@ export function useUpdateLoraSensor() {
         .single();
 
       if (error) throw error;
-      return data as LoraSensor;
+      return { sensor: data as LoraSensor, previousUnitId };
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["lora-sensors", data.organization_id] });
-      queryClient.invalidateQueries({ queryKey: ["lora-sensor", data.id] });
-      queryClient.invalidateQueries({ queryKey: ["lora-sensor-by-eui", data.dev_eui] });
-      if (data.unit_id) {
-        queryClient.invalidateQueries({ queryKey: ["lora-sensors-by-unit", data.unit_id] });
-      }
+    onSuccess: async ({ sensor, previousUnitId }) => {
+      await invalidateSensorAssignment(
+        queryClient,
+        sensor.id,
+        sensor.organization_id,
+        sensor.unit_id,
+        previousUnitId
+      );
       toast.success("LoRa sensor updated successfully");
     },
     onError: (error: Error) => {
@@ -195,7 +201,7 @@ export function useDeleteLoraSensor() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, orgId }: { id: string; orgId: string }): Promise<void> => {
+    mutationFn: async ({ id, orgId, unitId }: { id: string; orgId: string; unitId?: string | null }): Promise<{ orgId: string; unitId?: string | null }> => {
       // Get current user for deleted_by field
       const { data: sessionData } = await supabase.auth.getSession();
       const userId = sessionData?.session?.user?.id;
@@ -211,10 +217,15 @@ export function useDeleteLoraSensor() {
         .eq("id", id);
 
       if (error) throw error;
+      return { orgId, unitId };
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["lora-sensors", variables.orgId] });
-      queryClient.invalidateQueries({ queryKey: ["ttn-deprovision-jobs"] });
+    onSuccess: async ({ orgId, unitId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: qk.org(orgId).loraSensors() }),
+        queryClient.invalidateQueries({ queryKey: ["ttn-deprovision-jobs"] }),
+        unitId ? queryClient.invalidateQueries({ queryKey: qk.unit(unitId).loraSensors() }) : Promise.resolve(),
+        queryClient.invalidateQueries({ queryKey: qk.org(orgId).navTree() }),
+      ]);
       toast.success("Sensor archived. TTN cleanup will run in the background.");
     },
     onError: (error: Error) => {
@@ -233,10 +244,14 @@ export function useLinkSensorToUnit() {
     mutationFn: async ({
       sensorId,
       unitId,
+      previousUnitId,
+      orgId,
     }: {
       sensorId: string;
       unitId: string | null;
-    }): Promise<LoraSensor> => {
+      previousUnitId?: string | null;
+      orgId: string;
+    }): Promise<{ sensor: LoraSensor; previousUnitId?: string | null; orgId: string }> => {
       const { data, error } = await supabase
         .from("lora_sensors")
         .update({ unit_id: unitId })
@@ -245,23 +260,23 @@ export function useLinkSensorToUnit() {
         .single();
 
       if (error) throw error;
-      return data as LoraSensor;
+      return { sensor: data as LoraSensor, previousUnitId, orgId };
     },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["lora-sensors", data.organization_id] });
-      queryClient.invalidateQueries({ queryKey: ["lora-sensor", data.id] });
-      if (variables.unitId) {
-        queryClient.invalidateQueries({ queryKey: ["lora-sensors-by-unit", variables.unitId] });
-      }
-      toast.success(variables.unitId ? "Sensor linked to unit" : "Sensor unlinked from unit");
+    onSuccess: async ({ sensor, previousUnitId, orgId }) => {
+      await invalidateSensorAssignment(
+        queryClient,
+        sensor.id,
+        orgId,
+        sensor.unit_id,
+        previousUnitId
+      );
+      toast.success(sensor.unit_id ? "Sensor linked to unit" : "Sensor unlinked from unit");
     },
     onError: (error: Error) => {
       toast.error(`Failed to link sensor: ${error.message}`);
     },
   });
 }
-
-import { debugLog } from "@/lib/debugLogger";
 
 // Helper to get user-friendly error message for TTN provisioning errors
 const getProvisionErrorMessage = (error: string): string => {
@@ -297,7 +312,7 @@ export function useProvisionLoraSensor() {
     }: {
       sensorId: string;
       organizationId: string;
-    }): Promise<{ success: boolean; message?: string; already_exists?: boolean; device_id?: string }> => {
+    }): Promise<{ success: boolean; message?: string; already_exists?: boolean; device_id?: string; orgId: string; sensorId: string }> => {
       setProvisioningId(sensorId);
       const requestId = crypto.randomUUID().slice(0, 8);
       const startTime = Date.now();
@@ -390,7 +405,7 @@ export function useProvisionLoraSensor() {
           duration_ms: durationMs,
         });
         
-        return data;
+        return { ...data, orgId: organizationId, sensorId };
       } catch (err) {
         const durationMs = Date.now() - startTime;
         
@@ -407,10 +422,11 @@ export function useProvisionLoraSensor() {
         throw err;
       }
     },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["lora-sensors"] });
-      queryClient.invalidateQueries({ queryKey: ["lora-sensor", variables.sensorId] });
-      queryClient.invalidateQueries({ queryKey: ["lora-sensors-by-unit"] });
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: qk.org(data.orgId).loraSensors() }),
+        queryClient.invalidateQueries({ queryKey: qk.sensor(data.sensorId).details() }),
+      ]);
       
       if (data?.already_exists) {
         toast.success("Sensor already registered in TTN - ready to use");

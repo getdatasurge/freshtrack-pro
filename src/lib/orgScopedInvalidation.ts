@@ -1,13 +1,16 @@
 /**
  * Centralized cache invalidation for org-scoped queries.
  * 
- * Used when switching between impersonation contexts to ensure
- * no stale data from a previous org bleeds into the new view.
+ * @deprecated Use functions from src/lib/invalidation.ts instead.
+ * This file is kept for backward compatibility during migration.
  */
 
 import { QueryClient } from "@tanstack/react-query";
+import { invalidateAllOrgData } from "./invalidation";
 
 /**
+ * @deprecated Use invalidateAllOrgData from src/lib/invalidation.ts
+ * 
  * All query keys that are scoped to an organization.
  * These caches must be invalidated when switching orgs (via impersonation).
  */
@@ -72,31 +75,17 @@ export const ORG_SCOPED_QUERY_KEYS = [
 ] as const;
 
 /**
+ * @deprecated Use invalidateAllOrgData from src/lib/invalidation.ts
+ * 
  * Invalidates all org-scoped caches.
  * Call this when starting or stopping impersonation to ensure fresh data.
- * 
- * @param queryClient - The React Query client instance
- * @param reason - Optional reason for logging (e.g., 'startImpersonation', 'stopImpersonation')
  */
 export async function invalidateAllOrgScopedCaches(
   queryClient: QueryClient,
   reason?: string
 ): Promise<void> {
-  const startTime = performance.now();
-  
-  console.log(
-    `[OrgCache] Invalidating all org-scoped caches${reason ? ` (${reason})` : ""}`
-  );
-
-  // Invalidate all org-scoped query keys in parallel
-  await Promise.all(
-    ORG_SCOPED_QUERY_KEYS.map((key) =>
-      queryClient.invalidateQueries({ queryKey: key })
-    )
-  );
-
-  const elapsed = Math.round(performance.now() - startTime);
-  console.log(`[OrgCache] Cache invalidation complete (${elapsed}ms)`);
+  // Delegate to new centralized function
+  await invalidateAllOrgData(queryClient, reason);
 }
 
 /**
@@ -110,7 +99,15 @@ export async function clearAllOrgScopedCaches(
 ): Promise<void> {
   console.log("[OrgCache] Clearing all org-scoped caches");
 
-  // Remove all org-scoped query keys
+  // Remove all org-scoped query keys using prefix matching
+  queryClient.removeQueries({
+    predicate: (query) => {
+      const key = query.queryKey[0];
+      return key === 'org' || key === 'unit' || key === 'site' || key === 'sensor';
+    },
+  });
+  
+  // Also remove legacy keys
   ORG_SCOPED_QUERY_KEYS.forEach((key) => {
     queryClient.removeQueries({ queryKey: key });
   });
@@ -129,11 +126,22 @@ export function getOrgCacheStats(queryClient: QueryClient): {
   const stats: Record<string, number> = {};
   let totalCached = 0;
 
+  // Count new-style keys
+  const allQueries = queryClient.getQueryCache().getAll();
+  for (const query of allQueries) {
+    const scope = query.queryKey[0];
+    if (typeof scope === 'string' && ['org', 'unit', 'site', 'sensor'].includes(scope)) {
+      stats[scope] = (stats[scope] || 0) + 1;
+      totalCached++;
+    }
+  }
+
+  // Also count legacy keys
   ORG_SCOPED_QUERY_KEYS.forEach((key) => {
     const queries = queryClient.getQueriesData({ queryKey: key });
     const count = queries.length;
     if (count > 0) {
-      stats[key[0]] = count;
+      stats[key[0]] = (stats[key[0]] || 0) + count;
       totalCached += count;
     }
   });
