@@ -6,6 +6,7 @@ import {
   unauthorizedResponse,
   type NormalizedReadingInput 
 } from "../_shared/validation.ts";
+import { normalizeDoorData, getDoorFieldSource } from "../_shared/payloadNormalization.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -103,8 +104,17 @@ Deno.serve(async (req) => {
 
         const recordedAt = reading.recorded_at || new Date().toISOString();
 
-        // Only include door_open if explicitly provided (prevents temp sensors from polluting door data)
-        const hasDoorData = reading.door_open !== undefined;
+        // Normalize door data - check explicit door_open field first, then try normalization
+        // This handles various payload formats (door_status, door, open_close, etc.)
+        const normalizedDoorOpen = reading.door_open !== undefined 
+          ? reading.door_open 
+          : normalizeDoorData(reading as unknown as Record<string, unknown>);
+        const hasDoorData = normalizedDoorOpen !== undefined;
+
+        if (hasDoorData) {
+          const doorSource = getDoorFieldSource(reading as unknown as Record<string, unknown>);
+          console.log(`[ingest-readings] Door data for unit ${reading.unit_id}: ${normalizedDoorOpen} from ${doorSource || 'door_open field'}`);
+        }
 
         // Insert sensor reading with source tag
         const readingData: Record<string, unknown> = {
@@ -119,9 +129,9 @@ Deno.serve(async (req) => {
           received_at: new Date().toISOString(),
         };
 
-        // Only set door_open if explicitly provided in reading
+        // Only set door_open if door data is present (after normalization)
         if (hasDoorData) {
-          readingData.door_open = reading.door_open;
+          readingData.door_open = normalizedDoorOpen;
         }
 
         const { error: insertError } = await supabase.from("sensor_readings").insert(readingData);
@@ -137,8 +147,8 @@ Deno.serve(async (req) => {
         }
 
         // Track door state changes - insert into door_events if changed OR if initial state
-        if (reading.door_open !== undefined) {
-          const newDoorState = reading.door_open ? "open" : "closed";
+        if (normalizedDoorOpen !== undefined) {
+          const newDoorState = normalizedDoorOpen ? "open" : "closed";
           const currentDoorState = unit.door_state || "unknown";
           const isInitialReading = currentDoorState === "unknown" || currentDoorState === null;
           const stateChanged = newDoorState !== currentDoorState;
@@ -165,7 +175,7 @@ Deno.serve(async (req) => {
           unitUpdates.set(reading.unit_id, {
             temp: reading.temperature,
             time: recordedAt,
-            doorOpen: reading.door_open,
+            doorOpen: normalizedDoorOpen,
           });
         }
 
