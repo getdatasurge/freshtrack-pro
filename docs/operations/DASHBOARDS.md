@@ -399,7 +399,7 @@ Access via: https://supabase.com/dashboard/project/{project-id}
 | Dashboard | URL |
 |-----------|-----|
 | Supabase | `https://supabase.com/dashboard/project/{id}` |
-| TTN Console | `https://eu1.cloud.thethings.network/console` |
+| TTN Console | `https://nam1.cloud.thethings.network/console` (or region-specific) |
 | Stripe | `https://dashboard.stripe.com` |
 | Resend | `https://resend.com/emails` |
 
