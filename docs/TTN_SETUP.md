@@ -179,13 +179,15 @@ Automatically configured webhook:
 
 FreshTrack Pro supports these TTN regions:
 
-| Region | Code | Server URL |
-|--------|------|------------|
-| North America | `nam1` | `nam1.cloud.thethings.network` |
-| Europe | `eu1` | `eu1.cloud.thethings.network` |
-| Australia | `au1` | `au1.cloud.thethings.network` |
+| Region | Code | Server URL | Frequency Plan |
+|--------|------|------------|----------------|
+| **North America** (default) | `nam1` | `nam1.cloud.thethings.network` | US915 (US_902_928_FSB_2) |
+| Europe | `eu1` | `eu1.cloud.thethings.network` | EU868 (EU_863_870_TTN) |
+| Australia | `au1` | `au1.cloud.thethings.network` | AU915 (AU_915_928_FSB_2) |
 
-**Important**: Select the region closest to where your sensors are deployed for best performance.
+**Default Region**: New organizations are provisioned on **NAM1 (North America)** by default with the US915 frequency plan.
+
+**Important**: Select the region closest to where your sensors are deployed for best performance. Sensors must use the correct frequency plan for their region (US915 for NAM1, EU868 for EU1, AU915 for AU1).
 
 ## Next Steps
 

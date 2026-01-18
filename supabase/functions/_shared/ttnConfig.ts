@@ -462,7 +462,7 @@ export async function getTtnConfigForOrg(
     : undefined;
 
   // Normalize region (ensure lowercase) - default to eu1
-  const region = (settings.ttn_region || "eu1").toLowerCase();
+  const region = (settings.ttn_region || "nam1").toLowerCase();
 
   return {
     region,

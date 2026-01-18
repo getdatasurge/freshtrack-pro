@@ -197,8 +197,8 @@ const Onboarding = () => {
           body: {
             action: 'provision',
             organization_id: orgId,
-            // Default to eu1 - Identity Server is always on eu1
-            ttn_region: 'eu1',
+            // Default to nam1 (North America, US915 frequency plan)
+            ttn_region: 'nam1',
           },
         }
       );

@@ -444,7 +444,7 @@ serve(async (req) => {
     // Parse request
     const body: ProvisionOrgRequest = await req.json();
     const { action, organization_id, ttn_region } = body;
-    const region = (ttn_region || "eu1").toLowerCase();
+    const region = (ttn_region || "nam1").toLowerCase();
 
     console.log(`[ttn-provision-org] [${requestId}] Action: ${action}, Org: ${organization_id}, Region: ${region}`);
 
