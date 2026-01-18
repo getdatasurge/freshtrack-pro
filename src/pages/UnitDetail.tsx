@@ -240,13 +240,73 @@ const UnitDetail = () => {
   // Query client for cache invalidation
   const queryClient = useQueryClient();
 
+  // Reusable function to fetch fresh unit header data (door state, last reading, etc.)
+  const fetchUnitHeader = async (id: string): Promise<UnitData | null> => {
+    const { data, error } = await supabase
+      .from("units")
+      .select(`
+        id, name, unit_type, status, temp_limit_high, temp_limit_low,
+        last_temp_reading, last_reading_at, last_manual_log_at, manual_log_cadence,
+        notes, door_state, door_last_changed_at, door_sensor_enabled, door_open_grace_minutes,
+        area:areas!inner(id, name, site:sites!inner(id, name, organization_id))
+      `)
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error || !data) {
+      console.error("[fetchUnitHeader] error:", error);
+      return null;
+    }
+
+    console.log(`[fetchUnitHeader] door_state=${data.door_state} door_last_changed_at=${data.door_last_changed_at} last_reading_at=${data.last_reading_at} last_temp_reading=${data.last_temp_reading}`);
+
+    return {
+      ...data,
+      last_manual_log_at: data.last_manual_log_at,
+      manual_log_cadence: data.manual_log_cadence,
+      door_state: data.door_state as "open" | "closed" | "unknown" | null | undefined,
+      door_last_changed_at: data.door_last_changed_at,
+      door_sensor_enabled: data.door_sensor_enabled,
+      door_open_grace_minutes: data.door_open_grace_minutes,
+      area: {
+        id: data.area.id,
+        name: data.area.name,
+        site: {
+          id: data.area.site.id,
+          name: data.area.site.name,
+          organization_id: data.area.site.organization_id,
+        },
+      },
+    };
+  };
+
   // Silent background refresh - updates data WITHOUT showing loading state
   const refreshUnitData = async () => {
-    if (!unit || !unitId) return;
+    if (!unitId) return;
     
     console.log(`[REFRESH] start unitId=${unitId}`);
     
     try {
+      // Fetch fresh unit header (door_state, last_reading_at, etc.) - REPLACE, don't merge
+      const freshUnit = await fetchUnitHeader(unitId);
+      if (freshUnit) {
+        console.log(`[REFRESH] header door_state=${freshUnit.door_state} door_last_changed_at=${freshUnit.door_last_changed_at} last_reading_at=${freshUnit.last_reading_at}`);
+        setUnit(freshUnit);
+        
+        // Update lastKnownGood if we have a newer reading
+        if (freshUnit.last_temp_reading !== null && freshUnit.last_reading_at) {
+          setLastKnownGood(prev => {
+            const newTime = new Date(freshUnit.last_reading_at!).getTime();
+            const prevTime = prev.at ? new Date(prev.at).getTime() : 0;
+            if (newTime > prevTime) {
+              return { temp: freshUnit.last_temp_reading, at: freshUnit.last_reading_at, source: "sensor" };
+            }
+            return prev;
+          });
+        }
+      }
+
+      // Fetch latest sensor reading to update readings array
       const { data: latestReading } = await supabase
         .from("sensor_readings")
         .select("id, temperature, humidity, recorded_at")
@@ -264,40 +324,9 @@ const UnitDetail = () => {
             .slice(-500);
           return updated;
         });
-
-        setUnit(prev => prev ? {
-          ...prev,
-          last_temp_reading: latestReading.temperature,
-          last_reading_at: latestReading.recorded_at,
-        } : null);
-
-        setLastKnownGood(prev => {
-          const newTime = new Date(latestReading.recorded_at).getTime();
-          const prevTime = prev.at ? new Date(prev.at).getTime() : 0;
-          if (newTime > prevTime) {
-            return { temp: latestReading.temperature, at: latestReading.recorded_at, source: "sensor" };
-          }
-          return prev;
-        });
       }
 
-      // Re-fetch door_state from units table (set by TTN webhook)
-      const { data: unitUpdate } = await supabase
-        .from("units")
-        .select("door_state, door_last_changed_at, last_temp_reading, last_reading_at")
-        .eq("id", unitId)
-        .maybeSingle();
-
-      if (unitUpdate) {
-        setUnit(prev => prev ? {
-          ...prev,
-          door_state: unitUpdate.door_state as "open" | "closed" | "unknown" | null | undefined,
-          door_last_changed_at: unitUpdate.door_last_changed_at,
-          last_temp_reading: unitUpdate.last_temp_reading ?? prev.last_temp_reading,
-          last_reading_at: unitUpdate.last_reading_at ?? prev.last_reading_at,
-        } : null);
-      }
-
+      // Fetch door sensor reading if available
       if (doorSensor?.id) {
         const { data: doorReading } = await supabase
           .from("sensor_readings")
@@ -315,7 +344,7 @@ const UnitDetail = () => {
         }
       }
 
-      console.log(`[REFRESH] done door_state=${unitUpdate?.door_state} door_last_changed_at=${unitUpdate?.door_last_changed_at} last_reading_at=${unitUpdate?.last_reading_at}`);
+      console.log(`[REFRESH] done`);
     } catch (error) {
       console.error("[REFRESH] failed:", error);
     }
@@ -446,40 +475,15 @@ const UnitDetail = () => {
   const loadUnitData = async () => {
     setIsLoading(true);
     try {
-      const { data: unitData, error: unitError } = await supabase
-        .from("units")
-        .select(`
-          id, name, unit_type, status, temp_limit_high, temp_limit_low,
-          last_temp_reading, last_reading_at, last_manual_log_at, manual_log_cadence,
-          notes, door_state, door_last_changed_at, door_sensor_enabled, door_open_grace_minutes,
-          area:areas!inner(id, name, site:sites!inner(id, name, organization_id))
-        `)
-        .eq("id", unitId)
-        .maybeSingle();
+      // Use shared fetchUnitHeader for consistent unit data
+      const unitData = await fetchUnitHeader(unitId!);
 
-      if (unitError || !unitData) {
+      if (!unitData) {
         toast({ title: "Unit not found", variant: "destructive" });
         return;
       }
 
-      setUnit({
-        ...unitData,
-        last_manual_log_at: unitData.last_manual_log_at,
-        manual_log_cadence: unitData.manual_log_cadence,
-        door_state: unitData.door_state as "open" | "closed" | "unknown" | null | undefined,
-        door_last_changed_at: unitData.door_last_changed_at,
-        door_sensor_enabled: unitData.door_sensor_enabled,
-        door_open_grace_minutes: unitData.door_open_grace_minutes,
-        area: {
-          id: unitData.area.id,
-          name: unitData.area.name,
-          site: { 
-            id: unitData.area.site.id, 
-            name: unitData.area.site.name,
-            organization_id: unitData.area.site.organization_id,
-          },
-        },
-      });
+      setUnit(unitData);
 
       const { data: siblingsData } = await supabase
         .from("units")
