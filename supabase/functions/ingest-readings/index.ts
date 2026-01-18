@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     console.log(`[ingest-readings] Received ${readings.length} validated readings`);
 
     const results: { unit_id: string; success: boolean; error?: string }[] = [];
-    const unitUpdates: Map<string, { temp: number; time: string; doorOpen?: boolean }> = new Map();
+    const unitUpdates: Map<string, { temp: number; time: string; doorOpen?: boolean; sensorType?: string }> = new Map();
     const deviceBatteryUpdates: Map<string, { level: number | null; voltage: number | null; signalStrength: number | null; time: string }> = new Map();
 
     for (const reading of readings) {
@@ -170,12 +170,14 @@ Deno.serve(async (req) => {
         }
 
         // Track latest reading per unit for batch update
+        // Include sensorType so we can gate door_state updates
         const existing = unitUpdates.get(reading.unit_id);
         if (!existing || new Date(recordedAt) > new Date(existing.time)) {
           unitUpdates.set(reading.unit_id, {
             temp: reading.temperature,
             time: recordedAt,
             doorOpen: normalizedDoorOpen,
+            sensorType: reading.source === 'simulator' ? 'door' : undefined, // Simulator always counts as door
           });
         }
 
@@ -247,13 +249,18 @@ Deno.serve(async (req) => {
         status: "ok", // Mark unit as OK when receiving valid readings
       };
       
-      if (update.doorOpen !== undefined) {
+      // STEP D: Only update door_state if this reading came from a door sensor
+      // Prevent temp sensors from overwriting door state
+      const isDoorSensor = update.sensorType === 'door' || update.sensorType === 'contact';
+      if (update.doorOpen !== undefined && isDoorSensor) {
         updateData.door_state = update.doorOpen ? "open" : "closed";
         updateData.door_last_changed_at = update.time;
         // Door events also count as activity, reset consecutive counter if needed
         if (newConsecutive === 0) {
           updateData.consecutive_checkins = 1;
         }
+      } else if (update.doorOpen !== undefined && !isDoorSensor) {
+        console.log(`[ingest-readings] BLOCKED door_state update from non-door sensor: sensorType=${update.sensorType} unitId=${unitId}`);
       }
       
       await supabase

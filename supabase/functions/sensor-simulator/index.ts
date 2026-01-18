@@ -348,6 +348,16 @@ Deno.serve(async (req) => {
 
         const newDoorState = body.door_state || "closed";
         const now = new Date().toISOString();
+        const requestId = crypto.randomUUID().slice(0, 8);
+        
+        // STEP A: Log set_door_state action
+        console.log(`[sensor-simulator] set_door_state action:`, {
+          requestId,
+          unitId: unit_id,
+          previousState: unitData?.door_state,
+          newState: newDoorState,
+          source: 'emulator'
+        });
         
         const updates: any = {
           door_state: newDoorState,
@@ -365,7 +375,7 @@ Deno.serve(async (req) => {
         // Inject reading with door state
         if (simConfig.sensor_online || simConfig.sensor_paired) {
           const updatedConfig = { ...simConfig, ...updates } as SimulatedDeviceConfig;
-          await injectReading(supabase, updatedConfig, unitData, true);
+          await injectReading(supabase, updatedConfig, unitData, true, requestId);
         }
 
         result.message = `Door set to ${newDoorState}`;
@@ -652,7 +662,8 @@ async function injectReading(
   supabase: any, 
   config: SimulatedDeviceConfig, 
   unitData: any,
-  forceDoorUpdate = false
+  forceDoorUpdate = false,
+  requestId?: string
 ): Promise<void> {
   const now = new Date().toISOString();
   
@@ -721,7 +732,15 @@ async function injectReading(
     unitUpdate.door_last_changed_at = now;
   }
 
-  await supabase.from("units").update(unitUpdate).eq("id", config.unit_id);
+  const { error: unitUpdateError } = await supabase.from("units").update(unitUpdate).eq("id", config.unit_id);
+  
+  // STEP A: Log units UPDATE
+  console.log(`[sensor-simulator] units UPDATE:`, {
+    unitId: config.unit_id,
+    door_state_written: unitUpdate.door_state,
+    door_last_changed_at_written: unitUpdate.door_last_changed_at,
+    error: unitUpdateError?.message || null
+  });
 
   // Update device last seen and signal strength
   if (config.device_id) {
@@ -738,18 +757,33 @@ async function injectReading(
     last_heartbeat_at: now,
   }).eq("id", config.id);
 
-  // Insert door event if door state changed
+  // STEP B: ALWAYS insert door_event for emulator actions (deterministic for testing)
+  // Mark same_state=true if no actual change occurred
   if (config.door_sensor_present) {
     const currentDoorState = unitData.door_state || "unknown";
-    if (config.door_state !== currentDoorState) {
-      await supabase.from("door_events").insert({
-        unit_id: config.unit_id,
-        state: config.door_state,
-        occurred_at: now,
-        source: "simulator",
-        metadata: { temperature: config.current_temperature, simulated: true },
-      });
-    }
+    const sameState = config.door_state === currentDoorState;
+    
+    const { data: insertedEvent, error: doorError } = await supabase.from("door_events").insert({
+      unit_id: config.unit_id,
+      state: config.door_state,
+      occurred_at: now,
+      source: "simulator",
+      metadata: { 
+        temperature: config.current_temperature, 
+        simulated: true,
+        same_state: sameState  // Flag for same-state events
+      },
+    }).select('id').single();
+    
+    // STEP A: Log door_event INSERT
+    console.log(`[sensor-simulator] door_event INSERT:`, {
+      insertedEventId: insertedEvent?.id,
+      unitId: config.unit_id,
+      prevState: currentDoorState,
+      newState: config.door_state,
+      sameState,
+      error: doorError?.message || null
+    });
   }
 
   console.log(`[sensor-simulator] Injected reading: unit=${config.unit_id}, temp=${config.current_temperature}°F, door=${config.door_state}`);
