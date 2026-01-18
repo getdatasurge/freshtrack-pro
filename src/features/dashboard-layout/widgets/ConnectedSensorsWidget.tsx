@@ -121,8 +121,8 @@ export function ConnectedSensorsWidget({
   // Count unassigned sensors (no unit_id)
   const unassignedSensorsCount = allSensors?.filter(s => !s.unit_id).length || 0;
 
-  const handleUnlink = (sensorId: string) => {
-    unlinkSensor.mutate({ sensorId, unitId: null });
+  const handleUnlink = (sensorId: string, sensor: LoraSensor) => {
+    unlinkSensor.mutate({ sensorId, unitId: null, previousUnitId: unitId, orgId: sensor.organization_id });
   };
 
   const handleProvision = (sensor: LoraSensor) => {
@@ -210,7 +210,7 @@ export function ConnectedSensorsWidget({
                       sensor={sensor}
                       canEdit={true}
                       onSetPrimary={() => handleSetPrimary(sensor)}
-                      onUnlink={() => handleUnlink(sensor.id)}
+                      onUnlink={() => handleUnlink(sensor.id, sensor)}
                       onProvision={() => handleProvision(sensor)}
                       isProvisioning={provisionSensor.isProvisioning(sensor.id)}
                       isSettingPrimary={setPrimarySensor.isPending}

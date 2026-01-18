@@ -1,40 +1,29 @@
 import { QueryClient } from "@tanstack/react-query";
+import { qk } from "./queryKeys";
+import { invalidateUnit } from "./invalidation";
 
 const DEV = import.meta.env.DEV;
 
 /**
  * Invalidates all React Query caches related to a specific unit.
  * Call this after realtime events or data refreshes to ensure widgets update.
+ * 
+ * This is a convenience wrapper around invalidateUnit from the centralized
+ * invalidation module, maintaining backward compatibility.
  */
 export async function invalidateUnitCaches(
   queryClient: QueryClient,
-  unitId: string
+  unitId: string,
+  orgId?: string | null
 ): Promise<void> {
   DEV && console.log(`[CACHE] invalidateUnitCaches unitId=${unitId}`);
   
-  await Promise.all([
-    // Core sensor data
-    queryClient.invalidateQueries({ queryKey: ['lora-sensors-by-unit', unitId] }),
-    
-    // Alert rules
-    queryClient.invalidateQueries({ queryKey: ['alert-rules', 'unit', unitId] }),
-    queryClient.invalidateQueries({ queryKey: ['alert-rules', 'unit-override', unitId] }),
-    queryClient.invalidateQueries({ queryKey: ['unit-alert-rules', unitId] }),
-    queryClient.invalidateQueries({ queryKey: ['unit-alert-rules-override', unitId] }),
-    
-    // Door events (for DoorActivityWidget)
-    queryClient.invalidateQueries({ queryKey: ['door-events', unitId] }),
-    
-    // Notification policies (all alert types for this unit)
-    queryClient.invalidateQueries({ 
-      queryKey: ['notification-policies', 'unit', unitId],
-      exact: true 
-    }),
-    queryClient.invalidateQueries({ 
-      queryKey: ['notification-policies', 'effective', unitId],
-      exact: false  // Catch all alertType variations
-    }),
-  ]);
+  // Use centralized invalidation which handles both new and legacy keys
+  await invalidateUnit(queryClient, unitId, {
+    includeNavTree: !!orgId,
+    includeOrgSensors: false,
+    orgId,
+  });
   
   DEV && console.log(`[CACHE] invalidateUnitCaches complete`);
 }

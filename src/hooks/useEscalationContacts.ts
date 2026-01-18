@@ -1,5 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { qk } from "@/lib/queryKeys";
+import { invalidateEscalationContacts } from "@/lib/invalidation";
+import { useOrgScope } from "@/hooks/useOrgScope";
 
 export interface EscalationContact {
   id: string;
@@ -14,23 +17,34 @@ export interface EscalationContact {
   created_at: string;
 }
 
+/**
+ * Hook to fetch escalation contacts for the current organization.
+ * Uses org-scoped query key for proper cache invalidation on impersonation.
+ */
 export function useEscalationContacts() {
+  const { orgId } = useOrgScope();
+  
   return useQuery({
-    queryKey: ["escalation-contacts"],
+    queryKey: qk.org(orgId).escalationContacts(),
     queryFn: async () => {
+      if (!orgId) return [];
+      
       const { data, error } = await supabase
         .from("escalation_contacts")
         .select("*")
+        .eq("organization_id", orgId)
         .eq("is_active", true)
         .order("priority", { ascending: true });
       if (error) throw error;
       return data as EscalationContact[];
     },
+    enabled: !!orgId,
   });
 }
 
 export function useCreateEscalationContact() {
   const queryClient = useQueryClient();
+  const { orgId } = useOrgScope();
 
   return useMutation({
     mutationFn: async (contact: Omit<EscalationContact, "id" | "created_at">) => {
@@ -42,14 +56,17 @@ export function useCreateEscalationContact() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["escalation-contacts"] });
+    onSuccess: async () => {
+      if (orgId) {
+        await invalidateEscalationContacts(queryClient, orgId);
+      }
     },
   });
 }
 
 export function useUpdateEscalationContact() {
   const queryClient = useQueryClient();
+  const { orgId } = useOrgScope();
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<EscalationContact> & { id: string }) => {
@@ -59,14 +76,17 @@ export function useUpdateEscalationContact() {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["escalation-contacts"] });
+    onSuccess: async () => {
+      if (orgId) {
+        await invalidateEscalationContacts(queryClient, orgId);
+      }
     },
   });
 }
 
 export function useDeleteEscalationContact() {
   const queryClient = useQueryClient();
+  const { orgId } = useOrgScope();
 
   return useMutation({
     mutationFn: async (id: string) => {
@@ -76,8 +96,10 @@ export function useDeleteEscalationContact() {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["escalation-contacts"] });
+    onSuccess: async () => {
+      if (orgId) {
+        await invalidateEscalationContacts(queryClient, orgId);
+      }
     },
   });
 }
