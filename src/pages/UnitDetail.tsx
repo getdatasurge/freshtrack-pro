@@ -149,6 +149,9 @@ const UnitDetail = () => {
   // Realtime connection tracking + polling fallback
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [isTabVisible, setIsTabVisible] = useState(true);
+  
+  // State for last error tracking (for debug banner)
+  const [lastError, setLastError] = useState<string | null>(null);
 
   // Fetch LoRa sensors linked to this unit
   const { data: loraSensors } = useLoraSensorsByUnit(unitId || null);
@@ -847,9 +850,6 @@ const UnitDetail = () => {
     navigator.clipboard.writeText(window.location.href);
     toast({ title: "Link copied to clipboard" });
   };
-
-  // State for last error tracking (for debug banner)
-  const [lastError, setLastError] = useState<string | null>(null);
 
   return (
     <DashboardLayout>
