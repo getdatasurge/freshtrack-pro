@@ -57,6 +57,7 @@ export interface EntityDashboardProps {
   entityType: EntityType;
   entityId: string;
   organizationId: string;
+  siteId?: string;
   userId?: string;
   unit?: {
     id: string;
@@ -66,6 +67,8 @@ export interface EntityDashboardProps {
     temp_limit_low: number | null;
     last_temp_reading: number | null;
     last_reading_at: string | null;
+    door_state?: "open" | "closed" | "unknown" | null;
+    door_last_changed_at?: string | null;
   };
   sensor?: {
     id: string;
@@ -145,6 +148,7 @@ export function EntityDashboard({
   entityType,
   entityId,
   organizationId,
+  siteId,
   userId,
   unit,
   sensor,
@@ -218,6 +222,7 @@ export function EntityDashboard({
       entityType,
       entityId,
       organizationId,
+      siteId,
       sensor,
       unit,
       readings,
@@ -244,7 +249,7 @@ export function EntityDashboard({
       result[w.i] = allProps as unknown as Record<string, unknown>;
     });
     return result;
-  }, [entityType, entityId, organizationId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange]);
+  }, [entityType, entityId, organizationId, siteId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange]);
 
   // Apply preview mode mock data when not in live mode
   const effectiveWidgetProps = useMemo(() => {

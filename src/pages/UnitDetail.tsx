@@ -78,6 +78,10 @@ interface UnitData {
   last_reading_at: string | null;
   last_manual_log_at: string | null;
   manual_log_cadence: number;
+  door_state?: "open" | "closed" | "unknown" | null;
+  door_last_changed_at?: string | null;
+  door_sensor_enabled?: boolean;
+  door_open_grace_minutes?: number;
   area: { id: string; name: string; site: { id: string; name: string; organization_id: string } };
 }
 
@@ -382,6 +386,10 @@ const UnitDetail = () => {
         ...unitData,
         last_manual_log_at: unitData.last_manual_log_at,
         manual_log_cadence: unitData.manual_log_cadence,
+        door_state: unitData.door_state as "open" | "closed" | "unknown" | null | undefined,
+        door_last_changed_at: unitData.door_last_changed_at,
+        door_sensor_enabled: unitData.door_sensor_enabled,
+        door_open_grace_minutes: unitData.door_open_grace_minutes,
         area: {
           id: unitData.area.id,
           name: unitData.area.name,
@@ -797,6 +805,7 @@ const UnitDetail = () => {
             entityType="unit"
             entityId={unitId!}
             organizationId={unit.area.site.organization_id}
+            siteId={unit.area.site.id}
             unit={{
               id: unit.id,
               name: unit.name,
@@ -805,6 +814,8 @@ const UnitDetail = () => {
               temp_limit_low: unit.temp_limit_low,
               last_temp_reading: unit.last_temp_reading,
               last_reading_at: unit.last_reading_at,
+              door_state: unit.door_state,
+              door_last_changed_at: unit.door_last_changed_at,
             }}
             sensor={primaryLoraSensor ? {
               id: primaryLoraSensor.id,
