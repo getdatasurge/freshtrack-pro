@@ -240,6 +240,8 @@ const UnitDetail = () => {
   const refreshUnitData = async () => {
     if (!unit || !unitId) return;
     
+    console.log(`[REFRESH] start unitId=${unitId}`);
+    
     try {
       const { data: latestReading } = await supabase
         .from("sensor_readings")
@@ -275,6 +277,23 @@ const UnitDetail = () => {
         });
       }
 
+      // Re-fetch door_state from units table (set by TTN webhook)
+      const { data: unitUpdate } = await supabase
+        .from("units")
+        .select("door_state, door_last_changed_at, last_temp_reading, last_reading_at")
+        .eq("id", unitId)
+        .maybeSingle();
+
+      if (unitUpdate) {
+        setUnit(prev => prev ? {
+          ...prev,
+          door_state: unitUpdate.door_state as "open" | "closed" | "unknown" | null | undefined,
+          door_last_changed_at: unitUpdate.door_last_changed_at,
+          last_temp_reading: unitUpdate.last_temp_reading ?? prev.last_temp_reading,
+          last_reading_at: unitUpdate.last_reading_at ?? prev.last_reading_at,
+        } : null);
+      }
+
       if (doorSensor?.id) {
         const { data: doorReading } = await supabase
           .from("sensor_readings")
@@ -291,14 +310,18 @@ const UnitDetail = () => {
           });
         }
       }
+
+      console.log(`[REFRESH] done door_state=${unitUpdate?.door_state} door_last_changed_at=${unitUpdate?.door_last_changed_at} last_reading_at=${unitUpdate?.last_reading_at}`);
     } catch (error) {
-      console.error("Background refresh failed:", error);
+      console.error("[REFRESH] failed:", error);
     }
   };
 
   // Realtime subscription for sensor_readings
   useEffect(() => {
     if (!unitId) return;
+    
+    console.log(`[RT] subscribing unit-readings-${unitId} filter=unit_id=eq.${unitId}`);
     
     const channel = supabase
       .channel(`unit-readings-${unitId}`)
@@ -310,14 +333,17 @@ const UnitDetail = () => {
           table: 'sensor_readings',
           filter: `unit_id=eq.${unitId}`,
         },
-        () => {
+        (payload) => {
+          console.log(`[RT] sensor_readings INSERT payload id=${payload.new?.id} unit_id=${payload.new?.unit_id} recorded_at=${payload.new?.recorded_at}`);
           refreshUnitData();
           queryClient.invalidateQueries({ 
             queryKey: ['lora-sensors-by-unit', unitId] 
           });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`[RT] subscribed status=${status}`);
+      });
 
     return () => {
       supabase.removeChannel(channel);
