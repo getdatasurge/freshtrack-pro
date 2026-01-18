@@ -486,13 +486,7 @@ async function handleLoraSensor(
 
     if (shouldProcessDoor) {
       unitUpdate.door_state = currentDoorOpen ? 'open' : 'closed';
-      unitUpdate.door_last_changed_at = receivedAt;  // Fixed: was door_state_changed_at (wrong column)
-
-      if (currentDoorOpen && previousDoorState !== 'open') {
-        unitUpdate.door_open_since = receivedAt;
-      } else if (!currentDoorOpen && previousDoorState === 'open') {
-        unitUpdate.door_open_since = null;
-      }
+      unitUpdate.door_last_changed_at = receivedAt;
 
       // Insert door event - including initial readings to establish baseline
       const newDoorState = currentDoorOpen ? 'open' : 'closed';
