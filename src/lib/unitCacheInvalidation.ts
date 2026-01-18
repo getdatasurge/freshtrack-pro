@@ -1,5 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 
+const DEV = import.meta.env.DEV;
+
 /**
  * Invalidates all React Query caches related to a specific unit.
  * Call this after realtime events or data refreshes to ensure widgets update.
@@ -8,7 +10,7 @@ export async function invalidateUnitCaches(
   queryClient: QueryClient,
   unitId: string
 ): Promise<void> {
-  console.log(`[CACHE] invalidateUnitCaches unitId=${unitId}`);
+  DEV && console.log(`[CACHE] invalidateUnitCaches unitId=${unitId}`);
   
   await Promise.all([
     // Core sensor data
@@ -31,5 +33,5 @@ export async function invalidateUnitCaches(
     }),
   ]);
   
-  console.log(`[CACHE] invalidateUnitCaches complete`);
+  DEV && console.log(`[CACHE] invalidateUnitCaches complete`);
 }
