@@ -20,6 +20,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeDevEui, formatDevEuiForDisplay, lookupOrgByWebhookSecret } from "../_shared/ttnConfig.ts";
 import { inferSensorTypeFromPayload, inferModelFromPayload, extractModelFromUnitId } from "../_shared/payloadRegistry.ts";
+import { normalizeDoorData, getDoorFieldSource } from "../_shared/payloadNormalization.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -407,9 +408,19 @@ async function handleLoraSensor(
   // Handle unit-assigned sensors
   if (sensor.unit_id) {
     const hasTemperatureData = temperature !== undefined;
-    const hasDoorData = decoded.door_open !== undefined;
+    
+    // Normalize door data from various payload formats (door_status, door_open, open_close, etc.)
+    const normalizedDoorOpen = normalizeDoorData(decoded);
+    const hasDoorData = normalizedDoorOpen !== undefined;
+    
+    // Log door normalization for debugging
+    if (hasDoorData) {
+      const doorSource = getDoorFieldSource(decoded);
+      console.log(`[TTN-WEBHOOK] ${requestId} | Door data normalized: ${normalizedDoorOpen} from ${doorSource}`);
+    }
 
     if (!hasTemperatureData && !hasDoorData) {
+      console.log(`[TTN-WEBHOOK] ${requestId} | No temp or door data in payload. Keys: ${Object.keys(decoded).join(', ')}`);
       return new Response(
         JSON.stringify({ success: true, message: 'Sensor updated, no data to record', sensor_id: sensor.id }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -418,17 +429,14 @@ async function handleLoraSensor(
 
     const { data: unit } = await supabase.from('units').select('door_state').eq('id', sensor.unit_id).single();
     const previousDoorState = unit?.door_state;
-    const currentDoorOpen = decoded.door_open as boolean | undefined;
+    const currentDoorOpen = normalizedDoorOpen;
 
     // Only include door_open if the sensor actually has door capability
     // This prevents temperature sensors from polluting door data
-    const hasDoorCapability = sensor.sensor_type === 'door' || 
-      sensor.sensor_type === 'combo' ||
-      decoded.door !== undefined ||
-      decoded.door_open !== undefined ||
-      decoded.door_status !== undefined ||
-      decoded.DOOR_OPEN_STATUS !== undefined ||
-      decoded.open_close !== undefined;
+    // hasDoorData already confirms normalized door data exists
+    const hasDoorCapability = hasDoorData || 
+      sensor.sensor_type === 'door' || 
+      sensor.sensor_type === 'combo';
 
     // Build reading data - only include door_open for door-capable sensors
     const readingData: Record<string, unknown> = {
