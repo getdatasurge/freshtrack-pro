@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEntityDashboardUrl } from "@/hooks/useEntityDashboardUrl";
 import { supabase } from "@/integrations/supabase/client";
 import { invalidateUnitCaches } from "@/lib/unitCacheInvalidation";
+import { qk } from "@/lib/queryKeys";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
@@ -542,8 +543,8 @@ const UnitDetail = () => {
           filter: `unit_id=eq.${unitId}`,
         },
         () => {
-          queryClient.invalidateQueries({ 
-            queryKey: ['lora-sensors-by-unit', unitId] 
+          queryClient.invalidateQueries({
+            queryKey: qk.unit(unitId).loraSensors()
           });
         }
       )

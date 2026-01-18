@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { qk } from "@/lib/queryKeys";
+import { invalidateNotificationPolicies } from "@/lib/invalidation";
 
 // Alert types that can have notification policies
 export const ALERT_TYPES = [
@@ -119,7 +121,7 @@ function mapDbRowToPolicy(row: Record<string, unknown>): NotificationPolicy {
 // Hook to fetch org-level notification policies
 export function useOrgNotificationPolicies(orgId: string | null) {
   return useQuery({
-    queryKey: ["notification-policies", "org", orgId],
+    queryKey: qk.org(orgId).notificationPolicies(),
     queryFn: async () => {
       if (!orgId) return [];
       const { data, error } = await supabase
@@ -136,7 +138,7 @@ export function useOrgNotificationPolicies(orgId: string | null) {
 // Hook to fetch site-level notification policies
 export function useSiteNotificationPolicies(siteId: string | null) {
   return useQuery({
-    queryKey: ["notification-policies", "site", siteId],
+    queryKey: ['site', siteId, 'notification-policies'] as const,
     queryFn: async () => {
       if (!siteId) return [];
       const { data, error } = await supabase
@@ -153,7 +155,7 @@ export function useSiteNotificationPolicies(siteId: string | null) {
 // Hook to fetch unit-level notification policies
 export function useUnitNotificationPolicies(unitId: string | null) {
   return useQuery({
-    queryKey: ["notification-policies", "unit", unitId],
+    queryKey: qk.unit(unitId).notificationPolicies(),
     queryFn: async () => {
       if (!unitId) return [];
       const { data, error } = await supabase
@@ -170,7 +172,7 @@ export function useUnitNotificationPolicies(unitId: string | null) {
 // Hook to fetch effective notification policy for a unit + alert type
 export function useEffectiveNotificationPolicy(unitId: string | null, alertType: string | null) {
   return useQuery({
-    queryKey: ["notification-policies", "effective", unitId, alertType],
+    queryKey: qk.unit(unitId).notificationPolicies(alertType ?? undefined),
     queryFn: async () => {
       if (!unitId || !alertType) return null;
       const { data, error } = await supabase.rpc("get_effective_notification_policy", {
@@ -290,9 +292,14 @@ export function useUpsertNotificationPolicy() {
     }) => {
       const { error } = await upsertNotificationPolicy(scope, alertType, policy);
       if (error) throw error;
+      return scope; // Return scope for onSuccess
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notification-policies"] });
+    onSuccess: async (scope) => {
+      await invalidateNotificationPolicies(queryClient, {
+        orgId: scope.organization_id,
+        siteId: scope.site_id,
+        unitId: scope.unit_id,
+      });
     },
   });
 }
@@ -311,9 +318,14 @@ export function useDeleteNotificationPolicy() {
     }) => {
       const { error } = await deleteNotificationPolicy(scope, alertType);
       if (error) throw error;
+      return scope; // Return scope for onSuccess
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notification-policies"] });
+    onSuccess: async (scope) => {
+      await invalidateNotificationPolicies(queryClient, {
+        orgId: scope.organization_id,
+        siteId: scope.site_id,
+        unitId: scope.unit_id,
+      });
     },
   });
 }

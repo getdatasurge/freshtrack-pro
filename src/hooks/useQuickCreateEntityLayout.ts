@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { DEFAULT_LAYOUT_CONFIG, DEFAULT_TIMELINE_STATE } from "@/features/dashboard-layout/constants/defaultLayout";
+import { qk } from "@/lib/queryKeys";
+import { invalidateLayouts } from "@/lib/invalidation";
 
 export type EntityType = 'unit' | 'site';
 
@@ -71,12 +73,14 @@ export function useQuickCreateEntityLayout() {
         slotNumber: data.slot_number as 1 | 2 | 3,
       };
     },
-    onSuccess: (data, variables) => {
-      // Invalidate navigation tree and entity layouts with correct scope
-      queryClient.invalidateQueries({ queryKey: ["nav-tree"] });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree-layouts", variables.organizationId] });
-      queryClient.invalidateQueries({ queryKey: ["nav-tree-units", variables.organizationId] });
-      queryClient.invalidateQueries({ queryKey: ["entity-layouts", data.entityType, data.entityId] });
+    onSuccess: async (data, variables) => {
+      // Use centralized layout invalidation
+      await invalidateLayouts(
+        queryClient,
+        data.entityType,
+        data.entityId,
+        variables.organizationId
+      );
       toast.success(`Created "${data.name}"`);
     },
     onError: (error: Error) => {

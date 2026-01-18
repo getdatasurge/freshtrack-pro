@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { qk } from "@/lib/queryKeys";
 
 export interface AlertRules {
   manual_interval_minutes: number;
@@ -115,7 +116,7 @@ export function computeManualTriggerMinutes(rules: AlertRules): number {
  */
 export function useUnitAlertRules(unitId: string | null) {
   return useQuery({
-    queryKey: ["alert-rules", "unit", unitId],
+    queryKey: qk.unit(unitId).alertRules(),
     queryFn: async (): Promise<AlertRules> => {
       if (!unitId) return DEFAULT_ALERT_RULES;
       
@@ -145,7 +146,7 @@ export function useUnitAlertRules(unitId: string | null) {
  */
 export function useOrgAlertRules(orgId: string | null) {
   return useQuery({
-    queryKey: ["alert-rules", "org", orgId],
+    queryKey: qk.org(orgId).alertRules(),
     queryFn: async (): Promise<AlertRulesRow | null> => {
       if (!orgId) return null;
       
@@ -171,7 +172,7 @@ export function useOrgAlertRules(orgId: string | null) {
  */
 export function useSiteAlertRules(siteId: string | null) {
   return useQuery({
-    queryKey: ["alert-rules", "site", siteId],
+    queryKey: qk.site(siteId).alertRules(),
     queryFn: async (): Promise<AlertRulesRow | null> => {
       if (!siteId) return null;
       
@@ -197,7 +198,7 @@ export function useSiteAlertRules(siteId: string | null) {
  */
 export function useUnitAlertRulesOverride(unitId: string | null) {
   return useQuery({
-    queryKey: ["alert-rules", "unit-override", unitId],
+    queryKey: qk.unit(unitId).alertRulesOverride(),
     queryFn: async (): Promise<AlertRulesRow | null> => {
       if (!unitId) return null;
       

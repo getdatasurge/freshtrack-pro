@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { LoraSensor, LoraSensorType } from "@/types/ttn";
 import { toast } from "sonner";
+import { qk } from "@/lib/queryKeys";
+import { invalidateSensorAssignment } from "@/lib/invalidation";
 
 /**
  * Get sensor types in the same "primary group" for mutual exclusivity
@@ -56,10 +58,14 @@ export function useSetPrimarySensor() {
       if (error) throw error;
       return data as LoraSensor;
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["lora-sensors"] });
-      queryClient.invalidateQueries({ queryKey: ["lora-sensors-by-unit", data.unit_id] });
-      queryClient.invalidateQueries({ queryKey: ["lora-sensor", data.id] });
+    onSuccess: async (data) => {
+      // Use centralized invalidation for sensor assignment changes
+      await invalidateSensorAssignment(
+        queryClient,
+        data.id,
+        data.organization_id,
+        data.unit_id
+      );
       toast.success(`${data.name} set as primary sensor`);
     },
     onError: (error: Error) => {
