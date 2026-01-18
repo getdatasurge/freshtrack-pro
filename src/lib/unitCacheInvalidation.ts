@@ -22,6 +22,9 @@ export async function invalidateUnitCaches(
     queryClient.invalidateQueries({ queryKey: ['unit-alert-rules', unitId] }),
     queryClient.invalidateQueries({ queryKey: ['unit-alert-rules-override', unitId] }),
     
+    // Door events (for DoorActivityWidget)
+    queryClient.invalidateQueries({ queryKey: ['door-events', unitId] }),
+    
     // Notification policies (all alert types for this unit)
     queryClient.invalidateQueries({ 
       queryKey: ['notification-policies', 'unit', unitId],

@@ -152,6 +152,9 @@ const UnitDetail = () => {
   
   // State for last error tracking (for debug banner)
   const [lastError, setLastError] = useState<string | null>(null);
+  
+  // Refresh tick counter - increments on realtime events to trigger widget re-fetches
+  const [refreshTick, setRefreshTick] = useState(0);
 
   // Fetch LoRa sensors linked to this unit
   const { data: loraSensors } = useLoraSensorsByUnit(unitId || null);
@@ -412,6 +415,10 @@ const UnitDetail = () => {
           console.log(`[RT] sensor_readings INSERT payload id=${payload.new?.id} unit_id=${payload.new?.unit_id} recorded_at=${payload.new?.recorded_at}`);
           refreshUnitData();
           invalidateUnitCaches(queryClient, unitId);
+          
+          // Increment refreshTick to trigger widget re-fetches (e.g., DoorActivityWidget)
+          setRefreshTick(prev => prev + 1);
+          DEV && console.log('[RT] incremented refreshTick for door widget re-fetch');
         }
       )
       .subscribe((status) => {
@@ -1009,6 +1016,7 @@ const UnitDetail = () => {
             })) || []}
             lastKnownGood={lastKnownGood}
             onLogTemp={() => setModalOpen(true)}
+            refreshTick={refreshTick}
           />
         </TabsContent>
 

@@ -125,6 +125,8 @@ export interface EntityDashboardProps {
   totalUnits?: number;
   /** Callback to refetch site data after location changes */
   onSiteLocationChange?: () => void;
+  /** Refresh tick counter - increments on realtime events to trigger widget re-fetches */
+  refreshTick?: number;
 }
 
 function computeDateRange(state: TimelineState): { from: Date; to: Date } {
@@ -162,6 +164,7 @@ export function EntityDashboard({
   areas = [],
   totalUnits = 0,
   onSiteLocationChange,
+  refreshTick,
 }: EntityDashboardProps) {
   const DEV = import.meta.env.DEV;
   
@@ -250,6 +253,7 @@ export function EntityDashboard({
       recentlyAddedWidgetId,
       onClearRecentlyAdded: handleClearRecentlyAdded,
       onSiteLocationChange,
+      refreshTick,
     };
 
     // STEP 4: EntityDashboard widgetProps debug logging
@@ -269,7 +273,7 @@ export function EntityDashboard({
       result[w.i] = allProps as unknown as Record<string, unknown>;
     });
     return result;
-  }, [entityType, entityId, organizationId, siteId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange]);
+  }, [entityType, entityId, organizationId, siteId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange, refreshTick]);
 
   // Apply preview mode mock data when not in live mode
   const effectiveWidgetProps = useMemo(() => {

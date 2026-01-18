@@ -333,6 +333,8 @@ export interface WidgetProps {
   onClearRecentlyAdded?: () => void;
   /** Callback to refetch site data after location changes */
   onSiteLocationChange?: () => void;
+  /** Refresh tick counter - increments on realtime events to trigger widget re-fetches */
+  refreshTick?: number;
 }
 
 /**
