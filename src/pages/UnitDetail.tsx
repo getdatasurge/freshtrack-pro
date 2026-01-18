@@ -281,11 +281,13 @@ const UnitDetail = () => {
     };
   };
 
+  const DEV = import.meta.env.DEV;
+
   // Silent background refresh - updates data WITHOUT showing loading state
   const refreshUnitData = async () => {
     if (!unitId) return;
     
-    console.log(`[REFRESH] start unitId=${unitId}`);
+    DEV && console.log(`[REFRESH] start unitId=${unitId}`);
     
     try {
       // Fetch fresh unit header (door_state, last_reading_at, etc.) - REPLACE, don't merge
@@ -345,7 +347,7 @@ const UnitDetail = () => {
         }
       }
 
-      console.log(`[REFRESH] done`);
+      DEV && console.log(`[REFRESH] done door_state=${freshUnit?.door_state} door_last_changed_at=${freshUnit?.door_last_changed_at} last_reading_at=${freshUnit?.last_reading_at} last_temp_reading=${freshUnit?.last_temp_reading}`);
     } catch (error) {
       console.error("[REFRESH] failed:", error);
     }
@@ -419,16 +421,16 @@ const UnitDetail = () => {
       return;
     }
     
-    console.log(`[POLL] Starting 15s polling (realtime=${realtimeConnected}, visible=${isTabVisible})`);
+    DEV && console.warn(`[RT] realtime not subscribed; starting polling fallback 15s`);
     
     const interval = setInterval(() => {
-      console.log(`[POLL] tick - refreshing unitId=${unitId}`);
+      DEV && console.log(`[POLL] tick - refreshing unitId=${unitId}`);
       refreshUnitData();
       invalidateUnitCaches(queryClient, unitId);
     }, 15000);
 
     return () => {
-      console.log(`[POLL] Stopping polling`);
+      DEV && console.log(`[POLL] Stopping polling`);
       clearInterval(interval);
     };
   }, [unitId, realtimeConnected, isTabVisible]);
@@ -807,6 +809,20 @@ const UnitDetail = () => {
         >
           <Copy className="w-3 h-3" />
         </Button>
+        {DEV && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-5 px-2 text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 dark:bg-yellow-900/30 dark:hover:bg-yellow-900/50 dark:text-yellow-300"
+            onClick={() => {
+              console.log('[SMOKE] manual refresh triggered');
+              refreshUnitData();
+              invalidateUnitCaches(queryClient, unitId!);
+            }}
+          >
+            🔄 Simulate Update (DEV)
+          </Button>
+        )}
       </div>
       <HierarchyBreadcrumb
         items={[

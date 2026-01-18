@@ -163,12 +163,12 @@ export function EntityDashboard({
   totalUnits = 0,
   onSiteLocationChange,
 }: EntityDashboardProps) {
+  const DEV = import.meta.env.DEV;
+  
   // DEV LOG: Confirm when EntityDashboard re-renders with unit changes
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(
-      `[EntityDashboard] render unit door_state=${unit?.door_state} last_reading_at=${unit?.last_reading_at} last_temp_reading=${unit?.last_temp_reading}`
-    );
-  }
+  DEV && console.log(
+    `[EntityDashboard] render unit door_state=${unit?.door_state} last_reading_at=${unit?.last_reading_at} last_temp_reading=${unit?.last_temp_reading}`
+  );
 
   const { state, actions } = useLayoutManager(entityType, entityId, organizationId, userId);
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
