@@ -149,6 +149,7 @@ export function TemperatureChartWidget({
               stroke="hsl(var(--accent))"
               fill="url(#tempGradient)"
               strokeWidth={2}
+              connectNulls={true}
             />
             <Line
               type="monotone"
@@ -157,6 +158,7 @@ export function TemperatureChartWidget({
               strokeWidth={2}
               dot={false}
               activeDot={{ r: 4, fill: "hsl(var(--accent))" }}
+              connectNulls={true}
             />
             {/* Comparison overlay line (dashed) */}
             {showComparison && (
@@ -168,6 +170,7 @@ export function TemperatureChartWidget({
                 strokeDasharray="5 5"
                 dot={false}
                 activeDot={{ r: 3, fill: "hsl(var(--muted-foreground))" }}
+                connectNulls={true}
               />
             )}
           </ComposedChart>
