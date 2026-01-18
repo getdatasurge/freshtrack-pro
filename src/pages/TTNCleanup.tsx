@@ -47,7 +47,7 @@ export default function TTNCleanup() {
   const { data: jobs, isLoading: jobsLoading, refetch: refetchJobs } = useTTNDeprovisionJobs(orgId);
   const scanMutation = useScanTTNOrphans();
   const enqueueMutation = useEnqueueOrphanCleanup();
-  const retryMutation = useRetryDeprovisionJob();
+  const retryMutation = useRetryDeprovisionJob(orgId);
 
   const handleScan = async () => {
     if (!orgId) return;
