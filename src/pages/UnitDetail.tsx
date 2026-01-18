@@ -195,6 +195,66 @@ const UnitDetail = () => {
     recordedAt: string | null;
   }>({ doorOpen: null, recordedAt: null });
   
+  // STEP C: State for latest door_event - authoritative source for door state
+  const [latestDoorEvent, setLatestDoorEvent] = useState<{
+    state: string;
+    occurredAt: string;
+  } | null>(null);
+  
+  // STEP C: Fetch latest door_event on refreshTick changes
+  useEffect(() => {
+    if (!unitId) return;
+    
+    const fetchLatestDoorEvent = async () => {
+      const { data } = await supabase
+        .from('door_events')
+        .select('state, occurred_at')
+        .eq('unit_id', unitId)
+        .order('occurred_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (data) {
+        setLatestDoorEvent({
+          state: data.state,
+          occurredAt: data.occurred_at
+        });
+        DEV && console.log('[DOOR_EVENT] latest:', data);
+      }
+    };
+    
+    fetchLatestDoorEvent();
+  }, [unitId, refreshTick]);
+  
+  // STEP C: Compute effectiveDoorState that prefers door_event over units.door_state
+  const effectiveDoorState = useMemo(() => {
+    // Prefer latest door_event if it's newer than units.door_last_changed_at
+    if (latestDoorEvent && unit?.door_last_changed_at) {
+      const eventTime = new Date(latestDoorEvent.occurredAt).getTime();
+      const unitTime = new Date(unit.door_last_changed_at).getTime();
+      if (eventTime >= unitTime) {
+        return {
+          state: latestDoorEvent.state as "open" | "closed" | "unknown",
+          since: latestDoorEvent.occurredAt
+        };
+      }
+    }
+    
+    // Also prefer door_event if unit has no door_last_changed_at
+    if (latestDoorEvent && !unit?.door_last_changed_at) {
+      return {
+        state: latestDoorEvent.state as "open" | "closed" | "unknown",
+        since: latestDoorEvent.occurredAt
+      };
+    }
+    
+    // Fallback to units.door_state
+    return {
+      state: (unit?.door_state || "unknown") as "open" | "closed" | "unknown",
+      since: unit?.door_last_changed_at || null
+    };
+  }, [latestDoorEvent, unit?.door_state, unit?.door_last_changed_at]);
+  
   // Fetch latest door reading from sensor_readings when we have a door sensor
   useEffect(() => {
     if (!doorSensor?.id) {
@@ -991,8 +1051,9 @@ const UnitDetail = () => {
               temp_limit_low: unit.temp_limit_low,
               last_temp_reading: unit.last_temp_reading,
               last_reading_at: unit.last_reading_at,
-              door_state: unit.door_state,
-              door_last_changed_at: unit.door_last_changed_at,
+              // STEP C: Use effectiveDoorState from latest door_event
+              door_state: effectiveDoorState.state,
+              door_last_changed_at: effectiveDoorState.since,
             }}
             sensor={primaryLoraSensor ? {
               id: primaryLoraSensor.id,

@@ -293,11 +293,19 @@ export function SensorSimulatorPanel({ organizationId }: SensorSimulatorPanelPro
 
   const handleToggleDoorCycle = () => {
     // For now, just toggle door state - full cycle would need additional UI
-    if (config?.door_state === "open") {
-      invokeSimulator("set_door_state", { door_state: "closed" });
-    } else {
-      invokeSimulator("set_door_state", { door_state: "open" });
-    }
+    const newDoorState = config?.door_state === "open" ? "closed" : "open";
+    
+    // STEP A: Log emulator door action for pipeline tracing
+    const DEV = import.meta.env.DEV;
+    DEV && console.log('[Emulator] Door action:', {
+      action: `set_door_state -> ${newDoorState}`,
+      unitId: selectedUnit,
+      currentState: config?.door_state,
+      expectedNewState: newDoorState,
+      ts: new Date().toISOString()
+    });
+    
+    invokeSimulator("set_door_state", { door_state: newDoorState });
   };
 
   const selectedUnitData = units.find(u => u.id === selectedUnit);
