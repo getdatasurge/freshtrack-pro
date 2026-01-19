@@ -149,7 +149,8 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  const [region, setRegion] = useState("nam1");
+  // NAM1 ONLY - hardcoded cluster, no region selection
+  const region = "nam1";
   const [isEnabled, setIsEnabled] = useState(false);
   const [newApiKey, setNewApiKey] = useState("");
   const [newApplicationId, setNewApplicationId] = useState("");
@@ -245,7 +246,7 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
         };
         
         setSettings(loadedSettings);
-        setRegion(data.ttn_region || "nam1");
+        // Region is hardcoded to NAM1, no need to set from DB
         setIsEnabled(data.is_enabled ?? false);
         
         // Set application ID for the form
@@ -1077,20 +1078,14 @@ Cluster: ${region}
               </div>
               
               {/* Region Selection */}
+              {/* NAM1 Only - Display cluster info (read-only) */}
               <div className="max-w-xs mx-auto space-y-2">
-                <Label className="text-sm">Select TTN Region</Label>
-                <Select value={region} onValueChange={setRegion}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select region" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TTN_REGIONS.map((r) => (
-                      <SelectItem key={r.value} value={r.value}>
-                        {r.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-sm">TTN Cluster</Label>
+                <div className="flex items-center justify-center p-3 rounded-md border bg-muted/30">
+                  <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                    NAM1 (North America)
+                  </Badge>
+                </div>
               </div>
               
               <Button onClick={() => handleProvision(false)} disabled={isProvisioning || readOnly} size="lg">
@@ -1292,21 +1287,14 @@ Cluster: ${region}
 
               {/* Configuration Form */}
               <div className="space-y-3">
-                {/* Cluster Selection */}
+                {/* NAM1 Only - Display cluster info (read-only) */}
                 <div className="space-y-1.5">
                   <Label className="text-sm">TTN Cluster</Label>
-                  <Select value={region} onValueChange={setRegion} disabled={readOnly}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select cluster" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TTN_REGIONS.map((r) => (
-                        <SelectItem key={r.value} value={r.value}>
-                          {r.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center p-2.5 rounded-md border bg-muted/30">
+                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                      NAM1 (North America)
+                    </Badge>
+                  </div>
                 </div>
 
                 {/* Application ID */}
