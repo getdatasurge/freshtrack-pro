@@ -10,7 +10,11 @@
  * Created Org/App API keys are OUTPUT ARTIFACTS for runtime use, NOT inputs to provisioning.
  */
 
-// TTN regional Identity Server URLs
+// TTN Identity Server URL - ALWAYS eu1 for authentication and management APIs
+// This is where auth_info, user/org/app creation, and API key management happens
+export const IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network";
+
+// TTN regional Network/Application Server URLs - for webhooks and device operations
 export const REGIONAL_URLS: Record<string, string> = {
   nam1: "https://nam1.cloud.thethings.network",
   eu1: "https://eu1.cloud.thethings.network",
@@ -204,8 +208,9 @@ export async function validateMainUserApiKey(
   apiKey: string,
   requestId: string
 ): Promise<PreflightResult> {
-  const baseUrl = REGIONAL_URLS[cluster];
-  if (!baseUrl) {
+  // Validate cluster is known (for logging purposes)
+  const targetCluster = REGIONAL_URLS[cluster];
+  if (!targetCluster) {
     return {
       success: false,
       error: `Unknown cluster: ${cluster}`,
@@ -213,8 +218,10 @@ export async function validateMainUserApiKey(
     };
   }
 
-  const url = `${baseUrl}/api/v3/auth_info`;
-  console.log(`[ttnPermissions] [${requestId}] Preflight: checking Main User API Key at ${url}`);
+  // CRITICAL: auth_info is an Identity Server endpoint - ALWAYS on EU1
+  // Personal API keys are validated globally, regardless of target cluster
+  const url = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
+  console.log(`[ttnPermissions] [${requestId}] Preflight: Identity Server at ${url} (provisioning target: ${cluster})`);
   console.log(`[ttnPermissions] [${requestId}] API key last4: ...${apiKey.slice(-4)}`);
 
   try {
@@ -230,12 +237,12 @@ export async function validateMainUserApiKey(
       const errorText = await response.text();
       console.error(`[ttnPermissions] [${requestId}] Preflight failed: ${response.status} ${errorText}`);
       
-      // Check for route not found (wrong region/cluster)
+      // 404 on Identity Server auth_info is a service/network issue, not a region mismatch
       if (response.status === 404 || errorText.includes('route_not_found')) {
         return {
           success: false,
-          error: "TTN region/API base mismatch",
-          hint: `Verify TTN cluster setting matches your TTN Console region (e.g., eu1 vs nam1). Current cluster: ${cluster}`,
+          error: "TTN Identity Server unreachable",
+          hint: "The authentication endpoint returned 404. Check TTN service status at status.thethings.network or retry later.",
           statusCode: 404,
         };
       }
