@@ -982,7 +982,12 @@ Cluster: ${region}
     );
   }
 
-  const isProvisioned = settings?.provisioning_status === 'ready';
+  // Provisioned = has application ID AND has API key
+  // This aligns with TTNCredentialsPanel's getOverallStatus() logic
+  const isProvisioned = Boolean(
+    settings?.ttn_application_id && 
+    settings?.has_api_key
+  );
   const isFailed = settings?.provisioning_status === 'failed';
   const isProvisioningStatus = settings?.provisioning_status === 'provisioning';
 
