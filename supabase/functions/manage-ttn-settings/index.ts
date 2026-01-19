@@ -231,7 +231,7 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({
             exists: false,
             is_enabled: false,
-            ttn_region: "eu1",
+          ttn_region: "nam1", // NAM1 ONLY - standardized cluster
             ttn_application_id: null,
             provisioning_status: "not_started",
             has_api_key: false,
@@ -259,7 +259,7 @@ Deno.serve(async (req: Request) => {
         JSON.stringify({
           exists: true,
           is_enabled: settings.is_enabled,
-          ttn_region: settings.ttn_region || "eu1",
+          ttn_region: settings.ttn_region || "nam1", // NAM1 default
           ttn_application_id: settings.ttn_application_id,
           ttn_application_name: settings.ttn_application_name,
           // New state machine fields

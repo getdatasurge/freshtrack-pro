@@ -7,13 +7,7 @@ import { AlertTriangle, RefreshCw, Key, Building2, ExternalLink, CheckCircle2, X
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SecretField } from "./SecretField";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { TTNDiagnosticsPanel } from "@/components/ttn/TTNDiagnosticsPanel";
 
 type SecretStatus = "provisioned" | "missing" | "invalid" | "decryption_failed";
 import {
@@ -95,7 +89,8 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
   const [deepCleanConfirmChecked, setDeepCleanConfirmChecked] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [targetRegion, setTargetRegion] = useState<string>("nam1");
+  // NAM1 ONLY - hardcoded cluster, no region selection
+  const targetRegion = "nam1";
 
   // Track the last known organizationId to prevent clearing credentials during transitional states
   const lastOrgIdRef = useRef<string | null>(null);
@@ -244,13 +239,11 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
         return;
       }
 
-      const isMigrating = credentials?.ttn_region && credentials.ttn_region !== targetRegion;
-
       const { data, error } = await supabase.functions.invoke("ttn-provision-org", {
         body: { 
           action: "start_fresh",
           organization_id: organizationId,
-          ttn_region: targetRegion,
+          ttn_region: "nam1", // NAM1 ONLY - hardcoded cluster
         },
       });
 
@@ -271,11 +264,7 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
       }
 
       toast.success("Start Fresh completed", {
-        description: isMigrating 
-          ? `Migrated to ${targetRegion.toUpperCase()} cluster` 
-          : (data.app_id_rotated 
-              ? "Created new application ID under current key" 
-              : "Recreated application successfully"),
+        description: "Provisioned on NAM1 cluster successfully",
       });
       setTimeout(fetchCredentials, 2000);
     } catch (err: any) {
@@ -301,7 +290,7 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
         body: { 
           action: "deep_clean",
           organization_id: organizationId,
-          ttn_region: targetRegion,
+          ttn_region: "nam1", // NAM1 ONLY - hardcoded cluster
         },
       });
 
@@ -320,7 +309,7 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
       }
 
       toast.success("Deep clean completed", {
-        description: `Deleted ${data.deleted_devices || 0} devices. ${data.deleted_org ? 'Organization deleted.' : ''} Ready to provision on ${targetRegion.toUpperCase()}.`,
+        description: `Deleted ${data.deleted_devices || 0} devices. ${data.deleted_org ? 'Organization deleted.' : ''} Ready to provision on NAM1.`,
       });
       
       // Close dialog and refresh
@@ -605,6 +594,22 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                 </p>
               )}
 
+              {/* TTN Diagnostics Panel */}
+              {credentials && (
+                <TTNDiagnosticsPanel 
+                  data={{
+                    ttn_region: credentials.ttn_region,
+                    ttn_application_id: credentials.ttn_application_id,
+                    provisioning_status: credentials.provisioning_status,
+                    last_http_status: credentials.last_http_status,
+                    last_http_body: credentials.last_http_body,
+                    webhook_url: credentials.webhook_url,
+                    webhook_secret_last4: credentials.webhook_secret_last4,
+                  }}
+                  className="mt-3"
+                />
+              )}
+
               {/* Actions */}
               <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-border/50">
                 {/* Read-only notice for managers */}
@@ -615,23 +620,16 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                   </Badge>
                 )}
 
-                {/* Region Selector - show when not read-only and there's an existing app or we're setting up */}
-                {!readOnly && organizationId && (
+                {/* NAM1 Only - Display current cluster info (read-only) */}
+                {organizationId && (
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <Select value={targetRegion} onValueChange={setTargetRegion}>
-                      <SelectTrigger className="w-44 h-9">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="nam1">NAM1 (North America)</SelectItem>
-                        <SelectItem value="eu1">EU1 (Europe)</SelectItem>
-                        <SelectItem value="au1">AU1 (Australia)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {credentials?.ttn_region && credentials.ttn_region !== targetRegion && (
+                    <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
+                      NAM1 (North America)
+                    </Badge>
+                    {credentials?.ttn_region && credentials.ttn_region !== "nam1" && (
                       <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30">
-                        Migrate from {credentials.ttn_region.toUpperCase()}
+                        Migrating from {credentials.ttn_region.toUpperCase()}
                       </Badge>
                     )}
                   </div>
@@ -845,29 +843,29 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-warning" />
-              Start Fresh{credentials?.ttn_region && credentials.ttn_region !== targetRegion ? ` & Migrate to ${targetRegion.toUpperCase()}` : ''}?
+              Start Fresh on NAM1?
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-3">
-              <p>This will deprovision and re-provision all TTN resources. This action:</p>
+              <p>This will deprovision and re-provision all TTN resources on NAM1. This action:</p>
               <ul className="list-disc list-inside space-y-1 text-sm">
-                <li>Creates a new TTN application with fresh credentials</li>
+                <li>Creates a new TTN application with fresh credentials on <strong>NAM1</strong></li>
                 <li>Invalidates all existing API keys immediately</li>
                 <li>May temporarily interrupt active sensor connections</li>
                 <li>All devices will need to rejoin the new application</li>
-                {credentials?.ttn_region && credentials.ttn_region !== targetRegion && (
+                {credentials?.ttn_region && credentials.ttn_region !== "nam1" && (
                   <li className="text-warning font-medium">
-                    Migrates from {credentials.ttn_region.toUpperCase()} to {targetRegion.toUpperCase()} cluster
+                    Migrates from {credentials.ttn_region.toUpperCase()} to NAM1 cluster
                   </li>
                 )}
               </ul>
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          {credentials?.ttn_region && credentials.ttn_region !== targetRegion && (
+          {credentials?.ttn_region && credentials.ttn_region !== "nam1" && (
             <div className="flex items-center gap-2 p-3 bg-warning/10 rounded-lg border border-warning/30">
               <MapPin className="h-4 w-4 text-warning" />
               <span className="text-sm">
-                <strong>Region Migration:</strong> {credentials.ttn_region.toUpperCase()} → {targetRegion.toUpperCase()}
+                <strong>Region Migration:</strong> {credentials.ttn_region.toUpperCase()} → NAM1
               </span>
             </div>
           )}
@@ -901,8 +899,8 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                   Starting Fresh...
                 </>
               ) : (
-                credentials?.ttn_region && credentials.ttn_region !== targetRegion 
-                  ? `Migrate to ${targetRegion.toUpperCase()}`
+                credentials?.ttn_region && credentials.ttn_region !== "nam1" 
+                  ? "Migrate to NAM1"
                   : "Start Fresh"
               )}
             </AlertDialogAction>
@@ -934,7 +932,7 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
                 After this, you will need to:
               </p>
               <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                <li>Click "Start Provisioning" to create new TTN resources on <strong>{targetRegion.toUpperCase()}</strong></li>
+                <li>Click "Start Provisioning" to create new TTN resources on <strong>NAM1</strong></li>
                 <li>Re-provision all your sensors</li>
               </ul>
             </AlertDialogDescription>
