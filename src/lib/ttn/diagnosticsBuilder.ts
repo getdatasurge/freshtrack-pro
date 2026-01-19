@@ -166,7 +166,7 @@ export async function buildTTNDiagnostics(
     config: {
       state: context?.state || 'local_draft',
       source: context?.source || 'LOCAL',
-      region: settings?.cluster || null,
+      region: 'nam1', // NAM1 only - hardcoded, ignore stale DB value
       application_id: settings?.application_id || null,
       api_key_last4: settings?.api_key_last4 || null,
       webhook_configured: settings?.is_enabled || false,
