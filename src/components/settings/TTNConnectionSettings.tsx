@@ -1005,6 +1005,17 @@ Cluster: ${region}
   const isFailed = settings?.provisioning_status === 'failed';
   const isProvisioningStatus = settings?.provisioning_status === 'provisioning';
 
+  // Webhook permission issues - separate from overall validity
+  const webhookIssues = validationResult?.permissions && (
+    !validationResult.permissions.can_configure_webhook
+  );
+
+  // Compute effective state for badge display
+  // If latest validation passed, override any stale "invalid" state
+  const effectiveState = (ttnContext.state === 'invalid' && validationResult?.valid === true) 
+    ? 'validated' 
+    : ttnContext.state;
+
   return (
     <Card>
       <CardHeader>
@@ -1014,12 +1025,12 @@ Cluster: ${region}
             TTN Connection
           </CardTitle>
           <div className="flex items-center gap-2">
-            <TTNConfigSourceBadge context={ttnContext} size="sm" />
+            <TTNConfigSourceBadge context={{ ...ttnContext, state: effectiveState }} size="sm" />
             <TTNDiagnosticsDownload 
-              context={ttnContext} 
+              context={{ ...ttnContext, state: effectiveState }} 
               organizationId={organizationId}
               settings={settings ? {
-                cluster: settings.ttn_region || undefined,
+                cluster: 'nam1', // NAM1 only - hardcoded
                 application_id: settings.ttn_application_id || undefined,
                 api_key_last4: settings.api_key_last4 || undefined,
                 webhook_url: settings.webhook_url || undefined,
@@ -1052,6 +1063,25 @@ Cluster: ${region}
                 <p className="text-sm font-medium text-warning">TTN Bootstrap Service Issue</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {bootstrapHealthError}. Some TTN configuration features may not work correctly.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Webhook Permissions Warning - separate from overall validity */}
+        {isProvisioned && webhookIssues && !bootstrapHealthError && (
+          <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-warning mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-warning">Webhook Not Configured</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The API key lacks webhook permissions. Sensor data ingestion will not work until webhooks are configured.
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  <strong>Resolution:</strong> Re-provision with "Start Fresh" to get a new API key with full permissions, 
+                  or manually configure the webhook in TTN Console.
                 </p>
               </div>
             </div>
