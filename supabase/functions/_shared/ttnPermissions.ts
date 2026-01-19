@@ -479,13 +479,31 @@ export async function fetchTtnRights(
 }
 
 // ============================================================================
+// WILDCARD RIGHTS HELPER
+// Checks if a right is granted, supporting _ALL wildcards (e.g., RIGHT_APPLICATION_ALL)
+// ============================================================================
+function hasRight(rights: string[], requiredRight: string): boolean {
+  // Direct match
+  if (rights.includes(requiredRight)) return true;
+  
+  // Check for _ALL wildcard patterns
+  if (requiredRight.startsWith('RIGHT_APPLICATION_') && rights.includes('RIGHT_APPLICATION_ALL')) return true;
+  if (requiredRight.startsWith('RIGHT_ORGANIZATION_') && rights.includes('RIGHT_ORGANIZATION_ALL')) return true;
+  if (requiredRight.startsWith('RIGHT_GATEWAY_') && rights.includes('RIGHT_GATEWAY_ALL')) return true;
+  if (requiredRight.startsWith('RIGHT_USER_') && rights.includes('RIGHT_USER_ALL')) return true;
+  if (requiredRight.startsWith('RIGHT_CLIENT_') && rights.includes('RIGHT_CLIENT_ALL')) return true;
+  
+  return false;
+}
+
+// ============================================================================
 // COMPUTE PERMISSION REPORT
 // ============================================================================
 export function computePermissionReport(rights: string[]): PermissionReport {
-  const missing_core = REQUIRED_RIGHTS.core.filter(r => !rights.includes(r));
-  const missing_webhook = REQUIRED_RIGHTS.webhook.filter(r => !rights.includes(r));
-  const missing_devices = REQUIRED_RIGHTS.devices.filter(r => !rights.includes(r));
-  const missing_downlink = REQUIRED_RIGHTS.downlink.filter(r => !rights.includes(r));
+  const missing_core = REQUIRED_RIGHTS.core.filter(r => !hasRight(rights, r));
+  const missing_webhook = REQUIRED_RIGHTS.webhook.filter(r => !hasRight(rights, r));
+  const missing_devices = REQUIRED_RIGHTS.devices.filter(r => !hasRight(rights, r));
+  const missing_downlink = REQUIRED_RIGHTS.downlink.filter(r => !hasRight(rights, r));
   
   const report: PermissionReport = {
     valid: missing_core.length === 0,

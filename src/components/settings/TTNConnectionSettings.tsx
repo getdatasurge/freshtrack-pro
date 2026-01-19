@@ -256,9 +256,10 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
         
         // Mark context as canonical if we have valid settings from DB
         // This clears any stale "invalid" state from previous sessions
-        if (data.exists && data.ttn_application_id) {
+        // CRITICAL: Check for BOTH application_id AND api_key to ensure complete credentials
+        if (data.exists && data.ttn_application_id && data.has_api_key) {
           const hash = hashConfigValues({
-            cluster: data.ttn_region || 'nam1',
+            cluster: 'nam1', // NAM1 only - hardcoded
             application_id: data.ttn_application_id,
             api_key_last4: data.api_key_last4,
             is_enabled: data.is_enabled,
@@ -266,11 +267,13 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
           console.log('[TTN Config] Loaded from DB, setting canonical', { 
             org_id: organizationId, 
             app_id: data.ttn_application_id,
+            has_api_key: data.has_api_key,
             hash 
           });
           setCanonical(hash);
         } else if (data.exists) {
-          // TTN connection exists but no application ID yet - reset to draft
+          // TTN connection exists but incomplete credentials - reset to draft
+          // This clears any stale "invalid" state
           resetToDraft();
         }
       }

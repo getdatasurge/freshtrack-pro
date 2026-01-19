@@ -859,17 +859,18 @@ Deno.serve(async (req: Request) => {
         has_api_key: !!updates.api_key,
       });
 
-      // Validate: if enabling, require provisioned application
+      // Validate: if enabling, require provisioned application with credentials
       if (updates.is_enabled === true) {
         const { data: existingCheck } = await supabaseAdmin
           .from("ttn_connections")
-          .select("ttn_application_id, provisioning_status")
+          .select("ttn_application_id, ttn_api_key_encrypted, provisioning_status")
           .eq("organization_id", organizationId)
           .maybeSingle();
 
-        // Accept both "completed" and "ready" as valid completed states
-        const validStatuses = ["completed", "ready"];
-        if (!existingCheck?.ttn_application_id || !validStatuses.includes(existingCheck.provisioning_status || "")) {
+        // Check for actual credentials, not just provisioning_status field
+        // This fixes orgs stuck in 'idle' status but with valid credentials
+        const hasCredentials = existingCheck?.ttn_application_id && existingCheck?.ttn_api_key_encrypted;
+        if (!hasCredentials) {
           return new Response(
             JSON.stringify({ 
               error: "TTN application required", 
