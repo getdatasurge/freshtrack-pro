@@ -163,7 +163,7 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
   const [validationResult, setValidationResult] = useState<TTNValidationResult | null>(null);
 
   // TTN Config Context for state management
-  const { context: ttnContext, setValidated, setCanonical, setInvalid, checkForDrift } = useTTNConfig();
+  const { context: ttnContext, setValidated, setCanonical, setInvalid, checkForDrift, resetToDraft } = useTTNConfig();
 
   // Webhook edit mode state
   const [isEditingWebhook, setIsEditingWebhook] = useState(false);
@@ -255,6 +255,7 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
         }
         
         // Mark context as canonical if we have valid settings from DB
+        // This clears any stale "invalid" state from previous sessions
         if (data.exists && data.ttn_application_id) {
           const hash = hashConfigValues({
             cluster: data.ttn_region || 'nam1',
@@ -268,6 +269,9 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
             hash 
           });
           setCanonical(hash);
+        } else if (data.exists) {
+          // TTN connection exists but no application ID yet - reset to draft
+          resetToDraft();
         }
       }
     } catch (err) {
@@ -277,7 +281,7 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
     } finally {
       setIsLoading(false);
     }
-  }, [organizationId, setCanonical, setInvalid]);
+  }, [organizationId, setCanonical, setInvalid, resetToDraft]);
 
   // Check bootstrap service health on mount
   const checkBootstrapHealth = useCallback(async () => {
@@ -366,36 +370,46 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
           applicationId: effectiveAppId,
         });
         
-        // Update TTN config context
-        if (data.permissions) {
-          setValidated({
-            valid: true,
-            api_key_type: 'application',
-            permissions: {
-              applications_read: data.permissions.rights?.includes('RIGHT_APPLICATION_INFO') ?? false,
-              applications_write: data.permissions.rights?.includes('RIGHT_APPLICATION_SETTINGS_BASIC') ?? false,
-              devices_read: data.permissions.rights?.includes('RIGHT_APPLICATION_DEVICES_READ') ?? false,
-              devices_write: data.permissions.rights?.includes('RIGHT_APPLICATION_DEVICES_WRITE') ?? false,
-              gateways_read: false,
-              gateways_write: false,
-              webhooks_write: data.permissions.can_configure_webhook ?? false,
-              can_configure_webhook: data.permissions.can_configure_webhook ?? false,
-              can_manage_devices: data.permissions.can_manage_devices ?? false,
-              can_provision_gateways: false,
-              rights: data.permissions.rights || [],
-            },
-            missing_permissions: data.permissions.missing_core || [],
-            invalid_fields: [],
-            warnings: data.warnings || [],
-            validated_at: new Date().toISOString(),
-            request_id: data.request_id || '',
-            resolved: { 
-              cluster: region, 
-              application_id: effectiveAppId,
-              organization_id: organizationId,
-            },
-          });
-        }
+        // Update TTN config context - always call setValidated on success to clear any stale "invalid" state
+        setValidated({
+          valid: true,
+          api_key_type: 'application',
+          permissions: data.permissions ? {
+            applications_read: data.permissions.rights?.includes('RIGHT_APPLICATION_INFO') ?? false,
+            applications_write: data.permissions.rights?.includes('RIGHT_APPLICATION_SETTINGS_BASIC') ?? false,
+            devices_read: data.permissions.rights?.includes('RIGHT_APPLICATION_DEVICES_READ') ?? false,
+            devices_write: data.permissions.rights?.includes('RIGHT_APPLICATION_DEVICES_WRITE') ?? false,
+            gateways_read: false,
+            gateways_write: false,
+            webhooks_write: data.permissions.can_configure_webhook ?? false,
+            can_configure_webhook: data.permissions.can_configure_webhook ?? false,
+            can_manage_devices: data.permissions.can_manage_devices ?? false,
+            can_provision_gateways: false,
+            rights: data.permissions.rights || [],
+          } : {
+            applications_read: false,
+            applications_write: false,
+            devices_read: false,
+            devices_write: false,
+            gateways_read: false,
+            gateways_write: false,
+            webhooks_write: false,
+            can_configure_webhook: false,
+            can_manage_devices: false,
+            can_provision_gateways: false,
+            rights: [],
+          },
+          missing_permissions: data.permissions?.missing_core || [],
+          invalid_fields: [],
+          warnings: data.warnings || [],
+          validated_at: new Date().toISOString(),
+          request_id: data.request_id || '',
+          resolved: { 
+            cluster: region, 
+            application_id: effectiveAppId,
+            organization_id: organizationId,
+          },
+        });
       } else {
         // Validation failed - NOT a transport error, log as INFO
         console.info("[TTN Validation] Configuration invalid:", {
