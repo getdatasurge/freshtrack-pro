@@ -1166,10 +1166,10 @@ Cluster: ${region}
                       <span className="text-muted-foreground">Application ID:</span>
                       <code className="bg-muted px-2 py-0.5 rounded text-xs">{settings.ttn_application_id}</code>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Region:</span>
-                      <span>{TTN_REGIONS.find(r => r.value === settings.ttn_region)?.label || settings.ttn_region}</span>
-                    </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Region:</span>
+                  <span>North America (nam1)</span>
+                </div>
                     {settings.provisioned_at && (
                       <div className="flex items-center justify-between">
                         <span className="text-muted-foreground">Provisioned:</span>
