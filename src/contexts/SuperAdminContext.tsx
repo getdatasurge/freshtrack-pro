@@ -250,7 +250,10 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     checkSuperAdminStatus();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+      // Only recheck on actual sign in/out, NOT on token refresh
+      // Token refresh happens frequently (tab visibility changes, session renewal)
+      // and doesn't change the user's super admin status
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
         checkSuperAdminStatus();
       }
 
