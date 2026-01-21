@@ -44,7 +44,18 @@ import PlatformDeveloperTools from "./pages/platform/PlatformDeveloperTools";
 import { PlatformGuard, ImpersonationCacheSync } from "./components/platform";
 import { RequireImpersonationGuard } from "./components/guards/RequireImpersonationGuard";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Don't refetch on window focus - prevents cascade of refetches when switching tabs
+      refetchOnWindowFocus: false,
+      // Keep data fresh for 30 seconds before considering it stale
+      staleTime: 30 * 1000,
+      // Retry failed requests once
+      retry: 1,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
