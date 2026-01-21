@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { qk } from "@/lib/queryKeys";
 
 export type TtnProvisioningState =
   | "not_configured"
@@ -13,6 +14,7 @@ export type ProvisionedSource = "emulator" | "app" | "unknown" | "manual";
 
 export interface CheckTtnResult {
   sensor_id: string;
+  organization_id: string;
   provisioning_state: TtnProvisioningState;
   ttn_device_id?: string;
   ttn_app_id?: string;
@@ -56,7 +58,12 @@ export function useCheckTtnProvisioningState() {
       return data as CheckTtnResponse;
     },
     onSuccess: (data) => {
-      // Invalidate sensor queries to refresh UI
+      // Invalidate sensor queries using correct org-scoped keys
+      const orgIds = [...new Set(data.results.map(r => r.organization_id).filter(Boolean))];
+      orgIds.forEach(orgId => {
+        queryClient.invalidateQueries({ queryKey: qk.org(orgId).loraSensors() });
+      });
+      // Also invalidate legacy flat key for backwards compatibility
       queryClient.invalidateQueries({ queryKey: ["lora-sensors"] });
 
       // Show summary toast

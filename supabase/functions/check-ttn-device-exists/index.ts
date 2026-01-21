@@ -26,6 +26,7 @@ interface CheckRequest {
 
 interface CheckResult {
   sensor_id: string;
+  organization_id: string;
   provisioning_state: "not_configured" | "unknown" | "exists_in_ttn" | "missing_in_ttn" | "error";
   ttn_device_id?: string;
   ttn_app_id?: string;
@@ -167,6 +168,7 @@ Deno.serve(async (req) => {
         for (const sensor of orgSensors) {
           const result: CheckResult = {
             sensor_id: sensor.id,
+            organization_id: orgId,
             provisioning_state: sensor.dev_eui ? "not_configured" : "not_configured",
             error: "TTN not configured for organization",
             checked_at: now,
@@ -223,6 +225,7 @@ Deno.serve(async (req) => {
       for (const sensor of orgSensors) {
         const result: CheckResult = {
           sensor_id: sensor.id,
+          organization_id: orgId,
           provisioning_state: "unknown",
           ttn_app_id: config.application_id,
           ttn_cluster: config.cluster,
