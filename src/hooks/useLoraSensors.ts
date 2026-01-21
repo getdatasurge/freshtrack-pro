@@ -221,9 +221,15 @@ export function useDeleteLoraSensor() {
     },
     onSuccess: async ({ orgId, unitId }) => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: qk.org(orgId).loraSensors() }),
-        queryClient.invalidateQueries({ queryKey: ["ttn-deprovision-jobs"] }),
-        unitId ? queryClient.invalidateQueries({ queryKey: qk.unit(unitId).loraSensors() }) : Promise.resolve(),
+        queryClient.invalidateQueries({ 
+          queryKey: qk.org(orgId).loraSensors(),
+          refetchType: 'active'
+        }),
+        queryClient.invalidateQueries({ queryKey: qk.org(orgId).ttnDeprovisionJobs() }),
+        unitId ? queryClient.invalidateQueries({ 
+          queryKey: qk.unit(unitId).loraSensors(),
+          refetchType: 'active'
+        }) : Promise.resolve(),
         queryClient.invalidateQueries({ queryKey: qk.org(orgId).navTree() }),
       ]);
       toast.success("Sensor archived. TTN cleanup will run in the background.");
