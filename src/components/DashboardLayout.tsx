@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useState, useRef } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -69,12 +69,22 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
   // Use effectiveOrgId directly for sidebar - it already handles impersonation internally
   // The hook returns impersonated org when impersonating, real org otherwise
-  const sidebarOrgId = effectiveOrgId;
+  // Keep a stable reference to prevent sidebar flicker when org is temporarily null
+  const lastValidOrgIdRef = useRef<string | null>(null);
+  if (effectiveOrgId) {
+    lastValidOrgIdRef.current = effectiveOrgId;
+  }
+  // Use the current effectiveOrgId if available, otherwise fall back to last known valid value
+  const sidebarOrgId = effectiveOrgId || lastValidOrgIdRef.current;
   const displayOrgName = effectiveOrgName || realOrgName;
 
-  // Debug logging for impersonation state (always log for debugging)
+  // Debug logging for impersonation state changes (only log when value actually changes)
+  const prevOrgIdRef = useRef<string | null>(null);
   useEffect(() => {
-    console.warn('[DashboardLayout] Sidebar org:', sidebarOrgId, 'effectiveOrgId:', effectiveOrgId, 'isImpersonating:', isImpersonating);
+    if (prevOrgIdRef.current !== effectiveOrgId) {
+      console.warn('[DashboardLayout] Sidebar org:', sidebarOrgId, 'effectiveOrgId:', effectiveOrgId, 'isImpersonating:', isImpersonating);
+      prevOrgIdRef.current = effectiveOrgId;
+    }
   }, [sidebarOrgId, effectiveOrgId, isImpersonating]);
 
   // Redirect platform-only super admins to /platform (only when NOT in support mode / impersonating)
