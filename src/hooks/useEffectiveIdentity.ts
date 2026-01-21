@@ -11,7 +11,7 @@
  * This hook should be used by all data-fetching components to ensure proper scoping.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useSuperAdmin } from '@/contexts/SuperAdminContext';
 
@@ -80,18 +80,21 @@ function getStoredImpersonation(): StoredImpersonation | null {
 }
 
 export function useEffectiveIdentity(): EffectiveIdentity {
-  const { 
-    isSuperAdmin, 
-    rolesLoaded, 
-    impersonation, 
-    isSupportModeActive 
+  const {
+    isSuperAdmin,
+    rolesLoaded,
+    impersonation,
+    isSupportModeActive
   } = useSuperAdmin();
-  
+
   const [realUserId, setRealUserId] = useState<string | null>(null);
   const [realOrgId, setRealOrgId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [realIdentityLoaded, setRealIdentityLoaded] = useState(false);
   const [impersonationChecked, setImpersonationChecked] = useState(false);
+
+  // Track if initial load has completed to avoid resetting state on subsequent refreshes
+  const initialLoadCompleteRef = useRef(false);
   
   // Server-validated impersonation state - Initialize SYNCHRONOUSLY from localStorage
   // This is critical to prevent the race condition where effectiveOrgId is null
@@ -218,30 +221,53 @@ export function useEffectiveIdentity(): EffectiveIdentity {
 
   // Initialize identity
   const refresh = useCallback(async () => {
-    setIsLoading(true);
-    setImpersonationChecked(false);
-    setRealIdentityLoaded(false);
+    // Only reset loading states on initial load to prevent state oscillation
+    // After initial load, keep existing values while fetching updates
+    if (!initialLoadCompleteRef.current) {
+      setIsLoading(true);
+      setImpersonationChecked(false);
+      setRealIdentityLoaded(false);
+    }
     try {
       await loadRealIdentity();
       setRealIdentityLoaded(true);
-      
+
       if (rolesLoaded && isSuperAdmin && isSupportModeActive) {
         await validateServerImpersonation();
       }
       setImpersonationChecked(true);
+      initialLoadCompleteRef.current = true;
     } catch (err) {
       console.error('Error in refresh:', err);
       setRealIdentityLoaded(true);
       setImpersonationChecked(true);
+      initialLoadCompleteRef.current = true;
     } finally {
       setIsLoading(false);
     }
   }, [loadRealIdentity, validateServerImpersonation, rolesLoaded, isSuperAdmin, isSupportModeActive]);
 
-  // Initial load and when auth/roles change
+  // Initial load - only run once on mount
+  const hasRunInitialLoad = useRef(false);
   useEffect(() => {
-    refresh();
+    if (!hasRunInitialLoad.current) {
+      hasRunInitialLoad.current = true;
+      refresh();
+    }
   }, [refresh]);
+
+  // Re-validate impersonation when super admin context settles (without resetting identity)
+  const prevRolesLoadedRef = useRef(rolesLoaded);
+  useEffect(() => {
+    // Only trigger when roles become loaded (transition from false to true)
+    if (rolesLoaded && !prevRolesLoadedRef.current && initialLoadCompleteRef.current) {
+      if (isSuperAdmin && isSupportModeActive) {
+        validateServerImpersonation();
+      }
+      setImpersonationChecked(true);
+    }
+    prevRolesLoadedRef.current = rolesLoaded;
+  }, [rolesLoaded, isSuperAdmin, isSupportModeActive, validateServerImpersonation]);
 
   // Sync with SuperAdminContext impersonation state
   useEffect(() => {
