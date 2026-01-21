@@ -298,9 +298,36 @@ const getProvisionErrorMessage = (error: string): string => {
   if (error.includes('SENSOR_KEYS_MISSING')) {
     return "Sensor missing OTAA credentials (AppKey). Edit sensor to add credentials.";
   }
-  if (error.includes('already exists') || error.includes('409')) {
-    return "Device already registered in TTN.";
+  
+  // Parse specific TTN "already registered" errors with device/application details
+  if (error.includes('end_device_euis_taken') || error.includes('already registered')) {
+    // Try to extract device_id and application from the error message
+    const deviceIdMatch = error.match(/device[_\s]?id[:\s]+['"]?([a-z0-9-]+)['"]?/i);
+    const applicationMatch = error.match(/application[_\s]?(?:id)?[:\s]+['"]?([a-z0-9-]+)['"]?/i);
+    const devEuiMatch = error.match(/DevEUI[:\s]+['"]?([A-Fa-f0-9]+)['"]?/i);
+    
+    let details = "Device already registered in TTN";
+    
+    if (deviceIdMatch || applicationMatch) {
+      details = "Device already exists in TTN";
+      if (deviceIdMatch) {
+        details += ` as '${deviceIdMatch[1]}'`;
+      }
+      if (applicationMatch) {
+        details += ` in application '${applicationMatch[1]}'`;
+      }
+      details += ". Use 'Check Status' to sync, or delete the device in TTN Console first.";
+    } else if (devEuiMatch) {
+      details = `DevEUI ${devEuiMatch[1]} is already registered in TTN. Use 'Check Status' to sync.`;
+    }
+    
+    return details;
   }
+  
+  if (error.includes('409')) {
+    return "Device already registered in TTN. Use 'Check Status' to sync.";
+  }
+  
   return error;
 };
 
