@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { deobfuscateKey, normalizeDevEui } from "../_shared/ttnConfig.ts";
 
 const BUILD_VERSION = "check-ttn-device-exists-v2.0-deveui-lookup-20260115";
 
@@ -6,6 +7,17 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// TTN v3 Identity Server is always eu1 (authoritative for application + device registries)
+const IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network";
+
+function normalizeRegion(input: string | null | undefined): string {
+  const raw = (input || "nam1").toLowerCase().trim();
+  // Accept: "nam1", "nam1.cloud.thethings.network", "https://nam1.cloud.thethings.network"
+  const withoutProto = raw.replace(/^https?:\/\//, "");
+  const firstPart = withoutProto.split(".")[0];
+  return firstPart || "nam1";
+}
 
 interface CheckRequest {
   sensor_id?: string;
@@ -124,31 +136,13 @@ Deno.serve(async (req) => {
     const configMap = new Map<string, TTNConfig>();
     for (const cfg of ttnConfigs || []) {
       if (cfg.ttn_api_key_encrypted && cfg.ttn_application_id && cfg.ttn_region) {
-        // Deobfuscate the API key - it may be plain base64 (b64: prefix) or XOR obfuscated
-        let apiKey = cfg.ttn_api_key_encrypted;
-        try {
-          if (apiKey.startsWith("b64:")) {
-            // Plain base64 encoded
-            apiKey = atob(apiKey.slice(4));
-          } else {
-            // Try legacy XOR deobfuscation with org_id as salt
-            const salt = cfg.organization_id;
-            const decoded = atob(apiKey);
-            const saltBytes = new TextEncoder().encode(salt);
-            const resultBytes = new Uint8Array(decoded.length);
-            for (let i = 0; i < decoded.length; i++) {
-              resultBytes[i] = decoded.charCodeAt(i) ^ saltBytes[i % saltBytes.length];
-            }
-            apiKey = new TextDecoder().decode(resultBytes);
-          }
-        } catch (e) {
-          console.warn(`[check-ttn-device-exists] [${requestId}] Failed to deobfuscate key for org ${cfg.organization_id}, using as-is`);
-        }
+        const apiKey = deobfuscateKey(cfg.ttn_api_key_encrypted, cfg.organization_id);
+        const region = normalizeRegion(cfg.ttn_region);
         
         configMap.set(cfg.organization_id, {
           api_key: apiKey,
           application_id: cfg.ttn_application_id,
-          cluster: cfg.ttn_region,
+          cluster: region,
         });
       }
     }
@@ -190,7 +184,9 @@ Deno.serve(async (req) => {
       let listError: string | null = null;
 
       try {
-        const listUrl = `https://${config.cluster}.cloud.thethings.network/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui`;
+        // NOTE: Device registry queries should go via Identity Server.
+        // We still store/report the configured regional cluster (nam1), but list via eu1.
+        const listUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui`;
         
         const listResponse = await fetch(listUrl, {
           method: "GET",
@@ -207,7 +203,8 @@ Deno.serve(async (req) => {
           ttnDeviceMap = new Map();
           for (const device of devices) {
             if (device.ids?.dev_eui && device.ids?.device_id) {
-              const normalizedDevEui = device.ids.dev_eui.toLowerCase().replace(/[:\-\s]/g, '');
+              const normalizedDevEui = normalizeDevEui(device.ids.dev_eui);
+              if (!normalizedDevEui) continue;
               ttnDeviceMap.set(normalizedDevEui, device.ids.device_id);
             }
           }
@@ -251,7 +248,14 @@ Deno.serve(async (req) => {
         }
 
         // Look up sensor's DevEUI in the TTN device map
-        const normalizedDevEui = sensor.dev_eui.toLowerCase().replace(/[:\-\s]/g, '');
+        const normalizedDevEui = normalizeDevEui(sensor.dev_eui);
+        if (!normalizedDevEui) {
+          result.provisioning_state = "not_configured";
+          result.error = "Invalid DevEUI format";
+          await updateSensor(supabase, sensor.id, result);
+          results.push(result);
+          continue;
+        }
         const ttnDeviceId = ttnDeviceMap?.get(normalizedDevEui);
 
         if (ttnDeviceId) {
