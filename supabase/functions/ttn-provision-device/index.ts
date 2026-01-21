@@ -256,19 +256,64 @@ serve(async (req) => {
         }
       );
 
-      if (!createDeviceResponse.ok && createDeviceResponse.status !== 409) {
+      if (!createDeviceResponse.ok) {
         const errorText = await createDeviceResponse.text();
-        console.error(`[ttn-provision-device] Failed to create device in IS: ${errorText}`);
         
-        await supabase
-          .from("lora_sensors")
-          .update({ status: "fault" })
-          .eq("id", sensor_id);
-        
-        return new Response(
-          JSON.stringify({ error: "Failed to register device in TTN", details: errorText }),
-          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        // Handle 409 Conflict - check if device is in a DIFFERENT application
+        if (createDeviceResponse.status === 409) {
+          console.log(`[ttn-provision-device] 409 Conflict response: ${errorText}`);
+          
+          // Parse for cross-app conflict indicators
+          const isCrossAppConflict = errorText.includes("end_device_euis_taken") || 
+                                      errorText.includes("already registered");
+          
+          if (isCrossAppConflict) {
+            // Try to extract the conflicting application ID
+            const appMatch = errorText.match(/application[`\s]+([a-z0-9-]+)/i);
+            const existingApp = appMatch?.[1] || "another application";
+            
+            // If it's in a DIFFERENT app, this is a hard error
+            if (existingApp !== ttnAppId) {
+              console.error(`[ttn-provision-device] Cross-app conflict: DevEUI exists in ${existingApp}, not ${ttnAppId}`);
+              
+              await supabase
+                .from("lora_sensors")
+                .update({ 
+                  status: "fault",
+                  provisioning_state: "conflict",
+                  last_provision_check_error: `DevEUI already registered in TTN application: ${existingApp}`
+                })
+                .eq("id", sensor_id);
+              
+              return new Response(
+                JSON.stringify({
+                  success: false,
+                  error: "Device already registered in another TTN application",
+                  details: `DevEUI ${sensor.dev_eui.toUpperCase()} is registered in application "${existingApp}". It must be deleted from that application before it can be provisioned here.`,
+                  existing_application: existingApp,
+                  hint: `Go to TTN Console → Application "${existingApp}" → End devices and delete this device first.`
+                }),
+                { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+            
+            // Device exists in the SAME app - this is okay, continue
+            console.log(`[ttn-provision-device] Device already exists in target app ${ttnAppId}, continuing...`);
+          }
+        } else {
+          // Non-409 error
+          console.error(`[ttn-provision-device] Failed to create device in IS: ${errorText}`);
+          
+          await supabase
+            .from("lora_sensors")
+            .update({ status: "fault" })
+            .eq("id", sensor_id);
+          
+          return new Response(
+            JSON.stringify({ error: "Failed to register device in TTN", details: errorText }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
 
       // Step 2: Set device in Join Server (OTAA credentials)
@@ -302,7 +347,47 @@ serve(async (req) => {
 
         if (!jsResponse.ok) {
           const errorText = await jsResponse.text();
-          console.warn(`[ttn-provision-device] JS registration warning: ${errorText}`);
+          console.error(`[ttn-provision-device] JS registration failed: ${errorText}`);
+          
+          // Check for cross-app EUI conflict at Join Server level
+          if (errorText.includes("end_device_euis_taken") || errorText.includes("already registered")) {
+            const appMatch = errorText.match(/application[`\s]+([a-z0-9-]+)/i);
+            const existingApp = appMatch?.[1] || "another application";
+            
+            await supabase
+              .from("lora_sensors")
+              .update({ 
+                status: "fault",
+                provisioning_state: "conflict",
+                last_provision_check_error: `DevEUI/AppKey already claimed by: ${existingApp}`
+              })
+              .eq("id", sensor_id);
+            
+            return new Response(
+              JSON.stringify({
+                success: false,
+                error: "Device keys already claimed by another TTN application",
+                details: `The DevEUI or AppKey for ${sensor.dev_eui.toUpperCase()} is already registered in "${existingApp}". Delete the device there first.`,
+                existing_application: existingApp,
+              }),
+              { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+          
+          // Other JS errors are still hard failures
+          await supabase
+            .from("lora_sensors")
+            .update({ status: "fault" })
+            .eq("id", sensor_id);
+          
+          return new Response(
+            JSON.stringify({ 
+              success: false,
+              error: "Failed to register device keys in TTN Join Server", 
+              details: errorText 
+            }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         }
       }
 
