@@ -40,6 +40,7 @@ import { formatDistanceToNow } from "date-fns";
 import { SENSOR_STATUS_CONFIG, SENSOR_COLUMN_TOOLTIPS } from "@/lib/entityStatusConfig";
 import { cn } from "@/lib/utils";
 import { debugLog } from "@/lib/debugLogger";
+import { qk } from "@/lib/queryKeys";
 import { useTTNConfig } from "@/contexts/TTNConfigContext";
 import { checkTTNOperationAllowed } from "@/lib/ttn/guards";
 import { TtnProvisioningStatusBadge, TtnActions } from "./TtnProvisioningStatusBadge";
@@ -298,7 +299,10 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   const handleForceRefresh = async () => {
     setIsRefreshing(true);
     debugLog.info('crud', 'SENSORS_FORCE_REFRESH', { org_id: organizationId });
-    await queryClient.invalidateQueries({ queryKey: ["lora-sensors", organizationId] });
+    await queryClient.invalidateQueries({ 
+      queryKey: qk.org(organizationId).loraSensors(),
+      refetchType: 'active'
+    });
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
@@ -477,14 +481,16 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     });
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (deleteSensor_) {
-      deleteSensor.mutate(
-        { id: deleteSensor_.id, orgId: organizationId },
-        {
-          onSuccess: () => setDeleteSensor(null),
-        }
-      );
+      try {
+        await deleteSensor.mutateAsync(
+          { id: deleteSensor_.id, orgId: organizationId, unitId: deleteSensor_.unit_id }
+        );
+        setDeleteSensor(null);
+      } catch {
+        // Error toast handled by hook
+      }
     }
   };
 
