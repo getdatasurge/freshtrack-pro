@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
+import { getTtnConfigForOrg, assertClusterLocked } from "../_shared/ttnConfig.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 interface ProvisionRequest {
-  action: "create" | "delete" | "update";
+  action: "create" | "delete" | "update" | "diagnose";
   sensor_id: string;
   organization_id: string;
 }
@@ -561,6 +561,92 @@ serve(async (req) => {
         JSON.stringify({ success: true, message: "Device deleted from TTN" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // ========== DIAGNOSE ACTION ==========
+    // Non-mutating checks to verify device state across all TTN planes
+    if (action === "diagnose") {
+      console.log(`[ttn-provision-device] DIAGNOSE: Starting diagnostics for ${deviceId}`);
+      
+      // Step 1: Assert cluster lock (use imported helper)
+      try {
+        assertClusterLocked(ttnConfig);
+      } catch (err) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: "Cluster mismatch detected",
+          details: err instanceof Error ? err.message : String(err),
+        }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const checks: Record<string, { ok: boolean; status: number; error?: string }> = {};
+
+      // Step 2: Probe application
+      const appProbe = await ttnFetch(`/api/v3/applications/${ttnAppId}`, { method: "GET" }, "diagnose_app");
+      checks.appProbe = { ok: appProbe.ok, status: appProbe.status };
+      if (!appProbe.ok) checks.appProbe.error = (await appProbe.text()).substring(0, 200);
+
+      // Step 3: Check IS device registry (main endpoint)
+      const isCheck = await ttnFetch(`/api/v3/applications/${ttnAppId}/devices/${deviceId}`, { method: "GET" }, "diagnose_is");
+      checks.is = { ok: isCheck.ok, status: isCheck.status };
+      if (!isCheck.ok && isCheck.status !== 404) checks.is.error = (await isCheck.text()).substring(0, 200);
+
+      // Step 4: Check JS (Join Server - has root keys)
+      const jsCheck = await ttnFetch(`/api/v3/js/applications/${ttnAppId}/devices/${deviceId}`, { method: "GET" }, "diagnose_js");
+      checks.js = { ok: jsCheck.ok, status: jsCheck.status };
+      if (!jsCheck.ok && jsCheck.status !== 404) checks.js.error = (await jsCheck.text()).substring(0, 200);
+
+      // Step 5: Check NS (Network Server)
+      const nsCheck = await ttnFetch(`/api/v3/ns/applications/${ttnAppId}/devices/${deviceId}`, { method: "GET" }, "diagnose_ns");
+      checks.ns = { ok: nsCheck.ok, status: nsCheck.status };
+      if (!nsCheck.ok && nsCheck.status !== 404) checks.ns.error = (await nsCheck.text()).substring(0, 200);
+
+      // Step 6: Check AS (Application Server)
+      const asCheck = await ttnFetch(`/api/v3/as/applications/${ttnAppId}/devices/${deviceId}`, { method: "GET" }, "diagnose_as");
+      checks.as = { ok: asCheck.ok, status: asCheck.status };
+      if (!asCheck.ok && asCheck.status !== 404) checks.as.error = (await asCheck.text()).substring(0, 200);
+
+      // Analyze results for split-brain detection
+      const isExists = checks.is.ok;
+      const jsExists = checks.js.ok;
+      const nsExists = checks.ns.ok;
+      const asExists = checks.as.ok;
+      
+      let diagnosis = "unknown";
+      let hint = "";
+      
+      if (isExists && jsExists && nsExists && asExists) {
+        diagnosis = "fully_provisioned";
+        hint = "Device is registered in all TTN planes. Ready for uplinks.";
+      } else if (!isExists && !jsExists && !nsExists && !asExists) {
+        diagnosis = "not_provisioned";
+        hint = "Device not found in any TTN plane. Click 'Provision' to register.";
+      } else if (isExists && !jsExists) {
+        diagnosis = "split_brain_no_keys";
+        hint = "Device exists in Identity Server but missing from Join Server. Keys may not be set. Try re-provisioning.";
+      } else if (!isExists && (jsExists || nsExists || asExists)) {
+        diagnosis = "split_brain_orphaned";
+        hint = "Device missing from Identity Server but exists in other planes. Orphaned state - may need manual cleanup in TTN Console.";
+      } else {
+        diagnosis = "partial";
+        hint = "Device is partially provisioned. Some planes are missing. Try re-provisioning.";
+      }
+
+      console.log(`[ttn-provision-device] DIAGNOSE complete: ${diagnosis}`);
+
+      return new Response(JSON.stringify({
+        success: true,
+        clusterBaseUrl,
+        region: ttnConfig.region,
+        appId: ttnAppId,
+        deviceId,
+        sensorName: sensor.name,
+        devEui: sensor.dev_eui,
+        checks,
+        diagnosis,
+        hint,
+        diagnosedAt: new Date().toISOString(),
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     return new Response(

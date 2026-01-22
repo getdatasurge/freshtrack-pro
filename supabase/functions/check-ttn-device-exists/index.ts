@@ -1,15 +1,15 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { deobfuscateKey, normalizeDevEui } from "../_shared/ttnConfig.ts";
+import { deobfuscateKey, normalizeDevEui, getClusterBaseUrl } from "../_shared/ttnConfig.ts";
 
-const BUILD_VERSION = "check-ttn-device-exists-v2.0-deveui-lookup-20260115";
+const BUILD_VERSION = "check-ttn-device-exists-v3.0-cluster-locked-20260122";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// TTN v3 Identity Server is always eu1 (authoritative for application + device registries)
-const IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network";
+// REMOVED: Hard-coded IDENTITY_SERVER_URL = eu1
+// Now uses getClusterBaseUrl() from ttnConfig.ts for cluster-locked operation
 
 function normalizeRegion(input: string | null | undefined): string {
   const raw = (input || "nam1").toLowerCase().trim();
@@ -181,14 +181,29 @@ Deno.serve(async (req) => {
 
       console.log(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: Listing devices from TTN app ${config.application_id}`);
 
+      // CLUSTER-LOCKED: Use cluster URL from config, not hard-coded EU1
+      const clusterUrl = getClusterBaseUrl(config.cluster);
+      
       // List all devices from TTN for this application (single API call per org)
       let ttnDeviceMap: Map<string, string> | null = null; // normalized_dev_eui -> device_id
       let listError: string | null = null;
 
       try {
-        // NOTE: Device registry queries should go via Identity Server.
-        // We still store/report the configured regional cluster (nam1), but list via eu1.
-        const listUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui`;
+        // CLUSTER-LOCKED: Device registry queries go to the same cluster as provisioning
+        const listUrl = `${clusterUrl}/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui`;
+        
+        // Structured logging for debugging
+        console.log(JSON.stringify({
+          event: "ttn_api_call",
+          method: "GET",
+          endpoint: `/api/v3/applications/${config.application_id}/devices`,
+          baseUrl: clusterUrl,
+          orgId,
+          appId: config.application_id,
+          step: "list_devices_for_check",
+          timestamp: new Date().toISOString(),
+          buildVersion: BUILD_VERSION,
+        }));
         
         const listResponse = await fetch(listUrl, {
           method: "GET",
@@ -211,7 +226,7 @@ Deno.serve(async (req) => {
             }
           }
           
-          console.log(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: Found ${ttnDeviceMap.size} devices with DevEUI in TTN`);
+          console.log(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: Found ${ttnDeviceMap.size} devices with DevEUI in TTN (cluster: ${config.cluster})`);
         } else {
           listError = `TTN API error ${listResponse.status}: ${await listResponse.text().then(t => t.substring(0, 200))}`;
           console.error(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: ${listError}`);

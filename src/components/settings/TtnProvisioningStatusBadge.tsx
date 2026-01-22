@@ -4,7 +4,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { TtnProvisioningState } from "@/types/ttn";
 import { TTN_PROVISIONING_STATE_CONFIG } from "@/lib/entityStatusConfig";
-import { Search, CloudUpload, CloudOff, Loader2, AlertCircle } from "lucide-react";
+import { Search, CloudUpload, CloudOff, Loader2, AlertCircle, Stethoscope } from "lucide-react";
 
 interface TtnProvisioningStatusBadgeProps {
   state: TtnProvisioningState;
@@ -64,6 +64,9 @@ interface TtnActionsProps {
   canCheckNow?: boolean;
   /** Reason why check is not available (for tooltip) */
   checkUnavailableReason?: string;
+  /** Diagnose TTN status across all planes */
+  onDiagnose?: () => void;
+  isDiagnosing?: boolean;
 }
 
 export function TtnActions({
@@ -76,6 +79,8 @@ export function TtnActions({
   canEdit,
   canCheckNow = false,
   checkUnavailableReason,
+  onDiagnose,
+  isDiagnosing,
 }: TtnActionsProps) {
   if (!canEdit) return null;
 
@@ -144,6 +149,28 @@ export function TtnActions({
         </TooltipTrigger>
         <TooltipContent>Check TTN Status</TooltipContent>
       </Tooltip>
+
+      {/* Diagnose button - available for all states except not_configured */}
+      {onDiagnose && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={onDiagnose}
+              disabled={isDiagnosing}
+            >
+              {isDiagnosing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Stethoscope className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Diagnose TTN Planes</TooltipContent>
+        </Tooltip>
+      )}
 
       {/* Provision button - only if missing_in_ttn */}
       {state === "missing_in_ttn" && (
