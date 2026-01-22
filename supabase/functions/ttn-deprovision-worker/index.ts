@@ -309,12 +309,12 @@ serve(async (req) => {
       }
       
       try {
-        // CLUSTER-LOCKED: All endpoints use same base URL (no EU1/NAM1 split)
-        console.log(`[ttn-deprovision-worker] Deleting device ${deviceId} from app ${targetAppId} on cluster ${ttnConfig.clusterBaseUrl || ttnConfig.regionalBaseUrl}`);
+        // CLUSTER-LOCKED: All endpoints use same base URL
+        console.log(`[ttn-deprovision-worker] Deleting device ${deviceId} from app ${targetAppId} on cluster ${ttnConfig.clusterBaseUrl}`);
         
         const deleteResult = await tryDeleteFromTtn(
           {
-            clusterBaseUrl: ttnConfig.clusterBaseUrl || ttnConfig.regionalBaseUrl,
+            clusterBaseUrl: ttnConfig.clusterBaseUrl,
             apiKey: ttnConfig.apiKey,
           },
           targetAppId,

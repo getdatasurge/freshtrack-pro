@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg, getGlobalApplicationId } from "../_shared/ttnConfig.ts";
+import { CLUSTER_BASE_URL, assertClusterHost } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -111,22 +112,10 @@ serve(async (req) => {
     }
 
     // NAM1-ONLY: Use clusterBaseUrl for all TTN operations
-    const baseUrl = ttnConfig.clusterBaseUrl || ttnConfig.identityBaseUrl;
+    const baseUrl = ttnConfig.clusterBaseUrl;
     
-    // NAM1-ONLY GUARD
-    const NAM1_EXPECTED = "https://nam1.cloud.thethings.network";
-    if (!baseUrl.startsWith(NAM1_EXPECTED)) {
-      console.error(`[ttn-list-devices] NAM1-ONLY violation: ${baseUrl}`);
-      return new Response(
-        JSON.stringify({ 
-          error: "Cluster misconfiguration", 
-          hint: "NAM1-ONLY mode enforced",
-          devices: [],
-          orphans: []
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // HARD GUARD: Verify cluster host before any TTN call
+    assertClusterHost(`${baseUrl}/api/v3/applications/${ttnAppId}`);
 
     console.log(`[ttn-list-devices] Listing devices for TTN app: ${ttnAppId} on ${baseUrl}`);
 

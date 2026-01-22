@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg, assertClusterLocked } from "../_shared/ttnConfig.ts";
+import { CLUSTER_BASE_URL, assertClusterHost, logTtnApiCall, identifyPlane } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -128,22 +129,11 @@ serve(async (req) => {
     }
 
     // ========== CLUSTER-LOCK GUARD ==========
-    // Ensure identity and regional URLs match (prevents split-brain provisioning)
-    const clusterBaseUrl = ttnConfig.clusterBaseUrl || ttnConfig.regionalBaseUrl;
+    // Use ONLY clusterBaseUrl - no more identity/regional split
+    const clusterBaseUrl = ttnConfig.clusterBaseUrl;
     
-    if (ttnConfig.identityBaseUrl !== ttnConfig.regionalBaseUrl) {
-      console.error(`[ttn-provision-device] FATAL: Cluster mismatch detected!`);
-      console.error(`[ttn-provision-device] Identity: ${ttnConfig.identityBaseUrl}`);
-      console.error(`[ttn-provision-device] Regional: ${ttnConfig.regionalBaseUrl}`);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "Internal configuration error: TTN cluster mismatch",
-          details: "Identity Server and Regional Server URLs do not match. Contact support.",
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // HARD GUARD: Verify cluster host before any TTN operation
+    assertClusterHost(`${clusterBaseUrl}/api/v3/applications/${ttnConfig.applicationId}`);
     
     console.log(`[ttn-provision-device] ✓ CLUSTER-LOCKED to: ${clusterBaseUrl}`);
 

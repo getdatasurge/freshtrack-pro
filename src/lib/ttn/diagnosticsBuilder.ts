@@ -6,19 +6,31 @@
 import type { TTNConfigContext, TTNValidationResult, TTNConfigState } from '@/types/ttnState';
 import { supabase } from '@/integrations/supabase/client';
 
+// Single cluster base URL - must match backend
+const CLUSTER_BASE_URL = "https://nam1.cloud.thethings.network";
+const CLUSTER_HOST = "nam1.cloud.thethings.network";
+
 export interface TTNDiagnostics {
   generated_at: string;
   app_version: string;
   
-  // TTN Config (redacted)
+  // TTN Config (single cluster)
   config: {
     state: TTNConfigState;
     source: string;
-    region: string | null;
+    cluster_base_url: string;
+    cluster_host: string;
     application_id: string | null;
     api_key_last4: string | null;
     webhook_configured: boolean;
     webhook_url_redacted: string | null;
+  };
+  
+  // Cluster verification
+  cluster_verification: {
+    host_locked: boolean;
+    expected_host: string;
+    planes_use_same_host: boolean;
   };
   
   // Validation
@@ -166,11 +178,18 @@ export async function buildTTNDiagnostics(
     config: {
       state: context?.state || 'local_draft',
       source: context?.source || 'LOCAL',
-      region: 'nam1', // NAM1 only - hardcoded, ignore stale DB value
+      cluster_base_url: CLUSTER_BASE_URL,
+      cluster_host: CLUSTER_HOST,
       application_id: settings?.application_id || null,
       api_key_last4: settings?.api_key_last4 || null,
       webhook_configured: settings?.is_enabled || false,
       webhook_url_redacted: redactUrl(settings?.webhook_url || null),
+    },
+    
+    cluster_verification: {
+      host_locked: true, // Always true - single cluster mode
+      expected_host: CLUSTER_HOST,
+      planes_use_same_host: true, // All planes use CLUSTER_BASE_URL
     },
     
     last_validation: context?.last_validation_result || null,
