@@ -82,10 +82,10 @@ serve(async (req) => {
     console.log(`[user-sync-emitter] Received ${triggerPayload.event_type} event for user ${triggerPayload.user_id}`);
     console.log(`[user-sync-emitter] Site data: default_site_id=${triggerPayload.default_site_id}, user_sites=${JSON.stringify(triggerPayload.user_sites)}`);
 
-    // Get organization's TTN configuration
+    // NAM1-ONLY: Default cluster is always nam1
     let ttnConfig: TtnConfig = {
       enabled: false,
-      cluster: "eu1",
+      cluster: "nam1",
       application_id: null,
       api_key: null,
       api_key_last4: null,
@@ -138,7 +138,8 @@ serve(async (req) => {
 
         ttnConfig = {
           enabled: ttnConnection.is_enabled || false,
-          cluster: ttnConnection.ttn_region || "eu1",
+          // NAM1-ONLY: Always use nam1 regardless of stored value
+          cluster: "nam1",
           application_id: ttnConnection.ttn_application_id || null,
           api_key: fullApiKey,
           api_key_last4: ttnConnection.ttn_api_key_last4 || null,

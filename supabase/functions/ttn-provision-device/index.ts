@@ -165,7 +165,8 @@ serve(async (req) => {
     }
 
     const deviceId = `sensor-${sensor.dev_eui.toLowerCase()}`;
-    const frequencyPlan = ttnConfig.region === "eu1" ? "EU_863_870_TTN" : ttnConfig.region === "au1" ? "AU_915_928_FSB_2" : "US_902_928_FSB_2";
+    // NAM1-ONLY: Always use US frequency plan
+    const frequencyPlan = "US_902_928_FSB_2";
     
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
     console.log(`[ttn-provision-device] Region: ${ttnConfig.region}, Frequency plan: ${frequencyPlan}`);

@@ -294,8 +294,9 @@ serve(async (req) => {
           },
           name: gateway.name,
           description: gateway.description || `FrostGuard gateway at ${gateway.name}`,
-          gateway_server_address: `${ttnConfig.region}.cloud.thethings.network`,
-          frequency_plan_ids: [ttnConfig.region === "eu1" ? "EU_863_870_TTN" : "US_902_928_FSB_2"],
+          // NAM1-ONLY: Use NAM1 gateway server address and US frequency plan
+          gateway_server_address: "nam1.cloud.thethings.network",
+          frequency_plan_ids: ["US_902_928_FSB_2"],
           enforce_duty_cycle: true,
           status_public: false,
           location_public: false,

@@ -748,7 +748,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // VALIDATE_CLUSTER action - Verify all TTN resources are on EU1 cluster
+    // VALIDATE_CLUSTER action - Verify all TTN resources are on NAM1 cluster
     if (action === "validate_cluster") {
       console.log(`[manage-ttn-settings] [${requestId}] VALIDATE_CLUSTER for org: ${organizationId}`);
 
@@ -763,7 +763,7 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({
             success: false,
             error: "TTN not provisioned",
-            checks: { application_on_eu1: false, devices_on_eu1: false, webhook_on_eu1: false },
+            checks: { application_on_nam1: false, devices_on_nam1: false, webhook_on_nam1: false },
           }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -785,32 +785,33 @@ Deno.serve(async (req: Request) => {
       };
 
       const apiKey = deobfuscateKey(settings.ttn_api_key_encrypted, encryptionSalt);
-      const EU1_BASE = "https://eu1.cloud.thethings.network";
+      // NAM1-ONLY: All cluster validation uses NAM1
+      const NAM1_BASE = "https://nam1.cloud.thethings.network";
       const appId = settings.ttn_application_id;
 
       const checks = {
-        region_config: settings.ttn_region === "eu1",
-        application_on_eu1: false,
+        region_config: settings.ttn_region === "nam1",
+        application_on_nam1: false,
         as_accessible: false,
-        webhook_on_eu1: false,
+        webhook_on_nam1: false,
       };
 
-      // Check 1: Application exists on EU1 Identity Server
+      // Check 1: Application exists on NAM1 Identity Server
       try {
         const appResponse = await fetch(
-          `${EU1_BASE}/api/v3/applications/${appId}`,
+          `${NAM1_BASE}/api/v3/applications/${appId}`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
-        checks.application_on_eu1 = appResponse.ok;
+        checks.application_on_nam1 = appResponse.ok;
         console.log(`[manage-ttn-settings] [${requestId}] App check: ${appResponse.status}`);
       } catch (err) {
         console.error(`[manage-ttn-settings] [${requestId}] App check error:`, err);
       }
 
-      // Check 2: Application Server on EU1 is accessible
+      // Check 2: Application Server on NAM1 is accessible
       try {
         const asResponse = await fetch(
-          `${EU1_BASE}/api/v3/as/applications/${appId}/devices?limit=1`,
+          `${NAM1_BASE}/api/v3/as/applications/${appId}/devices?limit=1`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
         // 200 = accessible, 404 = no devices but AS is correct cluster
@@ -820,13 +821,13 @@ Deno.serve(async (req: Request) => {
         console.error(`[manage-ttn-settings] [${requestId}] AS check error:`, err);
       }
 
-      // Check 3: Webhook exists on EU1
+      // Check 3: Webhook exists on NAM1
       try {
         const webhookResponse = await fetch(
-          `${EU1_BASE}/api/v3/as/webhooks/${appId}`,
+          `${NAM1_BASE}/api/v3/as/webhooks/${appId}`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
-        checks.webhook_on_eu1 = webhookResponse.ok;
+        checks.webhook_on_nam1 = webhookResponse.ok;
         console.log(`[manage-ttn-settings] [${requestId}] Webhook check: ${webhookResponse.status}`);
       } catch (err) {
         console.error(`[manage-ttn-settings] [${requestId}] Webhook check error:`, err);
@@ -837,12 +838,12 @@ Deno.serve(async (req: Request) => {
       return new Response(
         JSON.stringify({
           success: allPassed,
-          cluster: "eu1",
+          cluster: "nam1",
           checks,
           request_id: requestId,
           message: allPassed
-            ? "All TTN resources verified on EU1 cluster"
-            : "Some TTN resources may not be on EU1 cluster",
+            ? "All TTN resources verified on NAM1 cluster"
+            : "Some TTN resources may not be on NAM1 cluster",
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -928,7 +929,8 @@ Deno.serve(async (req: Request) => {
           .insert({
             organization_id: organizationId,
             created_by: user.id,
-            ttn_region: "eu1",
+            // NAM1-ONLY: Default region is always nam1
+            ttn_region: "nam1",
             ...dbUpdates,
           })
           .select()

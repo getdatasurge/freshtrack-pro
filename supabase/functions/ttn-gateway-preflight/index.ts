@@ -210,7 +210,7 @@ serve(async (req) => {
     }
 
     // Check API key scope using auth_info endpoint
-    // CRITICAL: Always use EU1 identity server for auth_info - Personal API keys are global
+    // NAM1-ONLY: Uses NAM1 identity server for auth_info
     console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${TTN_IDENTITY_BASE}`);
 
     const authInfoResponse = await fetch(`${TTN_IDENTITY_BASE}/api/v3/auth_info`, {
@@ -238,10 +238,10 @@ serve(async (req) => {
           error: {
             code: "TTN_NOT_CONFIGURED" as const,
             message: "TTN region/API base mismatch",
-            hint: "Verify TTN cluster setting matches your TTN Console region (e.g., eu1 vs nam1)",
+            hint: "Verify TTN cluster setting is configured for NAM1",
             fix_steps: [
-              "1. Check your TTN Console URL (e.g., eu1.cloud.thethings.network)",
-              "2. Update TTN cluster in FrostGuard Settings → Developer to match",
+              "1. Check your TTN Console URL (should be nam1.cloud.thethings.network)",
+              "2. Update TTN cluster in FrostGuard Settings → Developer to NAM1",
               "3. Retry the preflight check",
             ],
           },

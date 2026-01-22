@@ -512,7 +512,7 @@ serve(async (req) => {
         has_org_api_key: !!ttnConn?.ttn_org_api_key_encrypted,
         // TTN Application info
         ttn_application_id: ttnConn?.ttn_application_id || null,
-        ttn_region: ttnConn?.ttn_region || "eu1",
+        ttn_region: "nam1", // NAM1-ONLY: Always report nam1
         has_app_api_key: !!ttnConn?.ttn_api_key_encrypted,
         has_webhook_secret: !!ttnConn?.ttn_webhook_secret_encrypted,
         webhook_url: ttnConn?.ttn_webhook_url || null,
@@ -707,7 +707,7 @@ serve(async (req) => {
         previous_app_id: currentAppId,
         previous_org_id: currentOrgId,
         request_id: requestId,
-        next_step: "Use 'Start Provisioning' to create new TTN organization and application on EU1",
+        next_step: "Use 'Start Provisioning' to create new TTN organization and application on NAM1",
       });
     }
 
@@ -904,7 +904,8 @@ serve(async (req) => {
       const webhookUrl = `${normalizedUrl}/functions/v1/ttn-webhook`;
       console.log(`[ttn-provision-org] [${requestId}] Webhook URL constructed: ${webhookUrl}`);
       
-      const regionalUrl = REGIONAL_URLS[region] || REGIONAL_URLS.eu1;
+      // NAM1-ONLY: Always use NAM1 regardless of region parameter
+      const regionalUrl = REGIONAL_URLS.nam1;
 
       // Initialize or update ttn_connections record
       if (ttnConn) {
@@ -2466,7 +2467,8 @@ serve(async (req) => {
 
       const ttnAppId = ttnConn.ttn_application_id;
       const webhookId = ttnConn.ttn_webhook_id || "frostguard-webhook";
-      const regionalUrl = REGIONAL_URLS[ttnConn.ttn_region || "eu1"] || REGIONAL_URLS.eu1;
+      // NAM1-ONLY: Always use NAM1 regardless of stored region
+      const regionalUrl = REGIONAL_URLS.nam1;
 
       console.log(`[ttn-provision-org] [${requestId}] Regenerating webhook secret for ${ttnAppId} (token_source: ${TOKEN_SOURCE})`);
 
