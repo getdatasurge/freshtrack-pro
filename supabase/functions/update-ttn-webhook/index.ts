@@ -252,8 +252,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get TTN API configuration
-    const ttnCluster = ttnConfig.ttn_region || "eu1";
+    // NAM1-ONLY: Always use nam1 regardless of stored value
+    const ttnCluster = "nam1";
     const applicationId = ttnConfig.ttn_application_id;
 
     if (!applicationId) {
@@ -315,8 +315,8 @@ Deno.serve(async (req) => {
       }
     });
 
-    // Update webhook in TTN
-    const ttnBaseUrl = `https://${ttnCluster}.cloud.thethings.network`;
+    // NAM1-ONLY: All TTN API calls target NAM1 regardless of stored cluster value
+    const ttnBaseUrl = "https://nam1.cloud.thethings.network";
     const ttnEndpoint = `${ttnBaseUrl}/api/v3/as/webhooks/${applicationId}/${newWebhookId}`;
 
     log("info", "Updating webhook in TTN", { endpoint: ttnEndpoint, changes });

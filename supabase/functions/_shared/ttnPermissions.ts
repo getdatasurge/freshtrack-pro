@@ -217,14 +217,13 @@ export async function validateMainUserApiKey(
     return {
       success: false,
       error: `Unknown cluster: ${cluster}`,
-      hint: "Supported clusters: eu1, nam1, au1, as1",
+      hint: "NAM1-ONLY mode: Only 'nam1' cluster is supported",
     };
   }
 
-  // CRITICAL: auth_info is an Identity Server endpoint - ALWAYS on EU1
-  // Personal API keys are validated globally, regardless of target cluster
+  // NAM1-ONLY: auth_info uses the NAM1 Identity Server (unified cluster)
   const url = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
-  console.log(`[ttnPermissions] [${requestId}] Preflight: Identity Server at ${url} (provisioning target: ${cluster})`);
+  console.log(`[ttnPermissions] [${requestId}] Preflight: Identity Server at ${url}`);
   console.log(`[ttnPermissions] [${requestId}] API key last4: ...${apiKey.slice(-4)}`);
 
   try {
@@ -407,7 +406,8 @@ export async function fetchTtnRights(
   apiKey: string,
   requestId: string
 ): Promise<FetchRightsResult> {
-  const baseUrl = REGIONAL_URLS[cluster] || REGIONAL_URLS.eu1;
+  // NAM1-ONLY: Always use NAM1 regardless of cluster parameter
+  const baseUrl = REGIONAL_URLS.nam1;
   const rightsUrl = `${baseUrl}/api/v3/applications/${applicationId}/rights`;
   
   console.log(`[ttnPermissions] [${requestId}] Fetching rights from: ${rightsUrl}`);
