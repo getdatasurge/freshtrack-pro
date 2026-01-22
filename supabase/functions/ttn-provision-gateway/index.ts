@@ -163,11 +163,37 @@ serve(async (req) => {
     const ttnGatewayId = `eui-${gatewayEui}`;
     console.log(`[ttn-provision-gateway] [${requestId}] TTN Gateway ID: ${ttnGatewayId}`);
 
-    // Helper for TTN Identity Server API calls
+    // NAM1-ONLY: Use clusterBaseUrl for all TTN operations
+    const baseUrl = ttnConfig.clusterBaseUrl || ttnConfig.identityBaseUrl;
+    
+    // NAM1-ONLY GUARD
+    const NAM1_EXPECTED = "https://nam1.cloud.thethings.network";
+    if (!baseUrl.startsWith(NAM1_EXPECTED)) {
+      console.error(`[ttn-provision-gateway] [${requestId}] NAM1-ONLY violation: ${baseUrl}`);
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "Cluster misconfiguration",
+          error_code: "NAM1_ONLY_VIOLATION",
+          hint: "NAM1-ONLY mode enforced - contact support",
+          request_id: requestId,
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Helper for TTN API calls (NAM1-ONLY)
     const ttnFetch = async (endpoint: string, options: RequestInit = {}, apiKey?: string) => {
-      const url = `${ttnConfig.identityBaseUrl}${endpoint}`;
+      const url = `${baseUrl}${endpoint}`;
       const key = apiKey || ttnConfig.apiKey;
-      console.log(`[ttn-provision-gateway] [${requestId}] TTN API: ${options.method || "GET"} ${url}`);
+      console.log(JSON.stringify({
+        event: "ttn_api_call",
+        method: options.method || "GET",
+        endpoint,
+        baseUrl,
+        step: "gateway_provision",
+        timestamp: new Date().toISOString(),
+      }));
       const response = await fetch(url, {
         ...options,
         headers: {

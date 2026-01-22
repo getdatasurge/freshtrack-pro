@@ -110,11 +110,37 @@ serve(async (req) => {
       );
     }
 
-    console.log(`[ttn-list-devices] Listing devices for TTN app: ${ttnAppId}`);
+    // NAM1-ONLY: Use clusterBaseUrl for all TTN operations
+    const baseUrl = ttnConfig.clusterBaseUrl || ttnConfig.identityBaseUrl;
+    
+    // NAM1-ONLY GUARD
+    const NAM1_EXPECTED = "https://nam1.cloud.thethings.network";
+    if (!baseUrl.startsWith(NAM1_EXPECTED)) {
+      console.error(`[ttn-list-devices] NAM1-ONLY violation: ${baseUrl}`);
+      return new Response(
+        JSON.stringify({ 
+          error: "Cluster misconfiguration", 
+          hint: "NAM1-ONLY mode enforced",
+          devices: [],
+          orphans: []
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    console.log(`[ttn-list-devices] Listing devices for TTN app: ${ttnAppId} on ${baseUrl}`);
 
     // List devices from TTN
-    const listUrl = `${ttnConfig.identityBaseUrl}/api/v3/applications/${ttnAppId}/devices?field_mask=name,created_at,updated_at,ids.dev_eui`;
-    console.log(`[ttn-list-devices] GET ${listUrl}`);
+    const listUrl = `${baseUrl}/api/v3/applications/${ttnAppId}/devices?field_mask=name,created_at,updated_at,ids.dev_eui`;
+    
+    console.log(JSON.stringify({
+      event: "ttn_api_call",
+      method: "GET",
+      endpoint: `/api/v3/applications/${ttnAppId}/devices`,
+      baseUrl,
+      step: "list_devices",
+      timestamp: new Date().toISOString(),
+    }));
     
     const response = await fetch(listUrl, {
       method: "GET",

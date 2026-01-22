@@ -50,8 +50,9 @@ interface PreflightResult {
  * Validates TTN API key type and gateway permissions BEFORE any provisioning attempt.
  * Returns actionable errors with step-by-step fix instructions.
  */
-// EU1 is the ONLY identity server for Personal API keys
-const TTN_IDENTITY_BASE = "https://eu1.cloud.thethings.network";
+// NAM1-ONLY: All TTN API calls target NAM1 cluster
+const NAM1_BASE_URL = "https://nam1.cloud.thethings.network";
+const TTN_IDENTITY_BASE = NAM1_BASE_URL;
 
 serve(async (req) => {
   const BUILD_VERSION = "ttn-gateway-preflight-v2.0-authinfo-fix-20260105";

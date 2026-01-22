@@ -10,16 +10,19 @@
  * Created Org/App API keys are OUTPUT ARTIFACTS for runtime use, NOT inputs to provisioning.
  */
 
-// TTN Identity Server URL - ALWAYS eu1 for authentication and management APIs
-// This is where auth_info, user/org/app creation, and API key management happens
-export const IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network";
+// ============================================================================
+// NAM1-ONLY HARD LOCK
+// All TTN API operations MUST target the NAM1 cluster exclusively.
+// ============================================================================
+const NAM1_BASE_URL = "https://nam1.cloud.thethings.network";
 
-// TTN regional Network/Application Server URLs - for webhooks and device operations
+// Identity Server URL - NAM1-ONLY (was EU1, now unified to NAM1)
+export const IDENTITY_SERVER_URL = NAM1_BASE_URL;
+
+// TTN regional URLs - NAM1-ONLY mode
 export const REGIONAL_URLS: Record<string, string> = {
-  nam1: "https://nam1.cloud.thethings.network",
-  eu1: "https://eu1.cloud.thethings.network",
-  au1: "https://au1.cloud.thethings.network",
-  as1: "https://as1.cloud.thethings.network",
+  nam1: NAM1_BASE_URL,
+  // Other clusters removed - NAM1-ONLY mode enforced
 };
 
 // ============================================================================

@@ -97,14 +97,28 @@ export interface TtnConnectionRow {
   ttn_application_provisioned_at: string | null;
 }
 
-// CLUSTER-LOCKED: All planes (IS, JS, NS, AS) use the SAME regional URL
-// This prevents split-brain where device identity is in one cluster but keys are in another
-const REGIONAL_URLS: Record<string, string> = {
-  nam1: "https://nam1.cloud.thethings.network",
-  eu1: "https://eu1.cloud.thethings.network",
-  au1: "https://au1.cloud.thethings.network",
-  as1: "https://as1.cloud.thethings.network",
+// ============================================================================
+// NAM1-ONLY HARD LOCK
+// All TTN API operations MUST target the NAM1 cluster exclusively.
+// This prevents split-brain provisioning and ensures consistent device registration.
+// ============================================================================
+const NAM1_BASE_URL = "https://nam1.cloud.thethings.network";
+
+// Exported for backward compatibility - but only nam1 is valid
+export const REGIONAL_URLS: Record<string, string> = {
+  nam1: NAM1_BASE_URL,
+  // Other clusters removed - NAM1-ONLY mode enforced
 };
+
+/**
+ * Mask EUI values for secure logging (never expose full DevEUI/JoinEUI in logs)
+ */
+export function maskEui(eui: string | null | undefined): string {
+  if (!eui) return "[no-eui]";
+  const clean = eui.replace(/[:\-\s]/g, "").toLowerCase();
+  if (clean.length < 8) return "[masked]";
+  return `${clean.slice(0, 4)}...${clean.slice(-4)}`;
+}
 
 // ============================================================================
 // Cluster Lock Helpers (exported for use across edge functions)
@@ -112,11 +126,15 @@ const REGIONAL_URLS: Record<string, string> = {
 
 /**
  * Get the base URL for a TTN cluster region.
- * Normalizes input and defaults to nam1.
+ * NAM1-ONLY: Always returns NAM1 regardless of requested region.
+ * This enforces single-cluster mode to prevent split-brain provisioning.
  */
 export function getClusterBaseUrl(region: string | null | undefined): string {
-  const normalized = (region || "nam1").toLowerCase().trim();
-  return REGIONAL_URLS[normalized] || REGIONAL_URLS.nam1;
+  const requested = (region || "nam1").toLowerCase().trim();
+  if (requested !== "nam1") {
+    console.warn(`[getClusterBaseUrl] NAM1-ONLY: Region "${requested}" requested but NAM1 enforced`);
+  }
+  return NAM1_BASE_URL;
 }
 
 /**
@@ -495,14 +513,18 @@ export async function getTtnConfigForOrg(
     ? deobfuscateKey(settings.ttn_gateway_api_key_encrypted, encryptionSalt)
     : undefined;
 
-  // Normalize region (ensure lowercase) - default to nam1
-  const region = (settings.ttn_region || "nam1").toLowerCase();
+  // NAM1-ONLY: Force region to nam1 regardless of stored setting
+  const requestedRegion = (settings.ttn_region || "nam1").toLowerCase();
+  const region = "nam1"; // HARD-LOCK to NAM1
   
-  // CLUSTER-LOCK: Use single base URL for ALL planes (Identity + Regional)
-  // This prevents split-brain where device identity is created in EU1 but keys are in NAM1
-  const clusterBaseUrl = REGIONAL_URLS[region] || REGIONAL_URLS.nam1;
+  if (requestedRegion !== "nam1") {
+    console.warn(`[getTtnConfigForOrg] NAM1-ONLY: Stored region "${requestedRegion}" overridden to "nam1"`);
+  }
   
-  console.log(`[getTtnConfigForOrg] Cluster locked to: ${clusterBaseUrl} (region: ${region})`);
+  // NAM1-ONLY: Single base URL for ALL planes (Identity + Regional)
+  const clusterBaseUrl = NAM1_BASE_URL;
+  
+  console.log(`[getTtnConfigForOrg] NAM1-ONLY: Using ${clusterBaseUrl}`);
 
   return {
     region,
