@@ -10,20 +10,20 @@
  * Created Org/App API keys are OUTPUT ARTIFACTS for runtime use, NOT inputs to provisioning.
  */
 
-import { TTN_BASE_URL } from "./ttnBase.ts";
+import { CLUSTER_BASE_URL, CLUSTER_HOST, assertClusterHost, logTtnApiCall } from "./ttnBase.ts";
 
 // ============================================================================
 // NAM1-ONLY HARD LOCK
 // All TTN API operations MUST target the NAM1 cluster exclusively.
-// Importing from single source of truth: _shared/ttnBase.ts
+// Using single source of truth: _shared/ttnBase.ts
 // ============================================================================
 
-// Re-export for backward compatibility
-export const IDENTITY_SERVER_URL = TTN_BASE_URL;
+// @deprecated - Use CLUSTER_BASE_URL directly
+export const IDENTITY_SERVER_URL = CLUSTER_BASE_URL;
 
-// @deprecated - Use TTN_BASE_URL directly
+// @deprecated - Use CLUSTER_BASE_URL directly
 export const REGIONAL_URLS: Record<string, string> = {
-  nam1: TTN_BASE_URL,
+  nam1: CLUSTER_BASE_URL,
   // Other clusters removed - NAM1-ONLY mode enforced
 };
 

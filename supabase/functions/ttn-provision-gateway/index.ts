@@ -164,23 +164,11 @@ serve(async (req) => {
     console.log(`[ttn-provision-gateway] [${requestId}] TTN Gateway ID: ${ttnGatewayId}`);
 
     // NAM1-ONLY: Use clusterBaseUrl for all TTN operations
-    const baseUrl = ttnConfig.clusterBaseUrl || ttnConfig.identityBaseUrl;
+    const baseUrl = ttnConfig.clusterBaseUrl;
     
-    // NAM1-ONLY GUARD
-    const NAM1_EXPECTED = "https://nam1.cloud.thethings.network";
-    if (!baseUrl.startsWith(NAM1_EXPECTED)) {
-      console.error(`[ttn-provision-gateway] [${requestId}] NAM1-ONLY violation: ${baseUrl}`);
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "Cluster misconfiguration",
-          error_code: "NAM1_ONLY_VIOLATION",
-          hint: "NAM1-ONLY mode enforced - contact support",
-          request_id: requestId,
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Import and use HARD GUARD
+    const { assertClusterHost } = await import("../_shared/ttnBase.ts");
+    assertClusterHost(`${baseUrl}/api/v3/gateways/${ttnGatewayId}`);
 
     // Helper for TTN API calls (NAM1-ONLY)
     const ttnFetch = async (endpoint: string, options: RequestInit = {}, apiKey?: string) => {

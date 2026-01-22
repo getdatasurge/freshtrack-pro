@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { deobfuscateKey, normalizeDevEui, getClusterBaseUrl } from "../_shared/ttnConfig.ts";
-import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
+import { CLUSTER_BASE_URL, assertClusterHost, logTtnApiCall } from "../_shared/ttnBase.ts";
 
 const BUILD_VERSION = "check-ttn-device-exists-v3.0-cluster-locked-20260122";
 
@@ -184,7 +184,9 @@ Deno.serve(async (req) => {
 
       // CLUSTER-LOCKED: Use cluster URL from config (always NAM1)
       const clusterUrl = getClusterBaseUrl(config.cluster);
-      assertNam1Only(clusterUrl); // Fail-closed guard
+      
+      // HARD GUARD: Verify cluster host before any TTN call
+      assertClusterHost(`${clusterUrl}/api/v3/applications/${config.application_id}`);
       
       // List all devices from TTN for this application (single API call per org)
       let ttnDeviceMap: Map<string, string> | null = null; // normalized_dev_eui -> device_id
@@ -195,17 +197,13 @@ Deno.serve(async (req) => {
         const listUrl = `${clusterUrl}/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui`;
         
         // Structured logging for debugging
-        console.log(JSON.stringify({
-          event: "ttn_api_call",
-          method: "GET",
-          endpoint: `/api/v3/applications/${config.application_id}/devices`,
-          baseUrl: clusterUrl,
-          orgId,
-          appId: config.application_id,
-          step: "list_devices_for_check",
-          timestamp: new Date().toISOString(),
-          buildVersion: BUILD_VERSION,
-        }));
+        logTtnApiCall(
+          "check-ttn-device-exists", 
+          "GET", 
+          `/api/v3/applications/${config.application_id}/devices`, 
+          "list_devices_for_check", 
+          requestId
+        );
         
         const listResponse = await fetch(listUrl, {
           method: "GET",

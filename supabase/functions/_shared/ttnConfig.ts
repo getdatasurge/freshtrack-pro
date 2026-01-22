@@ -8,7 +8,16 @@
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { TTN_BASE_URL, assertNam1Only } from "./ttnBase.ts";
+import { 
+  CLUSTER_BASE_URL, 
+  CLUSTER_HOST, 
+  TTN_BASE_URL, 
+  assertClusterHost, 
+  assertNam1Only,
+  identifyPlane,
+  logTtnApiCall,
+  buildTtnUrl,
+} from "./ttnBase.ts";
 
 // ============================================================================
 // DevEUI Normalization Helpers
@@ -55,9 +64,7 @@ export interface TtnConfig {
   region: string;
   apiKey: string;
   applicationId: string;       // Per-org TTN application ID
-  clusterBaseUrl: string;      // Single unified URL for all planes (IS, JS, NS, AS)
-  identityBaseUrl: string;     // Now equals clusterBaseUrl (kept for compatibility)
-  regionalBaseUrl: string;     // Now equals clusterBaseUrl (kept for compatibility)
+  clusterBaseUrl: string;      // THE ONLY TTN URL - all planes use this
   webhookSecret?: string;
   webhookUrl?: string;
   isEnabled: boolean;
@@ -104,12 +111,21 @@ export interface TtnConnectionRow {
 // This prevents split-brain provisioning and ensures consistent device registration.
 // ============================================================================
 
-// Re-export TTN_BASE_URL from canonical source for backward compatibility
-export { TTN_BASE_URL, assertNam1Only } from "./ttnBase.ts";
+// Re-export from canonical source for backward compatibility
+export { 
+  CLUSTER_BASE_URL,
+  CLUSTER_HOST,
+  TTN_BASE_URL, 
+  assertNam1Only,
+  assertClusterHost,
+  identifyPlane,
+  logTtnApiCall,
+  buildTtnUrl,
+} from "./ttnBase.ts";
 
-// @deprecated - Use TTN_BASE_URL directly. Kept for backward compatibility only.
+// @deprecated - Use CLUSTER_BASE_URL directly. Kept for backward compatibility only.
 export const REGIONAL_URLS: Record<string, string> = {
-  nam1: TTN_BASE_URL,
+  nam1: CLUSTER_BASE_URL,
   // Other clusters removed - NAM1-ONLY mode enforced
 };
 
@@ -141,8 +157,9 @@ export function getClusterBaseUrl(region: string | null | undefined): string {
 }
 
 /**
- * Assert that a TtnConfig is cluster-locked (all URLs point to same base).
- * Throws if mismatch detected - this prevents split-brain provisioning.
+ * @deprecated Use assertClusterHost() from ttnBase.ts instead.
+ * Assert that a TtnConfig is cluster-locked.
+ * Now simplified since TtnConfig only has clusterBaseUrl.
  */
 export function assertClusterLocked(cfg: TtnConfig): { ok: true; clusterBaseUrl: string } {
   const expected = cfg.clusterBaseUrl;
@@ -151,13 +168,8 @@ export function assertClusterLocked(cfg: TtnConfig): { ok: true; clusterBaseUrl:
     throw new Error("TTN config missing clusterBaseUrl - configuration error");
   }
   
-  if (cfg.identityBaseUrl && cfg.identityBaseUrl !== expected) {
-    throw new Error(`TTN cluster mismatch: identityBaseUrl (${cfg.identityBaseUrl}) != clusterBaseUrl (${expected})`);
-  }
-  
-  if (cfg.regionalBaseUrl && cfg.regionalBaseUrl !== expected) {
-    throw new Error(`TTN cluster mismatch: regionalBaseUrl (${cfg.regionalBaseUrl}) != clusterBaseUrl (${expected})`);
-  }
+  // Verify it's actually the correct cluster
+  assertClusterHost(`${expected}/api/v3/applications`);
   
   return { ok: true, clusterBaseUrl: expected };
 }
@@ -533,9 +545,7 @@ export async function getTtnConfigForOrg(
     region,
     apiKey,
     applicationId: applicationId || "",
-    clusterBaseUrl,                    // Single source of truth
-    identityBaseUrl: clusterBaseUrl,   // Now equals cluster URL (no more EU1 hard-code)
-    regionalBaseUrl: clusterBaseUrl,   // Now equals cluster URL
+    clusterBaseUrl,                    // THE ONLY TTN URL
     webhookSecret,
     webhookUrl: settings.ttn_webhook_url || undefined,
     isEnabled: settings.is_enabled || false,
@@ -607,18 +617,14 @@ export async function testTtnConnection(
   const apiKeyLast4 = config.apiKey.length >= 4 ? config.apiKey.slice(-4) : undefined;
 
   try {
-    // Step 1: Test application access on cluster base URL (now unified, no more EU1 split)
-    const baseUrl = config.clusterBaseUrl || config.identityBaseUrl;
+    // Step 1: Test application access on cluster base URL
+    const baseUrl = config.clusterBaseUrl;
+    
+    // HARD GUARD: Verify cluster host
+    assertClusterHost(`${baseUrl}/api/v3/applications`);
     
     // CLUSTER-LOCK: Log structured API call for debugging
-    console.log(JSON.stringify({
-      event: "ttn_api_call",
-      method: "GET",
-      endpoint: appEndpoint,
-      baseUrl,
-      step: "test_app_access",
-      timestamp: new Date().toISOString(),
-    }));
+    logTtnApiCall("testTtnConnection", "GET", appEndpoint, "test_app_access", crypto.randomUUID().slice(0, 8));
     
     const appResponse = await fetch(
       `${baseUrl}${appEndpoint}`,

@@ -37,24 +37,27 @@ interface TTNDiagnosticsPanelProps {
   className?: string;
 }
 
-// NAM1 is the only supported cluster
+// SINGLE CLUSTER - NAM1 is the only allowed endpoint
+const CLUSTER_BASE_URL = "https://nam1.cloud.thethings.network";
+const CLUSTER_HOST = "nam1.cloud.thethings.network";
+
 const CLUSTER_CONFIG = {
-  nam1: {
-    label: "NAM1 (North America)",
-    apiBase: "https://nam1.cloud.thethings.network/api/v3",
-    identityServer: "https://eu1.cloud.thethings.network/api/v3",
-    consoleUrl: "https://nam1.cloud.thethings.network/console",
-    frequencyPlan: "US_902_928_FSB_2",
-  },
+  label: "NAM1 (North America)",
+  baseUrl: CLUSTER_BASE_URL,
+  host: CLUSTER_HOST,
+  consoleUrl: "https://nam1.cloud.thethings.network/console",
+  frequencyPlan: "US_902_928_FSB_2",
 };
 
 export function TTNDiagnosticsPanel({ data, className }: TTNDiagnosticsPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
 
   const currentCluster = data.ttn_region || "nam1";
-  const clusterConfig = CLUSTER_CONFIG.nam1; // Always NAM1
   const isProvisioned = data.provisioning_status === "ready";
   const lastHttpOk = data.last_http_status && data.last_http_status >= 200 && data.last_http_status < 300;
+  
+  // Verify cluster host matches expected
+  const clusterHostMatches = currentCluster.toLowerCase() === "nam1";
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className={className}>
@@ -69,7 +72,7 @@ export function TTNDiagnosticsPanel({ data, className }: TTNDiagnosticsPanelProp
       
       <CollapsibleContent>
         <div className="mt-3 p-4 rounded-lg border bg-muted/30 space-y-4">
-          {/* Cluster Info */}
+          {/* Single Cluster Info */}
           <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
             <span className="text-muted-foreground flex items-center gap-1.5">
               <Globe className="h-3.5 w-3.5" />
@@ -77,31 +80,38 @@ export function TTNDiagnosticsPanel({ data, className }: TTNDiagnosticsPanelProp
             </span>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                NAM1
+                {CLUSTER_CONFIG.label}
               </Badge>
-              {currentCluster !== "nam1" && (
-                <Badge variant="outline" className="bg-warning/10 text-warning border-warning/30 text-xs">
-                  DB shows: {currentCluster.toUpperCase()}
+              {clusterHostMatches ? (
+                <CheckCircle2 className="h-3.5 w-3.5 text-safe" />
+              ) : (
+                <Badge variant="outline" className="bg-alarm/10 text-alarm border-alarm/30 text-xs">
+                  Host mismatch!
                 </Badge>
               )}
             </div>
 
             <span className="text-muted-foreground flex items-center gap-1.5">
               <Server className="h-3.5 w-3.5" />
-              API Base:
+              Base URL:
             </span>
             <code className="text-xs font-mono text-foreground/80 break-all">
-              {clusterConfig.apiBase}
+              {CLUSTER_CONFIG.baseUrl}
             </code>
 
-            <span className="text-muted-foreground">Identity Server:</span>
-            <code className="text-xs font-mono text-foreground/80 break-all">
-              {clusterConfig.identityServer}
-            </code>
+            <span className="text-muted-foreground">Host (all planes):</span>
+            <div className="flex items-center gap-2">
+              <code className="text-xs font-mono text-foreground/80">
+                {CLUSTER_CONFIG.host}
+              </code>
+              <Badge variant="outline" className="bg-safe/10 text-safe border-safe/30 text-xs">
+                IS/JS/NS/AS ✓
+              </Badge>
+            </div>
 
             <span className="text-muted-foreground">Frequency Plan:</span>
             <code className="text-xs font-mono text-foreground/80">
-              {clusterConfig.frequencyPlan}
+              {CLUSTER_CONFIG.frequencyPlan}
             </code>
           </div>
 
@@ -191,7 +201,7 @@ export function TTNDiagnosticsPanel({ data, className }: TTNDiagnosticsPanelProp
           {/* Console Link */}
           <div className="pt-2 border-t">
             <a
-              href={`${clusterConfig.consoleUrl}/applications/${data.ttn_application_id || ""}`}
+              href={`${CLUSTER_CONFIG.consoleUrl}/applications/${data.ttn_application_id || ""}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-primary hover:underline"

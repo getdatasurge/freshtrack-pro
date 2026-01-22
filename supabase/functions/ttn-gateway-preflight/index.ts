@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
-import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
+import { CLUSTER_BASE_URL, assertClusterHost, logTtnApiCall } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -208,11 +208,12 @@ serve(async (req) => {
     }
 
     // Check API key scope using auth_info endpoint
-    // NAM1-ONLY: Uses NAM1 identity server for auth_info (imported from ttnBase.ts)
-    assertNam1Only(TTN_BASE_URL);
-    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${TTN_BASE_URL}`);
+    // NAM1-ONLY: Uses CLUSTER_BASE_URL for auth_info (imported from ttnBase.ts)
+    const authInfoUrl = `${CLUSTER_BASE_URL}/api/v3/auth_info`;
+    assertClusterHost(authInfoUrl);
+    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${CLUSTER_BASE_URL}`);
 
-    const authInfoResponse = await fetch(`${TTN_BASE_URL}/api/v3/auth_info`, {
+    const authInfoResponse = await fetch(authInfoUrl, {
       headers: {
         Authorization: `Bearer ${ttnConfig.apiKey}`,
         "Content-Type": "application/json",
