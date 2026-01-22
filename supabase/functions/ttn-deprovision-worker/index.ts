@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
+import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -148,7 +149,10 @@ async function tryDeleteFromTtn(
   // CLUSTER-LOCKED: All endpoints use the SAME base URL
   // This prevents split-brain deletion where some planes are on different clusters
   const baseUrl = ttnConfig.clusterBaseUrl;
-  console.log(`[ttn-deprovision-worker] Cluster locked to: ${baseUrl}`);
+  
+  // NAM1-ONLY: Fail-closed guard - reject non-NAM1 base URLs
+  assertNam1Only(baseUrl);
+  console.log(`[ttn-deprovision-worker] Cluster locked to NAM1: ${baseUrl}`);
   
   const endpoints = [
     { name: "IS", url: `${baseUrl}/api/v3/applications/${targetAppId}/devices/${deviceId}` },

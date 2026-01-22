@@ -9,6 +9,7 @@ import {
   generateTtnDeviceId,
   generateWebhookSecret,
 } from "../_shared/ttnConfig.ts";
+import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -785,8 +786,8 @@ Deno.serve(async (req: Request) => {
       };
 
       const apiKey = deobfuscateKey(settings.ttn_api_key_encrypted, encryptionSalt);
-      // NAM1-ONLY: All cluster validation uses NAM1
-      const NAM1_BASE = "https://nam1.cloud.thethings.network";
+      // NAM1-ONLY: All cluster validation uses NAM1 (imported from ttnBase.ts)
+      assertNam1Only(TTN_BASE_URL);
       const appId = settings.ttn_application_id;
 
       const checks = {
@@ -799,7 +800,7 @@ Deno.serve(async (req: Request) => {
       // Check 1: Application exists on NAM1 Identity Server
       try {
         const appResponse = await fetch(
-          `${NAM1_BASE}/api/v3/applications/${appId}`,
+          `${TTN_BASE_URL}/api/v3/applications/${appId}`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
         checks.application_on_nam1 = appResponse.ok;
@@ -811,7 +812,7 @@ Deno.serve(async (req: Request) => {
       // Check 2: Application Server on NAM1 is accessible
       try {
         const asResponse = await fetch(
-          `${NAM1_BASE}/api/v3/as/applications/${appId}/devices?limit=1`,
+          `${TTN_BASE_URL}/api/v3/as/applications/${appId}/devices?limit=1`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
         // 200 = accessible, 404 = no devices but AS is correct cluster
@@ -824,7 +825,7 @@ Deno.serve(async (req: Request) => {
       // Check 3: Webhook exists on NAM1
       try {
         const webhookResponse = await fetch(
-          `${NAM1_BASE}/api/v3/as/webhooks/${appId}`,
+          `${TTN_BASE_URL}/api/v3/as/webhooks/${appId}`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
         checks.webhook_on_nam1 = webhookResponse.ok;
