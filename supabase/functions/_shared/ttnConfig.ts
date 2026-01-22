@@ -8,6 +8,7 @@
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { TTN_BASE_URL, assertNam1Only } from "./ttnBase.ts";
 
 // ============================================================================
 // DevEUI Normalization Helpers
@@ -102,11 +103,13 @@ export interface TtnConnectionRow {
 // All TTN API operations MUST target the NAM1 cluster exclusively.
 // This prevents split-brain provisioning and ensures consistent device registration.
 // ============================================================================
-const NAM1_BASE_URL = "https://nam1.cloud.thethings.network";
 
-// Exported for backward compatibility - but only nam1 is valid
+// Re-export TTN_BASE_URL from canonical source for backward compatibility
+export { TTN_BASE_URL, assertNam1Only } from "./ttnBase.ts";
+
+// @deprecated - Use TTN_BASE_URL directly. Kept for backward compatibility only.
 export const REGIONAL_URLS: Record<string, string> = {
-  nam1: NAM1_BASE_URL,
+  nam1: TTN_BASE_URL,
   // Other clusters removed - NAM1-ONLY mode enforced
 };
 
@@ -134,7 +137,7 @@ export function getClusterBaseUrl(region: string | null | undefined): string {
   if (requested !== "nam1") {
     console.warn(`[getClusterBaseUrl] NAM1-ONLY: Region "${requested}" requested but NAM1 enforced`);
   }
-  return NAM1_BASE_URL;
+  return TTN_BASE_URL;
 }
 
 /**
@@ -522,7 +525,7 @@ export async function getTtnConfigForOrg(
   }
   
   // NAM1-ONLY: Single base URL for ALL planes (Identity + Regional)
-  const clusterBaseUrl = NAM1_BASE_URL;
+  const clusterBaseUrl = TTN_BASE_URL;
   
   console.log(`[getTtnConfigForOrg] NAM1-ONLY: Using ${clusterBaseUrl}`);
 

@@ -10,18 +10,20 @@
  * Created Org/App API keys are OUTPUT ARTIFACTS for runtime use, NOT inputs to provisioning.
  */
 
+import { TTN_BASE_URL } from "./ttnBase.ts";
+
 // ============================================================================
 // NAM1-ONLY HARD LOCK
 // All TTN API operations MUST target the NAM1 cluster exclusively.
+// Importing from single source of truth: _shared/ttnBase.ts
 // ============================================================================
-const NAM1_BASE_URL = "https://nam1.cloud.thethings.network";
 
-// Identity Server URL - NAM1-ONLY (was EU1, now unified to NAM1)
-export const IDENTITY_SERVER_URL = NAM1_BASE_URL;
+// Re-export for backward compatibility
+export const IDENTITY_SERVER_URL = TTN_BASE_URL;
 
-// TTN regional URLs - NAM1-ONLY mode
+// @deprecated - Use TTN_BASE_URL directly
 export const REGIONAL_URLS: Record<string, string> = {
-  nam1: NAM1_BASE_URL,
+  nam1: TTN_BASE_URL,
   // Other clusters removed - NAM1-ONLY mode enforced
 };
 

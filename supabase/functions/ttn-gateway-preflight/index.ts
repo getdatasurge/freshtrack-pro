@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
+import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,9 +51,6 @@ interface PreflightResult {
  * Validates TTN API key type and gateway permissions BEFORE any provisioning attempt.
  * Returns actionable errors with step-by-step fix instructions.
  */
-// NAM1-ONLY: All TTN API calls target NAM1 cluster
-const NAM1_BASE_URL = "https://nam1.cloud.thethings.network";
-const TTN_IDENTITY_BASE = NAM1_BASE_URL;
 
 serve(async (req) => {
   const BUILD_VERSION = "ttn-gateway-preflight-v2.0-authinfo-fix-20260105";
@@ -210,10 +208,11 @@ serve(async (req) => {
     }
 
     // Check API key scope using auth_info endpoint
-    // NAM1-ONLY: Uses NAM1 identity server for auth_info
-    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${TTN_IDENTITY_BASE}`);
+    // NAM1-ONLY: Uses NAM1 identity server for auth_info (imported from ttnBase.ts)
+    assertNam1Only(TTN_BASE_URL);
+    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${TTN_BASE_URL}`);
 
-    const authInfoResponse = await fetch(`${TTN_IDENTITY_BASE}/api/v3/auth_info`, {
+    const authInfoResponse = await fetch(`${TTN_BASE_URL}/api/v3/auth_info`, {
       headers: {
         Authorization: `Bearer ${ttnConfig.apiKey}`,
         "Content-Type": "application/json",
