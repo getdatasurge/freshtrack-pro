@@ -133,10 +133,10 @@ async function logEvent(
 
 /**
  * Try to delete a device from TTN using multi-endpoint fallback
- * Handles "Other cluster" devices by trying NS, AS, JS endpoints
+ * CLUSTER-LOCKED: All endpoints use the same clusterBaseUrl (no EU1/NAM1 split)
  */
 async function tryDeleteFromTtn(
-  ttnConfig: { identityBaseUrl: string; regionalBaseUrl: string; apiKey: string },
+  ttnConfig: { clusterBaseUrl: string; apiKey: string },
   targetAppId: string,
   deviceId: string
 ): Promise<{ success: boolean; alreadyDeleted: boolean; error?: string; statusCode?: number }> {
@@ -145,16 +145,16 @@ async function tryDeleteFromTtn(
     "Content-Type": "application/json",
   };
 
-  // Endpoints to try in order:
-  // 1. Identity Server (IS) - main device registry
-  // 2. Network Server (NS) - handles device sessions
-  // 3. Application Server (AS) - handles application data
-  // 4. Join Server (JS) - handles join keys
+  // CLUSTER-LOCKED: All endpoints use the SAME base URL
+  // This prevents split-brain deletion where some planes are on different clusters
+  const baseUrl = ttnConfig.clusterBaseUrl;
+  console.log(`[ttn-deprovision-worker] Cluster locked to: ${baseUrl}`);
+  
   const endpoints = [
-    { name: "IS", url: `${ttnConfig.identityBaseUrl}/api/v3/applications/${targetAppId}/devices/${deviceId}` },
-    { name: "NS", url: `${ttnConfig.regionalBaseUrl}/api/v3/ns/applications/${targetAppId}/devices/${deviceId}` },
-    { name: "AS", url: `${ttnConfig.regionalBaseUrl}/api/v3/as/applications/${targetAppId}/devices/${deviceId}` },
-    { name: "JS", url: `${ttnConfig.identityBaseUrl}/api/v3/js/applications/${targetAppId}/devices/${deviceId}` },
+    { name: "IS", url: `${baseUrl}/api/v3/applications/${targetAppId}/devices/${deviceId}` },
+    { name: "NS", url: `${baseUrl}/api/v3/ns/applications/${targetAppId}/devices/${deviceId}` },
+    { name: "AS", url: `${baseUrl}/api/v3/as/applications/${targetAppId}/devices/${deviceId}` },
+    { name: "JS", url: `${baseUrl}/api/v3/js/applications/${targetAppId}/devices/${deviceId}` },
   ];
 
   let lastError = "";
@@ -305,13 +305,12 @@ serve(async (req) => {
       }
       
       try {
-        // Use multi-endpoint fallback to handle "Other cluster" devices
-        console.log(`[ttn-deprovision-worker] Deleting device ${deviceId} from app ${targetAppId}`);
+        // CLUSTER-LOCKED: All endpoints use same base URL (no EU1/NAM1 split)
+        console.log(`[ttn-deprovision-worker] Deleting device ${deviceId} from app ${targetAppId} on cluster ${ttnConfig.clusterBaseUrl || ttnConfig.regionalBaseUrl}`);
         
         const deleteResult = await tryDeleteFromTtn(
           {
-            identityBaseUrl: ttnConfig.identityBaseUrl,
-            regionalBaseUrl: ttnConfig.regionalBaseUrl,
+            clusterBaseUrl: ttnConfig.clusterBaseUrl || ttnConfig.regionalBaseUrl,
             apiKey: ttnConfig.apiKey,
           },
           targetAppId,

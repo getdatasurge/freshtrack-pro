@@ -54,8 +54,9 @@ export interface TtnConfig {
   region: string;
   apiKey: string;
   applicationId: string;       // Per-org TTN application ID
-  identityBaseUrl: string;     // Always eu1
-  regionalBaseUrl: string;     // Based on region
+  clusterBaseUrl: string;      // Single unified URL for all planes (IS, JS, NS, AS)
+  identityBaseUrl: string;     // Now equals clusterBaseUrl (kept for compatibility)
+  regionalBaseUrl: string;     // Now equals clusterBaseUrl (kept for compatibility)
   webhookSecret?: string;
   webhookUrl?: string;
   isEnabled: boolean;
@@ -96,10 +97,8 @@ export interface TtnConnectionRow {
   ttn_application_provisioned_at: string | null;
 }
 
-// Identity Server is always on eu1 for all TTN v3 clusters
-const IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network";
-
-// Regional URLs derived from region
+// CLUSTER-LOCKED: All planes (IS, JS, NS, AS) use the SAME regional URL
+// This prevents split-brain where device identity is in one cluster but keys are in another
 const REGIONAL_URLS: Record<string, string> = {
   nam1: "https://nam1.cloud.thethings.network",
   eu1: "https://eu1.cloud.thethings.network",
@@ -461,15 +460,22 @@ export async function getTtnConfigForOrg(
     ? deobfuscateKey(settings.ttn_gateway_api_key_encrypted, encryptionSalt)
     : undefined;
 
-  // Normalize region (ensure lowercase) - default to eu1
+  // Normalize region (ensure lowercase) - default to nam1
   const region = (settings.ttn_region || "nam1").toLowerCase();
+  
+  // CLUSTER-LOCK: Use single base URL for ALL planes (Identity + Regional)
+  // This prevents split-brain where device identity is created in EU1 but keys are in NAM1
+  const clusterBaseUrl = REGIONAL_URLS[region] || REGIONAL_URLS.nam1;
+  
+  console.log(`[getTtnConfigForOrg] Cluster locked to: ${clusterBaseUrl} (region: ${region})`);
 
   return {
     region,
     apiKey,
     applicationId: applicationId || "",
-    identityBaseUrl: IDENTITY_SERVER_URL,
-    regionalBaseUrl: REGIONAL_URLS[region] || REGIONAL_URLS.eu1,
+    clusterBaseUrl,                    // Single source of truth
+    identityBaseUrl: clusterBaseUrl,   // Now equals cluster URL (no more EU1 hard-code)
+    regionalBaseUrl: clusterBaseUrl,   // Now equals cluster URL
     webhookSecret,
     webhookUrl: settings.ttn_webhook_url || undefined,
     isEnabled: settings.is_enabled || false,
@@ -541,12 +547,12 @@ export async function testTtnConnection(
   const apiKeyLast4 = config.apiKey.length >= 4 ? config.apiKey.slice(-4) : undefined;
 
   try {
-    // Step 1: Test application access on IDENTITY SERVER (eu1) where apps are registered
-    // This is the authoritative source for application existence
-    console.log(`[testTtnConnection] Testing app on Identity Server: ${config.identityBaseUrl}${appEndpoint}`);
+    // Step 1: Test application access on cluster base URL (now unified, no more EU1 split)
+    console.log(`[testTtnConnection] Testing app on cluster: ${config.clusterBaseUrl || config.identityBaseUrl}${appEndpoint}`);
     
+    const baseUrl = config.clusterBaseUrl || config.identityBaseUrl;
     const appResponse = await fetch(
-      `${config.identityBaseUrl}${appEndpoint}`,
+      `${baseUrl}${appEndpoint}`,
       {
         method: "GET",
         headers: {
