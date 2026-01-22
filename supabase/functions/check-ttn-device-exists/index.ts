@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { deobfuscateKey, normalizeDevEui, getClusterBaseUrl } from "../_shared/ttnConfig.ts";
+import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
 
 const BUILD_VERSION = "check-ttn-device-exists-v3.0-cluster-locked-20260122";
 
@@ -181,8 +182,9 @@ Deno.serve(async (req) => {
 
       console.log(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: Listing devices from TTN app ${config.application_id}`);
 
-      // CLUSTER-LOCKED: Use cluster URL from config, not hard-coded EU1
+      // CLUSTER-LOCKED: Use cluster URL from config (always NAM1)
       const clusterUrl = getClusterBaseUrl(config.cluster);
+      assertNam1Only(clusterUrl); // Fail-closed guard
       
       // List all devices from TTN for this application (single API call per org)
       let ttnDeviceMap: Map<string, string> | null = null; // normalized_dev_eui -> device_id

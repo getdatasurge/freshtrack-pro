@@ -43,6 +43,7 @@ import {
   GATEWAY_KEY_RIGHTS_ALL,
   validateMainUserApiKey,
 } from "../_shared/ttnPermissions.ts";
+import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -67,18 +68,15 @@ interface TTNErrorDetails {
 }
 
 // ============================================================================
-// NAM1-ONLY HARD LOCK
-// All TTN API operations MUST target the NAM1 cluster exclusively.
+// NAM1-ONLY HARD LOCK - Imported from single source of truth
 // ============================================================================
-const NAM1_BASE_URL = "https://nam1.cloud.thethings.network";
-
+// @deprecated - Use TTN_BASE_URL directly
 const REGIONAL_URLS: Record<string, string> = {
-  nam1: NAM1_BASE_URL,
-  // Other clusters removed - NAM1-ONLY mode enforced
+  nam1: TTN_BASE_URL,
 };
 
-// NAM1-ONLY: Identity Server also uses NAM1 (was EU1, now unified)
-const IDENTITY_SERVER_URL = NAM1_BASE_URL;
+// @deprecated - Use TTN_BASE_URL directly
+const IDENTITY_SERVER_URL = TTN_BASE_URL;
 
 // Request timeout in milliseconds
 const REQUEST_TIMEOUT_MS = 15000;
