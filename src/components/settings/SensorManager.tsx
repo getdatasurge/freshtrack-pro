@@ -45,6 +45,8 @@ import { useTTNConfig } from "@/contexts/TTNConfigContext";
 import { checkTTNOperationAllowed } from "@/lib/ttn/guards";
 import { TtnProvisioningStatusBadge, TtnActions } from "./TtnProvisioningStatusBadge";
 import { useCheckTtnProvisioningState } from "@/hooks/useCheckTtnProvisioningState";
+import { TtnDiagnoseModal, TtnDiagnoseResult } from "./TtnDiagnoseModal";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Site {
   id: string;
@@ -356,6 +358,73 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   const handleUnprovision = (sensor: LoraSensor) => {
     // TODO: Queue a deprovision job via existing system
     toast.info("Deprovisioning will be implemented - creates a job in ttn_deprovision_jobs");
+  };
+
+  // ========== TTN DIAGNOSE STATE ==========
+  const [diagnosingSensorId, setDiagnosingSensorId] = useState<string | null>(null);
+  const [diagnoseResult, setDiagnoseResult] = useState<TtnDiagnoseResult | null>(null);
+  const [diagnoseModalOpen, setDiagnoseModalOpen] = useState(false);
+  const [diagnoseSensorName, setDiagnoseSensorName] = useState<string>("");
+
+  const handleDiagnose = async (sensor: LoraSensor) => {
+    setDiagnosingSensorId(sensor.id);
+    setDiagnoseSensorName(sensor.name);
+    setDiagnoseResult(null);
+    setDiagnoseModalOpen(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('ttn-provision-device', {
+        body: {
+          action: 'diagnose',
+          sensor_id: sensor.id,
+          organization_id: organizationId,
+        },
+      });
+      
+      if (error) {
+        setDiagnoseResult({
+          success: false,
+          error: error.message || 'Diagnosis failed',
+          clusterBaseUrl: '',
+          region: '',
+          appId: '',
+          deviceId: '',
+          checks: {
+            appProbe: { ok: false, status: 0 },
+            is: { ok: false, status: 0 },
+            js: { ok: false, status: 0 },
+            ns: { ok: false, status: 0 },
+            as: { ok: false, status: 0 },
+          },
+          diagnosis: 'error',
+          hint: '',
+          diagnosedAt: new Date().toISOString(),
+        });
+      } else {
+        setDiagnoseResult(data as TtnDiagnoseResult);
+      }
+    } catch (err) {
+      setDiagnoseResult({
+        success: false,
+        error: err instanceof Error ? err.message : 'Unknown error',
+        clusterBaseUrl: '',
+        region: '',
+        appId: '',
+        deviceId: '',
+        checks: {
+          appProbe: { ok: false, status: 0 },
+          is: { ok: false, status: 0 },
+          js: { ok: false, status: 0 },
+          ns: { ok: false, status: 0 },
+          as: { ok: false, status: 0 },
+        },
+        diagnosis: 'error',
+        hint: '',
+        diagnosedAt: new Date().toISOString(),
+      });
+    } finally {
+      setDiagnosingSensorId(null);
+    }
   };
   
   // Site change confirmation state
@@ -888,6 +957,8 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                                   ? "TTN integration not fully configured" 
                                   : undefined
                             }
+                            onDiagnose={isTtnConfiguredNow ? () => handleDiagnose(sensor) : undefined}
+                            isDiagnosing={diagnosingSensorId === sensor.id}
                           />
                         </div>
                         {/* Edit actions row */}
@@ -1097,6 +1168,20 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* TTN Diagnose Modal */}
+        <TtnDiagnoseModal
+          open={diagnoseModalOpen}
+          onOpenChange={setDiagnoseModalOpen}
+          result={diagnoseResult}
+          isLoading={diagnosingSensorId !== null}
+          sensorName={diagnoseSensorName}
+          onRetry={() => {
+            // Find the sensor by name to retry
+            const sensor = sensors?.find(s => s.name === diagnoseSensorName);
+            if (sensor) handleDiagnose(sensor);
+          }}
+        />
     </TooltipProvider>
   );
 }

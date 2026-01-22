@@ -107,6 +107,41 @@ const REGIONAL_URLS: Record<string, string> = {
 };
 
 // ============================================================================
+// Cluster Lock Helpers (exported for use across edge functions)
+// ============================================================================
+
+/**
+ * Get the base URL for a TTN cluster region.
+ * Normalizes input and defaults to nam1.
+ */
+export function getClusterBaseUrl(region: string | null | undefined): string {
+  const normalized = (region || "nam1").toLowerCase().trim();
+  return REGIONAL_URLS[normalized] || REGIONAL_URLS.nam1;
+}
+
+/**
+ * Assert that a TtnConfig is cluster-locked (all URLs point to same base).
+ * Throws if mismatch detected - this prevents split-brain provisioning.
+ */
+export function assertClusterLocked(cfg: TtnConfig): { ok: true; clusterBaseUrl: string } {
+  const expected = cfg.clusterBaseUrl;
+  
+  if (!expected) {
+    throw new Error("TTN config missing clusterBaseUrl - configuration error");
+  }
+  
+  if (cfg.identityBaseUrl && cfg.identityBaseUrl !== expected) {
+    throw new Error(`TTN cluster mismatch: identityBaseUrl (${cfg.identityBaseUrl}) != clusterBaseUrl (${expected})`);
+  }
+  
+  if (cfg.regionalBaseUrl && cfg.regionalBaseUrl !== expected) {
+    throw new Error(`TTN cluster mismatch: regionalBaseUrl (${cfg.regionalBaseUrl}) != clusterBaseUrl (${expected})`);
+  }
+  
+  return { ok: true, clusterBaseUrl: expected };
+}
+
+// ============================================================================
 // Byte-Safe Obfuscation (v2) with Legacy Fallback
 // ============================================================================
 
@@ -548,9 +583,18 @@ export async function testTtnConnection(
 
   try {
     // Step 1: Test application access on cluster base URL (now unified, no more EU1 split)
-    console.log(`[testTtnConnection] Testing app on cluster: ${config.clusterBaseUrl || config.identityBaseUrl}${appEndpoint}`);
-    
     const baseUrl = config.clusterBaseUrl || config.identityBaseUrl;
+    
+    // CLUSTER-LOCK: Log structured API call for debugging
+    console.log(JSON.stringify({
+      event: "ttn_api_call",
+      method: "GET",
+      endpoint: appEndpoint,
+      baseUrl,
+      step: "test_app_access",
+      timestamp: new Date().toISOString(),
+    }));
+    
     const appResponse = await fetch(
       `${baseUrl}${appEndpoint}`,
       {
@@ -599,16 +643,24 @@ export async function testTtnConnection(
     const appData = await appResponse.json();
     const applicationName = appData.name || config.applicationId;
 
-    // Step 2: Optionally test regional server accessibility (for devices/uplinks)
+    // Step 2: Optionally test device on SAME cluster URL (not regional - all unified now)
     // Only if a device test is requested
     let deviceTest: TtnTestResult['deviceTest'] = undefined;
     
     if (options?.testDeviceId) {
       const deviceEndpoint = `/api/v3/applications/${config.applicationId}/devices/${options.testDeviceId}`;
-      console.log(`[testTtnConnection] Testing device on regional server: ${config.regionalBaseUrl}${deviceEndpoint}`);
+      // CLUSTER-LOCK: Use same baseUrl for device test (not regionalBaseUrl)
+      console.log(JSON.stringify({
+        event: "ttn_api_call",
+        method: "GET",
+        endpoint: deviceEndpoint,
+        baseUrl,
+        step: "test_device_exists",
+        timestamp: new Date().toISOString(),
+      }));
       
       const deviceResponse = await fetch(
-        `${config.regionalBaseUrl}${deviceEndpoint}`,
+        `${baseUrl}${deviceEndpoint}`,
         {
           method: "GET",
           headers: {
