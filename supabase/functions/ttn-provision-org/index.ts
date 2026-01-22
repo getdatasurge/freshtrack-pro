@@ -66,15 +66,19 @@ interface TTNErrorDetails {
   code?: number;
 }
 
+// ============================================================================
+// NAM1-ONLY HARD LOCK
+// All TTN API operations MUST target the NAM1 cluster exclusively.
+// ============================================================================
+const NAM1_BASE_URL = "https://nam1.cloud.thethings.network";
+
 const REGIONAL_URLS: Record<string, string> = {
-  nam1: "https://nam1.cloud.thethings.network",
-  eu1: "https://eu1.cloud.thethings.network",
-  au1: "https://au1.cloud.thethings.network",
-  as1: "https://as1.cloud.thethings.network",
+  nam1: NAM1_BASE_URL,
+  // Other clusters removed - NAM1-ONLY mode enforced
 };
 
-// Identity Server is always on eu1 for all TTN v3 clusters
-const IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network";
+// NAM1-ONLY: Identity Server also uses NAM1 (was EU1, now unified)
+const IDENTITY_SERVER_URL = NAM1_BASE_URL;
 
 // Request timeout in milliseconds
 const REQUEST_TIMEOUT_MS = 15000;

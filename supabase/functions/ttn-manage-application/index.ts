@@ -105,12 +105,29 @@ serve(async (req) => {
       );
     }
 
+    // NAM1-ONLY: Use clusterBaseUrl for all TTN operations
+    const baseUrl = ttnConfig.clusterBaseUrl || ttnConfig.identityBaseUrl;
+    
+    // NAM1-ONLY GUARD: Verify we're targeting the correct cluster
+    const NAM1_EXPECTED = "https://nam1.cloud.thethings.network";
+    if (!baseUrl.startsWith(NAM1_EXPECTED)) {
+      console.error(`[ttn-manage-application] NAM1-ONLY violation: ${baseUrl}`);
+      return new Response(
+        JSON.stringify({ 
+          error: "Cluster misconfiguration", 
+          hint: "NAM1-ONLY mode enforced - contact support",
+          baseUrl,
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Verify or ensure the global TTN application exists
     if (action === "verify" || action === "ensure") {
-      console.log(`[ttn-manage-application] Verifying TTN application: ${ttnAppId}`);
+      console.log(`[ttn-manage-application] Verifying TTN application: ${ttnAppId} on ${baseUrl}`);
 
       const checkResponse = await fetch(
-        `${ttnConfig.identityBaseUrl}/api/v3/applications/${ttnAppId}`,
+        `${baseUrl}/api/v3/applications/${ttnAppId}`,
         {
           method: "GET",
           headers: {
@@ -181,9 +198,9 @@ serve(async (req) => {
           },
         };
 
-        // Webhooks are managed by Application Server - use Regional URL
+        // NAM1-ONLY: Webhooks use same clusterBaseUrl
         const webhookResponse = await fetch(
-          `${ttnConfig.regionalBaseUrl}/api/v3/as/webhooks/${ttnAppId}`,
+          `${baseUrl}/api/v3/as/webhooks/${ttnAppId}`,
           {
             method: "POST",
             headers: {
