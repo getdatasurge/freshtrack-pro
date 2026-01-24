@@ -1,5 +1,5 @@
 /**
- * TTN Bootstrap Edge Function v2.0
+ * TTN Bootstrap Edge Function v3.1
  *
  * Handles full TTN provisioning flow:
  * Step 1:  Create Organization
@@ -9,24 +9,26 @@
  * Step 3:  Create Webhook
  *
  * Key fixes in this version:
- * - ALWAYS uses EU1 cluster
+ * - SINGLE CLUSTER: ALL operations use NAM1 (2026-01-24 fix)
+ * - Fixed cross-cluster device registration causing "other cluster" warnings
+ * - Calls ttn-deprovision before Start Fresh to release DevEUIs
  * - Sanitizes org_id (no @ttn suffix, lowercase, URL-safe)
  * - Verifies org ownership BEFORE marking step 1 success
  * - Correct auth_info parsing (nested rights path)
  * - Proper error classification
- * - Start Fresh with org_id rotation on failure
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ============================================================================
-// CONSTANTS
+// CONSTANTS - SINGLE CLUSTER ARCHITECTURE
+// ALL operations use the same cluster - no EU1/NAM1 mixing!
 // ============================================================================
 
-const TTN_BASE_URL = "https://eu1.cloud.thethings.network";
-const TTN_REGION = "eu1"; // Default region
-const FUNCTION_VERSION = "ttn-bootstrap-v3.0-with-deprovision-20260124";
+const TTN_BASE_URL = "https://nam1.cloud.thethings.network";
+const TTN_REGION = "nam1"; // Single cluster for all operations
+const FUNCTION_VERSION = "ttn-bootstrap-v3.1-single-cluster-20260124";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

@@ -17,7 +17,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, handleCorsPreflightRequest } from "../_shared/cors.ts";
 
-const BUILD_VERSION = "ttn-force-release-eui-v1.0-20260124";
+const BUILD_VERSION = "ttn-force-release-eui-v1.1-20260124";
 
 // TTN cluster URLs to search
 const TTN_CLUSTERS = [

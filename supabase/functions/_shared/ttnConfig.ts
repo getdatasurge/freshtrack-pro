@@ -70,13 +70,13 @@ export interface TtnConfig {
   region: string;
   apiKey: string;
   applicationId: string;       // Per-org TTN application ID
-  
-  // DUAL-ENDPOINT ARCHITECTURE
-  // Identity Server (EU1): auth_info, applications, devices (registry)
-  // Data Planes (NAM1): NS, AS, JS, webhooks
-  identityServerUrl: string;   // EU1 for IS operations
-  clusterBaseUrl: string;      // NAM1 for data plane operations
-  
+
+  // SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix)
+  // ALL operations use the same cluster - no mixing!
+  // Both identityServerUrl and clusterBaseUrl point to the same URL now
+  identityServerUrl: string;   // Same as clusterBaseUrl (NAM1)
+  clusterBaseUrl: string;      // NAM1 for all operations
+
   webhookSecret?: string;
   webhookUrl?: string;
   isEnabled: boolean;
@@ -554,20 +554,19 @@ export async function getTtnConfigForOrg(
     console.warn(`[getTtnConfigForOrg] NAM1-ONLY: Stored region "${requestedRegion}" overridden to "nam1"`);
   }
   
-  // DUAL-ENDPOINT ARCHITECTURE
-  // Identity Server (EU1): for registry operations (apps, devices, orgs, API keys)
-  // Data Planes (NAM1): for LoRaWAN operations (NS, AS, JS, webhooks)
-  const identityServerUrl = IDENTITY_SERVER_URL;
-  const clusterBaseUrl = CLUSTER_BASE_URL;
-  
-  console.log(`[getTtnConfigForOrg] Dual-endpoint: IS=${identityServerUrl}, DATA=${clusterBaseUrl}`);
+  // SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix)
+  // ALL operations use the same cluster - no mixing between EU1 and NAM1
+  const identityServerUrl = IDENTITY_SERVER_URL;  // Now points to NAM1
+  const clusterBaseUrl = CLUSTER_BASE_URL;        // NAM1
+
+  console.log(`[getTtnConfigForOrg] Single-cluster: ${clusterBaseUrl}`);
 
   return {
     region,
     apiKey,
     applicationId: applicationId || "",
-    identityServerUrl,                 // EU1 for Identity Server
-    clusterBaseUrl,                    // NAM1 for data planes
+    identityServerUrl,                 // Same as clusterBaseUrl (NAM1)
+    clusterBaseUrl,                    // NAM1 for all operations
     webhookSecret,
     webhookUrl: settings.ttn_webhook_url || undefined,
     isEnabled: settings.is_enabled || false,
@@ -640,12 +639,11 @@ export async function testTtnConnection(
   const apiKeyLast4 = config.apiKey.length >= 4 ? config.apiKey.slice(-4) : undefined;
 
   try {
-    // DUAL-ENDPOINT ARCHITECTURE FIX:
-    // Application registry queries go to Identity Server (EU1), NOT data planes (NAM1)
-    // This fixes BUG-001/002 where testTtnConnection was incorrectly using NAM1 for IS calls
+    // SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix)
+    // All operations now use the same cluster (NAM1) - no EU1/NAM1 mixing
     const identityServerUrl = config.identityServerUrl || IDENTITY_SERVER_URL;
-    
-    // HARD GUARD: Verify we're calling the correct host for IS operations
+
+    // Validate URL format
     assertValidTtnHost(`${identityServerUrl}${appEndpoint}`, "IS");
     
     // Log with credential fingerprint for audit trail
@@ -710,14 +708,14 @@ export async function testTtnConnection(
     const appData = await appResponse.json();
     const applicationName = appData.name || config.applicationId;
 
-    // Step 2: Optionally test device on Identity Server (device registry is on IS/EU1)
+    // Step 2: Optionally test device on Identity Server
     // Only if a device test is requested
     let deviceTest: TtnTestResult['deviceTest'] = undefined;
-    
+
     if (options?.testDeviceId) {
       const deviceEndpoint = `/api/v3/applications/${config.applicationId}/devices/${options.testDeviceId}`;
-      
-      // Device registry is on IS (EU1), not data planes (NAM1)
+
+      // Device registry query (using single cluster - NAM1)
       logTtnApiCallWithCred(
         "testTtnConnection", 
         "GET", 
