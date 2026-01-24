@@ -2909,6 +2909,122 @@ export type Database = {
           },
         ]
       }
+      ttn_deprovision_run_steps: {
+        Row: {
+          attempt: number
+          created_at: string
+          finished_at: string | null
+          http_status: number | null
+          id: string
+          meta: Json
+          response_snippet: string | null
+          run_id: string
+          started_at: string | null
+          status: string
+          step_name: string
+          target_id: string | null
+          target_type: string | null
+          ttn_endpoint: string | null
+        }
+        Insert: {
+          attempt?: number
+          created_at?: string
+          finished_at?: string | null
+          http_status?: number | null
+          id?: string
+          meta?: Json
+          response_snippet?: string | null
+          run_id: string
+          started_at?: string | null
+          status?: string
+          step_name: string
+          target_id?: string | null
+          target_type?: string | null
+          ttn_endpoint?: string | null
+        }
+        Update: {
+          attempt?: number
+          created_at?: string
+          finished_at?: string | null
+          http_status?: number | null
+          id?: string
+          meta?: Json
+          response_snippet?: string | null
+          run_id?: string
+          started_at?: string | null
+          status?: string
+          step_name?: string
+          target_id?: string | null
+          target_type?: string | null
+          ttn_endpoint?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ttn_deprovision_run_steps_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "ttn_deprovision_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ttn_deprovision_runs: {
+        Row: {
+          action: string
+          created_at: string
+          error: string | null
+          finished_at: string | null
+          id: string
+          organization_id: string
+          request_id: string | null
+          requested_by: string | null
+          source: string
+          started_at: string | null
+          status: string
+          summary: Json
+          ttn_application_id: string | null
+          ttn_org_id: string | null
+          ttn_region: string | null
+          updated_at: string
+        }
+        Insert: {
+          action?: string
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          organization_id: string
+          request_id?: string | null
+          requested_by?: string | null
+          source?: string
+          started_at?: string | null
+          status?: string
+          summary?: Json
+          ttn_application_id?: string | null
+          ttn_org_id?: string | null
+          ttn_region?: string | null
+          updated_at?: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          organization_id?: string
+          request_id?: string | null
+          requested_by?: string | null
+          source?: string
+          started_at?: string | null
+          status?: string
+          summary?: Json
+          ttn_application_id?: string | null
+          ttn_org_id?: string | null
+          ttn_region?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ttn_provisioning_logs: {
         Row: {
           created_at: string
