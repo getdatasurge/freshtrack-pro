@@ -2337,9 +2337,8 @@ serve(async (req) => {
         }
 
         // ============ STEP 5: Provisioning Proof Report ============
-        // Verify that all resources exist on the CORRECT clusters:
-        // - Identity Server (EU1): applications, API keys
-        // - Data Planes (NAM1): webhooks
+        // Verify that all resources exist on the same cluster (NAM1):
+        // - Applications, API keys, webhooks - all on NAM1
         const step5Start = Date.now();
         console.log(`[ttn-provision-org] [${requestId}] Step 5: Running Provisioning Proof Report`);
         
@@ -2366,7 +2365,7 @@ serve(async (req) => {
           steps: [],
         };
         
-        // A) Identity verification (EU1 only)
+        // A) Identity verification (NAM1 - single cluster)
         // Test auth_info with the app API key we created
         let appApiKeyForProof = appApiKeyForWebhook;
         if (!appApiKeyForProof) {

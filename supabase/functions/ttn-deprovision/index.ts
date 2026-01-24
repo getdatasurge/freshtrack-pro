@@ -10,9 +10,8 @@
  * 4. Delete + Purge organization
  * 5. Clear local DB records
  *
- * Uses dual-endpoint architecture:
- * - Identity Server (EU1): Device registry, applications, organizations
- * - Data Planes (NAM1): NS, AS, JS cleanup
+ * Uses single-cluster architecture (2026-01-24 fix):
+ * - ALL operations use NAM1 - no cross-cluster mixing
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -133,7 +132,7 @@ async function deleteAndPurgeDevice(
     requestId
   );
 
-  // Step 4: Delete from Identity Server (EU1 - main registry)
+  // Step 4: Delete from Identity Server (NAM1 - single cluster)
   const deleteResult = await ttnRequest(
     IDENTITY_SERVER_URL,
     `/api/v3/applications/${appId}/devices/${deviceId}`,

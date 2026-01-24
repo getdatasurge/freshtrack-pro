@@ -147,14 +147,15 @@ async function tryDeleteFromTtn(
     "Content-Type": "application/json",
   };
 
-  // DUAL-ENDPOINT: IS on EU1, data planes on NAM1
+  // SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix)
+  // ALL operations use the same cluster (NAM1) - no EU1/NAM1 mixing
   const dataPlaneUrl = ttnConfig.clusterBaseUrl;
-  
-  console.log(`[ttn-deprovision-worker] Dual-endpoint: IS=${IDENTITY_SERVER_URL}, DATA=${dataPlaneUrl}`);
-  
-  // Device deletion requires hitting all four endpoints:
-  // 1. IS (EU1) - device registry
-  // 2-4. NS/AS/JS (NAM1) - LoRaWAN state
+
+  console.log(`[ttn-deprovision-worker] Single-cluster: ${IDENTITY_SERVER_URL}`);
+
+  // Device deletion requires hitting all four endpoints (all on same cluster):
+  // 1. IS - device registry
+  // 2-4. NS/AS/JS - LoRaWAN state
   const endpoints = [
     { name: "IS", url: `${IDENTITY_SERVER_URL}/api/v3/applications/${targetAppId}/devices/${deviceId}`, type: "IS" as const },
     { name: "NS", url: `${dataPlaneUrl}/api/v3/ns/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const },
@@ -211,7 +212,7 @@ async function tryDeleteFromTtn(
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "deprovision-worker-v4-multi-endpoint-20260115";
+  const BUILD_VERSION = "deprovision-worker-v5-single-cluster-20260124";
   console.log(`[ttn-deprovision-worker] Build: ${BUILD_VERSION}`);
   
   if (req.method === "OPTIONS") {

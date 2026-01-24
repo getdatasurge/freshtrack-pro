@@ -316,7 +316,7 @@ Deno.serve(async (req) => {
       }
     });
 
-    // DUAL-ENDPOINT: Webhooks are Application Server (AS) endpoints - use NAM1
+    // SINGLE-CLUSTER: Webhooks use the same cluster as all other operations (NAM1)
     const ttnEndpoint = `${CLUSTER_BASE_URL}/api/v3/as/webhooks/${applicationId}/${newWebhookId}`;
     
     // Validate host for DATA plane
