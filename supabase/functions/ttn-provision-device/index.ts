@@ -587,7 +587,52 @@ serve(async (req) => {
       // Step 2: Probe application
       const appProbe = await ttnFetch(`/api/v3/applications/${ttnAppId}`, { method: "GET" }, "diagnose_app");
       checks.appProbe = { ok: appProbe.ok, status: appProbe.status };
-      if (!appProbe.ok) checks.appProbe.error = (await appProbe.text()).substring(0, 200);
+      
+      // Handle 403 errors with actionable context
+      if (!appProbe.ok && appProbe.status === 403) {
+        const errorText = await appProbe.text();
+        checks.appProbe.error = errorText.substring(0, 200);
+        
+        // Check if this is an API key rights issue
+        if (errorText.includes("no_application_rights") || errorText.includes("forbidden")) {
+          // Fetch provisioning status for context
+          const { data: connStatus } = await supabase
+            .from("ttn_connections")
+            .select("provisioning_status, provisioning_error")
+            .eq("organization_id", organization_id)
+            .single();
+          
+          const isProvisioningFailed = connStatus?.provisioning_status === "failed";
+          const isProvisioningPending = connStatus?.provisioning_status === "pending";
+          
+          let errorMessage = "API key lacks rights for this application";
+          let hint = "Go to Settings → Developer → TTN Connection and click 'Retry Provisioning' or 'Start Fresh' to get a valid API key.";
+          
+          if (isProvisioningFailed) {
+            errorMessage = `TTN provisioning incomplete: ${connStatus?.provisioning_error || "API key creation failed"}`;
+          } else if (isProvisioningPending) {
+            errorMessage = "TTN provisioning is still pending";
+            hint = "Go to Settings → Developer → TTN Connection to complete the provisioning process.";
+          }
+          
+          return new Response(JSON.stringify({
+            success: false,
+            error: errorMessage,
+            hint,
+            provisioningStatus: connStatus?.provisioning_status,
+            provisioningError: connStatus?.provisioning_error,
+            clusterBaseUrl,
+            region: ttnConfig.region,
+            appId: ttnAppId,
+            deviceId,
+            checks,
+            diagnosis: "api_key_invalid",
+            diagnosedAt: new Date().toISOString(),
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      } else if (!appProbe.ok) {
+        checks.appProbe.error = (await appProbe.text()).substring(0, 200);
+      }
 
       // Step 3: Check IS device registry (main endpoint)
       const isCheck = await ttnFetch(`/api/v3/applications/${ttnAppId}/devices/${deviceId}`, { method: "GET" }, "diagnose_is");
