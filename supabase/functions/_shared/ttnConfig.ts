@@ -11,12 +11,18 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 import { 
   CLUSTER_BASE_URL, 
   CLUSTER_HOST, 
+  IDENTITY_SERVER_URL,
+  IDENTITY_SERVER_HOST,
   TTN_BASE_URL, 
-  assertClusterHost, 
+  assertClusterHost,
+  assertValidTtnHost,
   assertNam1Only,
   identifyPlane,
   logTtnApiCall,
+  logTtnApiCallWithCred,
   buildTtnUrl,
+  TTN_ERROR_CODES,
+  detectWrongCluster,
 } from "./ttnBase.ts";
 
 // ============================================================================
@@ -64,7 +70,13 @@ export interface TtnConfig {
   region: string;
   apiKey: string;
   applicationId: string;       // Per-org TTN application ID
-  clusterBaseUrl: string;      // THE ONLY TTN URL - all planes use this
+  
+  // DUAL-ENDPOINT ARCHITECTURE
+  // Identity Server (EU1): auth_info, applications, devices (registry)
+  // Data Planes (NAM1): NS, AS, JS, webhooks
+  identityServerUrl: string;   // EU1 for IS operations
+  clusterBaseUrl: string;      // NAM1 for data plane operations
+  
   webhookSecret?: string;
   webhookUrl?: string;
   isEnabled: boolean;
@@ -115,12 +127,18 @@ export interface TtnConnectionRow {
 export { 
   CLUSTER_BASE_URL,
   CLUSTER_HOST,
+  IDENTITY_SERVER_URL,
+  IDENTITY_SERVER_HOST,
   TTN_BASE_URL, 
   assertNam1Only,
   assertClusterHost,
+  assertValidTtnHost,
   identifyPlane,
   logTtnApiCall,
+  logTtnApiCallWithCred,
   buildTtnUrl,
+  TTN_ERROR_CODES,
+  detectWrongCluster,
 } from "./ttnBase.ts";
 
 // @deprecated - Use CLUSTER_BASE_URL directly. Kept for backward compatibility only.
@@ -536,16 +554,20 @@ export async function getTtnConfigForOrg(
     console.warn(`[getTtnConfigForOrg] NAM1-ONLY: Stored region "${requestedRegion}" overridden to "nam1"`);
   }
   
-  // NAM1-ONLY: Single base URL for ALL planes (Identity + Regional)
-  const clusterBaseUrl = TTN_BASE_URL;
+  // DUAL-ENDPOINT ARCHITECTURE
+  // Identity Server (EU1): for registry operations (apps, devices, orgs, API keys)
+  // Data Planes (NAM1): for LoRaWAN operations (NS, AS, JS, webhooks)
+  const identityServerUrl = IDENTITY_SERVER_URL;
+  const clusterBaseUrl = CLUSTER_BASE_URL;
   
-  console.log(`[getTtnConfigForOrg] NAM1-ONLY: Using ${clusterBaseUrl}`);
+  console.log(`[getTtnConfigForOrg] Dual-endpoint: IS=${identityServerUrl}, DATA=${clusterBaseUrl}`);
 
   return {
     region,
     apiKey,
     applicationId: applicationId || "",
-    clusterBaseUrl,                    // THE ONLY TTN URL
+    identityServerUrl,                 // EU1 for Identity Server
+    clusterBaseUrl,                    // NAM1 for data planes
     webhookSecret,
     webhookUrl: settings.ttn_webhook_url || undefined,
     isEnabled: settings.is_enabled || false,
@@ -589,12 +611,13 @@ export async function testTtnConnection(
   const testedAt = new Date().toISOString();
   const appEndpoint = `/api/v3/applications/${config.applicationId}`;
   const clusterTested = config.region;
+  const requestId = crypto.randomUUID().slice(0, 8);
 
   if (!config.applicationId) {
     return {
       success: false,
       error: "No TTN application provisioned",
-      hint: "Click 'Provision TTN Application' to create your organization's TTN application",
+      hint: "Click 'Verify TTN Setup' to create your organization's TTN application",
       testedAt,
       endpointTested: appEndpoint,
       effectiveApplicationId: "",
@@ -617,17 +640,30 @@ export async function testTtnConnection(
   const apiKeyLast4 = config.apiKey.length >= 4 ? config.apiKey.slice(-4) : undefined;
 
   try {
-    // Step 1: Test application access on cluster base URL
-    const baseUrl = config.clusterBaseUrl;
+    // DUAL-ENDPOINT ARCHITECTURE FIX:
+    // Application registry queries go to Identity Server (EU1), NOT data planes (NAM1)
+    // This fixes BUG-001/002 where testTtnConnection was incorrectly using NAM1 for IS calls
+    const identityServerUrl = config.identityServerUrl || IDENTITY_SERVER_URL;
     
-    // HARD GUARD: Verify cluster host
-    assertClusterHost(`${baseUrl}/api/v3/applications`);
+    // HARD GUARD: Verify we're calling the correct host for IS operations
+    assertValidTtnHost(`${identityServerUrl}${appEndpoint}`, "IS");
     
-    // CLUSTER-LOCK: Log structured API call for debugging
-    logTtnApiCall("testTtnConnection", "GET", appEndpoint, "test_app_access", crypto.randomUUID().slice(0, 8));
+    // Log with credential fingerprint for audit trail
+    logTtnApiCallWithCred(
+      "testTtnConnection", 
+      "GET", 
+      appEndpoint, 
+      "test_app_access", 
+      requestId,
+      apiKeyLast4 || "n/a",
+      undefined,
+      config.applicationId,
+      undefined,
+      identityServerUrl
+    );
     
     const appResponse = await fetch(
-      `${baseUrl}${appEndpoint}`,
+      `${identityServerUrl}${appEndpoint}`,
       {
         method: "GET",
         headers: {
@@ -674,24 +710,29 @@ export async function testTtnConnection(
     const appData = await appResponse.json();
     const applicationName = appData.name || config.applicationId;
 
-    // Step 2: Optionally test device on SAME cluster URL (not regional - all unified now)
+    // Step 2: Optionally test device on Identity Server (device registry is on IS/EU1)
     // Only if a device test is requested
     let deviceTest: TtnTestResult['deviceTest'] = undefined;
     
     if (options?.testDeviceId) {
       const deviceEndpoint = `/api/v3/applications/${config.applicationId}/devices/${options.testDeviceId}`;
-      // CLUSTER-LOCK: Use same baseUrl for device test (not regionalBaseUrl)
-      console.log(JSON.stringify({
-        event: "ttn_api_call",
-        method: "GET",
-        endpoint: deviceEndpoint,
-        baseUrl,
-        step: "test_device_exists",
-        timestamp: new Date().toISOString(),
-      }));
+      
+      // Device registry is on IS (EU1), not data planes (NAM1)
+      logTtnApiCallWithCred(
+        "testTtnConnection", 
+        "GET", 
+        deviceEndpoint, 
+        "test_device_exists", 
+        requestId,
+        apiKeyLast4 || "n/a",
+        undefined,
+        config.applicationId,
+        options.testDeviceId,
+        identityServerUrl
+      );
       
       const deviceResponse = await fetch(
-        `${baseUrl}${deviceEndpoint}`,
+        `${identityServerUrl}${deviceEndpoint}`,
         {
           method: "GET",
           headers: {

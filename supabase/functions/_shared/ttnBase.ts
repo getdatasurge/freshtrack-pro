@@ -142,6 +142,42 @@ export function assertNam1Only(baseUrl: string): void {
 }
 
 // ============================================================================
+// TTN ERROR CODES - Wrong Cluster Detection
+// ============================================================================
+
+export const TTN_ERROR_CODES = {
+  IS_CALL_ON_NAM1: "ERR_IS_CALL_ON_WRONG_CLUSTER",
+  WEBHOOK_ON_WRONG_CLUSTER: "ERR_WEBHOOK_WRONG_CLUSTER",
+  APP_ID_MISMATCH: "ERR_APP_ID_MISMATCH_BETWEEN_STEPS",
+  CREDENTIAL_MISMATCH: "ERR_CREDENTIAL_FINGERPRINT_MISMATCH",
+  DEVICE_SPLIT_BRAIN: "ERR_DEVICE_SPLIT_BRAIN",
+} as const;
+
+/**
+ * Detect if an API call is targeting the wrong cluster.
+ * Returns error details if host mismatch detected.
+ * 
+ * @param actualHost - The actual host being called
+ * @param expectedType - "IS" for Identity Server (EU1) or "DATA" for data planes (NAM1)
+ */
+export function detectWrongCluster(
+  actualHost: string,
+  expectedType: TTNEndpointType
+): { error: boolean; code: string | null; message: string } {
+  const expectedHost = expectedType === "IS" ? IDENTITY_SERVER_HOST : CLUSTER_HOST;
+  
+  if (actualHost !== expectedHost) {
+    return {
+      error: true,
+      code: expectedType === "IS" ? TTN_ERROR_CODES.IS_CALL_ON_NAM1 : TTN_ERROR_CODES.WEBHOOK_ON_WRONG_CLUSTER,
+      message: `Expected ${expectedType} on ${expectedHost}, got ${actualHost}`,
+    };
+  }
+  
+  return { error: false, code: null, message: "OK" };
+}
+
+// ============================================================================
 // STRUCTURED LOGGING
 // ============================================================================
 
@@ -182,6 +218,71 @@ export function logTtnApiCall(
     request_id: requestId,
     timestamp: new Date().toISOString(),
   }));
+}
+
+/**
+ * Enhanced TTN API call logging with credential fingerprint.
+ * Use this for audit trails where credential tracking is critical.
+ * 
+ * @param functionName - The edge function making the call
+ * @param method - HTTP method (GET, POST, PUT, DELETE)
+ * @param endpoint - API endpoint path (e.g., /api/v3/applications/...)
+ * @param step - Current provisioning step
+ * @param requestId - Request correlation ID
+ * @param credLast4 - Last 4 characters of the API key being used
+ * @param orgId - Optional organization ID
+ * @param appId - Optional TTN application ID
+ * @param deviceId - Optional device ID
+ * @param baseUrl - Optional explicit base URL
+ */
+export function logTtnApiCallWithCred(
+  functionName: string,
+  method: string,
+  endpoint: string,
+  step: string,
+  requestId: string,
+  credLast4: string,
+  orgId?: string,
+  appId?: string,
+  deviceId?: string,
+  baseUrl?: string
+): void {
+  const plane = identifyPlane(endpoint);
+  const { url: detectedUrl, type } = getEndpointForPath(endpoint);
+  const actualBaseUrl = baseUrl || detectedUrl;
+  
+  // Detect wrong cluster before logging
+  let clusterHost: string;
+  try {
+    clusterHost = new URL(actualBaseUrl).host;
+  } catch {
+    clusterHost = "invalid-url";
+  }
+  const clusterCheck = detectWrongCluster(clusterHost, type);
+  
+  console.log(JSON.stringify({
+    event: "ttn_api_call",
+    method,
+    endpoint,
+    base_url: actualBaseUrl,
+    host: clusterHost,
+    endpoint_type: type,
+    plane,
+    cred_last4: credLast4,
+    org_id: orgId,
+    app_id: appId,
+    device_id: deviceId,
+    function_name: functionName,
+    step,
+    request_id: requestId,
+    wrong_cluster: clusterCheck.error ? clusterCheck.code : null,
+    timestamp: new Date().toISOString(),
+  }));
+  
+  // Fail loudly if wrong cluster detected
+  if (clusterCheck.error) {
+    console.error(`[TTN CLUSTER ERROR] ${clusterCheck.message}`);
+  }
 }
 
 /**

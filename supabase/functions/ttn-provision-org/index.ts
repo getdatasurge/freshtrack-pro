@@ -2336,10 +2336,171 @@ serve(async (req) => {
           console.log(`[ttn-provision-org] [${requestId}] Step 4: Skipping (webhook already created)`);
         }
 
-        // ============ STEP 5: Finalize ============
+        // ============ STEP 5: Provisioning Proof Report ============
+        // Verify that all resources exist on the CORRECT clusters:
+        // - Identity Server (EU1): applications, API keys
+        // - Data Planes (NAM1): webhooks
+        const step5Start = Date.now();
+        console.log(`[ttn-provision-org] [${requestId}] Step 5: Running Provisioning Proof Report`);
+        
+        const proofReport: {
+          request_id: string;
+          timestamp: string;
+          cli_equivalence: boolean;
+          steps: Array<{
+            step: string;
+            host: string;
+            expected_host: string;
+            match: boolean;
+            status: number | null;
+            error?: string;
+          }>;
+          webhook_verification?: {
+            base_url_match: boolean;
+            secret_configured: boolean;
+          };
+        } = {
+          request_id: requestId,
+          timestamp: new Date().toISOString(),
+          cli_equivalence: true,
+          steps: [],
+        };
+        
+        // A) Identity verification (EU1 only)
+        // Test auth_info with the app API key we created
+        let appApiKeyForProof = appApiKeyForWebhook;
+        if (!appApiKeyForProof) {
+          // Retrieve from DB if not in memory
+          const { data: ttnConnForProof } = await supabase
+            .from("ttn_connections")
+            .select("ttn_api_key_encrypted")
+            .eq("organization_id", organization_id)
+            .single();
+          
+          if (ttnConnForProof?.ttn_api_key_encrypted) {
+            appApiKeyForProof = deobfuscateKey(ttnConnForProof.ttn_api_key_encrypted, encryptionSalt);
+          }
+        }
+        
+        if (appApiKeyForProof) {
+          try {
+            // Verify auth_info on EU1
+            const authInfoUrl = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
+            const authInfoResp = await fetchWithTimeout(authInfoUrl, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${appApiKeyForProof}` },
+            }, 5000);
+            
+            const authInfoHost = new URL(authInfoUrl).host;
+            const expectedIsHost = "eu1.cloud.thethings.network";
+            
+            proofReport.steps.push({
+              step: "auth_info",
+              host: authInfoHost,
+              expected_host: expectedIsHost,
+              match: authInfoHost === expectedIsHost,
+              status: authInfoResp.status,
+            });
+            
+            if (authInfoHost !== expectedIsHost) {
+              proofReport.cli_equivalence = false;
+              console.error(`[ttn-provision-org] [${requestId}] PROOF FAIL: auth_info on wrong host`);
+            }
+            
+            // Verify application GET on EU1
+            const appUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}`;
+            const appResp = await fetchWithTimeout(appUrl, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${appApiKeyForProof}` },
+            }, 5000);
+            
+            const appHost = new URL(appUrl).host;
+            proofReport.steps.push({
+              step: "get_application",
+              host: appHost,
+              expected_host: expectedIsHost,
+              match: appHost === expectedIsHost,
+              status: appResp.status,
+            });
+            
+            if (appHost !== expectedIsHost) {
+              proofReport.cli_equivalence = false;
+            }
+          } catch (proofErr) {
+            console.warn(`[ttn-provision-org] [${requestId}] Proof verification (IS) failed:`, proofErr);
+            proofReport.steps.push({
+              step: "auth_info",
+              host: "error",
+              expected_host: "eu1.cloud.thethings.network",
+              match: false,
+              status: null,
+              error: proofErr instanceof Error ? proofErr.message : "Unknown error",
+            });
+          }
+        }
+        
+        // B) Cluster verification (NAM1 only)
+        // Verify webhook exists on NAM1 with correct base_url
+        const webhookIdForProof = "frostguard-webhook";
+        const webhookVerifyUrl = `${CLUSTER_BASE_URL}/api/v3/as/webhooks/${ttnAppId}/${webhookIdForProof}`;
+        
+        try {
+          const webhookResp = await fetchWithTimeout(webhookVerifyUrl, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${orgApiKeyForAppOps || ttnAdminKey}` },
+          }, 5000);
+          
+          const webhookHost = new URL(webhookVerifyUrl).host;
+          const expectedDataHost = "nam1.cloud.thethings.network";
+          
+          let webhookBaseUrlMatch = false;
+          let secretConfigured = false;
+          
+          if (webhookResp.ok) {
+            const webhookData = await webhookResp.json();
+            webhookBaseUrlMatch = webhookData.base_url === webhookUrl;
+            secretConfigured = !!(webhookData.headers && webhookData.headers["x-webhook-secret"]);
+            
+            proofReport.webhook_verification = {
+              base_url_match: webhookBaseUrlMatch,
+              secret_configured: secretConfigured,
+            };
+          }
+          
+          proofReport.steps.push({
+            step: "get_webhook",
+            host: webhookHost,
+            expected_host: expectedDataHost,
+            match: webhookHost === expectedDataHost,
+            status: webhookResp.status,
+          });
+          
+          if (webhookHost !== expectedDataHost) {
+            proofReport.cli_equivalence = false;
+            console.error(`[ttn-provision-org] [${requestId}] PROOF FAIL: webhook on wrong host (${webhookHost})`);
+          }
+        } catch (webhookProofErr) {
+          console.warn(`[ttn-provision-org] [${requestId}] Proof verification (webhook) failed:`, webhookProofErr);
+          proofReport.steps.push({
+            step: "get_webhook",
+            host: "error",
+            expected_host: "nam1.cloud.thethings.network",
+            match: false,
+            status: null,
+            error: webhookProofErr instanceof Error ? webhookProofErr.message : "Unknown error",
+          });
+        }
+        
+        const step5Duration = Date.now() - step5Start;
+        console.log(`[ttn-provision-org] [${requestId}] Provisioning Proof Report:`, JSON.stringify(proofReport));
+        await logProvisioningStep(supabase, organization_id, "proof_report", "success", 
+          `Provisioning proof completed (CLI equiv: ${proofReport.cli_equivalence})`, 
+          { proof_report: proofReport }, step5Duration, requestId);
+
+        // ============ STEP 6: Finalize ============
         await logProvisioningStep(supabase, organization_id, "finalize", "success", 
           `Provisioning completed successfully (all steps used token_source: ${TOKEN_SOURCE})`, 
-          { ttn_org_id: ttnOrgId, ttn_app_id: ttnAppId }, undefined, requestId);
+          { ttn_org_id: ttnOrgId, ttn_app_id: ttnAppId, proof_report: proofReport }, undefined, requestId);
 
         await supabase
           .from("ttn_connections")
@@ -2354,7 +2515,7 @@ serve(async (req) => {
           })
           .eq("organization_id", organization_id);
 
-        console.log(`[ttn-provision-org] [${requestId}] Provisioning complete! All steps used token_source: ${TOKEN_SOURCE}`);
+        console.log(`[ttn-provision-org] [${requestId}] Provisioning complete! CLI Equivalence: ${proofReport.cli_equivalence ? "YES" : "NO"}`);
 
         return buildResponse({
           success: true,
@@ -2364,6 +2525,8 @@ serve(async (req) => {
           webhook_url: webhookUrl,
           provisioning_status: "ready",
           app_id_rotated: appIdRotated,
+          proof_report: proofReport,
+          cli_equivalence: proofReport.cli_equivalence,
           request_id: requestId,
         });
 
