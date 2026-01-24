@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
-import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
+import { IDENTITY_SERVER_URL, CLUSTER_BASE_URL, assertValidTtnHost } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -133,8 +133,9 @@ async function logEvent(
 }
 
 /**
- * Try to delete a device from TTN using multi-endpoint fallback
- * CLUSTER-LOCKED: All endpoints use the same clusterBaseUrl (no EU1/NAM1 split)
+ * Try to delete a device from TTN using dual-endpoint architecture
+ * IS (EU1): Device registry deletion
+ * Data Planes (NAM1): NS/AS/JS cleanup
  */
 async function tryDeleteFromTtn(
   ttnConfig: { clusterBaseUrl: string; apiKey: string },
@@ -146,19 +147,19 @@ async function tryDeleteFromTtn(
     "Content-Type": "application/json",
   };
 
-  // CLUSTER-LOCKED: All endpoints use the SAME base URL
-  // This prevents split-brain deletion where some planes are on different clusters
-  const baseUrl = ttnConfig.clusterBaseUrl;
+  // DUAL-ENDPOINT: IS on EU1, data planes on NAM1
+  const dataPlaneUrl = ttnConfig.clusterBaseUrl;
   
-  // NAM1-ONLY: Fail-closed guard - reject non-NAM1 base URLs
-  assertNam1Only(baseUrl);
-  console.log(`[ttn-deprovision-worker] Cluster locked to NAM1: ${baseUrl}`);
+  console.log(`[ttn-deprovision-worker] Dual-endpoint: IS=${IDENTITY_SERVER_URL}, DATA=${dataPlaneUrl}`);
   
+  // Device deletion requires hitting all four endpoints:
+  // 1. IS (EU1) - device registry
+  // 2-4. NS/AS/JS (NAM1) - LoRaWAN state
   const endpoints = [
-    { name: "IS", url: `${baseUrl}/api/v3/applications/${targetAppId}/devices/${deviceId}` },
-    { name: "NS", url: `${baseUrl}/api/v3/ns/applications/${targetAppId}/devices/${deviceId}` },
-    { name: "AS", url: `${baseUrl}/api/v3/as/applications/${targetAppId}/devices/${deviceId}` },
-    { name: "JS", url: `${baseUrl}/api/v3/js/applications/${targetAppId}/devices/${deviceId}` },
+    { name: "IS", url: `${IDENTITY_SERVER_URL}/api/v3/applications/${targetAppId}/devices/${deviceId}`, type: "IS" as const },
+    { name: "NS", url: `${dataPlaneUrl}/api/v3/ns/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const },
+    { name: "AS", url: `${dataPlaneUrl}/api/v3/as/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const },
+    { name: "JS", url: `${dataPlaneUrl}/api/v3/js/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const },
   ];
 
   let lastError = "";
@@ -168,6 +169,8 @@ async function tryDeleteFromTtn(
 
   for (const endpoint of endpoints) {
     try {
+      // Validate host for each endpoint type
+      assertValidTtnHost(endpoint.url, endpoint.type);
       console.log(`[ttn-deprovision-worker] DELETE ${endpoint.name}: ${endpoint.url}`);
       const response = await fetch(endpoint.url, { method: "DELETE", headers });
       

@@ -1,8 +1,8 @@
 /**
  * TTN Diagnostics Panel
  * 
- * Shows cluster info, API URLs, and connection diagnostics for debugging.
- * NAM1 ONLY - standardized cluster for all organizations.
+ * Shows dual-endpoint architecture info, API URLs, and connection diagnostics.
+ * Identity Server (EU1) + Data Planes (NAM1)
  */
 
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,8 @@ import {
   CheckCircle2, 
   XCircle,
   Info,
-  Wifi
+  Wifi,
+  Database
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -37,27 +38,30 @@ interface TTNDiagnosticsPanelProps {
   className?: string;
 }
 
-// SINGLE CLUSTER - NAM1 is the only allowed endpoint
-const CLUSTER_BASE_URL = "https://nam1.cloud.thethings.network";
-const CLUSTER_HOST = "nam1.cloud.thethings.network";
+// DUAL-ENDPOINT ARCHITECTURE
+// Identity Server (IS): EU1 - global registry
+// Data Planes (NS/AS/JS): NAM1 - regional LoRaWAN
+const IDENTITY_SERVER = {
+  label: "EU1 (Global Identity Server)",
+  baseUrl: "https://eu1.cloud.thethings.network",
+  host: "eu1.cloud.thethings.network",
+  purpose: "Auth, Applications, Devices, Organizations",
+};
 
-const CLUSTER_CONFIG = {
-  label: "NAM1 (North America)",
-  baseUrl: CLUSTER_BASE_URL,
-  host: CLUSTER_HOST,
+const DATA_PLANES = {
+  label: "NAM1 (North America Data Planes)",
+  baseUrl: "https://nam1.cloud.thethings.network",
+  host: "nam1.cloud.thethings.network",
   consoleUrl: "https://nam1.cloud.thethings.network/console",
   frequencyPlan: "US_902_928_FSB_2",
+  purpose: "Network Server, Application Server, Join Server",
 };
 
 export function TTNDiagnosticsPanel({ data, className }: TTNDiagnosticsPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const currentCluster = data.ttn_region || "nam1";
   const isProvisioned = data.provisioning_status === "ready";
   const lastHttpOk = data.last_http_status && data.last_http_status >= 200 && data.last_http_status < 300;
-  
-  // Verify cluster host matches expected
-  const clusterHostMatches = currentCluster.toLowerCase() === "nam1";
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className={className}>
@@ -72,53 +76,59 @@ export function TTNDiagnosticsPanel({ data, className }: TTNDiagnosticsPanelProp
       
       <CollapsibleContent>
         <div className="mt-3 p-4 rounded-lg border bg-muted/30 space-y-4">
-          {/* Single Cluster Info */}
-          <div className="grid grid-cols-[120px_1fr] gap-2 text-sm">
-            <span className="text-muted-foreground flex items-center gap-1.5">
-              <Globe className="h-3.5 w-3.5" />
-              Cluster:
-            </span>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">
-                {CLUSTER_CONFIG.label}
+          {/* Identity Server Info */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Database className="h-4 w-4 text-primary" />
+              <span>Identity Server (Global Registry)</span>
+              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-xs">
+                EU1 ✓
               </Badge>
-              {clusterHostMatches ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-safe" />
-              ) : (
-                <Badge variant="outline" className="bg-alarm/10 text-alarm border-alarm/30 text-xs">
-                  Host mismatch!
-                </Badge>
-              )}
             </div>
-
-            <span className="text-muted-foreground flex items-center gap-1.5">
-              <Server className="h-3.5 w-3.5" />
-              Base URL:
-            </span>
-            <code className="text-xs font-mono text-foreground/80 break-all">
-              {CLUSTER_CONFIG.baseUrl}
-            </code>
-
-            <span className="text-muted-foreground">Host (all planes):</span>
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-[120px_1fr] gap-2 text-sm pl-6">
+              <span className="text-muted-foreground">Host:</span>
               <code className="text-xs font-mono text-foreground/80">
-                {CLUSTER_CONFIG.host}
+                {IDENTITY_SERVER.host}
               </code>
+              <span className="text-muted-foreground">Purpose:</span>
+              <span className="text-xs text-foreground/80">
+                {IDENTITY_SERVER.purpose}
+              </span>
+            </div>
+          </div>
+
+          {/* Data Planes Info */}
+          <div className="space-y-2 border-t pt-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Server className="h-4 w-4 text-safe" />
+              <span>Data Planes (Regional LoRaWAN)</span>
               <Badge variant="outline" className="bg-safe/10 text-safe border-safe/30 text-xs">
-                IS/JS/NS/AS ✓
+                NAM1 ✓
               </Badge>
             </div>
-
-            <span className="text-muted-foreground">Frequency Plan:</span>
-            <code className="text-xs font-mono text-foreground/80">
-              {CLUSTER_CONFIG.frequencyPlan}
-            </code>
+            <div className="grid grid-cols-[120px_1fr] gap-2 text-sm pl-6">
+              <span className="text-muted-foreground">Host:</span>
+              <code className="text-xs font-mono text-foreground/80">
+                {DATA_PLANES.host}
+              </code>
+              <span className="text-muted-foreground">Purpose:</span>
+              <span className="text-xs text-foreground/80">
+                {DATA_PLANES.purpose}
+              </span>
+              <span className="text-muted-foreground">Frequency:</span>
+              <code className="text-xs font-mono text-foreground/80">
+                {DATA_PLANES.frequencyPlan}
+              </code>
+            </div>
           </div>
 
           {/* Application Info */}
           {data.ttn_application_id && (
             <div className="grid grid-cols-[120px_1fr] gap-2 text-sm border-t pt-3">
-              <span className="text-muted-foreground">Application:</span>
+              <span className="text-muted-foreground flex items-center gap-1.5">
+                <Globe className="h-3.5 w-3.5" />
+                Application:
+              </span>
               <code className="text-xs font-mono text-foreground/80">
                 {data.ttn_application_id}
               </code>
@@ -201,7 +211,7 @@ export function TTNDiagnosticsPanel({ data, className }: TTNDiagnosticsPanelProp
           {/* Console Link */}
           <div className="pt-2 border-t">
             <a
-              href={`${CLUSTER_CONFIG.consoleUrl}/applications/${data.ttn_application_id || ""}`}
+              href={`${DATA_PLANES.consoleUrl}/applications/${data.ttn_application_id || ""}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-primary hover:underline"

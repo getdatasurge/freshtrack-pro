@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg, assertClusterLocked } from "../_shared/ttnConfig.ts";
-import { CLUSTER_BASE_URL, assertClusterHost, logTtnApiCall, identifyPlane } from "../_shared/ttnBase.ts";
+import { CLUSTER_BASE_URL, IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCall, identifyPlane } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -128,14 +128,15 @@ serve(async (req) => {
       );
     }
 
-    // ========== CLUSTER-LOCK GUARD ==========
-    // Use ONLY clusterBaseUrl - no more identity/regional split
+    // ========== DUAL-ENDPOINT ARCHITECTURE ==========
+    // Identity Server (IS) = EU1: device registration in registry
+    // Data Planes (JS/NS/AS) = NAM1: LoRaWAN operations
     const clusterBaseUrl = ttnConfig.clusterBaseUrl;
     
-    // HARD GUARD: Verify cluster host before any TTN operation
-    assertClusterHost(`${clusterBaseUrl}/api/v3/applications/${ttnConfig.applicationId}`);
-    
-    console.log(`[ttn-provision-device] ✓ CLUSTER-LOCKED to: ${clusterBaseUrl}`);
+    // For device provisioning, we need BOTH endpoints:
+    // - IS (EU1) for device registry operations
+    // - Data planes (NAM1) for JS/NS/AS operations
+    console.log(`[ttn-provision-device] ✓ Using dual-endpoint: IS=${IDENTITY_SERVER_URL}, DATA=${clusterBaseUrl}`);
 
     const ttnAppId = ttnConfig.applicationId;
 
@@ -162,18 +163,29 @@ serve(async (req) => {
     console.log(`[ttn-provision-device] Region: ${ttnConfig.region}, Frequency plan: ${frequencyPlan}`);
     console.log(`[ttn-provision-device] Cluster base URL: ${clusterBaseUrl}`);
 
-    // ========== UNIFIED TTN API HELPER ==========
-    // ALL calls go to the SAME cluster base URL (no EU1/NAM1 split)
+    // ========== DUAL-ENDPOINT TTN API HELPER ==========
+    // Automatically routes to correct endpoint based on path
     const ttnFetch = async (endpoint: string, options: RequestInit = {}, step?: string) => {
-      const url = `${clusterBaseUrl}${endpoint}`;
+      // Determine if this is an IS or DATA plane call
+      const isDataPlane = endpoint.includes("/api/v3/js/") || 
+                          endpoint.includes("/api/v3/ns/") || 
+                          endpoint.includes("/api/v3/as/");
+      
+      const baseUrl = isDataPlane ? clusterBaseUrl : IDENTITY_SERVER_URL;
+      const endpointType = isDataPlane ? "DATA" : "IS";
+      const url = `${baseUrl}${endpoint}`;
       const method = options.method || "GET";
+      
+      // Validate host before call
+      assertValidTtnHost(url, endpointType);
       
       // Structured logging for every TTN call
       console.log(JSON.stringify({
         event: "ttn_api_call",
         method,
         endpoint,
-        baseUrl: clusterBaseUrl,
+        baseUrl,
+        endpoint_type: endpointType,
         appId: ttnAppId,
         deviceId,
         cluster: ttnConfig.region,

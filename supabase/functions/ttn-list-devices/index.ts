@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg, getGlobalApplicationId } from "../_shared/ttnConfig.ts";
-import { CLUSTER_BASE_URL, assertClusterHost } from "../_shared/ttnBase.ts";
+import { IDENTITY_SERVER_URL, assertValidTtnHost } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -111,15 +111,16 @@ serve(async (req) => {
       );
     }
 
-    // NAM1-ONLY: Use clusterBaseUrl for all TTN operations
-    const baseUrl = ttnConfig.clusterBaseUrl;
+    // DUAL-ENDPOINT: Device listing is an Identity Server operation (EU1)
+    // Device registry lives on the IS, not the regional cluster
+    const baseUrl = IDENTITY_SERVER_URL;
     
-    // HARD GUARD: Verify cluster host before any TTN call
-    assertClusterHost(`${baseUrl}/api/v3/applications/${ttnAppId}`);
+    // Validate host
+    assertValidTtnHost(`${baseUrl}/api/v3/applications/${ttnAppId}`, "IS");
 
-    console.log(`[ttn-list-devices] Listing devices for TTN app: ${ttnAppId} on ${baseUrl}`);
+    console.log(`[ttn-list-devices] Listing devices for TTN app: ${ttnAppId} on ${baseUrl} (EU1 Identity Server)`);
 
-    // List devices from TTN
+    // List devices from TTN Identity Server
     const listUrl = `${baseUrl}/api/v3/applications/${ttnAppId}/devices?field_mask=name,created_at,updated_at,ids.dev_eui`;
     
     console.log(JSON.stringify({
@@ -127,6 +128,7 @@ serve(async (req) => {
       method: "GET",
       endpoint: `/api/v3/applications/${ttnAppId}/devices`,
       baseUrl,
+      endpoint_type: "IS",
       step: "list_devices",
       timestamp: new Date().toISOString(),
     }));

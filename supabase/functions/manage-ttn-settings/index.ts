@@ -9,7 +9,11 @@ import {
   generateTtnDeviceId,
   generateWebhookSecret,
 } from "../_shared/ttnConfig.ts";
-import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
+import { 
+  IDENTITY_SERVER_URL, 
+  CLUSTER_BASE_URL, 
+  assertValidTtnHost,
+} from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -786,8 +790,7 @@ Deno.serve(async (req: Request) => {
       };
 
       const apiKey = deobfuscateKey(settings.ttn_api_key_encrypted, encryptionSalt);
-      // NAM1-ONLY: All cluster validation uses NAM1 (imported from ttnBase.ts)
-      assertNam1Only(TTN_BASE_URL);
+      // DUAL-ENDPOINT: App registry on EU1, data planes on NAM1
       const appId = settings.ttn_application_id;
 
       const checks = {
@@ -797,14 +800,14 @@ Deno.serve(async (req: Request) => {
         webhook_on_nam1: false,
       };
 
-      // Check 1: Application exists on NAM1 Identity Server
+      // Check 1: Application exists on Identity Server (EU1)
       try {
         const appResponse = await fetch(
-          `${TTN_BASE_URL}/api/v3/applications/${appId}`,
+          `${IDENTITY_SERVER_URL}/api/v3/applications/${appId}`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
         checks.application_on_nam1 = appResponse.ok;
-        console.log(`[manage-ttn-settings] [${requestId}] App check: ${appResponse.status}`);
+        console.log(`[manage-ttn-settings] [${requestId}] App check (EU1 IS): ${appResponse.status}`);
       } catch (err) {
         console.error(`[manage-ttn-settings] [${requestId}] App check error:`, err);
       }
@@ -812,24 +815,24 @@ Deno.serve(async (req: Request) => {
       // Check 2: Application Server on NAM1 is accessible
       try {
         const asResponse = await fetch(
-          `${TTN_BASE_URL}/api/v3/as/applications/${appId}/devices?limit=1`,
+          `${CLUSTER_BASE_URL}/api/v3/as/applications/${appId}/devices?limit=1`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
         // 200 = accessible, 404 = no devices but AS is correct cluster
         checks.as_accessible = asResponse.ok || asResponse.status === 404;
-        console.log(`[manage-ttn-settings] [${requestId}] AS check: ${asResponse.status}`);
+        console.log(`[manage-ttn-settings] [${requestId}] AS check (NAM1): ${asResponse.status}`);
       } catch (err) {
         console.error(`[manage-ttn-settings] [${requestId}] AS check error:`, err);
       }
 
-      // Check 3: Webhook exists on NAM1
+      // Check 3: Webhook exists on NAM1 Application Server
       try {
         const webhookResponse = await fetch(
-          `${TTN_BASE_URL}/api/v3/as/webhooks/${appId}`,
+          `${CLUSTER_BASE_URL}/api/v3/as/webhooks/${appId}`,
           { headers: { Authorization: `Bearer ${apiKey}` } }
         );
         checks.webhook_on_nam1 = webhookResponse.ok;
-        console.log(`[manage-ttn-settings] [${requestId}] Webhook check: ${webhookResponse.status}`);
+        console.log(`[manage-ttn-settings] [${requestId}] Webhook check (NAM1): ${webhookResponse.status}`);
       } catch (err) {
         console.error(`[manage-ttn-settings] [${requestId}] Webhook check error:`, err);
       }

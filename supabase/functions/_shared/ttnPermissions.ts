@@ -10,21 +10,27 @@
  * Created Org/App API keys are OUTPUT ARTIFACTS for runtime use, NOT inputs to provisioning.
  */
 
-import { CLUSTER_BASE_URL, CLUSTER_HOST, assertClusterHost, logTtnApiCall } from "./ttnBase.ts";
+import { 
+  CLUSTER_BASE_URL, 
+  CLUSTER_HOST, 
+  IDENTITY_SERVER_URL,
+  IDENTITY_SERVER_HOST,
+  assertValidTtnHost, 
+  logTtnApiCall 
+} from "./ttnBase.ts";
 
 // ============================================================================
-// NAM1-ONLY HARD LOCK
-// All TTN API operations MUST target the NAM1 cluster exclusively.
-// Using single source of truth: _shared/ttnBase.ts
+// DUAL-ENDPOINT ARCHITECTURE
+// Identity Server (IS): EU1 - auth_info, applications, devices, orgs
+// Data Planes (NS/AS/JS): NAM1 - LoRaWAN operations
 // ============================================================================
 
-// @deprecated - Use CLUSTER_BASE_URL directly
-export const IDENTITY_SERVER_URL = CLUSTER_BASE_URL;
+// Re-export for backward compatibility
+export { IDENTITY_SERVER_URL } from "./ttnBase.ts";
 
-// @deprecated - Use CLUSTER_BASE_URL directly
+// @deprecated - Use CLUSTER_BASE_URL for data planes, IDENTITY_SERVER_URL for IS
 export const REGIONAL_URLS: Record<string, string> = {
   nam1: CLUSTER_BASE_URL,
-  // Other clusters removed - NAM1-ONLY mode enforced
 };
 
 // ============================================================================
@@ -223,9 +229,10 @@ export async function validateMainUserApiKey(
     };
   }
 
-  // NAM1-ONLY: auth_info uses the NAM1 Identity Server (unified cluster)
+  // DUAL-ENDPOINT: auth_info MUST go to Identity Server (EU1)
+  // The IS is the global registry - it's ALWAYS on eu1 regardless of regional cluster
   const url = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
-  console.log(`[ttnPermissions] [${requestId}] Preflight: Identity Server at ${url}`);
+  console.log(`[ttnPermissions] [${requestId}] Preflight: Identity Server at ${url} (EU1 - global registry)`);
   console.log(`[ttnPermissions] [${requestId}] API key last4: ...${apiKey.slice(-4)}`);
 
   try {
@@ -408,11 +415,11 @@ export async function fetchTtnRights(
   apiKey: string,
   requestId: string
 ): Promise<FetchRightsResult> {
-  // NAM1-ONLY: Always use NAM1 regardless of cluster parameter
-  const baseUrl = REGIONAL_URLS.nam1;
-  const rightsUrl = `${baseUrl}/api/v3/applications/${applicationId}/rights`;
+  // DUAL-ENDPOINT: Application rights are fetched from Identity Server (EU1)
+  // The /applications/{id}/rights endpoint is an IS endpoint, not AS
+  const rightsUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${applicationId}/rights`;
   
-  console.log(`[ttnPermissions] [${requestId}] Fetching rights from: ${rightsUrl}`);
+  console.log(`[ttnPermissions] [${requestId}] Fetching rights from: ${rightsUrl} (EU1 Identity Server)`);
   console.log(`[ttnPermissions] [${requestId}] API key last4: ...${apiKey.slice(-4)}`);
   
   try {
