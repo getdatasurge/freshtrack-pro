@@ -413,11 +413,10 @@ export async function fetchTtnRights(
   apiKey: string,
   requestId: string
 ): Promise<FetchRightsResult> {
-  // DUAL-ENDPOINT: Application rights are fetched from Identity Server (EU1)
-  // The /applications/{id}/rights endpoint is an IS endpoint, not AS
+  // SINGLE-CLUSTER: Application rights are fetched from Identity Server (now NAM1)
   const rightsUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${applicationId}/rights`;
-  
-  console.log(`[ttnPermissions] [${requestId}] Fetching rights from: ${rightsUrl} (EU1 Identity Server)`);
+
+  console.log(`[ttnPermissions] [${requestId}] Fetching rights from: ${rightsUrl}`);
   console.log(`[ttnPermissions] [${requestId}] API key last4: ...${apiKey.slice(-4)}`);
   
   try {

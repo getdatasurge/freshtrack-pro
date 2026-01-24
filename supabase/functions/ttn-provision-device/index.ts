@@ -15,7 +15,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v9-cluster-lock-nwkkey-20260122";
+  const BUILD_VERSION = "ttn-provision-device-v10-single-cluster-20260124";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -128,15 +128,13 @@ serve(async (req) => {
       );
     }
 
-    // ========== DUAL-ENDPOINT ARCHITECTURE ==========
-    // Identity Server (IS) = EU1: device registration in registry
-    // Data Planes (JS/NS/AS) = NAM1: LoRaWAN operations
+    // ========== SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix) ==========
+    // ALL operations use the same cluster (NAM1) - no EU1/NAM1 mixing!
+    // This prevents cross-cluster device registration issues
     const clusterBaseUrl = ttnConfig.clusterBaseUrl;
-    
-    // For device provisioning, we need BOTH endpoints:
-    // - IS (EU1) for device registry operations
-    // - Data planes (NAM1) for JS/NS/AS operations
-    console.log(`[ttn-provision-device] ✓ Using dual-endpoint: IS=${IDENTITY_SERVER_URL}, DATA=${clusterBaseUrl}`);
+
+    // Verify single-cluster: IDENTITY_SERVER_URL should equal clusterBaseUrl
+    console.log(`[ttn-provision-device] ✓ Single-cluster: ${IDENTITY_SERVER_URL}`);
 
     const ttnAppId = ttnConfig.applicationId;
 
@@ -161,20 +159,21 @@ serve(async (req) => {
     
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
     console.log(`[ttn-provision-device] Region: ${ttnConfig.region}, Frequency plan: ${frequencyPlan}`);
-    console.log(`[ttn-provision-device] Dual-endpoint: IS=${IDENTITY_SERVER_URL}, DATA=${clusterBaseUrl}`);
+    console.log(`[ttn-provision-device] Single-cluster: ${IDENTITY_SERVER_URL}`);
     
     // Get API key last4 for audit logging
     const credLast4 = getLast4(ttnConfig.apiKey);
     const requestId = crypto.randomUUID().slice(0, 8);
 
-    // ========== DUAL-ENDPOINT TTN API HELPER ==========
-    // Automatically routes to correct endpoint based on path
+    // ========== SINGLE-CLUSTER TTN API HELPER ==========
+    // ALL operations use the same cluster (NAM1) - IDENTITY_SERVER_URL now equals clusterBaseUrl
     const ttnFetch = async (endpoint: string, options: RequestInit = {}, step?: string) => {
-      // Determine if this is an IS or DATA plane call
-      const isDataPlane = endpoint.includes("/api/v3/js/") || 
-                          endpoint.includes("/api/v3/ns/") || 
+      // Identify endpoint type for logging (both use same cluster now)
+      const isDataPlane = endpoint.includes("/api/v3/js/") ||
+                          endpoint.includes("/api/v3/ns/") ||
                           endpoint.includes("/api/v3/as/");
-      
+
+      // Single cluster: both IS and DATA use same base URL (NAM1)
       const baseUrl = isDataPlane ? clusterBaseUrl : IDENTITY_SERVER_URL;
       const endpointType = isDataPlane ? "DATA" : "IS";
       const url = `${baseUrl}${endpoint}`;

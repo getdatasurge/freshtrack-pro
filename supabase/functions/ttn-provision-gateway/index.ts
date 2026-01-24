@@ -255,9 +255,9 @@ serve(async (req) => {
       }
 
       // Step 2: Determine API key scope using auth_info
-      // DUAL-ENDPOINT: auth_info goes to Identity Server (EU1)
+      // SINGLE-CLUSTER: auth_info goes to NAM1 (same as all other operations)
       const { IDENTITY_SERVER_URL, assertValidTtnHost } = await import("../_shared/ttnBase.ts");
-      
+
       console.log(`[ttn-provision-gateway] [${requestId}] Checking API key scope via auth_info at ${IDENTITY_SERVER_URL}`);
       
       const authInfoUrl = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;

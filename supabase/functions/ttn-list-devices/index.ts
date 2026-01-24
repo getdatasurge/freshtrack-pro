@@ -111,14 +111,13 @@ serve(async (req) => {
       );
     }
 
-    // DUAL-ENDPOINT: Device listing is an Identity Server operation (EU1)
-    // Device registry lives on the IS, not the regional cluster
+    // SINGLE-CLUSTER: All operations use NAM1 (IDENTITY_SERVER_URL now points to NAM1)
     const baseUrl = IDENTITY_SERVER_URL;
-    
+
     // Validate host
     assertValidTtnHost(`${baseUrl}/api/v3/applications/${ttnAppId}`, "IS");
 
-    console.log(`[ttn-list-devices] Listing devices for TTN app: ${ttnAppId} on ${baseUrl} (EU1 Identity Server)`);
+    console.log(`[ttn-list-devices] Listing devices for TTN app: ${ttnAppId} on ${baseUrl}`);
 
     // List devices from TTN Identity Server
     const listUrl = `${baseUrl}/api/v3/applications/${ttnAppId}/devices?field_mask=name,created_at,updated_at,ids.dev_eui`;
