@@ -228,6 +228,29 @@ Deno.serve(async (req) => {
           }
           
           console.log(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: Found ${ttnDeviceMap.size} devices with DevEUI in TTN (cluster: ${config.cluster})`);
+        } else if (listResponse.status === 403) {
+          // Handle 403 with better context - check provisioning status
+          const errorBody = await listResponse.text();
+          console.error(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: 403 error - ${errorBody.substring(0, 200)}`);
+          
+          if (errorBody.includes("no_application_rights") || errorBody.includes("forbidden")) {
+            // Query provisioning_status for this org
+            const { data: connStatus } = await supabase
+              .from("ttn_connections")
+              .select("provisioning_status, provisioning_error")
+              .eq("organization_id", orgId)
+              .single();
+            
+            if (connStatus?.provisioning_status === "failed") {
+              listError = `TTN provisioning failed: ${connStatus.provisioning_error || "API key creation failed"}. Go to Settings → Developer → TTN Connection to retry provisioning.`;
+            } else if (connStatus?.provisioning_status === "pending") {
+              listError = `TTN provisioning incomplete. Go to Settings → Developer → TTN Connection to complete setup.`;
+            } else {
+              listError = `API key lacks rights for application '${config.application_id}'. This may indicate a stale or orphaned API key. Try re-provisioning in Settings → Developer → TTN Connection.`;
+            }
+          } else {
+            listError = `TTN API error 403: ${errorBody.substring(0, 200)}`;
+          }
         } else {
           listError = `TTN API error ${listResponse.status}: ${await listResponse.text().then(t => t.substring(0, 200))}`;
           console.error(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: ${listError}`);

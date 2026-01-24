@@ -1,8 +1,9 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, AlertTriangle, Server, Key, Radio, Database, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Server, Key, Radio, Database, Loader2, RefreshCw, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
 
 export interface TtnDiagnoseResult {
   success: boolean;
@@ -24,6 +25,8 @@ export interface TtnDiagnoseResult {
   diagnosedAt: string;
   error?: string;
   details?: string;
+  provisioningStatus?: string;
+  provisioningError?: string;
 }
 
 interface TtnDiagnoseModalProps {
@@ -86,6 +89,20 @@ export function TtnDiagnoseModal({
   onRetry,
   sensorName 
 }: TtnDiagnoseModalProps) {
+  const navigate = useNavigate();
+  
+  // Detect provisioning/API key errors
+  const isProvisioningError = result?.error?.includes("no_application_rights") || 
+                              result?.error?.includes("provisioning") ||
+                              result?.error?.includes("API key lacks rights") ||
+                              result?.diagnosis === "api_key_invalid" ||
+                              result?.provisioningStatus === "failed" ||
+                              result?.provisioningStatus === "pending";
+  
+  const handleGoToSettings = () => {
+    onOpenChange(false);
+    navigate("/settings?tab=developer");
+  };
   const getDiagnosisBadge = (diagnosis: string) => {
     switch (diagnosis) {
       case "fully_provisioned":
@@ -142,6 +159,39 @@ export function TtnDiagnoseModal({
               <p className="text-xs text-muted-foreground font-mono bg-muted p-2 rounded">
                 {result.details}
               </p>
+            )}
+            
+            {/* Provisioning Error Call-to-Action */}
+            {isProvisioningError && (
+              <div className="mt-3 p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-warning">
+                      TTN Configuration Issue Detected
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {result.provisioningStatus === "failed" 
+                        ? `Provisioning failed: ${result.provisioningError || "API key creation was interrupted."}`
+                        : result.provisioningStatus === "pending"
+                        ? "TTN provisioning is still in progress."
+                        : "The stored API key doesn't have access to the TTN application."}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Go to TTN Connection settings to retry provisioning or start fresh.
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-1 gap-1.5"
+                      onClick={handleGoToSettings}
+                    >
+                      <Settings className="h-3.5 w-3.5" />
+                      Go to TTN Settings
+                    </Button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         ) : result ? (
