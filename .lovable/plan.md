@@ -1,143 +1,262 @@
 
+# TTN Deprovision Job Tracking Implementation
 
-# Plan: Update and Deploy All 3 TTN Deprovisioning Functions
+## Overview
 
-## Summary
+This implementation adds **full deprovision run tracking** to ensure:
+1. Every TTN deprovision run is recorded with a persistent job ID
+2. Each atomic action (delete, purge, verify) is tracked as a step
+3. `success=true` is only returned when ALL critical steps succeed
+4. UI can query pending/completed jobs and drill down into step details
 
-The TTN deprovisioning functions need to be updated and redeployed to use the **single-cluster architecture** (NAM1 for all operations). Currently, the deployed versions are outdated.
+## Key Distinction
 
-## Current State Analysis
+| Existing | New |
+|----------|-----|
+| `ttn_deprovision_jobs` - Tracks individual sensor cleanups (1 job per device) | `ttn_deprovision_runs` - Tracks full org deprovision runs (1 run = many steps) |
+| Used by `ttn-deprovision-worker` | Used by `ttn-deprovision` |
 
-| Function | Codebase Version | Deployed Version | Status |
-|----------|-----------------|------------------|--------|
-| `ttn-deprovision-worker` | `v5-single-cluster-20260124` | `v4-multi-endpoint-20260115` | ⚠️ Outdated |
-| `ttn-deprovision` | `v1.1-single-cluster-20260124` | Unknown (needs deploy) | ⚠️ Outdated |
-| `ttn-force-release-eui` | `v1.1-20260124` | Unknown (needs deploy) | ✅ Already uses all clusters |
-| `ttn-bootstrap` | `v3.1-single-cluster-20260124` | Unknown (needs deploy) | ⚠️ Outdated |
+## Implementation
 
-## Architecture Issue
+### A) Database Migration
 
-The `ttn-deprovision` and `ttn-force-release-eui` functions currently import from `_shared/ttnBase.ts` which now uses single-cluster architecture. However:
+**File:** `supabase/migrations/20260124100000_ttn_deprovision_run_tracking.sql`
 
-1. **`ttn-deprovision`**: Uses `IDENTITY_SERVER_URL` which is now mapped to NAM1 (correct for single-cluster)
-2. **`ttn-force-release-eui`**: Intentionally searches ALL clusters (nam1, eu1, au1) to find orphaned devices - this is correct behavior for a "force release" utility
-3. **`ttn-bootstrap`**: Hardcodes `TTN_BASE_URL = "https://nam1.cloud.thethings.network"` - already correct
+Creates two tables:
 
-## Changes Required
-
-### 1. Update `ttn-deprovision-worker/index.ts`
-- **Current**: Imports dual-endpoint constants but uses single-cluster logic
-- **Fix**: Already correctly implemented in codebase (v5-single-cluster)
-- **Action**: Deploy the updated version
-
-### 2. Update `ttn-deprovision/index.ts`
-- **Current**: Uses `IDENTITY_SERVER_URL` and `CLUSTER_BASE_URL` from ttnBase.ts
-- **Status**: Already correctly uses single-cluster via the shared imports
-- **Action**: Deploy the updated version
-
-### 3. Keep `ttn-force-release-eui/index.ts` as-is
-- **Current**: Searches all clusters (nam1, eu1, au1)
-- **Rationale**: This is intentional - it's a recovery tool to find devices on wrong clusters
-- **Action**: Deploy to ensure version sync
-
-### 4. Update `ttn-bootstrap/index.ts`
-- **Current**: Uses hardcoded `TTN_BASE_URL = "https://nam1.cloud.thethings.network"`
-- **Status**: Already correct for single-cluster
-- **Action**: Deploy the updated version
-
-## Implementation Steps
-
-### Step 1: Verify ttn-deprovision-worker Code
-The codebase already has the correct v5 single-cluster implementation:
-- Uses `IDENTITY_SERVER_URL` for IS operations (now NAM1)
-- Uses `CLUSTER_BASE_URL` for data plane operations (NAM1)
-- Validates hosts with `assertValidTtnHost()`
-
-### Step 2: Add Version Check to Health Endpoint
-Add a simple version verification to all three functions' GET endpoints to make it easier to confirm deployments.
-
-### Step 3: Deploy All Functions
-Deploy all four functions in the correct order:
-1. `ttn-bootstrap` (provisions TTN resources)
-2. `ttn-deprovision-worker` (background worker for device cleanup)
-3. `ttn-deprovision` (full org deprovisioning)
-4. `ttn-force-release-eui` (emergency DevEUI release)
-
-## Technical Details
-
-### Single-Cluster Architecture (Current ttnBase.ts)
-
+#### Table 1: `ttn_deprovision_runs`
 ```text
-TTN_BASE_URL         = "https://nam1.cloud.thethings.network"
-TTN_HOST             = "nam1.cloud.thethings.network"
-CLUSTER_BASE_URL     = TTN_BASE_URL (same)
-IDENTITY_SERVER_URL  = TTN_BASE_URL (same - key change!)
+id                uuid PK default gen_random_uuid()
+organization_id   uuid NOT NULL
+requested_by      uuid NULL
+source            text NOT NULL default 'edge_function'
+action            text NOT NULL default 'deprovision'
+status            text NOT NULL default 'QUEUED'  -- QUEUED/RUNNING/SUCCEEDED/FAILED/PARTIAL
+started_at        timestamptz NULL
+finished_at       timestamptz NULL
+request_id        text NULL
+ttn_region        text NULL
+ttn_org_id        text NULL
+ttn_application_id text NULL
+summary           jsonb NOT NULL default '{}'
+error             text NULL
+created_at        timestamptz NOT NULL default now()
+updated_at        timestamptz NOT NULL default now()
 ```
 
-### Why Single-Cluster Works
-
-TTN Cloud uses co-located servers where IS, JS, NS, and AS all reside on the same regional cluster. The previous dual-endpoint approach (EU1 for IS, NAM1 for data) caused "other cluster" warnings because devices were being registered with split-brain state.
-
-### ttn-deprovision-worker Deletion Flow
-
+#### Table 2: `ttn_deprovision_run_steps`
 ```text
-1. DELETE from IS: nam1/api/v3/applications/{appId}/devices/{deviceId}
-2. DELETE from NS: nam1/api/v3/ns/applications/{appId}/devices/{deviceId}
-3. DELETE from AS: nam1/api/v3/as/applications/{appId}/devices/{deviceId}
-4. DELETE from JS: nam1/api/v3/js/applications/{appId}/devices/{deviceId}
+id               uuid PK default gen_random_uuid()
+run_id           uuid NOT NULL FK -> ttn_deprovision_runs(id) CASCADE
+step_name        text NOT NULL
+target_type      text NULL  -- device/application/organization/dev_eui/db
+target_id        text NULL
+attempt          int NOT NULL default 1
+status           text NOT NULL default 'PENDING'  -- PENDING/RUNNING/OK/ERROR/SKIPPED
+http_status      int NULL
+ttn_endpoint     text NULL
+response_snippet text NULL  -- max 400 chars
+started_at       timestamptz NULL
+finished_at      timestamptz NULL
+meta             jsonb NOT NULL default '{}'
+created_at       timestamptz NOT NULL default now()
 ```
 
-All on the same cluster = correct behavior.
+#### Indexes & RLS
+- Index on `(organization_id, created_at DESC)`
+- Index on `(status, created_at DESC)`
+- Index on `(run_id, created_at ASC)` for steps
+- RLS enabled with `USING (false)` to deny direct access (service role bypasses)
+- Trigger for auto-updating `updated_at`
 
-### ttn-force-release-eui Multi-Cluster Search
+### B) New Edge Function: `ttn-deprovision-jobs`
 
-```text
-Search for DevEUI on: nam1, eu1, au1
-For each device found:
-  - DELETE from AS, NS, JS, IS on that cluster
-  - PURGE from IS on that cluster
-Verify release by re-searching all clusters
+**File:** `supabase/functions/ttn-deprovision-jobs/index.ts`
+
+Endpoints:
+- `GET ?organization_id=X&status=RUNNING&limit=50` → List jobs
+- `GET ?job_id=X` → Get job + steps detail
+
+Response format:
+```json
+{
+  "success": true,
+  "version": "ttn-deprovision-jobs-v1.0-20260124",
+  "jobs": [...],  // or "job": {...}, "steps": [...]
+  "request_id": "abc123"
+}
 ```
 
-This multi-cluster approach is intentional for finding orphaned devices.
+Uses service role key internally, validates caller has org access via JWT.
 
-## Files to Modify
+### C) Update `ttn-deprovision` Edge Function
 
-| File | Change Type | Description |
-|------|-------------|-------------|
-| `supabase/functions/ttn-deprovision-worker/index.ts` | None | Already correct - just needs deploy |
-| `supabase/functions/ttn-deprovision/index.ts` | None | Already correct - just needs deploy |
-| `supabase/functions/ttn-force-release-eui/index.ts` | None | Already correct - just needs deploy |
-| `supabase/functions/ttn-bootstrap/index.ts` | None | Already correct - just needs deploy |
+**File:** `supabase/functions/ttn-deprovision/index.ts`
 
-## Deployment Commands
+Key changes:
 
-The following functions need to be deployed:
+#### 1. Create Run at Start
+```typescript
+const { data: run } = await supabase
+  .from("ttn_deprovision_runs")
+  .insert({
+    organization_id,
+    status: "RUNNING",
+    started_at: new Date().toISOString(),
+    request_id: requestId,
+    ttn_org_id: orgId,
+    ttn_application_id: appId,
+  })
+  .select("id")
+  .single();
+const runId = run.id;
+```
+
+#### 2. Track Each Step
+New helper function:
+```typescript
+async function recordStep(
+  supabase, runId, stepName, targetType, targetId, 
+  status, httpStatus?, endpoint?, snippet?, meta?
+): Promise<void>
+```
+
+Called for every TTN API call:
+- `list_devices` (with pagination meta)
+- `delete_device_as`, `delete_device_ns`, `delete_device_js`, `delete_device_is`
+- `purge_device` (CRITICAL)
+- `verify_dev_eui` (CRITICAL)
+- `delete_application`, `purge_application` (CRITICAL)
+- `delete_organization`, `purge_organization` (CRITICAL)
+- `clear_local_db`
+
+#### 3. Determine Final Status
+
+```typescript
+const criticalSteps = steps.filter(s => 
+  s.step_name.includes('purge_device') ||
+  s.step_name.includes('verify_dev_eui') ||
+  s.step_name === 'purge_application' ||
+  s.step_name === 'purge_organization'
+);
+
+const failedCritical = criticalSteps.filter(s => s.status === 'ERROR');
+const okCritical = criticalSteps.filter(s => s.status === 'OK' || s.status === 'SKIPPED');
+
+let finalStatus: 'SUCCEEDED' | 'FAILED' | 'PARTIAL';
+if (failedCritical.length === 0) {
+  finalStatus = 'SUCCEEDED';
+} else if (okCritical.length > 0) {
+  finalStatus = 'PARTIAL';
+} else {
+  finalStatus = 'FAILED';
+}
+```
+
+#### 4. Updated Response
+```json
+{
+  "success": true,  // ONLY if status === 'SUCCEEDED'
+  "job_id": "uuid",
+  "status": "SUCCEEDED",
+  "request_id": "abc123",
+  "summary": {
+    "devices_found": 5,
+    "devices_deleted_ok": 5,
+    "devices_purged_ok": 5,
+    "euis_verified_ok": 5,
+    "failed_euis": [],
+    "released_euis": ["eui1", "eui2"],
+    "app_purged": true,
+    "org_purged": true,
+    "db_cleared": true
+  },
+  "failed_euis": [],
+  "released_euis": [...],
+  "version": "ttn-deprovision-v2.0-tracked-20260124"
+}
+```
+
+#### 5. Handle 404 Correctly
+- DELETE returning 404 → step status `SKIPPED` (resource already gone)
+- PURGE returning 404 → step status `SKIPPED`
+- `verify_dev_eui` MUST confirm empty search result → `OK` only if truly released
+
+#### 6. Pagination for Device List
+```typescript
+let pageToken: string | undefined;
+do {
+  const url = `/api/v3/applications/${appId}/devices?field_mask=ids&limit=100` +
+    (pageToken ? `&page_token=${pageToken}` : '');
+  const result = await ttnRequest(...);
+  devices.push(...result.data.end_devices);
+  pageToken = result.data.next_page_token;
+  await recordStep(supabase, runId, 'list_devices', 'device', null, 'OK', 
+    result.status, url, null, { page: pageNum++, count: result.data.end_devices.length });
+} while (pageToken);
+```
+
+### D) Version Constants
+
+| Function | Version |
+|----------|---------|
+| `ttn-deprovision` | `ttn-deprovision-v2.0-tracked-20260124` |
+| `ttn-deprovision-jobs` | `ttn-deprovision-jobs-v1.0-20260124` |
+
+### E) Files to Create/Modify
+
+| File | Action |
+|------|--------|
+| `supabase/migrations/20260124100000_ttn_deprovision_run_tracking.sql` | CREATE |
+| `supabase/functions/ttn-deprovision-jobs/index.ts` | CREATE |
+| `supabase/functions/ttn-deprovision/index.ts` | MODIFY |
+
+### F) Deployment Commands
 
 ```bash
-supabase functions deploy ttn-bootstrap
-supabase functions deploy ttn-deprovision-worker
+# 1. Apply migration
+supabase db push
+
+# 2. Deploy functions
 supabase functions deploy ttn-deprovision
-supabase functions deploy ttn-force-release-eui
+supabase functions deploy ttn-deprovision-jobs
 ```
 
-## Verification After Deployment
+### G) Verification Commands
 
-1. Check function logs for correct version strings:
-   - `ttn-bootstrap-v3.1-single-cluster-20260124`
-   - `deprovision-worker-v5-single-cluster-20260124`
-   - `ttn-deprovision-v1.1-single-cluster-20260124`
-   - `ttn-force-release-eui-v1.1-20260124`
+```bash
+# List last 50 runs
+curl -X GET "https://mfwyiifehsvwnjwqoxht.supabase.co/functions/v1/ttn-deprovision-jobs?limit=50" \
+  -H "Authorization: Bearer <token>"
 
-2. Test deprovisioning by:
-   - Creating a test sensor
-   - Deleting the sensor (should create deprovision job)
-   - Triggering worker (should delete from NAM1)
-   - Verifying job status is SUCCEEDED
+# List pending/running runs
+curl -X GET "https://mfwyiifehsvwnjwqoxht.supabase.co/functions/v1/ttn-deprovision-jobs?status=RUNNING,QUEUED" \
+  -H "Authorization: Bearer <token>"
 
-## Risk Assessment
+# Get job detail with steps
+curl -X GET "https://mfwyiifehsvwnjwqoxht.supabase.co/functions/v1/ttn-deprovision-jobs?job_id=<uuid>" \
+  -H "Authorization: Bearer <token>"
+```
 
-- **Low risk**: All functions already have correct code in codebase
-- **Issue**: Just need to deploy the updated versions
-- **Rollback**: If issues occur, previous versions are in git history
+### H) Critical Bug Fixes
 
+1. **404 ≠ Success for verify_dev_eui**: The verify step must actively confirm the DevEUI is no longer registered (empty search result), not just accept 404
+2. **success=true only when status=SUCCEEDED**: The response `success` field is derived from job status, not assumed
+3. **db_cleared only on success OR force**: Database clearing happens only when all critical steps pass (or force=true)
+
+### I) Summary Table
+
+| Step Name | Target Type | Critical? | Description |
+|-----------|-------------|-----------|-------------|
+| list_devices | device | No | Fetch all devices (paginated) |
+| delete_device_as | device | No | Delete from Application Server |
+| delete_device_ns | device | No | Delete from Network Server |
+| delete_device_js | device | No | Delete from Join Server |
+| delete_device_is | device | No | Delete from Identity Server |
+| purge_device | device | **YES** | Hard delete (releases DevEUI) |
+| verify_dev_eui | dev_eui | **YES** | Confirm EUI is released |
+| delete_application | application | No | Delete application |
+| purge_application | application | **YES** | Hard delete application |
+| delete_organization | organization | No | Delete organization |
+| purge_organization | organization | **YES** | Hard delete organization |
+| clear_local_db | db | No | Clear local connection settings |
