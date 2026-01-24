@@ -6,7 +6,11 @@
 import type { TTNConfigContext, TTNValidationResult, TTNConfigState } from '@/types/ttnState';
 import { supabase } from '@/integrations/supabase/client';
 
-// Single cluster base URL - must match backend
+// DUAL-ENDPOINT ARCHITECTURE
+// Identity Server (IS): EU1 - global registry for auth, apps, devices, orgs
+// Data Planes (NS/AS/JS): NAM1 - regional LoRaWAN operations
+const IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network";
+const IDENTITY_SERVER_HOST = "eu1.cloud.thethings.network";
 const CLUSTER_BASE_URL = "https://nam1.cloud.thethings.network";
 const CLUSTER_HOST = "nam1.cloud.thethings.network";
 
@@ -14,10 +18,12 @@ export interface TTNDiagnostics {
   generated_at: string;
   app_version: string;
   
-  // TTN Config (single cluster)
+  // TTN Config (dual-endpoint)
   config: {
     state: TTNConfigState;
     source: string;
+    identity_server_url: string;
+    identity_server_host: string;
     cluster_base_url: string;
     cluster_host: string;
     application_id: string | null;
@@ -26,11 +32,16 @@ export interface TTNDiagnostics {
     webhook_url_redacted: string | null;
   };
   
-  // Cluster verification
-  cluster_verification: {
-    host_locked: boolean;
-    expected_host: string;
-    planes_use_same_host: boolean;
+  // Endpoint verification
+  endpoint_verification: {
+    identity_server: {
+      host: string;
+      purpose: string;
+    };
+    data_planes: {
+      host: string;
+      purpose: string;
+    };
   };
   
   // Validation
@@ -178,6 +189,8 @@ export async function buildTTNDiagnostics(
     config: {
       state: context?.state || 'local_draft',
       source: context?.source || 'LOCAL',
+      identity_server_url: IDENTITY_SERVER_URL,
+      identity_server_host: IDENTITY_SERVER_HOST,
       cluster_base_url: CLUSTER_BASE_URL,
       cluster_host: CLUSTER_HOST,
       application_id: settings?.application_id || null,
@@ -186,10 +199,15 @@ export async function buildTTNDiagnostics(
       webhook_url_redacted: redactUrl(settings?.webhook_url || null),
     },
     
-    cluster_verification: {
-      host_locked: true, // Always true - single cluster mode
-      expected_host: CLUSTER_HOST,
-      planes_use_same_host: true, // All planes use CLUSTER_BASE_URL
+    endpoint_verification: {
+      identity_server: {
+        host: IDENTITY_SERVER_HOST,
+        purpose: "Global registry: auth, applications, devices, organizations, API keys",
+      },
+      data_planes: {
+        host: CLUSTER_HOST,
+        purpose: "Regional LoRaWAN: Network Server (NS), Application Server (AS), Join Server (JS)",
+      },
     },
     
     last_validation: context?.last_validation_result || null,

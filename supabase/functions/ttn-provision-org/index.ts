@@ -43,7 +43,14 @@ import {
   GATEWAY_KEY_RIGHTS_ALL,
   validateMainUserApiKey,
 } from "../_shared/ttnPermissions.ts";
-import { TTN_BASE_URL, assertNam1Only } from "../_shared/ttnBase.ts";
+import { 
+  TTN_BASE_URL, 
+  IDENTITY_SERVER_URL,
+  CLUSTER_BASE_URL,
+  assertValidTtnHost,
+  assertNam1Only,
+  logTtnApiCall,
+} from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -68,15 +75,15 @@ interface TTNErrorDetails {
 }
 
 // ============================================================================
-// NAM1-ONLY HARD LOCK - Imported from single source of truth
+// DUAL-ENDPOINT ARCHITECTURE
+// Identity Server (IS) = EU1: auth_info, applications, devices, organizations
+// Data Planes (NS/AS/JS) = NAM1: webhooks, LoRaWAN operations
 // ============================================================================
-// @deprecated - Use TTN_BASE_URL directly
-const REGIONAL_URLS: Record<string, string> = {
-  nam1: TTN_BASE_URL,
-};
 
-// @deprecated - Use TTN_BASE_URL directly
-const IDENTITY_SERVER_URL = TTN_BASE_URL;
+// @deprecated - Use IDENTITY_SERVER_URL for IS calls, CLUSTER_BASE_URL for data plane
+const REGIONAL_URLS: Record<string, string> = {
+  nam1: CLUSTER_BASE_URL,
+};
 
 // Request timeout in milliseconds
 const REQUEST_TIMEOUT_MS = 15000;

@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { CLUSTER_BASE_URL, assertClusterHost, logTtnApiCall } from "../_shared/ttnBase.ts";
+import { CLUSTER_BASE_URL, assertValidTtnHost, logTtnApiCall } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -316,11 +316,11 @@ Deno.serve(async (req) => {
       }
     });
 
-    // NAM1-ONLY: All TTN API calls target NAM1 (imported from ttnBase.ts)
+    // DUAL-ENDPOINT: Webhooks are Application Server (AS) endpoints - use NAM1
     const ttnEndpoint = `${CLUSTER_BASE_URL}/api/v3/as/webhooks/${applicationId}/${newWebhookId}`;
     
-    // HARD GUARD: Verify cluster host
-    assertClusterHost(ttnEndpoint);
+    // Validate host for DATA plane
+    assertValidTtnHost(ttnEndpoint, "DATA");
 
     log("info", "Updating webhook in TTN", { endpoint: ttnEndpoint, changes });
 

@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
-import { CLUSTER_BASE_URL, assertClusterHost, logTtnApiCall } from "../_shared/ttnBase.ts";
+import { IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCall } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -208,10 +208,10 @@ serve(async (req) => {
     }
 
     // Check API key scope using auth_info endpoint
-    // NAM1-ONLY: Uses CLUSTER_BASE_URL for auth_info (imported from ttnBase.ts)
-    const authInfoUrl = `${CLUSTER_BASE_URL}/api/v3/auth_info`;
-    assertClusterHost(authInfoUrl);
-    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${CLUSTER_BASE_URL}`);
+    // DUAL-ENDPOINT: auth_info MUST go to Identity Server (EU1 - global registry)
+    const authInfoUrl = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
+    assertValidTtnHost(authInfoUrl, "IS");
+    console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${IDENTITY_SERVER_URL} (EU1 Identity Server)`);
 
     const authInfoResponse = await fetch(authInfoUrl, {
       headers: {

@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { deobfuscateKey, normalizeDevEui, getClusterBaseUrl } from "../_shared/ttnConfig.ts";
-import { CLUSTER_BASE_URL, assertClusterHost, logTtnApiCall } from "../_shared/ttnBase.ts";
+import { IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCall } from "../_shared/ttnBase.ts";
 
 const BUILD_VERSION = "check-ttn-device-exists-v3.0-cluster-locked-20260122";
 
@@ -182,18 +182,18 @@ Deno.serve(async (req) => {
 
       console.log(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: Listing devices from TTN app ${config.application_id}`);
 
-      // CLUSTER-LOCKED: Use cluster URL from config (always NAM1)
-      const clusterUrl = getClusterBaseUrl(config.cluster);
+      // DUAL-ENDPOINT: Device registry queries go to Identity Server (EU1)
+      // The device list is stored in the IS, not regional clusters
+      const clusterUrl = IDENTITY_SERVER_URL;
       
-      // HARD GUARD: Verify cluster host before any TTN call
-      assertClusterHost(`${clusterUrl}/api/v3/applications/${config.application_id}`);
+      // Validate host
+      assertValidTtnHost(`${clusterUrl}/api/v3/applications/${config.application_id}`, "IS");
       
-      // List all devices from TTN for this application (single API call per org)
+      // List all devices from TTN Identity Server (single API call per org)
       let ttnDeviceMap: Map<string, string> | null = null; // normalized_dev_eui -> device_id
       let listError: string | null = null;
 
       try {
-        // CLUSTER-LOCKED: Device registry queries go to the same cluster as provisioning
         const listUrl = `${clusterUrl}/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui`;
         
         // Structured logging for debugging
@@ -202,7 +202,8 @@ Deno.serve(async (req) => {
           "GET", 
           `/api/v3/applications/${config.application_id}/devices`, 
           "list_devices_for_check", 
-          requestId
+          requestId,
+          clusterUrl
         );
         
         const listResponse = await fetch(listUrl, {
