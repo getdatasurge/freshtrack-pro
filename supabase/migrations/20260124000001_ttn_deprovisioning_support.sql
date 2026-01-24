@@ -12,9 +12,9 @@ CREATE INDEX IF NOT EXISTS idx_ttn_connections_provisioning_status
 ON ttn_connections(provisioning_status)
 WHERE provisioning_status IS NOT NULL;
 
--- Update comment on ttn_region to clarify dual-endpoint architecture
+-- Update comment on ttn_region to clarify single-cluster architecture
 COMMENT ON COLUMN ttn_connections.ttn_region IS
-  'TTN cluster region (nam1, eu1, au1). Used for data plane operations. Identity Server is always on EU1.';
+  'TTN cluster region (nam1, eu1, au1). All TTN operations use the configured region - no cross-cluster mixing.';
 
 -- Add comment documenting the deprovisioning workflow
 COMMENT ON TABLE ttn_connections IS

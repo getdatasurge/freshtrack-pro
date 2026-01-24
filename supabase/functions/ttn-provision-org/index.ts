@@ -75,12 +75,12 @@ interface TTNErrorDetails {
 }
 
 // ============================================================================
-// DUAL-ENDPOINT ARCHITECTURE
-// Identity Server (IS) = EU1: auth_info, applications, devices, organizations
-// Data Planes (NS/AS/JS) = NAM1: webhooks, LoRaWAN operations
+// SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix)
+// ALL operations use NAM1 - no EU1/NAM1 mixing
+// This fixes cross-cluster device registration issues
 // ============================================================================
 
-// @deprecated - Use IDENTITY_SERVER_URL for IS calls, CLUSTER_BASE_URL for data plane
+// Regional URLs - all point to single cluster now
 const REGIONAL_URLS: Record<string, string> = {
   nam1: CLUSTER_BASE_URL,
 };
@@ -2384,54 +2384,54 @@ serve(async (req) => {
         
         if (appApiKeyForProof) {
           try {
-            // Verify auth_info on EU1
+            // Verify auth_info on NAM1 (single cluster architecture)
             const authInfoUrl = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
             const authInfoResp = await fetchWithTimeout(authInfoUrl, {
               method: "GET",
               headers: { Authorization: `Bearer ${appApiKeyForProof}` },
             }, 5000);
-            
+
             const authInfoHost = new URL(authInfoUrl).host;
-            const expectedIsHost = "eu1.cloud.thethings.network";
-            
+            const expectedHost = "nam1.cloud.thethings.network"; // Single cluster
+
             proofReport.steps.push({
               step: "auth_info",
               host: authInfoHost,
-              expected_host: expectedIsHost,
-              match: authInfoHost === expectedIsHost,
+              expected_host: expectedHost,
+              match: authInfoHost === expectedHost,
               status: authInfoResp.status,
             });
-            
-            if (authInfoHost !== expectedIsHost) {
+
+            if (authInfoHost !== expectedHost) {
               proofReport.cli_equivalence = false;
               console.error(`[ttn-provision-org] [${requestId}] PROOF FAIL: auth_info on wrong host`);
             }
-            
-            // Verify application GET on EU1
+
+            // Verify application GET on NAM1
             const appUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}`;
             const appResp = await fetchWithTimeout(appUrl, {
               method: "GET",
               headers: { Authorization: `Bearer ${appApiKeyForProof}` },
             }, 5000);
-            
+
             const appHost = new URL(appUrl).host;
             proofReport.steps.push({
               step: "get_application",
               host: appHost,
-              expected_host: expectedIsHost,
-              match: appHost === expectedIsHost,
+              expected_host: expectedHost,
+              match: appHost === expectedHost,
               status: appResp.status,
             });
-            
-            if (appHost !== expectedIsHost) {
+
+            if (appHost !== expectedHost) {
               proofReport.cli_equivalence = false;
             }
           } catch (proofErr) {
-            console.warn(`[ttn-provision-org] [${requestId}] Proof verification (IS) failed:`, proofErr);
+            console.warn(`[ttn-provision-org] [${requestId}] Proof verification failed:`, proofErr);
             proofReport.steps.push({
               step: "auth_info",
               host: "error",
-              expected_host: "eu1.cloud.thethings.network",
+              expected_host: "nam1.cloud.thethings.network",
               match: false,
               status: null,
               error: proofErr instanceof Error ? proofErr.message : "Unknown error",

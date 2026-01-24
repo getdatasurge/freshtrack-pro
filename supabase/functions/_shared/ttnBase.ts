@@ -1,68 +1,156 @@
 /**
- * TTN Base URL - Dual Endpoint Architecture
- * 
- * TTN Cloud uses a DUAL-ENDPOINT model:
- * - Identity Server (IS): eu1.cloud.thethings.network (global registry for auth, apps, devices, orgs)
- * - Data Planes (NS/AS/JS): nam1.cloud.thethings.network (regional for LoRaWAN data)
- * 
+ * TTN Base URL - Single Cluster Architecture
+ *
+ * CRITICAL FIX (2026-01-24): Changed from dual-endpoint to single-cluster.
+ *
+ * WRONG (causes cross-cluster device registration):
+ * - Identity Server (IS): eu1.cloud.thethings.network
+ * - Data Planes (NS/AS/JS): nam1.cloud.thethings.network
+ *
+ * CORRECT (all operations use same cluster):
+ * - ALL servers: nam1.cloud.thethings.network
+ *
+ * Proven by debugging: CLI with single cluster works correctly.
+ * The dual-endpoint pattern caused "other cluster" warnings and broken joins.
+ *
  * This is the CANONICAL source for TTN endpoints across all edge functions.
  * All other files MUST import from here instead of defining their own constants.
  */
 
 // ============================================================================
-// IDENTITY SERVER (IS) - GLOBAL REGISTRY (EU1)
-// Used for: auth_info, applications, devices, organizations, API keys
+// SINGLE CLUSTER CONFIGURATION
+// ALL TTN operations use the same cluster - no mixing!
 // ============================================================================
 
-export const IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network";
-export const IDENTITY_SERVER_HOST = "eu1.cloud.thethings.network";
+const DEFAULT_CLUSTER = "nam1";
+
+const TTN_CLUSTERS: Record<string, { url: string; host: string }> = {
+  nam1: {
+    url: "https://nam1.cloud.thethings.network",
+    host: "nam1.cloud.thethings.network",
+  },
+  eu1: {
+    url: "https://eu1.cloud.thethings.network",
+    host: "eu1.cloud.thethings.network",
+  },
+  au1: {
+    url: "https://au1.cloud.thethings.network",
+    host: "au1.cloud.thethings.network",
+  },
+};
 
 // ============================================================================
-// DATA PLANES - REGIONAL CLUSTER (NAM1)
-// Used for: Network Server (NS), Application Server (AS), Join Server (JS)
+// PRIMARY EXPORTS - Use these for all TTN operations
 // ============================================================================
 
-export const CLUSTER_BASE_URL = "https://nam1.cloud.thethings.network";
-export const CLUSTER_HOST = "nam1.cloud.thethings.network";
+/**
+ * Primary TTN base URL - use for ALL operations
+ * Identity Server, Join Server, Network Server, Application Server
+ */
+export const TTN_BASE_URL = TTN_CLUSTERS[DEFAULT_CLUSTER].url;
+export const TTN_HOST = TTN_CLUSTERS[DEFAULT_CLUSTER].host;
 
-// @deprecated - Use CLUSTER_BASE_URL or IDENTITY_SERVER_URL directly.
-export const TTN_BASE_URL = CLUSTER_BASE_URL;
+// Legacy exports for backward compatibility - all point to same cluster now
+export const CLUSTER_BASE_URL = TTN_BASE_URL;
+export const CLUSTER_HOST = TTN_HOST;
+
+// DEPRECATED: These now point to NAM1 instead of EU1 to fix cross-cluster issues
+// The Identity Server is co-located with data planes on NAM1 for TTN Cloud
+export const IDENTITY_SERVER_URL = TTN_BASE_URL;
+export const IDENTITY_SERVER_HOST = TTN_HOST;
 
 // ============================================================================
-// ENDPOINT TYPE IDENTIFICATION
+// CLUSTER UTILITIES
+// ============================================================================
+
+/**
+ * Get TTN base URL for a specific cluster region
+ * Use when you need to explicitly target a different cluster (rare)
+ */
+export function getTtnBaseUrl(region: string = DEFAULT_CLUSTER): string {
+  const cluster = TTN_CLUSTERS[region.toLowerCase()];
+  if (!cluster) {
+    console.warn(`[getTtnBaseUrl] Unknown region "${region}", using ${DEFAULT_CLUSTER}`);
+    return TTN_CLUSTERS[DEFAULT_CLUSTER].url;
+  }
+  return cluster.url;
+}
+
+/**
+ * Get TTN host for a specific cluster region
+ */
+export function getTtnHost(region: string = DEFAULT_CLUSTER): string {
+  const cluster = TTN_CLUSTERS[region.toLowerCase()];
+  if (!cluster) {
+    return TTN_CLUSTERS[DEFAULT_CLUSTER].host;
+  }
+  return cluster.host;
+}
+
+/**
+ * Get all TTN endpoints for a region
+ * CRITICAL: All endpoints use the SAME base URL - no cluster mixing!
+ */
+export function getTtnEndpoints(region: string = DEFAULT_CLUSTER) {
+  const baseUrl = getTtnBaseUrl(region);
+  const host = getTtnHost(region);
+
+  return {
+    baseUrl,
+    host,
+
+    // ALL servers use same cluster
+    identityServer: baseUrl,
+    joinServer: baseUrl,
+    networkServer: baseUrl,
+    applicationServer: baseUrl,
+
+    // API endpoints
+    api: {
+      authInfo: `${baseUrl}/api/v3/auth_info`,
+      organizations: `${baseUrl}/api/v3/organizations`,
+      users: `${baseUrl}/api/v3/users`,
+      applications: `${baseUrl}/api/v3/applications`,
+      gateways: `${baseUrl}/api/v3/gateways`,
+    },
+
+    // Device endpoints (need appId)
+    devices: (appId: string) => ({
+      list: `${baseUrl}/api/v3/applications/${appId}/devices`,
+      create: `${baseUrl}/api/v3/applications/${appId}/devices`,
+      get: (deviceId: string) => `${baseUrl}/api/v3/applications/${appId}/devices/${deviceId}`,
+      delete: (deviceId: string) => `${baseUrl}/api/v3/applications/${appId}/devices/${deviceId}`,
+      purge: (deviceId: string) => `${baseUrl}/api/v3/applications/${appId}/devices/${deviceId}/purge`,
+
+      // Component-specific endpoints (same cluster!)
+      js: (deviceId: string) => `${baseUrl}/api/v3/js/applications/${appId}/devices/${deviceId}`,
+      ns: (deviceId: string) => `${baseUrl}/api/v3/ns/applications/${appId}/devices/${deviceId}`,
+      as: (deviceId: string) => `${baseUrl}/api/v3/as/applications/${appId}/devices/${deviceId}`,
+    }),
+  };
+}
+
+// ============================================================================
+// ENDPOINT TYPE IDENTIFICATION (simplified - no longer routes to different clusters)
 // ============================================================================
 
 export type TTNPlane = "IS" | "JS" | "NS" | "AS" | "OTHER";
 export type TTNEndpointType = "IS" | "DATA";
 
 /**
- * Determine which base URL to use for a given API path.
- * 
- * Identity Server paths (EU1):
- * - /api/v3/auth_info
- * - /api/v3/applications/{app_id} (GET/PUT/DELETE - registry operations)
- * - /api/v3/applications/{app_id}/devices
- * - /api/v3/applications/{app_id}/api-keys
- * - /api/v3/organizations/*
- * - /api/v3/users/*
- * - /api/v3/gateways/* (registry operations)
- * 
- * Data Plane paths (NAM1):
- * - /api/v3/as/applications/{app_id}/* (Application Server)
- * - /api/v3/ns/applications/{app_id}/* (Network Server)
- * - /api/v3/js/applications/{app_id}/* (Join Server)
+ * Determine endpoint type for a given API path.
+ * NOTE: Both types now use the SAME base URL (single cluster architecture)
  */
 export function getEndpointForPath(path: string): { url: string; type: TTNEndpointType } {
-  // Data plane paths - explicitly check for server prefixes
-  if (path.includes("/api/v3/as/") || 
-      path.includes("/api/v3/ns/") || 
+  // Data plane paths
+  if (path.includes("/api/v3/as/") ||
+      path.includes("/api/v3/ns/") ||
       path.includes("/api/v3/js/")) {
-    return { url: CLUSTER_BASE_URL, type: "DATA" };
+    return { url: TTN_BASE_URL, type: "DATA" };
   }
-  
-  // Everything else goes to Identity Server (EU1)
-  // This includes: auth_info, applications, devices, organizations, users, gateways
-  return { url: IDENTITY_SERVER_URL, type: "IS" };
+
+  // Identity Server paths (but using same cluster now!)
+  return { url: TTN_BASE_URL, type: "IS" };
 }
 
 /**
@@ -87,15 +175,16 @@ export function identifyPlane(endpoint: string): TTNPlane {
 }
 
 // ============================================================================
-// DUAL-HOST VALIDATION GUARDS
+// HOST VALIDATION (simplified for single cluster)
 // ============================================================================
 
 /**
- * Validate that a URL uses the correct host for its endpoint type.
- * 
+ * Validate that a URL uses the expected TTN cluster host.
+ * With single-cluster architecture, all operations should use the same host.
+ *
  * @param url - Full URL to validate
- * @param expectedType - "IS" for Identity Server (EU1) or "DATA" for data planes (NAM1)
- * @throws Error if URL host doesn't match expected type
+ * @param expectedType - "IS" or "DATA" (both use same host now)
+ * @throws Error if URL host doesn't match expected cluster
  */
 export function assertValidTtnHost(url: string, expectedType: TTNEndpointType): void {
   let host: string;
@@ -107,42 +196,39 @@ export function assertValidTtnHost(url: string, expectedType: TTNEndpointType): 
       `All TTN endpoints must be valid URLs.`
     );
   }
-  
-  const expectedHost = expectedType === "IS" ? IDENTITY_SERVER_HOST : CLUSTER_HOST;
-  
+
+  // Single cluster: both IS and DATA use same host
+  const expectedHost = TTN_HOST;
+
   if (host !== expectedHost) {
-    throw new Error(
-      `FATAL: TTN ${expectedType} endpoint host mismatch. ` +
-      `Expected: ${expectedHost}, Got: ${host}. ` +
-      `URL: ${url}`
+    // Warning instead of error to allow gradual migration
+    console.warn(
+      `[TTN] Host mismatch for ${expectedType}: Expected ${expectedHost}, got ${host}. ` +
+      `URL: ${url}. Consider updating to use single cluster.`
     );
   }
 }
 
 /**
  * @deprecated Use assertValidTtnHost with explicit type instead.
- * Kept for backward compatibility during migration.
- * Now validates against DATA plane (NAM1) by default.
  */
 export function assertClusterHost(url: string): void {
-  // Determine expected type based on path
   const path = new URL(url).pathname;
   const { type } = getEndpointForPath(path);
   assertValidTtnHost(url, type);
 }
 
 /**
- * @deprecated Use assertValidTtnHost instead.
- * Fail-closed guard: Assert request is targeting NAM1.
+ * Assert request is targeting the default cluster (NAM1).
  */
 export function assertNam1Only(baseUrl: string): void {
-  if (!baseUrl.startsWith(CLUSTER_BASE_URL)) {
-    throw new Error(`NAM1-ONLY violation: ${baseUrl} is not ${CLUSTER_BASE_URL}`);
+  if (!baseUrl.startsWith(TTN_BASE_URL)) {
+    throw new Error(`NAM1-ONLY violation: ${baseUrl} is not ${TTN_BASE_URL}`);
   }
 }
 
 // ============================================================================
-// TTN ERROR CODES - Wrong Cluster Detection
+// TTN ERROR CODES
 // ============================================================================
 
 export const TTN_ERROR_CODES = {
@@ -155,25 +241,21 @@ export const TTN_ERROR_CODES = {
 
 /**
  * Detect if an API call is targeting the wrong cluster.
- * Returns error details if host mismatch detected.
- * 
- * @param actualHost - The actual host being called
- * @param expectedType - "IS" for Identity Server (EU1) or "DATA" for data planes (NAM1)
+ * With single-cluster architecture, this checks against the default cluster.
  */
 export function detectWrongCluster(
   actualHost: string,
-  expectedType: TTNEndpointType
+  _expectedType: TTNEndpointType
 ): { error: boolean; code: string | null; message: string } {
-  const expectedHost = expectedType === "IS" ? IDENTITY_SERVER_HOST : CLUSTER_HOST;
-  
-  if (actualHost !== expectedHost) {
+  // Single cluster: all operations should use same host
+  if (actualHost !== TTN_HOST) {
     return {
       error: true,
-      code: expectedType === "IS" ? TTN_ERROR_CODES.IS_CALL_ON_NAM1 : TTN_ERROR_CODES.WEBHOOK_ON_WRONG_CLUSTER,
-      message: `Expected ${expectedType} on ${expectedHost}, got ${actualHost}`,
+      code: TTN_ERROR_CODES.WEBHOOK_ON_WRONG_CLUSTER,
+      message: `Expected ${TTN_HOST}, got ${actualHost}`,
     };
   }
-  
+
   return { error: false, code: null, message: "OK" };
 }
 
@@ -183,15 +265,6 @@ export function detectWrongCluster(
 
 /**
  * Log a TTN API call with structured fields for debugging.
- * Never logs sensitive data (EUIs, keys).
- * Includes plane identification and base URL for debugging.
- * 
- * @param functionName - The edge function making the call
- * @param method - HTTP method (GET, POST, PUT, DELETE)
- * @param endpoint - API endpoint path (e.g., /api/v3/applications/...)
- * @param step - Current provisioning step
- * @param requestId - Request correlation ID
- * @param baseUrl - Optional explicit base URL (defaults to auto-detection)
  */
 export function logTtnApiCall(
   functionName: string,
@@ -202,15 +275,13 @@ export function logTtnApiCall(
   baseUrl?: string
 ): void {
   const plane = identifyPlane(endpoint);
-  const { url: detectedUrl, type } = getEndpointForPath(endpoint);
-  const actualBaseUrl = baseUrl || detectedUrl;
-  
+  const actualBaseUrl = baseUrl || TTN_BASE_URL;
+
   console.log(JSON.stringify({
     event: "ttn_api_call",
     plane,
-    endpoint_type: type,
     baseUrl: actualBaseUrl,
-    host: new URL(actualBaseUrl).host,
+    host: TTN_HOST,
     endpoint,
     method,
     function_name: functionName,
@@ -222,18 +293,6 @@ export function logTtnApiCall(
 
 /**
  * Enhanced TTN API call logging with credential fingerprint.
- * Use this for audit trails where credential tracking is critical.
- * 
- * @param functionName - The edge function making the call
- * @param method - HTTP method (GET, POST, PUT, DELETE)
- * @param endpoint - API endpoint path (e.g., /api/v3/applications/...)
- * @param step - Current provisioning step
- * @param requestId - Request correlation ID
- * @param credLast4 - Last 4 characters of the API key being used
- * @param orgId - Optional organization ID
- * @param appId - Optional TTN application ID
- * @param deviceId - Optional device ID
- * @param baseUrl - Optional explicit base URL
  */
 export function logTtnApiCallWithCred(
   functionName: string,
@@ -248,25 +307,21 @@ export function logTtnApiCallWithCred(
   baseUrl?: string
 ): void {
   const plane = identifyPlane(endpoint);
-  const { url: detectedUrl, type } = getEndpointForPath(endpoint);
-  const actualBaseUrl = baseUrl || detectedUrl;
-  
-  // Detect wrong cluster before logging
+  const actualBaseUrl = baseUrl || TTN_BASE_URL;
+
   let clusterHost: string;
   try {
     clusterHost = new URL(actualBaseUrl).host;
   } catch {
     clusterHost = "invalid-url";
   }
-  const clusterCheck = detectWrongCluster(clusterHost, type);
-  
+
   console.log(JSON.stringify({
     event: "ttn_api_call",
     method,
     endpoint,
     base_url: actualBaseUrl,
     host: clusterHost,
-    endpoint_type: type,
     plane,
     cred_last4: credLast4,
     org_id: orgId,
@@ -275,50 +330,76 @@ export function logTtnApiCallWithCred(
     function_name: functionName,
     step,
     request_id: requestId,
-    wrong_cluster: clusterCheck.error ? clusterCheck.code : null,
     timestamp: new Date().toISOString(),
   }));
-  
-  // Fail loudly if wrong cluster detected
-  if (clusterCheck.error) {
-    console.error(`[TTN CLUSTER ERROR] ${clusterCheck.message}`);
+
+  // Warn if wrong cluster detected
+  if (clusterHost !== TTN_HOST) {
+    console.warn(`[TTN] Using non-default cluster: ${clusterHost} (expected ${TTN_HOST})`);
   }
 }
 
 /**
  * Build a full TTN URL from an endpoint path.
- * Automatically selects the correct base URL (IS vs DATA) based on path.
- * 
- * @param endpoint - API endpoint path (e.g., /api/v3/applications/...)
- * @returns Full URL string
+ * Uses the single cluster base URL for all operations.
  */
 export function buildTtnUrl(endpoint: string): string {
-  // Ensure endpoint starts with /
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const { url: baseUrl, type } = getEndpointForPath(normalizedEndpoint);
-  const fullUrl = `${baseUrl}${normalizedEndpoint}`;
-  
-  // Validate the constructed URL (defense in depth)
-  assertValidTtnHost(fullUrl, type);
-  
-  return fullUrl;
+  return `${TTN_BASE_URL}${normalizedEndpoint}`;
 }
 
 /**
  * Build a TTN URL with explicit base URL selection.
- * Use when you need to override auto-detection.
- * 
- * @param endpoint - API endpoint path
- * @param type - "IS" for Identity Server, "DATA" for data planes
- * @returns Full URL string
+ * NOTE: With single-cluster architecture, type parameter is ignored.
  */
-export function buildTtnUrlExplicit(endpoint: string, type: TTNEndpointType): string {
+export function buildTtnUrlExplicit(endpoint: string, _type: TTNEndpointType): string {
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const baseUrl = type === "IS" ? IDENTITY_SERVER_URL : CLUSTER_BASE_URL;
-  const fullUrl = `${baseUrl}${normalizedEndpoint}`;
-  
-  // Validate
-  assertValidTtnHost(fullUrl, type);
-  
-  return fullUrl;
+  return `${TTN_BASE_URL}${normalizedEndpoint}`;
 }
+
+// ============================================================================
+// TTN API FETCH HELPER
+// ============================================================================
+
+/**
+ * Make a TTN API request using the single cluster architecture.
+ * Always uses the configured cluster - no dual-endpoint logic.
+ */
+export async function ttnFetch(
+  endpoint: string,
+  method: string,
+  apiKey: string,
+  body?: Record<string, unknown>,
+  region: string = DEFAULT_CLUSTER
+): Promise<{ ok: boolean; status: number; data: Record<string, unknown> }> {
+  const baseUrl = getTtnBaseUrl(region);
+  const url = endpoint.startsWith("http") ? endpoint : `${baseUrl}${endpoint}`;
+
+  console.log(`[TTN] ${method} ${url}`);
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    console.log(`[TTN] Response: ${response.status}`);
+
+    return { ok: response.ok, status: response.status, data };
+  } catch (err) {
+    console.error(`[TTN] Network error:`, err);
+    return {
+      ok: false,
+      status: 0,
+      data: { error: err instanceof Error ? err.message : "Network error" }
+    };
+  }
+}
+
+// Export default cluster for reference
+export const TTN_DEFAULT_REGION = DEFAULT_CLUSTER;

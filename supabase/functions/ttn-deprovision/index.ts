@@ -25,7 +25,7 @@ import {
 } from "../_shared/ttnBase.ts";
 import { deobfuscateKey } from "../_shared/ttnConfig.ts";
 
-const BUILD_VERSION = "ttn-deprovision-v1.0-proper-cleanup-20260124";
+const BUILD_VERSION = "ttn-deprovision-v1.1-single-cluster-20260124";
 
 interface DeprovisionResult {
   step: string;

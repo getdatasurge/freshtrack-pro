@@ -20,15 +20,14 @@ import {
 } from "./ttnBase.ts";
 
 // ============================================================================
-// DUAL-ENDPOINT ARCHITECTURE
-// Identity Server (IS): EU1 - auth_info, applications, devices, orgs
-// Data Planes (NS/AS/JS): NAM1 - LoRaWAN operations
+// SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix)
+// ALL operations use NAM1 - no EU1/NAM1 mixing
 // ============================================================================
 
 // Re-export for backward compatibility
 export { IDENTITY_SERVER_URL } from "./ttnBase.ts";
 
-// @deprecated - Use CLUSTER_BASE_URL for data planes, IDENTITY_SERVER_URL for IS
+// Regional URLs - all point to single cluster now
 export const REGIONAL_URLS: Record<string, string> = {
   nam1: CLUSTER_BASE_URL,
 };
@@ -229,10 +228,9 @@ export async function validateMainUserApiKey(
     };
   }
 
-  // DUAL-ENDPOINT: auth_info MUST go to Identity Server (EU1)
-  // The IS is the global registry - it's ALWAYS on eu1 regardless of regional cluster
+  // SINGLE-CLUSTER: auth_info goes to the configured cluster (NAM1)
   const url = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
-  console.log(`[ttnPermissions] [${requestId}] Preflight: Identity Server at ${url} (EU1 - global registry)`);
+  console.log(`[ttnPermissions] [${requestId}] Preflight: TTN API at ${url}`);
   console.log(`[ttnPermissions] [${requestId}] API key last4: ...${apiKey.slice(-4)}`);
 
   try {
