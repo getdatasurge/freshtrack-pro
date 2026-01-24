@@ -1,8 +1,8 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { deobfuscateKey, normalizeDevEui, getClusterBaseUrl } from "../_shared/ttnConfig.ts";
-import { IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCall } from "../_shared/ttnBase.ts";
+import { deobfuscateKey, normalizeDevEui, getClusterBaseUrl, getLast4 } from "../_shared/ttnConfig.ts";
+import { IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCallWithCred } from "../_shared/ttnBase.ts";
 
-const BUILD_VERSION = "check-ttn-device-exists-v3.0-cluster-locked-20260122";
+const BUILD_VERSION = "check-ttn-device-exists-v4.0-dual-endpoint-audit-20260124";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -196,13 +196,18 @@ Deno.serve(async (req) => {
       try {
         const listUrl = `${clusterUrl}/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui`;
         
-        // Structured logging for debugging
-        logTtnApiCall(
+        // Enhanced logging with credential fingerprint
+        const credLast4 = getLast4(config.api_key);
+        logTtnApiCallWithCred(
           "check-ttn-device-exists", 
           "GET", 
           `/api/v3/applications/${config.application_id}/devices`, 
           "list_devices_for_check", 
           requestId,
+          credLast4,
+          orgId,
+          config.application_id,
+          undefined,
           clusterUrl
         );
         

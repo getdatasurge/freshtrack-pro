@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getTtnConfigForOrg, assertClusterLocked } from "../_shared/ttnConfig.ts";
-import { CLUSTER_BASE_URL, IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCall, identifyPlane } from "../_shared/ttnBase.ts";
+import { getTtnConfigForOrg, assertClusterLocked, getLast4 } from "../_shared/ttnConfig.ts";
+import { CLUSTER_BASE_URL, IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCallWithCred, identifyPlane } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -161,7 +161,11 @@ serve(async (req) => {
     
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
     console.log(`[ttn-provision-device] Region: ${ttnConfig.region}, Frequency plan: ${frequencyPlan}`);
-    console.log(`[ttn-provision-device] Cluster base URL: ${clusterBaseUrl}`);
+    console.log(`[ttn-provision-device] Dual-endpoint: IS=${IDENTITY_SERVER_URL}, DATA=${clusterBaseUrl}`);
+    
+    // Get API key last4 for audit logging
+    const credLast4 = getLast4(ttnConfig.apiKey);
+    const requestId = crypto.randomUUID().slice(0, 8);
 
     // ========== DUAL-ENDPOINT TTN API HELPER ==========
     // Automatically routes to correct endpoint based on path
@@ -179,19 +183,19 @@ serve(async (req) => {
       // Validate host before call
       assertValidTtnHost(url, endpointType);
       
-      // Structured logging for every TTN call
-      console.log(JSON.stringify({
-        event: "ttn_api_call",
+      // Enhanced logging with credential fingerprint for audit trail
+      logTtnApiCallWithCred(
+        "ttn-provision-device",
         method,
         endpoint,
-        baseUrl,
-        endpoint_type: endpointType,
-        appId: ttnAppId,
+        step || "unknown",
+        requestId,
+        credLast4,
+        organization_id,
+        ttnAppId,
         deviceId,
-        cluster: ttnConfig.region,
-        step: step || "unknown",
-        timestamp: new Date().toISOString(),
-      }));
+        baseUrl
+      );
       
       const response = await fetch(url, {
         ...options,

@@ -20,6 +20,26 @@ import {
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
+interface TTNProofStep {
+  step: string;
+  host: string;
+  expected_host: string;
+  match: boolean;
+  status: number | null;
+  error?: string;
+}
+
+interface TTNProofReport {
+  request_id: string;
+  timestamp: string;
+  cli_equivalence: boolean;
+  steps: TTNProofStep[];
+  webhook_verification?: {
+    base_url_match: boolean;
+    secret_configured: boolean;
+  };
+}
+
 interface TTNDiagnosticsData {
   ttn_region: string | null;
   ttn_application_id: string | null;
@@ -31,6 +51,8 @@ interface TTNDiagnosticsData {
   // Optional webhook health fields (if available)
   webhook_last_received_at?: string | null;
   webhook_last_status?: string | null;
+  // Provisioning proof report (if available)
+  proof_report?: TTNProofReport | null;
 }
 
 interface TTNDiagnosticsPanelProps {
@@ -205,6 +227,76 @@ export function TTNDiagnosticsPanel({ data, className }: TTNDiagnosticsPanelProp
                   </span>
                 </>
               )}
+            </div>
+          )}
+
+          {/* Provisioning Proof Report */}
+          {data.proof_report && (
+            <div className="space-y-2 border-t pt-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                {data.proof_report.cli_equivalence ? (
+                  <CheckCircle2 className="h-4 w-4 text-safe" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-alarm" />
+                )}
+                <span>Provisioning Proof</span>
+                <Badge 
+                  variant="outline" 
+                  className={cn(
+                    "text-xs",
+                    data.proof_report.cli_equivalence 
+                      ? "bg-safe/10 text-safe border-safe/30"
+                      : "bg-alarm/10 text-alarm border-alarm/30"
+                  )}
+                >
+                  CLI Equiv: {data.proof_report.cli_equivalence ? "YES" : "NO"}
+                </Badge>
+              </div>
+              
+              <div className="text-xs space-y-1 pl-6">
+                <p className="text-muted-foreground">
+                  Verified at: {new Date(data.proof_report.timestamp).toLocaleString()}
+                </p>
+                
+                {/* Step-by-step verification */}
+                <div className="space-y-0.5 mt-2">
+                  {data.proof_report.steps.map((step, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      {step.match ? (
+                        <CheckCircle2 className="h-3 w-3 text-safe" />
+                      ) : (
+                        <XCircle className="h-3 w-3 text-alarm" />
+                      )}
+                      <span className="font-mono">{step.step}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <code className={cn(
+                        "text-xs",
+                        step.match ? "text-safe" : "text-alarm"
+                      )}>
+                        {step.host}
+                      </code>
+                      {step.status && (
+                        <span className="text-muted-foreground">({step.status})</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Webhook verification */}
+                {data.proof_report.webhook_verification && (
+                  <div className="mt-2 pt-2 border-t border-dashed">
+                    <p className="text-muted-foreground">Webhook Verification:</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className={data.proof_report.webhook_verification.base_url_match ? "text-safe" : "text-alarm"}>
+                        URL: {data.proof_report.webhook_verification.base_url_match ? "✓" : "✗"}
+                      </span>
+                      <span className={data.proof_report.webhook_verification.secret_configured ? "text-safe" : "text-alarm"}>
+                        Secret: {data.proof_report.webhook_verification.secret_configured ? "✓" : "✗"}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

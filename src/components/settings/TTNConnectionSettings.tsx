@@ -1138,6 +1138,10 @@ Cluster: ${region}
                     NAM1 (North America)
                   </Badge>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Identity Server: <code className="font-mono">eu1.cloud.thethings.network</code><br/>
+                  Data Planes: <code className="font-mono">nam1.cloud.thethings.network</code>
+                </p>
               </div>
               
               <Button onClick={() => handleProvision(false)} disabled={isProvisioning || readOnly} size="lg">
@@ -1146,7 +1150,7 @@ Cluster: ${region}
                 ) : (
                   <Plus className="h-4 w-4 mr-2" />
                 )}
-                Provision TTN Application
+                Verify TTN Setup
               </Button>
             </div>
           </div>
