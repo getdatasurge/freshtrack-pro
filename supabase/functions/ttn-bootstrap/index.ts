@@ -26,7 +26,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const TTN_BASE_URL = "https://eu1.cloud.thethings.network";
 const TTN_REGION = "eu1"; // Default region
-const FUNCTION_VERSION = "ttn-bootstrap-v2.9-region-param-20260108";
+const FUNCTION_VERSION = "ttn-bootstrap-v3.0-with-deprovision-20260124";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1294,6 +1294,58 @@ serve(async (req: Request) => {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             }
           );
+        }
+
+        // For start_fresh or provision, first deprovision any existing TTN resources
+        // This ensures DevEUIs are properly released before re-provisioning
+        if (body.customer_id || body.organization_id) {
+          const targetOrgId = body.customer_id || body.organization_id;
+          console.log(`[Bootstrap] Calling deprovision before ${body.action} for org: ${targetOrgId}`);
+
+          try {
+            const deprovisionResponse = await fetch(
+              `${supabaseUrl}/functions/v1/ttn-deprovision`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${supabaseServiceKey}`,
+                },
+                body: JSON.stringify({
+                  organization_id: targetOrgId,
+                  force: body.action === "start_fresh"
+                }),
+              }
+            );
+
+            const deprovisionResult = await deprovisionResponse.json();
+            console.log(`[Bootstrap] Deprovision result:`, JSON.stringify(deprovisionResult));
+
+            // If deprovision failed with stuck DevEUIs and this is start_fresh, warn but continue
+            if (!deprovisionResult.success && deprovisionResult.failed_euis?.length > 0) {
+              console.warn(`[Bootstrap] Some DevEUIs failed to release:`, deprovisionResult.failed_euis);
+
+              // Only block if not forcing
+              if (!body.force_new_org && body.action !== "start_fresh") {
+                return new Response(JSON.stringify({
+                  success: false,
+                  error: "Failed to release some DevEUIs. Use Start Fresh to force cleanup.",
+                  failed_euis: deprovisionResult.failed_euis,
+                  version: FUNCTION_VERSION
+                }), {
+                  status: 400,
+                  headers: { ...corsHeaders, "Content-Type": "application/json" }
+                });
+              }
+            }
+
+            // Small delay to let TTN propagate deletions
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          } catch (deprovisionError) {
+            console.warn(`[Bootstrap] Deprovision call failed (continuing anyway):`, deprovisionError);
+            // Continue with provisioning even if deprovision fails
+            // The deprovision function might not exist in all environments
+          }
         }
 
         // For start_fresh, force a new org_id suffix
