@@ -1,325 +1,143 @@
 
-# Audit: TTN Provisioning "Wrong Cluster" End-Device Symptoms
 
-## Executive Summary
+# Plan: Update and Deploy All 3 TTN Deprovisioning Functions
 
-This audit traces every TTN API call during provisioning to verify:
-1. **Identity Server (IS) calls** target `eu1.cloud.thethings.network` (registry operations)
-2. **Data Plane calls (NS/AS/JS)** target `nam1.cloud.thethings.network` (LoRaWAN operations)
-3. **Webhook verification** proves the webhook exists on NAM1, not elsewhere
+## Summary
 
-## Current Architecture Analysis
+The TTN deprovisioning functions need to be updated and redeployed to use the **single-cluster architecture** (NAM1 for all operations). Currently, the deployed versions are outdated.
 
-### Dual-Endpoint Constants (Correct)
+## Current State Analysis
 
-**File:** `supabase/functions/_shared/ttnBase.ts`
+| Function | Codebase Version | Deployed Version | Status |
+|----------|-----------------|------------------|--------|
+| `ttn-deprovision-worker` | `v5-single-cluster-20260124` | `v4-multi-endpoint-20260115` | ⚠️ Outdated |
+| `ttn-deprovision` | `v1.1-single-cluster-20260124` | Unknown (needs deploy) | ⚠️ Outdated |
+| `ttn-force-release-eui` | `v1.1-20260124` | Unknown (needs deploy) | ✅ Already uses all clusters |
+| `ttn-bootstrap` | `v3.1-single-cluster-20260124` | Unknown (needs deploy) | ⚠️ Outdated |
+
+## Architecture Issue
+
+The `ttn-deprovision` and `ttn-force-release-eui` functions currently import from `_shared/ttnBase.ts` which now uses single-cluster architecture. However:
+
+1. **`ttn-deprovision`**: Uses `IDENTITY_SERVER_URL` which is now mapped to NAM1 (correct for single-cluster)
+2. **`ttn-force-release-eui`**: Intentionally searches ALL clusters (nam1, eu1, au1) to find orphaned devices - this is correct behavior for a "force release" utility
+3. **`ttn-bootstrap`**: Hardcodes `TTN_BASE_URL = "https://nam1.cloud.thethings.network"` - already correct
+
+## Changes Required
+
+### 1. Update `ttn-deprovision-worker/index.ts`
+- **Current**: Imports dual-endpoint constants but uses single-cluster logic
+- **Fix**: Already correctly implemented in codebase (v5-single-cluster)
+- **Action**: Deploy the updated version
+
+### 2. Update `ttn-deprovision/index.ts`
+- **Current**: Uses `IDENTITY_SERVER_URL` and `CLUSTER_BASE_URL` from ttnBase.ts
+- **Status**: Already correctly uses single-cluster via the shared imports
+- **Action**: Deploy the updated version
+
+### 3. Keep `ttn-force-release-eui/index.ts` as-is
+- **Current**: Searches all clusters (nam1, eu1, au1)
+- **Rationale**: This is intentional - it's a recovery tool to find devices on wrong clusters
+- **Action**: Deploy to ensure version sync
+
+### 4. Update `ttn-bootstrap/index.ts`
+- **Current**: Uses hardcoded `TTN_BASE_URL = "https://nam1.cloud.thethings.network"`
+- **Status**: Already correct for single-cluster
+- **Action**: Deploy the updated version
+
+## Implementation Steps
+
+### Step 1: Verify ttn-deprovision-worker Code
+The codebase already has the correct v5 single-cluster implementation:
+- Uses `IDENTITY_SERVER_URL` for IS operations (now NAM1)
+- Uses `CLUSTER_BASE_URL` for data plane operations (NAM1)
+- Validates hosts with `assertValidTtnHost()`
+
+### Step 2: Add Version Check to Health Endpoint
+Add a simple version verification to all three functions' GET endpoints to make it easier to confirm deployments.
+
+### Step 3: Deploy All Functions
+Deploy all four functions in the correct order:
+1. `ttn-bootstrap` (provisions TTN resources)
+2. `ttn-deprovision-worker` (background worker for device cleanup)
+3. `ttn-deprovision` (full org deprovisioning)
+4. `ttn-force-release-eui` (emergency DevEUI release)
+
+## Technical Details
+
+### Single-Cluster Architecture (Current ttnBase.ts)
+
 ```text
-IDENTITY_SERVER_URL = "https://eu1.cloud.thethings.network"
-CLUSTER_BASE_URL    = "https://nam1.cloud.thethings.network"
+TTN_BASE_URL         = "https://nam1.cloud.thethings.network"
+TTN_HOST             = "nam1.cloud.thethings.network"
+CLUSTER_BASE_URL     = TTN_BASE_URL (same)
+IDENTITY_SERVER_URL  = TTN_BASE_URL (same - key change!)
 ```
 
-### CRITICAL FINDINGS
+### Why Single-Cluster Works
 
-| Issue | Severity | Location | Description |
-|-------|----------|----------|-------------|
-| **BUG-001** | HIGH | `_shared/ttnConfig.ts:540` | `clusterBaseUrl` set to `TTN_BASE_URL` (NAM1), but testTtnConnection uses it for IS calls |
-| **BUG-002** | HIGH | `_shared/ttnConfig.ts:620-624` | `testTtnConnection` calls `assertClusterHost()` which validates NAM1 but then uses that URL for app lookup (should use IS/EU1) |
-| **BUG-003** | MEDIUM | No verification | Webhook existence is never verified on correct cluster after creation |
-| **GAP-001** | HIGH | Missing | No "Provisioning Proof" report after provisioning |
-| **GAP-002** | MEDIUM | Missing | No explicit wrong-cluster detection with clear error codes |
+TTN Cloud uses co-located servers where IS, JS, NS, and AS all reside on the same regional cluster. The previous dual-endpoint approach (EU1 for IS, NAM1 for data) caused "other cluster" warnings because devices were being registered with split-brain state.
 
-## Detailed Trace: Provisioning End-to-End
+### ttn-deprovision-worker Deletion Flow
 
-### Function: `ttn-provision-org/index.ts`
-
-| Step | Action | Expected Host | Actual Host | Evidence |
-|------|--------|---------------|-------------|----------|
-| 0 (Preflight) | POST `/api/v3/auth_info` | EU1 (IS) | EU1 | Uses `validateMainUserApiKey()` which imports `IDENTITY_SERVER_URL` |
-| 1 (Create Org) | POST `/api/v3/users/{userId}/organizations` | EU1 (IS) | EU1 | Line 1048: `${IDENTITY_SERVER_URL}/api/v3/users/...` |
-| 1 (Verify Org) | GET `/api/v3/organizations/{id}` | EU1 (IS) | EU1 | Line 1149: `${IDENTITY_SERVER_URL}/api/v3/organizations/...` |
-| 1B (Org API Key) | POST `/api/v3/organizations/{id}/api-keys` | EU1 (IS) | EU1 | Uses `IDENTITY_SERVER_URL` |
-| 2 (Create App) | POST `/api/v3/organizations/{orgId}/applications` | EU1 (IS) | EU1 | Uses `IDENTITY_SERVER_URL` |
-| 2B (Verify Rights) | GET `/api/v3/applications/{appId}/rights` | EU1 (IS) | EU1 | Uses `IDENTITY_SERVER_URL` |
-| 3 (App API Key) | POST `/api/v3/applications/{appId}/api-keys` | EU1 (IS) | EU1 | Line 1946: `${IDENTITY_SERVER_URL}/api/v3/applications/...` |
-| 3B (Gateway Key) | POST `/api/v3/organizations/{orgId}/api-keys` | EU1 (IS) | EU1 | Line 2104: `${IDENTITY_SERVER_URL}/api/v3/organizations/...` |
-| 4 (Webhook) | PUT `/api/v3/as/webhooks/{appId}/{webhookId}` | NAM1 (AS) | NAM1 | Line 2206: `${regionalUrl}/api/v3/as/webhooks/...` where `regionalUrl = REGIONAL_URLS.nam1` |
-
-**Result:** ttn-provision-org correctly routes IS calls to EU1 and AS calls to NAM1.
-
-### Function: `ttn-provision-device/index.ts`
-
-| Step | Action | Expected Host | Actual Host | Evidence |
-|------|--------|---------------|-------------|----------|
-| Probe | GET `/api/v3/applications/{appId}` | EU1 (IS) | EU1 | Line 174: `baseUrl = isDataPlane ? clusterBaseUrl : IDENTITY_SERVER_URL` |
-| Create | POST `/api/v3/applications/{appId}/devices` | EU1 (IS) | EU1 | Line 284: `ttnFetch()` auto-detects IS path |
-| JS Keys | PUT `/api/v3/js/applications/{appId}/devices/{deviceId}` | NAM1 (JS) | NAM1 | Line 367: `ttnFetch()` detects `/js/` prefix |
-| NS | PUT `/api/v3/ns/applications/{appId}/devices/{deviceId}` | NAM1 (NS) | NAM1 | Line 428: `ttnFetch()` detects `/ns/` prefix |
-| AS | PUT `/api/v3/as/applications/{appId}/devices/{deviceId}` | NAM1 (AS) | NAM1 | Line 457: `ttnFetch()` detects `/as/` prefix |
-| Verify | GET `/api/v3/applications/{appId}/devices/{deviceId}` | EU1 (IS) | EU1 | Line 472: `ttnFetch()` auto-detects IS path |
-
-**Result:** ttn-provision-device correctly uses `ttnFetch()` helper which auto-routes based on path.
-
-### Function: `check-ttn-device-exists/index.ts`
-
-| Step | Action | Expected Host | Actual Host | Evidence |
-|------|--------|---------------|-------------|----------|
-| List Devices | GET `/api/v3/applications/{appId}/devices` | EU1 (IS) | EU1 | Line 187: `clusterUrl = IDENTITY_SERVER_URL` |
-
-**Result:** Correctly uses EU1 for device registry listing.
-
-## BUG ANALYSIS
-
-### BUG-001/002: `getTtnConfigForOrg` Returns Wrong Base URL
-
-**Location:** `supabase/functions/_shared/ttnConfig.ts` lines 539-548
-
-```typescript
-// NAM1-ONLY: Single base URL for ALL planes (Identity + Regional)
-const clusterBaseUrl = TTN_BASE_URL;  // <-- BUG: TTN_BASE_URL = NAM1
+```text
+1. DELETE from IS: nam1/api/v3/applications/{appId}/devices/{deviceId}
+2. DELETE from NS: nam1/api/v3/ns/applications/{appId}/devices/{deviceId}
+3. DELETE from AS: nam1/api/v3/as/applications/{appId}/devices/{deviceId}
+4. DELETE from JS: nam1/api/v3/js/applications/{appId}/devices/{deviceId}
 ```
 
-The config object sets `clusterBaseUrl` to NAM1, but this value is used in `testTtnConnection()` at lines 620-638 to make an IS call (GET application):
+All on the same cluster = correct behavior.
 
-```typescript
-const baseUrl = config.clusterBaseUrl;  // <-- Uses NAM1
-assertClusterHost(`${baseUrl}/api/v3/applications`);  // <-- Validates NAM1
-const appResponse = await fetch(`${baseUrl}${appEndpoint}`, ...);  // <-- Calls NAM1 for IS operation!
+### ttn-force-release-eui Multi-Cluster Search
+
+```text
+Search for DevEUI on: nam1, eu1, au1
+For each device found:
+  - DELETE from AS, NS, JS, IS on that cluster
+  - PURGE from IS on that cluster
+Verify release by re-searching all clusters
 ```
 
-**This is incorrect.** The application lookup should go to EU1 (Identity Server), not NAM1.
-
-**Fix Required:**
-- `getTtnConfigForOrg` should return BOTH `identityServerUrl` (EU1) and `clusterBaseUrl` (NAM1)
-- `testTtnConnection` should use `IDENTITY_SERVER_URL` for the application GET
-
-### BUG-003: No Webhook Verification After Creation
-
-After webhook creation at Step 4 in `ttn-provision-org`, there is no verification that:
-1. The webhook exists on NAM1 AS endpoint
-2. The `base_url` matches the stored value
-3. The secret header is correctly configured
-
-**Fix Required:** Add a verification step after webhook PUT that:
-1. GETs the webhook from `${CLUSTER_BASE_URL}/api/v3/as/webhooks/${appId}/${webhookId}`
-2. Compares `base_url` and headers with stored values
-3. Fails loudly if mismatched
-
-## Implementation Plan
-
-### Phase 1: Fix TtnConfig Architecture
-
-**File:** `supabase/functions/_shared/ttnConfig.ts`
-
-1. Add `identityServerUrl` to `TtnConfig` interface
-2. Modify `getTtnConfigForOrg()` to return both URLs:
-```typescript
-return {
-  region: "nam1",
-  apiKey,
-  applicationId,
-  identityServerUrl: IDENTITY_SERVER_URL,  // NEW
-  clusterBaseUrl: CLUSTER_BASE_URL,
-  // ...
-};
-```
-
-3. Fix `testTtnConnection()` to use correct endpoint:
-```typescript
-const appBaseUrl = IDENTITY_SERVER_URL;  // IS for app lookup
-assertValidTtnHost(`${appBaseUrl}/api/v3/applications`, "IS");
-```
-
-### Phase 2: Add Provisioning Proof Report
-
-**File:** `supabase/functions/ttn-provision-org/index.ts`
-
-After Step 4 (webhook creation), add Step 5 (Verification Report):
-
-```typescript
-// ============ STEP 5: Provisioning Proof Report ============
-const proofReport = {
-  request_id: requestId,
-  timestamp: new Date().toISOString(),
-  steps: []
-};
-
-// A) Identity verification (EU1 only)
-const authInfoUrl = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
-const authInfoResp = await fetchWithTimeout(authInfoUrl, {
-  method: "GET",
-  headers: { Authorization: `Bearer ${appApiKeyForWebhook}` }
-});
-proofReport.steps.push({
-  step: "auth_info",
-  host: "eu1.cloud.thethings.network",
-  expected_host: "eu1.cloud.thethings.network",
-  match: true,
-  status: authInfoResp.status
-});
-
-const appUrl = `${IDENTITY_SERVER_URL}/api/v3/applications/${ttnAppId}`;
-const appResp = await fetchWithTimeout(appUrl, {
-  method: "GET",
-  headers: { Authorization: `Bearer ${appApiKeyForWebhook}` }
-});
-proofReport.steps.push({
-  step: "get_application",
-  host: "eu1.cloud.thethings.network",
-  expected_host: "eu1.cloud.thethings.network",
-  match: true,
-  status: appResp.status
-});
-
-// B) Cluster verification (NAM1 only)
-const webhookUrl = `${CLUSTER_BASE_URL}/api/v3/as/webhooks/${ttnAppId}/${webhookId}`;
-const webhookResp = await fetchWithTimeout(webhookUrl, {
-  method: "GET",
-  headers: { Authorization: `Bearer ${orgApiKeyForAppOps}` }
-});
-
-let webhookMatch = false;
-if (webhookResp.ok) {
-  const webhookData = await webhookResp.json();
-  webhookMatch = webhookData.base_url === webhookUrl;
-}
-
-proofReport.steps.push({
-  step: "get_webhook",
-  host: "nam1.cloud.thethings.network",
-  expected_host: "nam1.cloud.thethings.network",
-  match: true,
-  webhook_base_url_match: webhookMatch,
-  status: webhookResp.status
-});
-```
-
-### Phase 3: Add Wrong-Cluster Detection
-
-**File:** `supabase/functions/_shared/ttnBase.ts`
-
-Add explicit error codes for wrong-cluster conditions:
-
-```typescript
-export const TTN_ERROR_CODES = {
-  IS_CALL_ON_NAM1: "ERR_IS_CALL_ON_WRONG_CLUSTER",
-  WEBHOOK_ON_WRONG_CLUSTER: "ERR_WEBHOOK_WRONG_CLUSTER",
-  APP_ID_MISMATCH: "ERR_APP_ID_MISMATCH_BETWEEN_STEPS",
-  CREDENTIAL_MISMATCH: "ERR_CREDENTIAL_FINGERPRINT_MISMATCH",
-};
-
-export function detectWrongCluster(
-  actualHost: string,
-  expectedType: TTNEndpointType
-): { error: boolean; code: string | null; message: string } {
-  const expectedHost = expectedType === "IS" ? IDENTITY_SERVER_HOST : CLUSTER_HOST;
-  
-  if (actualHost !== expectedHost) {
-    return {
-      error: true,
-      code: expectedType === "IS" ? TTN_ERROR_CODES.IS_CALL_ON_NAM1 : TTN_ERROR_CODES.WEBHOOK_ON_WRONG_CLUSTER,
-      message: `Expected ${expectedType} on ${expectedHost}, got ${actualHost}`,
-    };
-  }
-  
-  return { error: false, code: null, message: "OK" };
-}
-```
-
-### Phase 4: Enhanced Logging
-
-Add credential fingerprint to every TTN API call log:
-
-**File:** `supabase/functions/_shared/ttnBase.ts`
-
-```typescript
-export function logTtnApiCallWithCred(
-  functionName: string,
-  method: string,
-  endpoint: string,
-  step: string,
-  requestId: string,
-  credLast4: string,
-  orgId?: string,
-  appId?: string,
-  deviceId?: string,
-  baseUrl?: string
-): void {
-  const { url: detectedUrl, type } = getEndpointForPath(endpoint);
-  const actualBaseUrl = baseUrl || detectedUrl;
-  
-  console.log(JSON.stringify({
-    event: "ttn_api_call",
-    method,
-    endpoint,
-    base_url: actualBaseUrl,
-    host: new URL(actualBaseUrl).host,
-    endpoint_type: type,
-    plane: identifyPlane(endpoint),
-    cred_last4: credLast4,
-    org_id: orgId,
-    app_id: appId,
-    device_id: deviceId,
-    function_name: functionName,
-    step,
-    request_id: requestId,
-    timestamp: new Date().toISOString(),
-  }));
-}
-```
-
-### Phase 5: UI Improvements
-
-**File:** `src/components/settings/TTNConnectionSettings.tsx`
-
-1. Rename "Provision TTN Application" button to "Verify TTN Setup"
-2. Add a toggle for "Show TTN Communication Details"
-3. Display the Provisioning Proof Report after successful provisioning
-
-### Phase 6: CLI Equivalence Statement
-
-After implementing all fixes, verify provisioning matches `ttn-lw-cli` behavior:
-
-| CLI Command | Edge Function | Host | Match |
-|-------------|---------------|------|-------|
-| `ttn-lw-cli applications create` | ttn-provision-org Step 2 | EU1 | YES |
-| `ttn-lw-cli applications api-keys create` | ttn-provision-org Step 3 | EU1 | YES |
-| `ttn-lw-cli applications webhooks set` | ttn-provision-org Step 4 | NAM1 | YES |
-| `ttn-lw-cli end-devices create` | ttn-provision-device create | EU1 | YES |
-| `ttn-lw-cli end-devices set --join-server` | ttn-provision-device JS PUT | NAM1 | YES |
-| `ttn-lw-cli end-devices set --network-server` | ttn-provision-device NS PUT | NAM1 | YES |
-| `ttn-lw-cli end-devices set --application-server` | ttn-provision-device AS PUT | NAM1 | YES |
-
-**CLI EQUIVALENCE: YES** (after fixes applied)
+This multi-cluster approach is intentional for finding orphaned devices.
 
 ## Files to Modify
 
-| File | Changes |
-|------|---------|
-| `supabase/functions/_shared/ttnConfig.ts` | Add `identityServerUrl` to config, fix `testTtnConnection()` |
-| `supabase/functions/_shared/ttnBase.ts` | Add error codes, enhanced logging with credential fingerprint |
-| `supabase/functions/ttn-provision-org/index.ts` | Add Step 5 Provisioning Proof Report |
-| `supabase/functions/ttn-provision-device/index.ts` | Add credential fingerprinting to logs |
-| `supabase/functions/check-ttn-device-exists/index.ts` | Add credential fingerprinting to logs |
-| `src/components/settings/TTNConnectionSettings.tsx` | Rename button, add TTN communication toggle |
-| `src/components/ttn/TTNDiagnosticsPanel.tsx` | Display Provisioning Proof Report |
+| File | Change Type | Description |
+|------|-------------|-------------|
+| `supabase/functions/ttn-deprovision-worker/index.ts` | None | Already correct - just needs deploy |
+| `supabase/functions/ttn-deprovision/index.ts` | None | Already correct - just needs deploy |
+| `supabase/functions/ttn-force-release-eui/index.ts` | None | Already correct - just needs deploy |
+| `supabase/functions/ttn-bootstrap/index.ts` | None | Already correct - just needs deploy |
 
-## Deliverables Summary
+## Deployment Commands
 
-1. **Provisioning Step Table** (Above)
-2. **CLI Equivalence Statement:** YES (after fixes)
-3. **Code Changes:**
-   - `IS_BASE` always EU1 for registry operations
-   - `CLUSTER_BASE` always NAM1 for AS/NS/JS operations
-4. **UI Fix:**
-   - "Provision TTN Application" → "Verify TTN Setup"
-   - TTN Communication toggle exposed
-5. **Webhook Verification:**
-   - After creation, verify webhook exists on NAM1
-   - Compare base_url and secret with stored values
+The following functions need to be deployed:
 
-## Technical Notes
+```bash
+supabase functions deploy ttn-bootstrap
+supabase functions deploy ttn-deprovision-worker
+supabase functions deploy ttn-deprovision
+supabase functions deploy ttn-force-release-eui
+```
 
-- The current dual-endpoint architecture in `ttnBase.ts` is correct
-- The bug is in `ttnConfig.ts` where `getTtnConfigForOrg()` only returns NAM1 URL
-- `ttn-provision-org` and `ttn-provision-device` correctly use the dual-endpoint pattern
-- The missing piece is verification after provisioning and explicit wrong-cluster detection
+## Verification After Deployment
+
+1. Check function logs for correct version strings:
+   - `ttn-bootstrap-v3.1-single-cluster-20260124`
+   - `deprovision-worker-v5-single-cluster-20260124`
+   - `ttn-deprovision-v1.1-single-cluster-20260124`
+   - `ttn-force-release-eui-v1.1-20260124`
+
+2. Test deprovisioning by:
+   - Creating a test sensor
+   - Deleting the sensor (should create deprovision job)
+   - Triggering worker (should delete from NAM1)
+   - Verifying job status is SUCCEEDED
+
+## Risk Assessment
+
+- **Low risk**: All functions already have correct code in codebase
+- **Issue**: Just need to deploy the updated versions
+- **Rollback**: If issues occur, previous versions are in git history
+
