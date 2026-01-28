@@ -365,10 +365,13 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   const [diagnoseResult, setDiagnoseResult] = useState<TtnDiagnoseResult | null>(null);
   const [diagnoseModalOpen, setDiagnoseModalOpen] = useState(false);
   const [diagnoseSensorName, setDiagnoseSensorName] = useState<string>("");
+  const [diagnoseSensorForAdopt, setDiagnoseSensorForAdopt] = useState<LoraSensor | null>(null);
+  const [isAdopting, setIsAdopting] = useState(false);
 
   const handleDiagnose = async (sensor: LoraSensor) => {
     setDiagnosingSensorId(sensor.id);
     setDiagnoseSensorName(sensor.name);
+    setDiagnoseSensorForAdopt(sensor);
     setDiagnoseResult(null);
     setDiagnoseModalOpen(true);
     
@@ -424,6 +427,51 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
       });
     } finally {
       setDiagnosingSensorId(null);
+    }
+  };
+
+  // ========== TTN ADOPT HANDLER ==========
+  const handleAdoptDevice = async () => {
+    if (!diagnoseSensorForAdopt) return;
+    
+    setIsAdopting(true);
+    debugLog.info('ttn', 'ADOPT_DEVICE_START', { sensor_id: diagnoseSensorForAdopt.id });
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('ttn-provision-device', {
+        body: {
+          action: 'adopt',
+          sensor_id: diagnoseSensorForAdopt.id,
+          organization_id: organizationId,
+        },
+      });
+      
+      if (error) {
+        toast.error(`Failed to adopt device: ${error.message}`);
+        debugLog.error('ttn', 'ADOPT_DEVICE_ERROR', { error: error.message });
+        return;
+      }
+      
+      if (data?.success && data?.adopted) {
+        toast.success(`Device adopted! TTN ID: ${data.device_id}`);
+        debugLog.info('ttn', 'ADOPT_DEVICE_SUCCESS', { device_id: data.device_id });
+        
+        // Close modal and refresh sensor list
+        setDiagnoseModalOpen(false);
+        await queryClient.invalidateQueries({ 
+          queryKey: qk.org(organizationId).loraSensors(),
+          refetchType: 'active'
+        });
+      } else {
+        toast.error(data?.error || 'Failed to adopt device');
+        debugLog.warn('ttn', 'ADOPT_DEVICE_NOT_FOUND', { error: data?.error, hint: data?.hint });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      toast.error(`Adopt failed: ${message}`);
+      debugLog.error('ttn', 'ADOPT_DEVICE_EXCEPTION', { error: message });
+    } finally {
+      setIsAdopting(false);
     }
   };
   
@@ -1181,6 +1229,8 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
             const sensor = sensors?.find(s => s.name === diagnoseSensorName);
             if (sensor) handleDiagnose(sensor);
           }}
+          onAdopt={handleAdoptDevice}
+          isAdopting={isAdopting}
         />
     </TooltipProvider>
   );

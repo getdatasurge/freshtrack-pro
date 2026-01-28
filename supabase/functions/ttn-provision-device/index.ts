@@ -9,13 +9,13 @@ const corsHeaders = {
 };
 
 interface ProvisionRequest {
-  action: "create" | "delete" | "update" | "diagnose";
+  action: "create" | "delete" | "update" | "diagnose" | "adopt";
   sensor_id: string;
   organization_id: string;
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v10-single-cluster-20260124";
+  const BUILD_VERSION = "ttn-provision-device-v11-adopt-20260128";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -698,6 +698,164 @@ serve(async (req) => {
         hint,
         diagnosedAt: new Date().toISOString(),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ========== ADOPT ACTION ==========
+    // Adopt a manually-added TTN device by searching for DevEUI
+    if (action === "adopt") {
+      console.log(`[ttn-provision-device] ADOPT: Attempting to adopt manually-added device for DevEUI ${sensor.dev_eui}`);
+      
+      const devEuiUpper = sensor.dev_eui.toUpperCase();
+      
+      // Step 1: Check if device exists in our application with any device ID
+      // First try the standard naming convention
+      console.log(`[ttn-provision-device] ADOPT Step 1: Checking for device in application ${ttnAppId}`);
+      
+      const standardDeviceId = `sensor-${sensor.dev_eui.toLowerCase()}`;
+      const checkStandard = await ttnFetch(
+        `/api/v3/applications/${ttnAppId}/devices/${standardDeviceId}`,
+        { method: "GET" },
+        "adopt_check_standard"
+      );
+      
+      if (checkStandard.ok) {
+        // Device found with standard naming - adopt it
+        console.log(`[ttn-provision-device] ADOPT: Found device with standard ID ${standardDeviceId}`);
+        
+        await supabase
+          .from("lora_sensors")
+          .update({
+            ttn_device_id: standardDeviceId,
+            ttn_application_id: ttnAppId,
+            ttn_cluster: ttnConfig.region,
+            provisioning_state: "exists_in_ttn",
+            provisioned_source: "manual",
+            status: "active",
+            last_provision_check_at: new Date().toISOString(),
+            last_provision_check_error: null,
+          })
+          .eq("id", sensor_id);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          adopted: true,
+          device_id: standardDeviceId,
+          application_id: ttnAppId,
+          cluster: ttnConfig.region,
+          source: "manual",
+          message: "Device adopted successfully. It was found with standard naming.",
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      
+      // Step 2: List all devices and search by DevEUI
+      console.log(`[ttn-provision-device] ADOPT Step 2: Searching all devices in ${ttnAppId} for DevEUI ${devEuiUpper}`);
+      
+      let foundDevice: { device_id: string; dev_eui: string } | null = null;
+      let pageToken: string | undefined;
+      let pageNum = 0;
+      
+      do {
+        const listUrl = `/api/v3/applications/${ttnAppId}/devices?field_mask=ids&limit=100` +
+          (pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : '');
+        
+        const listResponse = await ttnFetch(listUrl, { method: "GET" }, `adopt_list_page_${pageNum}`);
+        
+        if (!listResponse.ok) {
+          const errorText = await listResponse.text();
+          console.error(`[ttn-provision-device] ADOPT: Failed to list devices: ${errorText}`);
+          
+          return new Response(JSON.stringify({
+            success: false,
+            error: "Failed to search for device in TTN",
+            details: errorText.substring(0, 200),
+            hint: "Check TTN API key permissions.",
+          }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        
+        const listData = await listResponse.json();
+        const devices = listData.end_devices || [];
+        
+        console.log(`[ttn-provision-device] ADOPT: Page ${pageNum}, found ${devices.length} devices`);
+        
+        // Search for matching DevEUI
+        for (const device of devices) {
+          const deviceDevEui = device.ids?.dev_eui?.toUpperCase();
+          if (deviceDevEui === devEuiUpper) {
+            foundDevice = {
+              device_id: device.ids.device_id,
+              dev_eui: deviceDevEui,
+            };
+            break;
+          }
+        }
+        
+        if (foundDevice) break;
+        
+        pageToken = listData.next_page_token;
+        pageNum++;
+      } while (pageToken && pageNum < 50); // Safety limit
+      
+      if (foundDevice) {
+        console.log(`[ttn-provision-device] ADOPT: Found device ${foundDevice.device_id} with DevEUI ${foundDevice.dev_eui}`);
+        
+        // Update local database to recognize this device
+        await supabase
+          .from("lora_sensors")
+          .update({
+            ttn_device_id: foundDevice.device_id,
+            ttn_application_id: ttnAppId,
+            ttn_cluster: ttnConfig.region,
+            provisioning_state: "exists_in_ttn",
+            provisioned_source: "manual",
+            status: "active",
+            last_provision_check_at: new Date().toISOString(),
+            last_provision_check_error: null,
+          })
+          .eq("id", sensor_id);
+        
+        return new Response(JSON.stringify({
+          success: true,
+          adopted: true,
+          device_id: foundDevice.device_id,
+          application_id: ttnAppId,
+          cluster: ttnConfig.region,
+          source: "manual",
+          message: `Device adopted successfully. TTN device ID: ${foundDevice.device_id}`,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      
+      // Step 3: Device not found in our application
+      console.log(`[ttn-provision-device] ADOPT: DevEUI ${devEuiUpper} not found in application ${ttnAppId}`);
+      
+      // Check if device exists in data planes (orphaned state)
+      const jsCheck = await ttnFetch(`/api/v3/js/applications/${ttnAppId}/devices/${standardDeviceId}`, { method: "GET" }, "adopt_check_js");
+      const nsCheck = await ttnFetch(`/api/v3/ns/applications/${ttnAppId}/devices/${standardDeviceId}`, { method: "GET" }, "adopt_check_ns");
+      const asCheck = await ttnFetch(`/api/v3/as/applications/${ttnAppId}/devices/${standardDeviceId}`, { method: "GET" }, "adopt_check_as");
+      
+      const inDataPlanes = jsCheck.ok || nsCheck.ok || asCheck.ok;
+      
+      if (inDataPlanes) {
+        // Orphaned state - device in data planes but not IS
+        return new Response(JSON.stringify({
+          success: false,
+          adopted: false,
+          error: "Device found in TTN data planes but not in registry",
+          hint: "The device appears to be in an orphaned state. It may be registered in a different TTN application, or TTN's Identity Server cache is out of sync. Try waiting 2 minutes and running 'Adopt' again, or check TTN Console for the correct application.",
+          details: {
+            js_found: jsCheck.ok,
+            ns_found: nsCheck.ok,
+            as_found: asCheck.ok,
+          },
+        }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      
+      // Device truly not found
+      return new Response(JSON.stringify({
+        success: false,
+        adopted: false,
+        error: "Device not found in TTN",
+        hint: `No device with DevEUI ${devEuiUpper} was found in application ${ttnAppId}. Ensure the device was registered in TTN Console with the correct DevEUI, or click 'Provision' to register it automatically.`,
+      }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     return new Response(
