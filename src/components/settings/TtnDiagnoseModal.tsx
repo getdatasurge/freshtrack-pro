@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, AlertTriangle, Server, Key, Radio, Database, Loader2, RefreshCw, Settings } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Server, Key, Radio, Database, Loader2, RefreshCw, Settings, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 
@@ -36,6 +36,8 @@ interface TtnDiagnoseModalProps {
   isLoading?: boolean;
   onRetry?: () => void;
   sensorName?: string;
+  onAdopt?: () => void;
+  isAdopting?: boolean;
 }
 
 const CheckRow = ({ 
@@ -87,9 +89,19 @@ export function TtnDiagnoseModal({
   result, 
   isLoading,
   onRetry,
-  sensorName 
+  sensorName,
+  onAdopt,
+  isAdopting,
 }: TtnDiagnoseModalProps) {
   const navigate = useNavigate();
+  
+  // Detect if device can be adopted (orphaned or partial state)
+  const canAdopt = result && !result.error && (
+    result.diagnosis === "split_brain_orphaned" ||
+    result.diagnosis === "partial" ||
+    // Device in data planes but not in IS
+    (!result.checks.is?.ok && (result.checks.js?.ok || result.checks.ns?.ok || result.checks.as?.ok))
+  );
   
   // Detect provisioning/API key errors
   const isProvisioningError = result?.error?.includes("no_application_rights") || 
@@ -226,6 +238,43 @@ export function TtnDiagnoseModal({
               <p className="text-sm text-muted-foreground bg-muted/30 p-2 rounded">
                 {result.hint}
               </p>
+            )}
+
+            {/* Adopt Device CTA for orphaned/partial states */}
+            {canAdopt && onAdopt && (
+              <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <Download className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                  <div className="space-y-2 flex-1">
+                    <p className="text-sm font-medium text-primary">
+                      Manually Added Device Detected
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      This device appears to exist in TTN but wasn't provisioned through FrostGuard. 
+                      Click "Adopt Device" to link it to your sensor.
+                    </p>
+                    <Button 
+                      variant="default" 
+                      size="sm" 
+                      className="mt-1 gap-1.5"
+                      onClick={onAdopt}
+                      disabled={isAdopting}
+                    >
+                      {isAdopting ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Adopting...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-3.5 w-3.5" />
+                          Adopt Device
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Plane Checks */}
