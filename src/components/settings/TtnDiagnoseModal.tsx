@@ -95,13 +95,18 @@ export function TtnDiagnoseModal({
 }: TtnDiagnoseModalProps) {
   const navigate = useNavigate();
   
+  // Check if application is missing (404 on app probe)
+  const appMissing = result?.checks?.appProbe?.status === 404;
+  
   // Detect if device can be adopted (orphaned or partial state)
-  const canAdopt = result && !result.error && (
-    result.diagnosis === "split_brain_orphaned" ||
-    result.diagnosis === "partial" ||
-    // Device in data planes but not in IS
-    (!result.checks.is?.ok && (result.checks.js?.ok || result.checks.ns?.ok || result.checks.as?.ok))
-  );
+  // CRITICAL: Don't show adopt if app itself is missing
+  const canAdopt = result && !result.error && !appMissing &&
+    result.checks?.appProbe?.ok && (
+      result.diagnosis === "split_brain_orphaned" ||
+      result.diagnosis === "partial" ||
+      // Device in data planes but not in IS
+      (!result.checks.is?.ok && (result.checks.js?.ok || result.checks.ns?.ok || result.checks.as?.ok))
+    );
   
   // Detect provisioning/API key errors
   const isProvisioningError = result?.error?.includes("no_application_rights") || 
@@ -238,6 +243,32 @@ export function TtnDiagnoseModal({
               <p className="text-sm text-muted-foreground bg-muted/30 p-2 rounded">
                 {result.hint}
               </p>
+            )}
+
+            {/* App Missing Warning */}
+            {appMissing && (
+              <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-warning">
+                      TTN Application Not Found
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      The FrostGuard TTN application doesn't exist in TTN. You need to provision it first before you can adopt manual devices.
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-1 gap-1.5"
+                      onClick={handleGoToSettings}
+                    >
+                      <Settings className="h-3.5 w-3.5" />
+                      Go to TTN Settings
+                    </Button>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Adopt Device CTA for orphaned/partial states */}

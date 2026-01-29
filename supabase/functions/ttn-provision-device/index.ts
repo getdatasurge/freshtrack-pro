@@ -15,7 +15,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v11-adopt-20260128";
+  const BUILD_VERSION = "ttn-provision-device-v12-adopt-fix-20260129";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -706,12 +706,47 @@ serve(async (req) => {
       console.log(`[ttn-provision-device] ADOPT: Attempting to adopt manually-added device for DevEUI ${sensor.dev_eui}`);
       
       const devEuiUpper = sensor.dev_eui.toUpperCase();
+      const standardDeviceId = `sensor-${sensor.dev_eui.toLowerCase()}`;
+      
+      // Step 0: Verify the TTN application exists first
+      console.log(`[ttn-provision-device] ADOPT Step 0: Verifying application ${ttnAppId} exists`);
+      
+      const appCheck = await ttnFetch(
+        `/api/v3/applications/${ttnAppId}`,
+        { method: "GET" },
+        "adopt_check_app"
+      );
+      
+      if (!appCheck.ok) {
+        const appErrorText = await appCheck.text();
+        console.error(`[ttn-provision-device] ADOPT: Application not found: ${appCheck.status} - ${appErrorText}`);
+        
+        // Fetch provisioning status for context
+        const { data: connStatus } = await supabase
+          .from("ttn_connections")
+          .select("provisioning_status, provisioning_error")
+          .eq("organization_id", organization_id)
+          .single();
+        
+        return new Response(JSON.stringify({
+          success: false,
+          adopted: false,
+          error: "TTN application not found",
+          hint: "The FrostGuard TTN application doesn't exist in TTN. Go to Settings → TTN Connection and click 'Provision' to create it first.",
+          needs_provisioning: true,
+          app_id: ttnAppId,
+          app_status: appCheck.status,
+          provisioningStatus: connStatus?.provisioning_status,
+          provisioningError: connStatus?.provisioning_error,
+        }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      
+      console.log(`[ttn-provision-device] ADOPT: Application ${ttnAppId} verified`);
       
       // Step 1: Check if device exists in our application with any device ID
       // First try the standard naming convention
       console.log(`[ttn-provision-device] ADOPT Step 1: Checking for device in application ${ttnAppId}`);
       
-      const standardDeviceId = `sensor-${sensor.dev_eui.toLowerCase()}`;
       const checkStandard = await ttnFetch(
         `/api/v3/applications/${ttnAppId}/devices/${standardDeviceId}`,
         { method: "GET" },
