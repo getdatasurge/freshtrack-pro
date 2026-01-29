@@ -1,113 +1,155 @@
 
-# Plan: Support Manually Added TTN Devices ("Adopt" Feature)
+# Plan: Fix "Adopt Device" for Missing TTN Application + Orphaned Devices
 
-## Problem Analysis
+## Problem Summary
 
-Your TTN diagnostics shows a "Split Brain (Orphaned)" state where:
-- Device exists in Join Server, Network Server, Application Server (200 OK)
-- Device is NOT found in Identity Server/Application endpoint (404)
+Your manually-added device shows "Split Brain (Orphaned)" because:
 
-This typically happens in one of these scenarios:
+1. **TTN Application doesn't exist**: The FrostGuard app `fg-7873654e-yq` was never actually created in TTN (404 on app probe)
+2. **Device exists elsewhere**: Your device shows 200 OK in JS/NS/AS, meaning it exists in a **different TTN application**
+3. **Adopt fails**: The adopt function tries to search `fg-7873654e-yq` which doesn't exist
 
-1. **Different Application ID**: The device was manually added to TTN under a different application ID than FrostGuard uses (`fg-7873654e-yq`). The data planes can see it, but the IS query fails because it's searching in the wrong app.
+## Root Cause
 
-2. **API Key Scope Issue**: The FrostGuard API key doesn't have read rights to the application where the device actually lives.
+The database shows:
+- `provisioning_status: ready` 
+- `ttn_application_provisioned_at: NULL`
 
-3. **Cross-Cluster Registration**: The device might be registered on a different cluster (e.g., EU1 instead of NAM1).
+This is inconsistent - the application provisioning never completed but was marked ready.
 
-## Proposed Solution: Add "Adopt Manual Device" Action
+## Solution: Two-Part Fix
 
-Create a new `action: "adopt"` in the `ttn-provision-device` edge function that:
+### Part 1: Improve Adopt Error Handling
 
-### Step 1: Search for DevEUI Across TTN
-Instead of checking a specific app, search for the DevEUI globally to find where it actually lives.
+Update `ttn-provision-device` adopt action to detect when the application doesn't exist and return a clear error with actionable guidance.
 
-### Step 2: Verify Device Exists in Target App
-If found in FrostGuard's app, simply update the local database to recognize it.
+```text
+IF app probe returns 404:
+  RETURN {
+    success: false,
+    error: "TTN application not found",
+    hint: "The FrostGuard TTN application doesn't exist. 
+           Go to Settings → TTN Connection and click 'Provision' 
+           to create it. Then try 'Adopt' again.",
+    needs_provisioning: true
+  }
+```
 
-### Step 3: Handle Cross-App Situation
-If the device is in a different app, provide clear guidance to the user.
+### Part 2: Fix Database Inconsistency
+
+Reset the provisioning status since the application was never actually created:
+
+```sql
+UPDATE ttn_connections 
+SET provisioning_status = 'needs_app',
+    provisioning_error = 'Application was not created - needs reprovisioning'
+WHERE organization_id = '7873654e-017b-43cd-9a52-351222dfdff4';
+```
+
+### Part 3: Add Organization-Wide Device Search (Optional Enhancement)
+
+If the device was added to a different application within the same TTN organization, the adopt flow could search across all applications:
+
+```text
+1. List all applications in TTN org
+2. For each app, search for DevEUI
+3. If found, return which app it's in
+4. User can then manually move device or FrostGuard can re-register
+```
+
+However, this requires organization-level API access which may not be available.
 
 ## Implementation Details
 
-### A) Update `ttn-provision-device/index.ts`
+### A) Update `ttn-provision-device/index.ts` - Adopt Action
 
-Add new action `"adopt"` that:
+Add app existence check at the start of adopt:
 
+```typescript
+// Before searching for devices, verify app exists
+const appCheck = await ttnFetch(
+  `/api/v3/applications/${ttnAppId}`,
+  { method: "GET" },
+  "adopt_check_app"
+);
+
+if (!appCheck.ok) {
+  return new Response(JSON.stringify({
+    success: false,
+    adopted: false,
+    error: "TTN application not found",
+    hint: "The FrostGuard TTN application doesn't exist. Go to Settings → TTN Connection and click 'Provision' to create it first.",
+    needs_provisioning: true,
+    app_id: ttnAppId,
+    app_status: appCheck.status,
+  }), { status: 404, headers: corsHeaders });
+}
+```
+
+### B) Update `TtnDiagnoseModal.tsx`
+
+Show specific guidance when app doesn't exist:
+
+```typescript
+const appMissing = result?.checks?.appProbe?.status === 404;
+
+{appMissing && (
+  <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
+    <p className="text-sm font-medium text-warning">
+      TTN Application Not Found
+    </p>
+    <p className="text-xs text-muted-foreground">
+      The FrostGuard TTN application needs to be created first.
+      Go to Settings → TTN Connection to provision it.
+    </p>
+    <Button onClick={handleGoToSettings}>
+      Go to TTN Settings
+    </Button>
+  </div>
+)}
+```
+
+### C) Hide "Adopt Device" Button When App Missing
+
+```typescript
+const canAdopt = result && !result.error && 
+  result.checks?.appProbe?.ok &&  // ADD THIS CHECK
+  (result.diagnosis === "split_brain_orphaned" || ...);
+```
+
+## Files to Modify
+
+| File | Change |
+|------|--------|
+| `supabase/functions/ttn-provision-device/index.ts` | Add app existence check in adopt action |
+| `src/components/settings/TtnDiagnoseModal.tsx` | Show "App Not Found" message, hide adopt when app missing |
+
+## What You Need To Do
+
+1. **Fix the TTN application**: Go to Settings → TTN Connection and re-provision the application
+2. **Re-add your device**: After the app is created, either:
+   - Use "Provision" to auto-register the device, OR
+   - Add it manually in TTN Console to the correct application (`fg-7873654e-yq`)
+3. **Then adopt works**: Once the device is in the correct FrostGuard app, adopt will find it
+
+## Version Update
+
+| Function | Version |
+|----------|---------|
+| `ttn-provision-device` | `ttn-provision-device-v12-adopt-fix-20260129` |
+
+## Technical Details
+
+The current adopt flow:
 ```text
-1. Takes sensor_id and organization_id
-2. Uses the DevEUI search endpoint: GET /api/v3/end_devices?dev_eui=<EUI>
-3. If found in FrostGuard's app:
-   - Update lora_sensors with ttn_device_id, provisioning_state = 'exists_in_ttn'
-   - Set provisioned_source = 'manual'
-4. If found in different app:
-   - Return error with the app ID where device lives
-5. If not found anywhere:
-   - Return "device not in TTN" message
+1. Check for device with standard ID → 404 (expected for manual devices)
+2. List all devices in app → 404 (because APP doesn't exist!)
+3. Return error "Failed to search"
 ```
 
-### B) Update TtnDiagnoseModal UI
-
-Add an "Adopt Device" button that appears when:
-- Diagnosis is `split_brain_orphaned` OR
-- Device exists in data planes but not IS
-
-### C) Database Updates
-
-When adopting a manual device:
-```sql
-UPDATE lora_sensors SET
-  ttn_device_id = 'sensor-<dev_eui>',
-  ttn_application_id = '<found_app_id>',
-  ttn_cluster = 'nam1',
-  provisioning_state = 'exists_in_ttn',
-  provisioned_source = 'manual',
-  status = 'active'
-WHERE id = <sensor_id>;
+After fix:
+```text
+1. Check if app exists → 404
+2. Return clear error: "App not found, needs provisioning"
+3. UI shows guidance to create app first
 ```
-
-## Files to Create/Modify
-
-| File | Action | Description |
-|------|--------|-------------|
-| `supabase/functions/ttn-provision-device/index.ts` | MODIFY | Add `adopt` action |
-| `src/components/settings/TtnDiagnoseModal.tsx` | MODIFY | Add "Adopt Device" button |
-| `src/components/settings/SensorManager.tsx` | MODIFY | Wire up adopt action handler |
-
-## Alternative Quick Fix
-
-If the device was added to the **same FrostGuard application** (`fg-7873654e-yq`) but IS just can't find it, the issue might be:
-
-1. **Timing**: TTN's Identity Server cache hasn't synced yet (wait 1-2 minutes)
-2. **Device ID mismatch**: You registered it with a different device ID than `sensor-a840415a61897757`
-
-### Manual Verification Steps
-
-In TTN Console, check:
-1. Which application is the device actually in?
-2. What is the device ID you gave it?
-3. Does the DevEUI match exactly: `A840415A61897757`?
-
-If the device is in the **correct application** but with a **different device ID**, the adopt flow can still work by matching on DevEUI.
-
-## Version Constants
-
-| Function | New Version |
-|----------|-------------|
-| `ttn-provision-device` | `ttn-provision-device-v11-adopt-20260128` |
-
-## Deployment
-
-```bash
-supabase functions deploy ttn-provision-device
-```
-
-## User Flow
-
-1. User adds sensor in FrostGuard with DevEUI
-2. User manually registers device in TTN Console
-3. User runs diagnostics, sees "Split Brain (Orphaned)"
-4. User clicks "Adopt Device" button
-5. System searches for DevEUI, finds device
-6. Database updated to recognize manual registration
-7. Sensor shows "Provisioned (Manual)" status
