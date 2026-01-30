@@ -1,0 +1,200 @@
+/**
+ * Unit tests for Payload Normalization
+ *
+ * Covers:
+ * - normalizeTelemetry(): vendor-specific key aliasing (Dragino, etc.)
+ * - normalizeDoorData(): door field normalization (existing)
+ *
+ * Run with:  deno test supabase/functions/_shared/payloadNormalization.test.ts
+ */
+
+import { assertEquals } from "https://deno.land/std@0.168.0/testing/asserts.ts";
+import { normalizeTelemetry, normalizeDoorData } from "./payloadNormalization.ts";
+
+// ============================================================================
+// normalizeTelemetry
+// ============================================================================
+
+Deno.test("normalizeTelemetry - Dragino HT65N payload maps all fields", () => {
+  const dragino = {
+    BatV: 3.05,
+    Bat_status: 0,
+    Ext_sensor: "Temperature Sensor",
+    Hum_SHT: 62.0,
+    TempC_DS: 23.37,
+    TempC_SHT: 23.45,
+  };
+
+  const result = normalizeTelemetry(dragino);
+
+  // Canonical keys should be set from aliases
+  assertEquals(result.temperature, 23.45, "temperature should come from TempC_SHT");
+  assertEquals(result.humidity, 62.0, "humidity should come from Hum_SHT");
+  assertEquals(result.battery, 3.05, "battery should come from BatV");
+
+  // Original keys must be preserved
+  assertEquals(result.TempC_SHT, 23.45);
+  assertEquals(result.TempC_DS, 23.37);
+  assertEquals(result.Hum_SHT, 62.0);
+  assertEquals(result.BatV, 3.05);
+  assertEquals(result.Bat_status, 0);
+  assertEquals(result.Ext_sensor, "Temperature Sensor");
+});
+
+Deno.test("normalizeTelemetry - canonical keys already present are not overwritten", () => {
+  const payload = {
+    temperature: 22.0,
+    humidity: 45.0,
+    battery: 95,
+    TempC_SHT: 99.9, // should NOT overwrite existing temperature
+    Hum_SHT: 99.9,   // should NOT overwrite existing humidity
+    BatV: 2.5,        // should NOT overwrite existing battery
+  };
+
+  const result = normalizeTelemetry(payload);
+
+  assertEquals(result.temperature, 22.0, "existing temperature must not be overwritten");
+  assertEquals(result.humidity, 45.0, "existing humidity must not be overwritten");
+  assertEquals(result.battery, 95, "existing battery must not be overwritten");
+});
+
+Deno.test("normalizeTelemetry - battery_level is recognized as existing battery alias", () => {
+  // battery_level is used by many sensors (EM300-TH, etc.)
+  // The webhook extracts via: decoded.battery ?? decoded.battery_level
+  // normalizeTelemetry only maps to 'battery', so battery_level should pass through
+  const payload = {
+    temperature: 22.0,
+    humidity: 50.0,
+    battery_level: 95,
+    BatV: 2.5, // should NOT map because 'battery' is not present, but this is fine
+  };
+
+  const result = normalizeTelemetry(payload);
+
+  // battery_level is not the canonical key 'battery', so BatV WILL set 'battery'
+  // This is correct - the webhook uses decoded.battery ?? decoded.battery_level
+  assertEquals(result.battery, 2.5, "BatV should map to battery since battery key was absent");
+  assertEquals(result.battery_level, 95, "battery_level should be preserved as-is");
+});
+
+Deno.test("normalizeTelemetry - empty payload returns empty", () => {
+  const result = normalizeTelemetry({});
+  assertEquals(Object.keys(result).length, 0);
+});
+
+Deno.test("normalizeTelemetry - no aliasing needed for standard sensor", () => {
+  const standard = { temperature: 5.2, humidity: 80, battery_level: 92 };
+  const result = normalizeTelemetry(standard);
+
+  assertEquals(result.temperature, 5.2);
+  assertEquals(result.humidity, 80);
+  assertEquals(result.battery_level, 92);
+  // No extra keys should be added
+  assertEquals(Object.keys(result).length, 3);
+});
+
+Deno.test("normalizeTelemetry - TempC_DS used as fallback when TempC_SHT is absent", () => {
+  const payload = { TempC_DS: 18.5, Hum_SHT: 55.0 };
+  const result = normalizeTelemetry(payload);
+
+  assertEquals(result.temperature, 18.5, "temperature should fall back to TempC_DS");
+  assertEquals(result.humidity, 55.0);
+});
+
+Deno.test("normalizeTelemetry - TempC_SHT preferred over TempC_DS", () => {
+  const payload = { TempC_SHT: 23.45, TempC_DS: 23.37 };
+  const result = normalizeTelemetry(payload);
+
+  assertEquals(result.temperature, 23.45, "TempC_SHT should be preferred over TempC_DS");
+});
+
+Deno.test("normalizeTelemetry - non-numeric alias values are ignored", () => {
+  const payload = { TempC_SHT: "invalid", Hum_SHT: null, BatV: undefined };
+  const result = normalizeTelemetry(payload);
+
+  assertEquals(result.temperature, undefined, "non-numeric TempC_SHT should not map");
+  assertEquals(result.humidity, undefined, "null Hum_SHT should not map");
+  assertEquals(result.battery, undefined, "undefined BatV should not map");
+});
+
+Deno.test("normalizeTelemetry - does not mutate original object", () => {
+  const original = { TempC_SHT: 23.5, Hum_SHT: 62.0 };
+  const frozen = { ...original };
+  normalizeTelemetry(original);
+
+  assertEquals(original.TempC_SHT, frozen.TempC_SHT);
+  assertEquals(original.Hum_SHT, frozen.Hum_SHT);
+  assertEquals("temperature" in original, false, "original must not gain canonical key");
+});
+
+// ============================================================================
+// Integration: Dragino payload through hasTemperatureData gate
+// ============================================================================
+
+Deno.test("integration - Dragino payload passes hasTemperatureData gate", () => {
+  // Simulate the webhook's extraction logic after normalization
+  const dragino = {
+    BatV: 3.05,
+    Bat_status: 0,
+    Ext_sensor: "Temperature Sensor",
+    Hum_SHT: 62.0,
+    TempC_DS: 23.37,
+    TempC_SHT: 23.45,
+  };
+
+  const decoded = normalizeTelemetry(dragino);
+
+  // Replicate webhook extraction (index.ts lines 345-414)
+  const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+  let temperature = decoded.temperature as number | undefined;
+  if (temperature !== undefined) {
+    const tempScale = (decoded.temperature_scale ?? 1) as number;
+    if (tempScale !== 1) {
+      temperature = temperature * tempScale;
+    } else if (temperature > 0 && temperature < 10) {
+      const scaledTemp = temperature * 10;
+      if (scaledTemp >= 10 && scaledTemp <= 100) {
+        temperature = scaledTemp;
+      }
+    }
+  }
+
+  const hasTemperatureData = temperature !== undefined;
+  const normalizedDoorOpen = normalizeDoorData(decoded);
+  const hasDoorData = normalizedDoorOpen !== undefined;
+
+  // THE CRITICAL ASSERTION: Dragino payloads must NOT early-exit
+  assertEquals(hasTemperatureData, true, "Dragino payload must have temperature data after normalization");
+  assertEquals(temperature, 23.45, "temperature value should be 23.45°C from TempC_SHT");
+  assertEquals(decoded.humidity, 62.0, "humidity should be mapped from Hum_SHT");
+  assertEquals(battery, 3.05, "battery should be mapped from BatV");
+  assertEquals(hasDoorData, false, "Dragino HT65N has no door data");
+});
+
+Deno.test("integration - standard EM300-TH payload still works", () => {
+  const em300 = { temperature: 22.1, humidity: 45.3, battery_level: 95 };
+  const decoded = normalizeTelemetry(em300);
+
+  const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+  const temperature = decoded.temperature as number | undefined;
+  const hasTemperatureData = temperature !== undefined;
+
+  assertEquals(hasTemperatureData, true);
+  assertEquals(temperature, 22.1);
+  assertEquals(decoded.humidity, 45.3);
+  assertEquals(battery, 95);
+});
+
+Deno.test("integration - door sensor payload still works", () => {
+  const lds02 = { door_status: "closed", battery_level: 90 };
+  const decoded = normalizeTelemetry(lds02);
+
+  const temperature = decoded.temperature as number | undefined;
+  const hasTemperatureData = temperature !== undefined;
+  const normalizedDoorOpen = normalizeDoorData(decoded);
+  const hasDoorData = normalizedDoorOpen !== undefined;
+
+  assertEquals(hasTemperatureData, false, "LDS02 has no temperature");
+  assertEquals(hasDoorData, true, "LDS02 has door data");
+  assertEquals(normalizedDoorOpen, false, "door_status closed -> false");
+});

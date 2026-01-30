@@ -62,6 +62,60 @@ export function normalizeDoorData(decoded: Record<string, unknown>): boolean | u
 }
 
 /**
+ * Vendor-specific key aliases for telemetry fields.
+ * Each entry maps a canonical field to an ordered list of fallback keys.
+ * The first alias found in the payload wins. The canonical key itself
+ * is always checked first (implicitly — if it already exists, we skip).
+ */
+const TELEMETRY_ALIASES: Record<string, string[]> = {
+  // Temperature: Dragino HT65N/LHT65/LHT52 use TempC_SHT (internal SHT sensor)
+  // and TempC_DS (external DS18B20 probe). Prefer SHT as it's always present.
+  temperature: ['TempC_SHT', 'TempC_DS'],
+  // Humidity: Dragino HT65N/LHT65/LHT52 use Hum_SHT
+  humidity: ['Hum_SHT'],
+  // Battery: Dragino uses BatV (voltage, e.g. 3.05).
+  // Stored as-is in battery_level (number); semantics are voltage not percent.
+  battery: ['BatV'],
+};
+
+/**
+ * Normalize telemetry fields from vendor-specific keys to canonical keys.
+ *
+ * Returns a shallow copy of `decoded` with canonical keys added where they
+ * were missing but a known alias was present. Original keys are preserved.
+ * If the canonical key already exists in the payload, no aliasing occurs
+ * for that field (existing devices are unaffected).
+ *
+ * @example
+ *   normalizeTelemetry({ TempC_SHT: 23.5, Hum_SHT: 62, BatV: 3.05 })
+ *   // → { TempC_SHT: 23.5, Hum_SHT: 62, BatV: 3.05,
+ *   //     temperature: 23.5, humidity: 62, battery: 3.05 }
+ */
+export function normalizeTelemetry(
+  decoded: Record<string, unknown>,
+): Record<string, unknown> {
+  const result = { ...decoded };
+
+  for (const [canonical, aliases] of Object.entries(TELEMETRY_ALIASES)) {
+    // Skip if canonical key already present
+    if (canonical in result && result[canonical] !== undefined) continue;
+
+    for (const alias of aliases) {
+      if (alias in decoded && decoded[alias] !== undefined) {
+        const value = decoded[alias];
+        // Only map numeric values (guard against unexpected types)
+        if (typeof value === 'number') {
+          result[canonical] = value;
+          break;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * Check if payload contains any door-related fields
  */
 export function hasDoorFields(decoded: Record<string, unknown>): boolean {
