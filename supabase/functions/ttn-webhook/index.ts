@@ -20,7 +20,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeDevEui, formatDevEuiForDisplay, lookupOrgByWebhookSecret } from "../_shared/ttnConfig.ts";
 import { inferSensorTypeFromPayload, inferModelFromPayload, extractModelFromUnitId } from "../_shared/payloadRegistry.ts";
-import { normalizeDoorData, getDoorFieldSource } from "../_shared/payloadNormalization.ts";
+import { normalizeDoorData, getDoorFieldSource, normalizeTelemetry } from "../_shared/payloadNormalization.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -339,8 +339,11 @@ async function handleLoraSensor(
     requestId: string;
   }
 ): Promise<Response> {
-  const { devEui, decoded, rssi, receivedAt, requestId } = data;
-  
+  const { devEui, rssi, receivedAt, requestId } = data;
+
+  // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
+  const decoded = normalizeTelemetry(data.decoded);
+
   // Battery handling
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
 
@@ -555,11 +558,14 @@ async function handleLegacyDevice(
     requestId: string;
   }
 ): Promise<Response> {
-  const { decoded, rssi, receivedAt, requestId } = data;
-  
+  const { rssi, receivedAt, requestId } = data;
+
+  // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
+  const decoded = normalizeTelemetry(data.decoded);
+
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
   let temperature = decoded.temperature as number | undefined;
-  
+
   if (temperature !== undefined && temperature > 0 && temperature < 10) {
     const scaledTemp = temperature * 10;
     if (scaledTemp >= 10 && scaledTemp <= 100) {
