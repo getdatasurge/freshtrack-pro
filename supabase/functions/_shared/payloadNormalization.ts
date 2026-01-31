@@ -74,9 +74,24 @@ const TELEMETRY_ALIASES: Record<string, string[]> = {
   // Humidity: Dragino HT65N/LHT65/LHT52 use Hum_SHT
   humidity: ['Hum_SHT'],
   // Battery: Dragino uses BatV (voltage, e.g. 3.05).
-  // Stored as-is in battery_level (number); semantics are voltage not percent.
+  // Converted to integer percentage for battery_level column (INTEGER type).
   battery: ['BatV'],
 };
+
+// Dragino battery voltage range (from Dragino documentation)
+// 3.0V = device minimum (0%), 3.6V = fully charged (100%)
+const DRAGINO_BATV_MIN = 3.0;
+const DRAGINO_BATV_MAX = 3.6;
+
+/**
+ * Convert Dragino BatV voltage to integer battery percentage (0-100).
+ * Clamps to valid range to handle edge cases.
+ */
+function convertBatVToPercent(voltage: number): number {
+  const clamped = Math.max(DRAGINO_BATV_MIN, Math.min(DRAGINO_BATV_MAX, voltage));
+  const percent = ((clamped - DRAGINO_BATV_MIN) / (DRAGINO_BATV_MAX - DRAGINO_BATV_MIN)) * 100;
+  return Math.round(percent);
+}
 
 /**
  * Normalize telemetry fields from vendor-specific keys to canonical keys.
@@ -105,7 +120,12 @@ export function normalizeTelemetry(
         const value = decoded[alias];
         // Only map numeric values (guard against unexpected types)
         if (typeof value === 'number') {
-          result[canonical] = value;
+          // Convert BatV voltage to integer percentage for battery_level column
+          if (alias === 'BatV' && canonical === 'battery') {
+            result[canonical] = convertBatVToPercent(value);
+          } else {
+            result[canonical] = value;
+          }
           break;
         }
       }
