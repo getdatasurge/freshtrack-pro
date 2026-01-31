@@ -30,7 +30,8 @@ Deno.test("normalizeTelemetry - Dragino HT65N payload maps all fields", () => {
   // Canonical keys should be set from aliases
   assertEquals(result.temperature, 23.45, "temperature should come from TempC_SHT");
   assertEquals(result.humidity, 62.0, "humidity should come from Hum_SHT");
-  assertEquals(result.battery, 3.05, "battery should come from BatV");
+  // BatV 3.05 → ((3.05 - 3.0) / 0.6) * 100 = 8.33 → rounded to 8
+  assertEquals(result.battery, 8, "battery should be converted from BatV voltage to integer percent");
 
   // Original keys must be preserved
   assertEquals(result.TempC_SHT, 23.45);
@@ -72,8 +73,8 @@ Deno.test("normalizeTelemetry - battery_level is recognized as existing battery 
   const result = normalizeTelemetry(payload);
 
   // battery_level is not the canonical key 'battery', so BatV WILL set 'battery'
-  // This is correct - the webhook uses decoded.battery ?? decoded.battery_level
-  assertEquals(result.battery, 2.5, "BatV should map to battery since battery key was absent");
+  // BatV 2.5 is below DRAGINO_BATV_MIN (3.0), so clamps to 0%
+  assertEquals(result.battery, 0, "BatV 2.5V below min should clamp to 0%");
   assertEquals(result.battery_level, 95, "battery_level should be preserved as-is");
 });
 
@@ -128,6 +129,22 @@ Deno.test("normalizeTelemetry - does not mutate original object", () => {
 });
 
 // ============================================================================
+// BatV voltage-to-percent conversion
+// ============================================================================
+
+Deno.test("normalizeTelemetry - BatV converts to integer percentage", () => {
+  // 3.0V = 0%, 3.3V = 50%, 3.6V = 100%
+  assertEquals(normalizeTelemetry({ BatV: 3.0 }).battery, 0, "3.0V = 0%");
+  assertEquals(normalizeTelemetry({ BatV: 3.3 }).battery, 50, "3.3V = 50%");
+  assertEquals(normalizeTelemetry({ BatV: 3.6 }).battery, 100, "3.6V = 100%");
+  assertEquals(normalizeTelemetry({ BatV: 3.058 }).battery, 10, "3.058V ≈ 10%");
+
+  // Clamp out-of-range values
+  assertEquals(normalizeTelemetry({ BatV: 2.5 }).battery, 0, "below 3.0V clamps to 0%");
+  assertEquals(normalizeTelemetry({ BatV: 4.0 }).battery, 100, "above 3.6V clamps to 100%");
+});
+
+// ============================================================================
 // Integration: Dragino payload through hasTemperatureData gate
 // ============================================================================
 
@@ -167,7 +184,8 @@ Deno.test("integration - Dragino payload passes hasTemperatureData gate", () => 
   assertEquals(hasTemperatureData, true, "Dragino payload must have temperature data after normalization");
   assertEquals(temperature, 23.45, "temperature value should be 23.45°C from TempC_SHT");
   assertEquals(decoded.humidity, 62.0, "humidity should be mapped from Hum_SHT");
-  assertEquals(battery, 3.05, "battery should be mapped from BatV");
+  // BatV 3.05 → 8% integer
+  assertEquals(battery, 8, "battery should be converted from BatV to integer percent");
   assertEquals(hasDoorData, false, "Dragino HT65N has no door data");
 });
 
