@@ -1111,6 +1111,8 @@ const UnitDetail = () => {
               siteId={unit.area.site.id}
               doorState={(unit as any).door_state}
               doorLastChangedAt={(unit as any).door_last_changed_at}
+              tempLimitLow={unit.temp_limit_low}
+              tempLimitHigh={unit.temp_limit_high}
             />
           )}
 

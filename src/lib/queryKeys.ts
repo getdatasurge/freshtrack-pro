@@ -138,6 +138,8 @@ export const qk = {
   sensor: (sensorId: string | null) => ({
     all: ['sensor', sensorId] as const,
     details: () => ['sensor', sensorId, 'details'] as const,
+    config: () => ['sensor', sensorId, 'config'] as const,
+    pendingChanges: () => ['sensor', sensorId, 'pending-changes'] as const,
   }),
   
   /**
