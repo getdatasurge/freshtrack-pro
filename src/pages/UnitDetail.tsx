@@ -125,8 +125,9 @@ import { getAlertClearCondition } from "@/lib/alertConfig";
 const UnitDetail = () => {
   const { unitId } = useParams();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const initialTab = searchParams.get("tab") || "dashboard";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = searchParams.get("tab") || "dashboard";
+  const section = searchParams.get("section");
   const { toast } = useToast();
   const { layoutKey } = useEntityDashboardUrl();
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
@@ -324,6 +325,19 @@ const UnitDetail = () => {
       localStorage.setItem("lastViewedUnitId", unitId);
     }
   }, [unitId]);
+
+  // Scroll to sensors section when navigating via ?tab=settings&section=sensors
+  useEffect(() => {
+    if (currentTab === "settings" && section === "sensors") {
+      // Delay to ensure the Settings tab content is mounted
+      requestAnimationFrame(() => {
+        document.getElementById("connected-sensors")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    }
+  }, [currentTab, section]);
 
   useEffect(() => {
     if (unitId) loadUnitData();
@@ -1023,7 +1037,18 @@ const UnitDetail = () => {
       />
 
       {/* Tab-based layout */}
-      <Tabs defaultValue={initialTab} className="space-y-4">
+      <Tabs
+        value={currentTab}
+        onValueChange={(value) => {
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set("tab", value);
+            next.delete("section"); // Clear section when switching tabs
+            return next;
+          });
+        }}
+        className="space-y-4"
+      >
         <TabsList>
           <TabsTrigger value="dashboard">
             <LayoutDashboard className="w-4 h-4 mr-2" />
@@ -1107,15 +1132,17 @@ const UnitDetail = () => {
 
           {/* Connected LoRa Sensors */}
           {unit.area.site.organization_id && (
-            <UnitSensorsCard
-              unitId={unit.id}
-              organizationId={(unit.area.site as any).organization_id}
-              siteId={unit.area.site.id}
-              doorState={(unit as any).door_state}
-              doorLastChangedAt={(unit as any).door_last_changed_at}
-              tempLimitLow={unit.temp_limit_low}
-              tempLimitHigh={unit.temp_limit_high}
-            />
+            <div id="connected-sensors">
+              <UnitSensorsCard
+                unitId={unit.id}
+                organizationId={(unit.area.site as any).organization_id}
+                siteId={unit.area.site.id}
+                doorState={(unit as any).door_state}
+                doorLastChangedAt={(unit as any).door_last_changed_at}
+                tempLimitLow={unit.temp_limit_low}
+                tempLimitHigh={unit.temp_limit_high}
+              />
+            </div>
           )}
 
           {/* Battery Health */}

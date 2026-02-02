@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect } from "vitest";
 import { LayoutValidationBanner } from "../LayoutValidationBanner";
@@ -74,5 +74,29 @@ describe("LayoutValidationBanner", () => {
     );
 
     expect(container.firstChild).toBeNull();
+  });
+
+  it("clicking action link does not throw and has correct href", () => {
+    render(
+      <MemoryRouter initialEntries={["/units/unit-123"]}>
+        <LayoutValidationBanner
+          validation={mockValidation}
+          entityId="unit-123"
+          entityType="unit"
+        />
+      </MemoryRouter>
+    );
+
+    const link = screen.getByRole("link", { name: /configure sensor/i });
+    
+    // Verify href is correct
+    expect(link).toHaveAttribute("href", "/units/unit-123?tab=settings");
+    
+    // Verify click doesn't throw (stopPropagation works)
+    expect(() => fireEvent.click(link)).not.toThrow();
+    fireEvent.click(link);
+
+    // The link should have the correct href (navigation happens via the Link component)
+    expect(link).toHaveAttribute("href", "/units/unit-123?tab=settings");
   });
 });

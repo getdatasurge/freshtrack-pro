@@ -178,6 +178,7 @@ export function GridCanvas({
               widgetId={widget.i}
               isCustomizing={isCustomizing}
               isResizing={isResizing && activeItemId === widget.i}
+              isInteracting={isInteracting}
               canHide={canHideWidget(widget.i)}
               onHide={() => onHideWidget(widget.i)}
               props={widgetProps[widget.i] || {}}

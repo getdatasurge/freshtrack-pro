@@ -15,6 +15,8 @@ interface WidgetWrapperProps {
   widgetId: string;
   isCustomizing: boolean;
   isResizing?: boolean;
+  /** True when user is actively dragging or resizing any widget */
+  isInteracting?: boolean;
   canHide: boolean;
   onHide: () => void;
   props: Record<string, unknown>;
@@ -24,6 +26,7 @@ export function WidgetWrapper({
   widgetId,
   isCustomizing,
   isResizing = false,
+  isInteracting = false,
   canHide,
   onHide,
   props,
@@ -87,7 +90,7 @@ export function WidgetWrapper({
       {/* Widget content */}
       <div
         className={`h-full flex flex-col min-h-0 ${isCustomizing ? "pt-8" : ""}`}
-        style={{ pointerEvents: isCustomizing ? "none" : "auto" }}
+        style={{ pointerEvents: isCustomizing && isInteracting ? "none" : "auto" }}
       >
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
           {isResizing ? (

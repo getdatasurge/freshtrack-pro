@@ -164,7 +164,7 @@ function getWidgetSpecificState(
         rootCause: "This unit needs a temperature sensor to display readings",
         action: {
           label: "Assign Sensor",
-          href: unit?.id ? `/settings?tab=sensors&unitId=${unit.id}` : "/settings?tab=sensors",
+          href: unit?.id ? `/units/${unit.id}?tab=settings&section=sensors` : "/settings?tab=sensors",
           icon: Settings,
         },
         lastUpdated: null,
@@ -233,7 +233,7 @@ function getWidgetSpecificState(
         rootCause: "Assign a sensor to monitor battery health",
         action: {
           label: "Assign Sensor",
-          href: "/settings?tab=sensors",
+          href: unit?.id ? `/units/${unit.id}?tab=settings&section=sensors` : "/settings?tab=sensors",
           icon: Settings,
         },
         lastUpdated: null,
@@ -270,7 +270,7 @@ function getWidgetSpecificState(
         rootCause: "This unit doesn't have a door sensor assigned",
         action: {
           label: "Configure Sensors",
-          href: "/settings?tab=sensors",
+          href: unit?.id ? `/units/${unit.id}?tab=settings&section=sensors` : "/settings?tab=sensors",
           icon: Settings,
         },
         lastUpdated: null,
@@ -338,7 +338,7 @@ function getWidgetSpecificState(
         rootCause: "Add sensors to monitor this unit",
         action: {
           label: "Add Sensor",
-          href: "/settings?tab=sensors",
+          href: unit?.id ? `/units/${unit.id}?tab=settings&section=sensors` : "/settings?tab=sensors",
           icon: Settings,
         },
         lastUpdated: null,
@@ -396,7 +396,7 @@ function getWidgetSpecificState(
         rootCause: "Current sensor doesn't report humidity",
         action: {
           label: "Upgrade Sensor",
-          href: "/settings?tab=sensors",
+          href: unit?.id ? `/units/${unit.id}?tab=settings&section=sensors` : "/settings?tab=sensors",
           icon: Thermometer,
         },
         lastUpdated: null,
