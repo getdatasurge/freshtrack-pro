@@ -141,13 +141,16 @@ export function DeviceReadinessWidget({
 
   const StatusIcon = getStatusIcon();
 
-  const getBatteryStatus = (level: number | null | undefined) => {
+  const getBatteryStatus = (level: number | null | undefined, voltage?: number | null) => {
     if (level === null || level === undefined) {
-      return { label: "N/A", color: "text-muted-foreground", bg: "bg-muted" };
+      return { label: "N/A", color: "text-muted-foreground", bg: "bg-muted", healthLabel: null };
     }
-    if (level > 50) return { label: `${level}%`, color: "text-safe", bg: "bg-safe/10" };
-    if (level > 20) return { label: `${level}%`, color: "text-warning", bg: "bg-warning/10" };
-    return { label: `${level}%`, color: "text-alarm", bg: "bg-alarm/10" };
+    // Include "(Est.)" suffix to indicate derived percentage
+    const levelLabel = `${level}% (Est.)`;
+    
+    if (level > 50) return { label: levelLabel, color: "text-safe", bg: "bg-safe/10", healthLabel: "OK" };
+    if (level > 20) return { label: levelLabel, color: "text-warning", bg: "bg-warning/10", healthLabel: "Warning" };
+    return { label: levelLabel, color: "text-alarm", bg: "bg-alarm/10", healthLabel: "Low" };
   };
 
   const getSignalStatus = (strength: number | null | undefined) => {
@@ -217,9 +220,14 @@ export function DeviceReadinessWidget({
               Battery Level
             </p>
             {effectiveBatteryLevel !== null && effectiveBatteryLevel !== undefined ? (
-              <Badge className={`${batteryStatus.bg} ${batteryStatus.color} border-0`}>
-                {batteryStatus.label}
-              </Badge>
+              <div className="flex flex-col gap-0.5">
+                <Badge className={`${batteryStatus.bg} ${batteryStatus.color} border-0`}>
+                  {batteryStatus.label}
+                </Badge>
+                {batteryStatus.healthLabel && (
+                  <span className={`text-xs ${batteryStatus.color}`}>{batteryStatus.healthLabel}</span>
+                )}
+              </div>
             ) : (isLoraPending || isLoraJoining) ? (
               <span className="text-sm text-muted-foreground italic">Awaiting data</span>
             ) : (
