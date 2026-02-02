@@ -17,6 +17,7 @@ import {
   DoorClosed,
   Star,
   Info,
+  Settings2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useLoraSensorsByUnit, useLinkSensorToUnit, useProvisionLoraSensor, useLoraSensors } from "@/hooks/useLoraSensors";
@@ -25,6 +26,8 @@ import { LoraSensor, LoraSensorStatus } from "@/types/ttn";
 import { useState } from "react";
 import { AssignSensorToUnitDialog } from "@/components/unit/AssignSensorToUnitDialog";
 import { SensorDetailsPopover } from "@/components/unit/SensorDetailsPopover";
+import { SensorSettingsDrawer } from "@/components/unit/SensorSettingsDrawer";
+import { usePendingChangeCounts } from "@/hooks/useSensorConfig";
 import { cn } from "@/lib/utils";
 import { UNIT_SENSOR_STATUS_CONFIG } from "@/lib/entityStatusConfig";
 import type { WidgetProps } from "../types";
@@ -104,6 +107,11 @@ export function ConnectedSensorsWidget({
   const provisionSensor = useProvisionLoraSensor();
   const setPrimarySensor = useSetPrimarySensor();
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [settingsSensor, setSettingsSensor] = useState<LoraSensor | null>(null);
+
+  // Pending change counts for gear icon badges
+  const sensorIds = sensors?.map((s) => s.id) ?? [];
+  const { data: pendingCounts } = usePendingChangeCounts(sensorIds);
 
   // Extract door state from unit if available
   const doorState = unit?.door_state;
@@ -250,6 +258,35 @@ export function ConnectedSensorsWidget({
 
                         {/* Right Side: Status & Door State */}
                         <div className="flex items-center gap-2 flex-shrink-0">
+                          {/* Sensor Settings Gear */}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label="Sensor settings"
+                                className="relative p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSettingsSensor(sensor);
+                                }}
+                              >
+                                <Settings2 className="w-4 h-4" />
+                                {(pendingCounts?.[sensor.id] ?? 0) > 0 && (
+                                  <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                                    {pendingCounts?.[sensor.id] ?? 0}
+                                  </span>
+                                )}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">
+                              <span className="text-xs">
+                                {(pendingCounts?.[sensor.id] ?? 0) > 0
+                                  ? `${pendingCounts?.[sensor.id] ?? 0} pending change${(pendingCounts?.[sensor.id] ?? 0) > 1 ? "s" : ""}`
+                                  : "Sensor settings"}
+                              </span>
+                            </TooltipContent>
+                          </Tooltip>
+
                           {/* Door State Badge - Always visible for door sensors */}
                           {showDoorState && doorState && (
                             <Badge 
@@ -316,6 +353,18 @@ export function ConnectedSensorsWidget({
           organizationId={orgId}
           siteId={sId}
         />
+
+        {settingsSensor && (
+          <SensorSettingsDrawer
+            open={!!settingsSensor}
+            onOpenChange={(open) => {
+              if (!open) setSettingsSensor(null);
+            }}
+            sensor={settingsSensor}
+            unitAlarmLow={unit?.temp_limit_low ?? null}
+            unitAlarmHigh={unit?.temp_limit_high ?? null}
+          />
+        )}
       </div>
     </TooltipProvider>
   );
