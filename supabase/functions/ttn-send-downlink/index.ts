@@ -24,6 +24,7 @@ import {
   buildCommand,
   type BuiltCommand,
 } from "../_shared/downlinkCommands.ts";
+import { deobfuscateKey } from "../_shared/ttnConfig.ts";
 
 const FUNCTION_VERSION = "ttn-send-downlink-v1.0";
 
@@ -173,22 +174,6 @@ function translateTtnError(status: number, body: any): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Decrypt TTN API key from ttn_connections
-// ---------------------------------------------------------------------------
-
-function deobfuscateKey(encrypted: string, salt: string): string {
-  const decoded = atob(encrypted);
-  const result: string[] = [];
-  for (let i = 0; i < decoded.length; i++) {
-    result.push(
-      String.fromCharCode(
-        decoded.charCodeAt(i) ^ salt.charCodeAt(i % salt.length)
-      )
-    );
-  }
-  return result.join("");
-}
 
 // ---------------------------------------------------------------------------
 // Main handler
