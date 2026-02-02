@@ -432,7 +432,11 @@ export function EntityDashboard({
       />
       {/* Validation Banner (only in customize mode) */}
       {state.isCustomizing && validation.issues.length > 0 && (
-        <LayoutValidationBanner validation={validation} />
+        <LayoutValidationBanner 
+          validation={validation}
+          entityId={entityId}
+          entityType={entityType}
+        />
       )}
       
       {/* Preview Mode and Hidden Widgets (only in customize mode) */}
