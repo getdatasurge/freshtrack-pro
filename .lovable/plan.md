@@ -1,155 +1,129 @@
 
-# Plan: Fix "Adopt Device" for Missing TTN Application + Orphaned Devices
+# Fix Plan: Sensor Settings Gear Icon Feature
 
 ## Problem Summary
 
-Your manually-added device shows "Split Brain (Orphaned)" because:
-
-1. **TTN Application doesn't exist**: The FrostGuard app `fg-7873654e-yq` was never actually created in TTN (404 on app probe)
-2. **Device exists elsewhere**: Your device shows 200 OK in JS/NS/AS, meaning it exists in a **different TTN application**
-3. **Adopt fails**: The adopt function tries to search `fg-7873654e-yq` which doesn't exist
+The sensor settings feature is broken due to **missing database tables**. The migrations exist in the codebase but were never applied to the live database.
 
 ## Root Cause
 
-The database shows:
-- `provisioning_status: ready` 
-- `ttn_application_provisioned_at: NULL`
+| Component | Status | Issue |
+|-----------|--------|-------|
+| Database tables | Missing | `sensor_configurations` and `sensor_pending_changes` tables don't exist |
+| TypeScript types | Stale | Auto-generated types don't include the missing tables |
+| useSensorConfig hook | Breaking | TypeScript rejects non-existent table names |
+| SensorSettingsDrawer | Complete | 945-line implementation ready to use |
+| ttn-send-downlink edge function | Deployed | Will work once tables exist |
+| UnitSensorsCard | Complete | Gear icon code exists but drawer won't open due to hook errors |
 
-This is inconsistent - the application provisioning never completed but was marked ready.
+## Fix Steps
 
-## Solution: Two-Part Fix
+### Step 1: Create Database Tables
 
-### Part 1: Improve Adopt Error Handling
-
-Update `ttn-provision-device` adopt action to detect when the application doesn't exist and return a clear error with actionable guidance.
-
-```text
-IF app probe returns 404:
-  RETURN {
-    success: false,
-    error: "TTN application not found",
-    hint: "The FrostGuard TTN application doesn't exist. 
-           Go to Settings → TTN Connection and click 'Provision' 
-           to create it. Then try 'Adopt' again.",
-    needs_provisioning: true
-  }
-```
-
-### Part 2: Fix Database Inconsistency
-
-Reset the provisioning status since the application was never actually created:
+Run the first migration to create the tables, enums, RLS policies, and triggers:
 
 ```sql
-UPDATE ttn_connections 
-SET provisioning_status = 'needs_app',
-    provisioning_error = 'Application was not created - needs reprovisioning'
-WHERE organization_id = '7873654e-017b-43cd-9a52-351222dfdff4';
-```
+-- sensor_change_status enum
+CREATE TYPE sensor_change_status AS ENUM ('queued', 'sent', 'applied', 'failed', 'timeout');
 
-### Part 3: Add Organization-Wide Device Search (Optional Enhancement)
+-- sensor_change_type enum  
+CREATE TYPE sensor_change_type AS ENUM ('uplink_interval', 'ext_mode', 'time_sync', 'set_time', 'alarm', 'clear_datalog', 'pnackmd', 'raw');
 
-If the device was added to a different application within the same TTN organization, the adopt flow could search across all applications:
-
-```text
-1. List all applications in TTN org
-2. For each app, search for DevEUI
-3. If found, return which app it's in
-4. User can then manually move device or FrostGuard can re-register
-```
-
-However, this requires organization-level API access which may not be available.
-
-## Implementation Details
-
-### A) Update `ttn-provision-device/index.ts` - Adopt Action
-
-Add app existence check at the start of adopt:
-
-```typescript
-// Before searching for devices, verify app exists
-const appCheck = await ttnFetch(
-  `/api/v3/applications/${ttnAppId}`,
-  { method: "GET" },
-  "adopt_check_app"
+-- sensor_configurations table
+CREATE TABLE sensor_configurations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sensor_id UUID NOT NULL REFERENCES lora_sensors(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  uplink_interval_s INTEGER,
+  ext_mode TEXT CHECK (ext_mode IN ('e3_ext1', 'e3_ext9')),
+  time_sync_enabled BOOLEAN DEFAULT false,
+  time_sync_days INTEGER CHECK (time_sync_days >= 0 AND time_sync_days <= 255),
+  override_unit_alarm BOOLEAN DEFAULT false,
+  alarm_enabled BOOLEAN DEFAULT false,
+  alarm_low NUMERIC(6,2),
+  alarm_high NUMERIC(6,2),
+  alarm_check_minutes INTEGER CHECK (alarm_check_minutes >= 1 AND alarm_check_minutes <= 65535),
+  default_fport INTEGER DEFAULT 2 CHECK (default_fport >= 1 AND default_fport <= 223),
+  last_applied_at TIMESTAMPTZ,
+  pending_change_id UUID,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  UNIQUE (sensor_id)
 );
 
-if (!appCheck.ok) {
-  return new Response(JSON.stringify({
-    success: false,
-    adopted: false,
-    error: "TTN application not found",
-    hint: "The FrostGuard TTN application doesn't exist. Go to Settings → TTN Connection and click 'Provision' to create it first.",
-    needs_provisioning: true,
-    app_id: ttnAppId,
-    app_status: appCheck.status,
-  }), { status: 404, headers: corsHeaders });
-}
+-- sensor_pending_changes table
+CREATE TABLE sensor_pending_changes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sensor_id UUID NOT NULL REFERENCES lora_sensors(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  change_type sensor_change_type NOT NULL,
+  requested_payload_hex TEXT NOT NULL,
+  requested_fport INTEGER DEFAULT 2 CHECK (requested_fport >= 1 AND requested_fport <= 223),
+  status sensor_change_status DEFAULT 'queued' NOT NULL,
+  requested_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  sent_at TIMESTAMPTZ,
+  applied_at TIMESTAMPTZ,
+  failed_at TIMESTAMPTZ,
+  command_params JSONB,
+  expected_result TEXT,
+  debug_response JSONB,
+  requested_by UUID REFERENCES auth.users(id),
+  requested_by_email TEXT,
+  created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+-- RLS policies and indexes (included in full migration)
 ```
 
-### B) Update `TtnDiagnoseModal.tsx`
+### Step 2: Add RLS Policies
 
-Show specific guidance when app doesn't exist:
+Enable Row Level Security on both tables with policies allowing organization members to manage their own sensor configurations.
 
-```typescript
-const appMissing = result?.checks?.appProbe?.status === 404;
+### Step 3: Add Foreign Key and Indexes
 
-{appMissing && (
-  <div className="p-3 bg-warning/10 border border-warning/30 rounded-lg">
-    <p className="text-sm font-medium text-warning">
-      TTN Application Not Found
-    </p>
-    <p className="text-xs text-muted-foreground">
-      The FrostGuard TTN application needs to be created first.
-      Go to Settings → TTN Connection to provision it.
-    </p>
-    <Button onClick={handleGoToSettings}>
-      Go to TTN Settings
-    </Button>
-  </div>
-)}
-```
+- Add FK from `sensor_configurations.pending_change_id` to `sensor_pending_changes.id`
+- Create indexes for efficient querying
 
-### C) Hide "Adopt Device" Button When App Missing
+### Step 4: Verify Auto-Generated Types
 
-```typescript
-const canAdopt = result && !result.error && 
-  result.checks?.appProbe?.ok &&  // ADD THIS CHECK
-  (result.diagnosis === "split_brain_orphaned" || ...);
-```
+After migration, the TypeScript types will auto-regenerate to include:
+- `Database['public']['Tables']['sensor_configurations']`
+- `Database['public']['Tables']['sensor_pending_changes']`
 
-## Files to Modify
+This will resolve all 11 TypeScript errors in `useSensorConfig.ts`.
 
-| File | Change |
-|------|--------|
-| `supabase/functions/ttn-provision-device/index.ts` | Add app existence check in adopt action |
-| `src/components/settings/TtnDiagnoseModal.tsx` | Show "App Not Found" message, hide adopt when app missing |
-
-## What You Need To Do
-
-1. **Fix the TTN application**: Go to Settings → TTN Connection and re-provision the application
-2. **Re-add your device**: After the app is created, either:
-   - Use "Provision" to auto-register the device, OR
-   - Add it manually in TTN Console to the correct application (`fg-7873654e-yq`)
-3. **Then adopt works**: Once the device is in the correct FrostGuard app, adopt will find it
-
-## Version Update
-
-| Function | Version |
-|----------|---------|
-| `ttn-provision-device` | `ttn-provision-device-v12-adopt-fix-20260129` |
+---
 
 ## Technical Details
 
-The current adopt flow:
-```text
-1. Check for device with standard ID → 404 (expected for manual devices)
-2. List all devices in app → 404 (because APP doesn't exist!)
-3. Return error "Failed to search"
+### Why the Build is Broken
+
+The Supabase client uses TypeScript generics to validate table names:
+
+```typescript
+// This fails because "sensor_configurations" isn't in the types
+supabase.from("sensor_configurations")  // Error: 'sensor_configurations' is not assignable to type 'never'
 ```
 
-After fix:
-```text
-1. Check if app exists → 404
-2. Return clear error: "App not found, needs provisioning"
-3. UI shows guidance to create app first
-```
+Once the tables exist and types regenerate, the same code will work.
+
+### Files That Will Start Working
+
+1. **useSensorConfig.ts** - All hooks will function
+2. **SensorSettingsDrawer.tsx** - Will open and load data
+3. **UnitSensorsCard.tsx** - Gear icon will work, pending counts will show
+4. **ttn-send-downlink edge function** - Already deployed, will save pending changes
+
+---
+
+## Verification Steps
+
+After applying the migration:
+
+1. Confirm tables exist: `SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'sensor%'`
+2. Verify build passes (no TypeScript errors)
+3. Navigate to a unit page with sensors
+4. Confirm gear icon appears on each sensor row
+5. Click gear icon - drawer should open
+6. Test a simple downlink command (e.g., change uplink interval)
