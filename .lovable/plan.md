@@ -1,95 +1,222 @@
 
 
-# Fix: TTN Send Downlink Base64 Decoding Error
-
-## Problem
-
-When sending a downlink command, the edge function fails with:
-```
-InvalidCharacterError: Failed to decode base64
-```
-
-The error occurs at line 181 in `deobfuscateKey()`:
-```typescript
-const decoded = atob(encrypted);  // "b64:somedata" is not valid base64!
-```
+# Fix Plan: "Configure Sensor" Buttons Not Working in Validation Banner
 
 ## Root Cause
 
-The `ttn-send-downlink` function has its own local `deobfuscateKey` implementation that only handles the legacy XOR format:
+The **`LayoutValidationBanner`** component (lines 110-117) renders action buttons for each validation issue, but **the Button has no click handler at all**:
 
-| Stored Format | Local Function | Shared Function |
-|---------------|----------------|-----------------|
-| `b64:abc...`  | Fails - tries `atob("b64:...")` | Works - strips prefix, decodes |
-| `v2:xyz...`   | Fails - tries `atob("v2:...")` | Works - strips prefix, XOR decodes |
-| Plain base64  | Works | Works |
+```tsx
+{issue.action && (
+  <Button
+    variant="ghost"
+    size="sm"
+    className="h-6 px-2 text-xs shrink-0"
+  >
+    {issue.action.label}
+  </Button>
+)}
+```
 
-The TTN API keys in your database use the `b64:` prefix format (introduced to bypass XOR corruption issues), but the local function doesn't recognize this prefix.
+The button:
+- Has no `onClick` handler
+- Ignores the `issue.action.href` property
+- Is completely non-functional
 
-## Fix
-
-Replace the local `deobfuscateKey` function with an import from the shared module `_shared/ttnConfig.ts`, which correctly handles all obfuscation formats.
-
-### File: supabase/functions/ttn-send-downlink/index.ts
-
-**Remove lines 180-191** (local deobfuscateKey function):
+The `ValidationIssue.action` interface does include an `href` property:
 ```typescript
-// DELETE THIS:
-function deobfuscateKey(encrypted: string, salt: string): string {
-  const decoded = atob(encrypted);
-  const result: string[] = [];
-  for (let i = 0; i < decoded.length; i++) {
-    result.push(
-      String.fromCharCode(
-        decoded.charCodeAt(i) ^ salt.charCodeAt(i % salt.length)
-      )
-    );
+action?: {
+  label: string;
+  href?: string;  // <-- This is available but unused
+};
+```
+
+---
+
+## Solution Overview
+
+Wire the action buttons in `LayoutValidationBanner` to:
+1. **Use `Link`** when `issue.action.href` is provided (e.g., "#sensors")
+2. **Translate relative hash anchors** like `#sensors` into proper routes with the unit ID
+3. **Use `stopPropagation`** to prevent the customization grid from intercepting clicks
+
+Since the UnitDetail page uses Radix Tabs without URL-based tab state, the simplest approach is to:
+- Navigate to `/units/${entityId}` with a **query parameter** (e.g., `?tab=settings`)  
+- Update the UnitDetail page to read this query param and set the initial tab value
+
+---
+
+## Files to Change
+
+### 1. `src/features/dashboard-layout/components/LayoutValidationBanner.tsx`
+
+**Changes:**
+- Accept `entityId` and `entityType` props to construct proper navigation URLs
+- Replace the non-functional Button with a Link-based approach
+- Map relative hrefs like `#sensors` to `/units/{entityId}?tab=settings`
+- Add `onClick` with `stopPropagation` to ensure clicks work in customizing mode
+
+```tsx
+interface LayoutValidationBannerProps {
+  validation: LayoutValidationResult;
+  entityId: string;       // NEW
+  entityType: EntityType; // NEW
+  className?: string;
+}
+
+// In the render, replace the Button with:
+{issue.action && (
+  <Button
+    asChild
+    variant="ghost"
+    size="sm"
+    className="h-6 px-2 text-xs shrink-0"
+    onClick={(e) => e.stopPropagation()} // Prevent grid capture
+  >
+    <Link to={resolveActionHref(issue.action.href, entityId, entityType)}>
+      {issue.action.label}
+    </Link>
+  </Button>
+)}
+```
+
+**Helper function:**
+```tsx
+function resolveActionHref(
+  href: string | undefined, 
+  entityId: string, 
+  entityType: EntityType
+): string {
+  if (!href) return "#";
+  
+  // Handle hash anchors like "#sensors"
+  if (href.startsWith("#sensors")) {
+    return entityType === "unit" 
+      ? `/units/${entityId}?tab=settings` 
+      : `/sites/${entityId}?tab=settings`;
   }
-  return result.join("");
+  
+  // Handle settings paths
+  if (href.startsWith("/settings")) {
+    return entityType === "unit"
+      ? `/units/${entityId}${href.replace("/settings", "")}?tab=settings`
+      : href;
+  }
+  
+  return href;
 }
 ```
 
-**Add import at line 26** (with other ttnConfig imports):
-```typescript
-import {
-  hexToBase64,
-  buildCommand,
-  type BuiltCommand,
-} from "../_shared/downlinkCommands.ts";
-import { deobfuscateKey } from "../_shared/ttnConfig.ts";  // ADD THIS
+### 2. `src/features/dashboard-layout/components/EntityDashboard.tsx`
+
+**Changes:**
+- Pass `entityId` and `entityType` to `LayoutValidationBanner`
+
+```tsx
+// Around line 435:
+{state.isCustomizing && validation.issues.length > 0 && (
+  <LayoutValidationBanner 
+    validation={validation}
+    entityId={entityId}        // NEW
+    entityType={entityType}    // NEW
+  />
+)}
 ```
 
-## Technical Details
+### 3. `src/pages/UnitDetail.tsx`
 
-### Shared deobfuscateKey Flow
+**Changes:**
+- Read `tab` query param from URL
+- Use it as the Tabs `defaultValue` (or controlled `value`)
 
-The shared function (lines 293-319 in ttnConfig.ts) handles all formats:
+```tsx
+// Near top:
+import { useSearchParams } from "react-router-dom";
 
-```text
-Input: "b64:TlJOUy5aMjRE..."
-       ↓
-Detects "b64:" prefix
-       ↓
-Strips prefix → "TlJOUy5aMjRE..."
-       ↓
-Base64 decode → raw bytes
-       ↓
-TextDecoder → API key string
+// In component:
+const [searchParams] = useSearchParams();
+const initialTab = searchParams.get("tab") || "dashboard";
+
+// Replace Tabs:
+<Tabs defaultValue={initialTab} className="space-y-4">
 ```
 
-### Why This Happened
+---
 
-The `ttn-send-downlink` function was created before the versioned obfuscation system was finalized. It copied an early version of the deobfuscation logic instead of importing from the shared module.
+## Technical Notes
 
-### No Database Changes Required
+1. **Why `stopPropagation`?**: In customizing mode, the `react-grid-layout` library attaches mouse handlers for drag-and-drop. Without `stopPropagation`, clicks on buttons inside widgets could be captured by the grid.
 
-The fix is purely in the edge function code. The stored TTN API keys are valid and don't need updating.
+2. **Why URL-based tabs?**: The cleanest approach for deep-linking to the Settings tab. Using query params (`?tab=settings`) is less intrusive than changing the route structure.
 
-## After Fix
+3. **Export update**: The `EntityType` type needs to be imported in the banner file from `../hooks/useEntityLayoutStorage`.
 
-Clicking preset buttons (Power Saver, Standard, Debug) will successfully:
-1. Decode the TTN API key using the correct format
-2. Build the downlink command hex payload
-3. Send the REPLACE downlink to TTN
-4. Record the pending change for tracking
+---
+
+## Testing Plan
+
+### Manual Verification
+1. Navigate to Unit Dashboard with a widget that triggers validation warnings (e.g., Temperature Chart without a temperature sensor)
+2. Enable "Customizing" mode
+3. Click "Configure Sensor" button in the validation banner
+4. Verify:
+   - Navigates to `/units/{unitId}?tab=settings`
+   - Settings tab is active
+   - UnitSensorsCard is visible
+
+### Component Test (New)
+
+Create `src/features/dashboard-layout/components/__tests__/LayoutValidationBanner.test.tsx`:
+
+```tsx
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { LayoutValidationBanner } from "../LayoutValidationBanner";
+
+const mockValidation = {
+  isValid: false,
+  hasErrors: false,
+  hasWarnings: true,
+  issues: [
+    {
+      id: "capability-temperature_chart",
+      widgetId: "temperature_chart",
+      widgetName: "Temperature Chart",
+      severity: "warning" as const,
+      message: "Missing temperature capability",
+      action: { label: "Configure Sensor", href: "#sensors" },
+    },
+  ],
+  errorCount: 0,
+  warningCount: 1,
+};
+
+describe("LayoutValidationBanner", () => {
+  it("renders action button as navigable link", () => {
+    render(
+      <MemoryRouter>
+        <LayoutValidationBanner
+          validation={mockValidation}
+          entityId="unit-123"
+          entityType="unit"
+        />
+      </MemoryRouter>
+    );
+
+    const link = screen.getByRole("link", { name: /configure sensor/i });
+    expect(link).toHaveAttribute("href", "/units/unit-123?tab=settings");
+  });
+});
+```
+
+---
+
+## Summary of Changes
+
+| File | Change |
+|------|--------|
+| `LayoutValidationBanner.tsx` | Add `entityId`/`entityType` props, wire Button to Link with proper URL resolution |
+| `EntityDashboard.tsx` | Pass `entityId` and `entityType` to banner |
+| `UnitDetail.tsx` | Read `?tab=` query param for initial tab selection |
+| New test file | Component test verifying link behavior |
 
