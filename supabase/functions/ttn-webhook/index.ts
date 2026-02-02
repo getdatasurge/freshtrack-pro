@@ -21,6 +21,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeDevEui, formatDevEuiForDisplay, lookupOrgByWebhookSecret } from "../_shared/ttnConfig.ts";
 import { inferSensorTypeFromPayload, inferModelFromPayload, extractModelFromUnitId } from "../_shared/payloadRegistry.ts";
 import { normalizeDoorData, getDoorFieldSource, normalizeTelemetry } from "../_shared/payloadNormalization.ts";
+import { parseLHT65NUplink, matchChangeToUplink } from "../_shared/uplinkParser.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -408,6 +409,16 @@ async function handleLoraSensor(
 
   await supabase.from('lora_sensors').update(sensorUpdate).eq('id', sensor.id);
 
+  // ========================================
+  // DOWNLINK CONFIRMATION: Check pending changes against this uplink
+  // ========================================
+  try {
+    await confirmPendingChanges(supabase, sensor.id, decoded, requestId);
+  } catch (confirmErr) {
+    // Never fail the uplink processing because of confirmation errors
+    console.error(`[TTN-WEBHOOK] ${requestId} | Pending change confirmation error:`, confirmErr);
+  }
+
   // Handle unit-assigned sensors
   if (sensor.unit_id) {
     const hasTemperatureData = temperature !== undefined;
@@ -540,6 +551,130 @@ async function handleLoraSensor(
     JSON.stringify({ success: true, message: 'Sensor updated (not assigned to unit)', sensor_id: sensor.id }),
     { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
   );
+}
+
+/**
+ * Check for pending 'sent' downlink changes for this sensor and confirm
+ * them based on the uplink payload content.
+ *
+ * For Class A devices, the first uplink after a downlink means the device
+ * received the queued command. We parse the uplink to verify values where
+ * possible, or auto-confirm for commands that can't be read back.
+ */
+async function confirmPendingChanges(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  sensorId: string,
+  decoded: Record<string, unknown>,
+  requestId: string,
+): Promise<void> {
+  // Fetch all 'sent' changes for this sensor (oldest first so we confirm in order)
+  const { data: sentChanges, error: fetchErr } = await supabase
+    .from('sensor_pending_changes')
+    .select('id, change_type, command_params, sent_at')
+    .eq('sensor_id', sensorId)
+    .eq('status', 'sent')
+    .order('sent_at', { ascending: true })
+    .limit(10);
+
+  if (fetchErr || !sentChanges || sentChanges.length === 0) {
+    return; // Nothing to confirm
+  }
+
+  console.log(`[TTN-WEBHOOK] ${requestId} | Found ${sentChanges.length} pending 'sent' change(s) for sensor ${sensorId}`);
+
+  const uplinkState = parseLHT65NUplink(decoded);
+
+  for (const change of sentChanges) {
+    const result = matchChangeToUplink(
+      change.change_type,
+      change.command_params,
+      uplinkState,
+    );
+
+    if (result === 'confirmed') {
+      const { error: updateErr } = await supabase
+        .from('sensor_pending_changes')
+        .update({
+          status: 'applied',
+          applied_at: new Date().toISOString(),
+        })
+        .eq('id', change.id);
+
+      if (updateErr) {
+        console.error(`[TTN-WEBHOOK] ${requestId} | Failed to mark change ${change.id} as applied:`, updateErr.message);
+      } else {
+        console.log(`[TTN-WEBHOOK] ${requestId} | Change ${change.id} (${change.change_type}) confirmed → applied`);
+      }
+
+      // Also update sensor_configurations.pending_change_id to null
+      // and record last_applied_at
+      await supabase
+        .from('sensor_configurations')
+        .update({
+          pending_change_id: null,
+          last_applied_at: new Date().toISOString(),
+        })
+        .eq('sensor_id', sensorId)
+        .eq('pending_change_id', change.id);
+
+      // If this was an uplink_interval change, persist the new value
+      if (change.change_type === 'uplink_interval' && change.command_params?.seconds) {
+        await supabase
+          .from('sensor_configurations')
+          .update({ uplink_interval_s: change.command_params.seconds })
+          .eq('sensor_id', sensorId);
+      }
+
+      // If this was an ext_mode change, persist
+      if (change.change_type === 'ext_mode' && change.command_params?.mode) {
+        await supabase
+          .from('sensor_configurations')
+          .update({ ext_mode: change.command_params.mode })
+          .eq('sensor_id', sensorId);
+      }
+
+      // If this was an alarm change, persist
+      if (change.change_type === 'alarm' && change.command_params) {
+        const p = change.command_params;
+        await supabase
+          .from('sensor_configurations')
+          .update({
+            alarm_enabled: p.enable ?? false,
+            alarm_low: p.low_c ?? null,
+            alarm_high: p.high_c ?? null,
+            alarm_check_minutes: p.check_minutes ?? null,
+          })
+          .eq('sensor_id', sensorId);
+      }
+
+      // If this was a time_sync change, persist
+      if (change.change_type === 'time_sync' && change.command_params) {
+        if (change.command_params.type === 'time_sync') {
+          await supabase
+            .from('sensor_configurations')
+            .update({ time_sync_enabled: change.command_params.enable ?? false })
+            .eq('sensor_id', sensorId);
+        }
+        if (change.command_params.type === 'time_sync_days') {
+          await supabase
+            .from('sensor_configurations')
+            .update({ time_sync_days: change.command_params.days ?? null })
+            .eq('sensor_id', sensorId);
+        }
+      }
+
+    } else if (result === 'mismatch') {
+      console.warn(`[TTN-WEBHOOK] ${requestId} | Change ${change.id} (${change.change_type}) MISMATCH - keeping as 'sent'`);
+      // Don't fail the change on first mismatch; the device may not
+      // have applied it yet if there were queued frames. Leave as 'sent'
+      // and let the timeout handler deal with truly stale ones.
+
+    } else {
+      // inconclusive - leave as 'sent'
+      console.log(`[TTN-WEBHOOK] ${requestId} | Change ${change.id} (${change.change_type}) inconclusive, still 'sent'`);
+    }
+  }
 }
 
 /**

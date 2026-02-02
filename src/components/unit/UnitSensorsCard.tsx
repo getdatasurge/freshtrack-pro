@@ -1,15 +1,16 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { 
-  Radio, 
-  Plus, 
+import {
+  Radio,
+  Plus,
   Loader2,
   Thermometer,
   DoorOpen,
   DoorClosed,
   Star,
   Info,
+  Settings2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDistanceToNow } from "date-fns";
@@ -19,6 +20,8 @@ import { LoraSensor, LoraSensorStatus } from "@/types/ttn";
 import { useState } from "react";
 import { AssignSensorToUnitDialog } from "./AssignSensorToUnitDialog";
 import { SensorDetailsPopover } from "./SensorDetailsPopover";
+import { SensorSettingsDrawer } from "./SensorSettingsDrawer";
+import { usePendingChangeCounts } from "@/hooks/useSensorConfig";
 import { cn } from "@/lib/utils";
 import { UNIT_SENSOR_STATUS_CONFIG } from "@/lib/entityStatusConfig";
 
@@ -29,6 +32,10 @@ interface UnitSensorsCardProps {
   canEdit?: boolean;
   doorState?: 'open' | 'closed' | null;
   doorLastChangedAt?: string | null;
+  /** Unit-level alarm low limit (°F) — used as default for sensor alarm config */
+  tempLimitLow?: number | null;
+  /** Unit-level alarm high limit (°F) — used as default for sensor alarm config */
+  tempLimitHigh?: number | null;
 }
 
 const getStatusBadge = (status: LoraSensorStatus) => {
@@ -90,13 +97,15 @@ const StatusBadgeWithTooltip = ({ status }: { status: LoraSensorStatus }) => {
   );
 };
 
-export function UnitSensorsCard({ 
-  unitId, 
-  organizationId, 
+export function UnitSensorsCard({
+  unitId,
+  organizationId,
   siteId,
   canEdit = true,
   doorState,
   doorLastChangedAt,
+  tempLimitLow,
+  tempLimitHigh,
 }: UnitSensorsCardProps) {
   const { data: sensors, isLoading } = useLoraSensorsByUnit(unitId);
   const { data: allSensors } = useLoraSensors(organizationId);
@@ -104,6 +113,11 @@ export function UnitSensorsCard({
   const provisionSensor = useProvisionLoraSensor();
   const setPrimarySensor = useSetPrimarySensor();
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [settingsSensor, setSettingsSensor] = useState<LoraSensor | null>(null);
+
+  // Pending change counts for gear icon badges
+  const sensorIds = sensors?.map(s => s.id) ?? [];
+  const { data: pendingCounts } = usePendingChangeCounts(sensorIds);
 
   // Count unassigned sensors (no unit_id)
   const unassignedSensorsCount = allSensors?.filter(s => !s.unit_id).length || 0;
@@ -239,15 +253,45 @@ export function UnitSensorsCard({
                           </div>
                         </div>
 
-                        {/* Right Side: Status & Door State */}
+                        {/* Right Side: Settings gear + Status & Door State */}
                         <div className="flex items-center gap-2 flex-shrink-0">
+                          {/* Sensor Settings Gear */}
+                          {canEdit && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="relative p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSettingsSensor(sensor);
+                                  }}
+                                >
+                                  <Settings2 className="w-4 h-4" />
+                                  {(pendingCounts?.[sensor.id] ?? 0) > 0 && (
+                                    <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold text-white">
+                                      {pendingCounts[sensor.id]}
+                                    </span>
+                                  )}
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <span className="text-xs">
+                                  {(pendingCounts?.[sensor.id] ?? 0) > 0
+                                    ? `${pendingCounts[sensor.id]} pending change${pendingCounts[sensor.id] > 1 ? "s" : ""}`
+                                    : "Sensor settings"}
+                                </span>
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+
                           {/* Door State Badge - Always visible for door sensors */}
                           {showDoorState && doorState && (
-                            <Badge 
+                            <Badge
                               className={cn(
                                 "border-0 font-medium",
-                                doorState === 'open' 
-                                  ? "bg-alarm/20 text-alarm" 
+                                doorState === 'open'
+                                  ? "bg-alarm/20 text-alarm"
                                   : "bg-safe/20 text-safe"
                               )}
                             >
@@ -310,6 +354,18 @@ export function UnitSensorsCard({
         organizationId={organizationId}
         siteId={siteId}
       />
+
+      {settingsSensor && (
+        <SensorSettingsDrawer
+          open={!!settingsSensor}
+          onOpenChange={(open) => {
+            if (!open) setSettingsSensor(null);
+          }}
+          sensor={settingsSensor}
+          unitAlarmLow={tempLimitLow ?? null}
+          unitAlarmHigh={tempLimitHigh ?? null}
+        />
+      )}
     </TooltipProvider>
   );
 }
