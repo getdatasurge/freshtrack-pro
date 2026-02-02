@@ -5,6 +5,14 @@
 
 import type { LucideIcon } from "lucide-react";
 
+// Re-export battery profile types
+export type { 
+  BatteryProfile, 
+  BatteryWidgetState, 
+  BatteryEstimateResult, 
+  ConfidenceLevel 
+} from "./batteryProfiles";
+
 // ============================================================================
 // Device Categories
 // ============================================================================
