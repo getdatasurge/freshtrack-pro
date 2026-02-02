@@ -281,15 +281,15 @@ serve(async (req: Request) => {
       );
     }
 
-    // Verify user belongs to this org
-    const { data: membership } = await db
-      .from("organization_members")
-      .select("id")
+    // Verify user belongs to this org via user_roles table
+    const { data: roleCheck } = await db
+      .from("user_roles")
+      .select("role")
       .eq("organization_id", sensor.organization_id)
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (!membership) {
+    if (!roleCheck) {
       return new Response(
         JSON.stringify({ ok: false, error: "Not authorized for this sensor" }),
         {
