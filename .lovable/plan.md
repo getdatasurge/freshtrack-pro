@@ -1,107 +1,146 @@
 
+## What’s happening (why the Battery Health widget stays on the pinwheel)
 
-# Fix Plan: Battery Profile Query Causing 406 Errors
+From the code and your network snapshot:
 
-## Problem Summary
+- The `battery_profiles` request is now **200** (good; the 406 loop is fixed).
+- The Battery Health widget still shows the spinner because `estimate.loading` keeps flipping back to `true`.
 
-The Battery Health widget is causing an infinite loop of **406 (Not Acceptable)** errors when loading the Unit Detail page. The console shows repeated failed requests:
+The reason is in `BatteryHealthWidget.tsx`:
 
-```
-GET .../battery_profiles?select=*&model=eq.SENSOR-A840415A 406 (Not Acceptable)
-```
-
-## Root Cause
-
-In `useBatteryEstimate.ts`, the battery profile query uses `.single()`:
-
-```typescript
-supabase
-  .from("battery_profiles")
-  .select("*")
-  .eq("model", sensor.model)
-  .single()  // <- PROBLEM: throws 406 when 0 rows match
+```ts
+const estimate = useBatteryEstimate(sensorId, primarySensor ? {
+  id: primarySensor.id,
+  model: null,
+  last_seen_at: primarySensor.last_seen_at,
+  battery_level: primarySensor.battery_level,
+} : null);
 ```
 
-When `.single()` is used and **zero rows** are returned, PostgREST returns a 406 error instead of null. Since:
-1. The sensor's model is `SENSOR-A840415A` (auto-generated, not a real model name)
-2. No matching profile exists in `battery_profiles` table
-3. The error triggers a re-render cycle, causing infinite retries
+That inline object is **a brand-new object every render**.  
+`useBatteryEstimate` has:
 
-## Solution
-
-Change `.single()` to `.maybeSingle()` for queries that may legitimately return zero rows:
-
-| Query | Issue | Fix |
-|-------|-------|-----|
-| `battery_profiles` by model | No profile exists for auto-generated models | `.maybeSingle()` |
-| `sensor_configurations` by sensor_id | Config may not exist | `.maybeSingle()` |
-
-## Code Changes
-
-**File:** `src/hooks/useBatteryEstimate.ts`
-
-### Change 1: Battery profile query (lines 97-103)
-
-**Before:**
-```typescript
-sensor?.model
-  ? supabase
-      .from("battery_profiles")
-      .select("*")
-      .eq("model", sensor.model)
-      .single()
-  : Promise.resolve({ data: null, error: null }),
+```ts
+useEffect(..., [sensorId, sensorData])
 ```
 
-**After:**
-```typescript
-sensor?.model
-  ? supabase
-      .from("battery_profiles")
-      .select("*")
-      .eq("model", sensor.model)
-      .maybeSingle()
-  : Promise.resolve({ data: null, error: null }),
+So every re-render (and Unit Detail re-renders frequently due to realtime refreshTick + state replacement) retriggers the effect, which calls `setLoading(true)` again. Result: the widget never “settles” and looks stuck on the pinwheel.
+
+---
+
+## Goals for the fix (aligned with your approved preferences)
+
+1. **Stop the infinite “loading” loop** (battery widget should resolve to a stable UI).
+2. **Missing profile behavior:** show **no estimate** when the model has no configured profile (show the MISSING_PROFILE UI).
+3. **No voltage available:** show battery percent as **(Reported)** in Device Readiness (not Estimated).
+4. **Update frequency:** Battery Health calculations should refresh **only on page load** (not on realtime ticks).
+
+---
+
+## Implementation approach
+
+### A) Fix the pinwheel: make the hook call stable (page-load only)
+We will change the dashboard Battery Health widget to **stop passing an inline `sensorData` object**.
+
+Best option (and simplest):  
+- Call `useBatteryEstimate(sensorId)` with **only** the id.
+- The hook already fetches the sensor row from the backend, so it does not need the extra partial object.
+
+This prevents re-fetching on every re-render and matches your “only on page load” requirement.
+
+**File**
+- `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx`
+
+**Change**
+- Replace the current call with:
+  - `const estimate = useBatteryEstimate(sensorId);`
+
+(Alternative we will not use unless needed: memoize that object via `useMemo`, but removing it is cleaner and more deterministic.)
+
+---
+
+### B) Enforce “No estimate without profile” in the hook
+Right now, `useBatteryEstimate` still sets a fallback profile when the profile lookup returns no rows:
+
+```ts
+} else if (sensor?.model) {
+  const fallbackProfile = getFallbackProfile(sensor.model);
+  setBatteryProfile(fallbackProfile);
+  setProfileSource("fallback");
+}
 ```
 
-### Change 2: Sensor configuration query (lines 114-119)
+That conflicts with your approved behavior. We will change it to:
 
-**Before:**
-```typescript
-supabase
-  .from("sensor_configurations")
-  .select("uplink_interval_s")
-  .eq("sensor_id", sensorId)
-  .single(),
+- If no profile row exists → `batteryProfile = null`, `profileSource = "none"`, `sensorChemistry = null`.
+
+That ensures:
+- Widget state becomes `MISSING_PROFILE`
+- No days-remaining estimate is computed
+
+**File**
+- `src/hooks/useBatteryEstimate.ts`
+
+**Change**
+- Remove/disable fallback profile assignment for missing profiles (keep helper for future if you ever want a toggle).
+
+---
+
+### C) Make the hook truly “page load only”
+To align with “only on page load” and avoid accidental loops in other callers:
+
+- Change the effect dependency from `[sensorId, sensorData]` to **only** `[sensorId]`.
+
+Because after step A we won’t pass `sensorData` anymore, this is also defensive and prevents future regressions if someone passes a new inline object again.
+
+**File**
+- `src/hooks/useBatteryEstimate.ts`
+
+**Change**
+- `useEffect(..., [sensorId])`
+
+Note: This means if some parent passes updated sensor fields later, Battery Health won’t refetch (which is exactly what you requested).
+
+---
+
+### D) Device Readiness: label % as (Reported) when voltage is missing
+Currently `DeviceReadinessWidget` always renders:
+
+```ts
+const levelLabel = `${level}% (Est.)`;
 ```
 
-**After:**
-```typescript
-supabase
-  .from("sensor_configurations")
-  .select("uplink_interval_s")
-  .eq("sensor_id", sensorId)
-  .maybeSingle(),
-```
+We will update it so:
+- If `battery_voltage_filtered` or `battery_voltage` exists (non-null) → label `% (Est.)`
+- Otherwise → label `% (Reported)`
 
-## Expected Behavior After Fix
+Because `WidgetSensor` doesn’t currently type these voltage fields, we’ll safely read them from the existing `any` cast you already have (`const loraSensor = primarySensor as any;`) without changing the broader typing surface.
 
-When the sensor model doesn't match any battery profile:
-1. Query returns `{ data: null, error: null }` (no 406 error)
-2. Hook sets `profileSource: "fallback"` and uses the fallback profile from `getFallbackProfile()`
-3. Widget displays battery estimate using the conservative fallback
-4. Per user preference: When no profile exists, widget shows "Battery estimate unavailable - battery profile not configured" (MISSING_PROFILE state)
+**File**
+- `src/features/dashboard-layout/widgets/DeviceReadinessWidget.tsx`
 
-## Files Changed
+**Change**
+- Add `const effectiveVoltage = loraSensor?.battery_voltage_filtered ?? loraSensor?.battery_voltage ?? null;`
+- Pass that into `getBatteryStatus(level, effectiveVoltage)` and format the label accordingly.
 
-| File | Change |
-|------|--------|
-| `src/hooks/useBatteryEstimate.ts` | Replace `.single()` with `.maybeSingle()` for profile and config queries |
+---
 
-## Technical Notes
+## Verification checklist (what we’ll test after implementing)
 
-- **`.single()` behavior**: Expects exactly 1 row; returns 406 for 0 or 2+ rows
-- **`.maybeSingle()` behavior**: Returns null for 0 rows, data for 1 row, error for 2+ rows
-- This is a common pattern issue in Supabase queries for lookup tables
-- The fallback profile logic in `getFallbackProfile()` already handles missing profiles correctly
+1. Open `/units/8d9a7c25-8340-45b2-82dd-52c6fe29e484`:
+   - Battery Health widget should stop spinning and resolve quickly.
+2. For model `SENSOR-A840415A` with no battery profile row:
+   - Battery Health should show **Battery estimate unavailable** (MISSING_PROFILE state), not an estimate.
+3. Device Readiness battery:
+   - Should show `4% (Reported)` (since voltage is null in your current data).
+4. Confirm no repeated backend calls:
+   - Battery-related calls should happen once on page load, not on realtime refresh ticks.
+5. Regression check:
+   - Switch between tabs (Dashboard/Settings/History) and back; Battery Health should still behave predictably.
 
+---
+
+## Files that will be updated (no new files required)
+- `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx`
+- `src/hooks/useBatteryEstimate.ts`
+- `src/features/dashboard-layout/widgets/DeviceReadinessWidget.tsx`
