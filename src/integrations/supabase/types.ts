@@ -403,6 +403,51 @@ export type Database = {
           },
         ]
       }
+      battery_profiles: {
+        Row: {
+          battery_type: string
+          created_at: string
+          id: string
+          mah_per_uplink: number
+          manufacturer: string | null
+          model: string
+          nominal_capacity_mah: number
+          notes: string | null
+          replacement_threshold: number
+          sleep_current_ua: number
+          updated_at: string
+          usable_capacity_pct: number
+        }
+        Insert: {
+          battery_type: string
+          created_at?: string
+          id?: string
+          mah_per_uplink?: number
+          manufacturer?: string | null
+          model: string
+          nominal_capacity_mah: number
+          notes?: string | null
+          replacement_threshold?: number
+          sleep_current_ua?: number
+          updated_at?: string
+          usable_capacity_pct?: number
+        }
+        Update: {
+          battery_type?: string
+          created_at?: string
+          id?: string
+          mah_per_uplink?: number
+          manufacturer?: string | null
+          model?: string
+          nominal_capacity_mah?: number
+          notes?: string | null
+          replacement_threshold?: number
+          sleep_current_ua?: number
+          updated_at?: string
+          usable_capacity_pct?: number
+        }
+        Relationships: []
+      }
       calibration_records: {
         Row: {
           calibrated_at: string
