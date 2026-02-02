@@ -22,9 +22,24 @@ export function LastKnownGoodWidget({
   const tempLimitLow = unit?.temp_limit_low ?? null;
   const isCurrentlyOnline = derivedStatus?.isOnline ?? false;
 
-  // Don't show if unit is currently online and has valid readings
+  // Show healthy state when sensor is online and has valid readings
   if (isCurrentlyOnline && lastValidTemp !== null) {
-    return null;
+    return (
+      <div className="h-full p-4 bg-safe/5">
+        <div className="flex items-center gap-2 mb-2">
+          <CheckCircle className="w-5 h-5 text-safe" />
+          <h3 className="text-lg font-semibold">Monitoring Active</h3>
+        </div>
+        <div className="space-y-1">
+          <span className="text-3xl font-bold text-safe">
+            {lastValidTemp.toFixed(1)}°F
+          </span>
+          <p className="text-sm text-muted-foreground">
+            Live data from sensor
+          </p>
+        </div>
+      </div>
+    );
   }
 
   const isInRange = lastValidTemp !== null && 
