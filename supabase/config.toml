@@ -143,6 +143,10 @@ verify_jwt = false
 [functions.telnyx-webhook]
 verify_jwt = false
 
+# TTN downlink sender - handles CORS preflight and custom JWT verification
+[functions.ttn-send-downlink]
+verify_jwt = false
+
 # Telnyx config diagnostic - super admin only, checks Telnyx API connectivity
 [functions.test-telnyx-config]
 verify_jwt = false
