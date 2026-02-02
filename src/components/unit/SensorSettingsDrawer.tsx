@@ -260,7 +260,7 @@ export function SensorSettingsDrawer({
   useEffect(() => {
     if (alarmHighF) {
       setAlarmHighError(validate(alarmTempStringSchema, alarmHighF));
-      // Cross-field: high must be > low + 1
+      // Cross-field: mirrors alarmFormSchema.refine() in validation.ts
       const lowN = parseFloat(alarmLowF);
       const highN = parseFloat(alarmHighF);
       if (!isNaN(lowN) && !isNaN(highN) && highN <= lowN + 1) {

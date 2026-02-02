@@ -10,6 +10,8 @@
  *  - one change = one downlink
  */
 
+import type { ExtMode, DownlinkCommandParams } from "@/types/sensorConfig";
+
 // ---------------------------------------------------------------------------
 // Hex ↔ Base64 helpers
 // ---------------------------------------------------------------------------
@@ -55,7 +57,7 @@ export function cmdSetIntervalSeconds(seconds: number): string {
  *  - e3_ext1 → A201 (E3 temp probe)
  *  - e3_ext9 → A209 (E3 temp probe + unix timestamp in uplink)
  */
-export function cmdSetExtMode(mode: 'e3_ext1' | 'e3_ext9'): string {
+export function cmdSetExtMode(mode: ExtMode): string {
   const map: Record<string, string> = {
     e3_ext1: 'A201',
     e3_ext9: 'A209',
@@ -144,18 +146,10 @@ export interface BuiltCommand {
   expectedResult: string;
 }
 
-export type CommandParams =
-  | { type: 'uplink_interval'; seconds: number }
-  | { type: 'ext_mode'; mode: 'e3_ext1' | 'e3_ext9' }
-  | { type: 'time_sync'; enable: boolean }
-  | { type: 'time_sync_days'; days: number }
-  | { type: 'set_time'; unix_ts: number }
-  | { type: 'alarm'; enable: boolean; check_minutes: number; low_c: number; high_c: number }
-  | { type: 'clear_datalog' }
-  | { type: 'pnackmd'; enable: boolean }
-  | { type: 'raw'; hex: string; fport?: number };
+/** @deprecated Use DownlinkCommandParams from @/types/sensorConfig */
+export type CommandParams = DownlinkCommandParams;
 
-export function buildCommand(params: CommandParams, defaultFport: number = 2): BuiltCommand {
+export function buildCommand(params: DownlinkCommandParams, defaultFport: number = 2): BuiltCommand {
   switch (params.type) {
     case 'uplink_interval':
       return {
