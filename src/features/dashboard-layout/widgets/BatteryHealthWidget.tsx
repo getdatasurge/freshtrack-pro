@@ -2,7 +2,7 @@
  * Battery Health Widget
  * 
  * Production-grade battery life estimation for LoRaWAN sensors.
- * Uses physics-based calculations with model-specific battery profiles.
+ * Uses voltage as source of truth with chemistry-specific curves.
  * 
  * States:
  * - NOT_CONFIGURED: No sensor assigned
@@ -11,7 +11,7 @@
  * - SENSOR_OFFLINE: No uplink in 3× expected interval
  * - ESTIMATE_LOW_CONFIDENCE: 12–50 uplinks, 6–24h span
  * - ESTIMATE_HIGH_CONFIDENCE: ≥ 50 uplinks, ≥ 48h span
- * - CRITICAL_BATTERY: SOC ≤ 10%
+ * - CRITICAL_BATTERY: SOC ≤ 10% or health state CRITICAL/REPLACE_ASAP
  */
 
 import { useMemo } from "react";
@@ -28,15 +28,19 @@ import {
   WifiOff,
   HelpCircle,
   Loader2,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
-import { format, addDays } from "date-fns";
+import { format } from "date-fns";
 import type { WidgetProps } from "../types";
-import { WidgetEmptyState } from "../components/WidgetEmptyState";
 import { useBatteryEstimate } from "@/hooks/useBatteryEstimate";
 import {
   formatEstimate,
   formatDailyConsumption,
+  formatVoltage,
+  formatVoltageSlope,
   getStateMessage,
+  getHealthStateInfo,
   MIN_UPLINKS_FOR_ESTIMATE,
   MIN_HOURS_FOR_ESTIMATE,
 } from "@/lib/devices/batteryProfiles";
@@ -175,6 +179,9 @@ export function BatteryHealthWidget({
     );
   }
 
+  // Get health state styling
+  const healthStateInfo = getHealthStateInfo(estimate.healthState);
+
   // Render estimate states (LOW/HIGH confidence)
   return (
     <div className="h-full flex flex-col">
@@ -191,22 +198,41 @@ export function BatteryHealthWidget({
       />
       <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
         <div className="space-y-4">
-          {/* Battery Level Display */}
+          {/* Voltage & Percentage Display */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className={`p-2 rounded-lg bg-muted ${batteryColor}`}>
                 <BatteryIcon className="w-5 h-5" />
               </div>
               <div>
-                <p className={`text-2xl font-bold ${batteryColor}`}>
-                  {estimate.currentSoc !== null ? `${estimate.currentSoc}%` : "—"}
-                </p>
-                <p className="text-xs text-muted-foreground">Current Level</p>
+                {estimate.filteredVoltage !== null ? (
+                  <>
+                    <p className={`text-2xl font-bold ${batteryColor}`}>
+                      {formatVoltage(estimate.filteredVoltage)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      ≈ {estimate.currentSoc !== null ? `${estimate.currentSoc}%` : "—"} (Est.)
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className={`text-2xl font-bold ${batteryColor}`}>
+                      {estimate.currentSoc !== null ? `${estimate.currentSoc}%` : "—"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Current Level (Est.)</p>
+                  </>
+                )}
               </div>
             </div>
 
             <div className="text-right">
-              <p className="text-lg font-semibold">
+              <Badge 
+                variant="outline" 
+                className={`${healthStateInfo.bgColor} ${healthStateInfo.color} border-0`}
+              >
+                {healthStateInfo.label}
+              </Badge>
+              <p className="text-sm font-medium mt-1">
                 {formatEstimate(estimate.estimatedDaysRemaining, estimate.confidence)}
               </p>
               <p className="text-xs text-muted-foreground">Est. Remaining</p>
@@ -222,6 +248,19 @@ export function BatteryHealthWidget({
               indicatorClassName={progressColor}
             />
           </div>
+
+          {/* Voltage Trend */}
+          {estimate.voltageSlope !== null && (
+            <div className="flex items-center gap-2 text-sm">
+              {estimate.voltageSlope < -0.001 ? (
+                <TrendingDown className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <Minus className="w-4 h-4 text-muted-foreground" />
+              )}
+              <span className="text-muted-foreground">Trend:</span>
+              <span className="font-medium">{formatVoltageSlope(estimate.voltageSlope)}</span>
+            </div>
+          )}
 
           {/* Details Section */}
           <div className="pt-2 border-t border-border space-y-2">

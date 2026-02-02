@@ -76,6 +76,8 @@ const TELEMETRY_ALIASES: Record<string, string[]> = {
   // Battery: Dragino uses BatV (voltage, e.g. 3.05).
   // Converted to integer percentage for battery_level column (INTEGER type).
   battery: ['BatV'],
+  // Battery voltage: Store raw voltage for voltage-based estimation
+  battery_voltage: ['BatV', 'bat_v', 'batteryVoltage', 'vbat'],
 };
 
 // Dragino battery voltage range (from Dragino documentation)
@@ -123,7 +125,13 @@ export function normalizeTelemetry(
           // Convert BatV voltage to integer percentage for battery_level column
           if (alias === 'BatV' && canonical === 'battery') {
             result[canonical] = convertBatVToPercent(value);
-          } else {
+          } 
+          // Store raw voltage for battery_voltage field
+          else if (canonical === 'battery_voltage') {
+            // Store voltage as-is (already in volts)
+            result[canonical] = value;
+          }
+          else {
             result[canonical] = value;
           }
           break;

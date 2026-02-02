@@ -406,45 +406,57 @@ export type Database = {
       battery_profiles: {
         Row: {
           battery_type: string
+          chemistry: string | null
           created_at: string
+          cutoff_voltage: number | null
           id: string
           mah_per_uplink: number
           manufacturer: string | null
           model: string
           nominal_capacity_mah: number
+          nominal_voltage: number | null
           notes: string | null
           replacement_threshold: number
           sleep_current_ua: number
           updated_at: string
           usable_capacity_pct: number
+          voltage_curve: Json | null
         }
         Insert: {
           battery_type: string
+          chemistry?: string | null
           created_at?: string
+          cutoff_voltage?: number | null
           id?: string
           mah_per_uplink?: number
           manufacturer?: string | null
           model: string
           nominal_capacity_mah: number
+          nominal_voltage?: number | null
           notes?: string | null
           replacement_threshold?: number
           sleep_current_ua?: number
           updated_at?: string
           usable_capacity_pct?: number
+          voltage_curve?: Json | null
         }
         Update: {
           battery_type?: string
+          chemistry?: string | null
           created_at?: string
+          cutoff_voltage?: number | null
           id?: string
           mah_per_uplink?: number
           manufacturer?: string | null
           model?: string
           nominal_capacity_mah?: number
+          nominal_voltage?: number | null
           notes?: string | null
           replacement_threshold?: number
           sleep_current_ua?: number
           updated_at?: string
           usable_capacity_pct?: number
+          voltage_curve?: Json | null
         }
         Relationships: []
       }
@@ -1283,7 +1295,10 @@ export type Database = {
         Row: {
           app_eui: string | null
           app_key: string | null
+          battery_health_state: string | null
           battery_level: number | null
+          battery_voltage: number | null
+          battery_voltage_filtered: number | null
           created_at: string
           created_by: string | null
           deleted_at: string | null
@@ -1316,7 +1331,10 @@ export type Database = {
         Insert: {
           app_eui?: string | null
           app_key?: string | null
+          battery_health_state?: string | null
           battery_level?: number | null
+          battery_voltage?: number | null
+          battery_voltage_filtered?: number | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
@@ -1349,7 +1367,10 @@ export type Database = {
         Update: {
           app_eui?: string | null
           app_key?: string | null
+          battery_health_state?: string | null
           battery_level?: number | null
+          battery_voltage?: number | null
+          battery_voltage_filtered?: number | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
@@ -2343,6 +2364,7 @@ export type Database = {
       sensor_readings: {
         Row: {
           battery_level: number | null
+          battery_voltage: number | null
           device_id: string | null
           door_open: boolean | null
           humidity: number | null
@@ -2357,6 +2379,7 @@ export type Database = {
         }
         Insert: {
           battery_level?: number | null
+          battery_voltage?: number | null
           device_id?: string | null
           door_open?: boolean | null
           humidity?: number | null
@@ -2371,6 +2394,7 @@ export type Database = {
         }
         Update: {
           battery_level?: number | null
+          battery_voltage?: number | null
           device_id?: string | null
           door_open?: boolean | null
           humidity?: number | null
