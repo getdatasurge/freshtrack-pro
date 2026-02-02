@@ -986,7 +986,7 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
 }
 
 // ─── Add Sensor Dialog ───────────────────────────────────────
-function AddSensorDialog({
+function AddCatalogEntryDialog({
   open,
   onOpenChange,
   onAdd,
@@ -1392,7 +1392,7 @@ export default function PlatformSensorLibrary() {
       )}
 
       {/* Add Sensor Dialog */}
-      <AddSensorDialog
+      <AddCatalogEntryDialog
         open={showAddDialog}
         onOpenChange={setShowAddDialog}
         onAdd={handleAddSensor}
