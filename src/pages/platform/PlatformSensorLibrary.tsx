@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import PlatformLayout from "@/components/platform/PlatformLayout";
 import { useSuperAdmin } from "@/contexts/SuperAdminContext";
-import { useSensorCatalog, useAddSensorCatalogEntry, useDeleteSensorCatalogEntry } from "@/hooks/useSensorCatalog";
+import { useSensorCatalog, useAddSensorCatalogEntry, useDeleteSensorCatalogEntry, useRetireSensorCatalogEntry } from "@/hooks/useSensorCatalog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +63,9 @@ import {
   Trash2,
   MapPin,
   Activity,
+  AlertTriangle,
+  Archive,
+  Play,
 } from "lucide-react";
 import type {
   SensorCatalogEntry,
@@ -416,11 +419,41 @@ function SensorCard({ sensor, onClick }: { sensor: SensorCatalogEntry; onClick: 
 }
 
 // ─── Sensor Detail View ──────────────────────────────────────
-function SensorDetail({ sensor, onBack }: { sensor: SensorCatalogEntry; onBack: () => void }) {
+function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
+  sensor: SensorCatalogEntry;
+  onBack: () => void;
+  onRetire: (reason: string) => void;
+  onDelete: () => void;
+}) {
   const [activeTab, setActiveTab] = useState("payloads");
   const [selectedPayload, setSelectedPayload] = useState(0);
+  const [showRetireDialog, setShowRetireDialog] = useState(false);
+  const [retireReason, setRetireReason] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [testResults, setTestResults] = useState<{ passed: boolean; actual: Record<string, unknown> | null; error?: string }[] | null>(null);
   const meta = getKindMeta(sensor.sensor_kind);
   const Icon = meta.icon;
+
+  const runTestVectors = useCallback(() => {
+    if (!sensor.decoder_js || !sensor.decoder_test_vectors?.length) return;
+    const results = sensor.decoder_test_vectors.map((tv) => {
+      try {
+        const hexPairs = tv.raw_hex.match(/.{1,2}/g);
+        if (!hexPairs) throw new Error("Invalid hex string");
+        const bytes = hexPairs.map((b) => parseInt(b, 16));
+        const wrappedCode = `${sensor.decoder_js}\nreturn decodeUplink(input);`;
+        const fn = new Function("input", wrappedCode);
+        const result = fn({ bytes, fPort: tv.f_port });
+        const actual = (result?.data ?? result) as Record<string, unknown>;
+        const passed = JSON.stringify(actual) === JSON.stringify(tv.expected_decoded);
+        return { passed, actual };
+      } catch (err: unknown) {
+        return { passed: false, actual: null, error: err instanceof Error ? err.message : String(err) };
+      }
+    });
+    setTestResults(results);
+  }, [sensor.decoder_js, sensor.decoder_test_vectors]);
 
   return (
     <div className="space-y-6">
@@ -451,6 +484,21 @@ function SensorDetail({ sensor, onBack }: { sensor: SensorCatalogEntry; onBack: 
           ))}
           <Badge variant="secondary">LoRaWAN {sensor.lorawan_version}</Badge>
           <Badge variant="secondary">Class {sensor.supports_class}</Badge>
+        </div>
+        <div className="flex gap-2 ml-2">
+          {!sensor.deprecated_at && (
+            <Button variant="outline" size="sm" onClick={() => setShowRetireDialog(true)}>
+              <Archive className="w-4 h-4 mr-1" /> Retire
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+            onClick={() => setShowDeleteConfirm(true)}
+          >
+            <Trash2 className="w-4 h-4 mr-1" /> Delete
+          </Button>
         </div>
       </div>
 
@@ -735,8 +783,67 @@ function SensorDetail({ sensor, onBack }: { sensor: SensorCatalogEntry; onBack: 
                 )}
               </div>
               {sensor.decoder_test_vectors?.length > 0 && (
-                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-800 dark:text-green-200">
-                  {sensor.decoder_test_vectors.length} test vector{sensor.decoder_test_vectors.length !== 1 ? "s" : ""} available for verification
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-800 dark:text-green-200">
+                      {sensor.decoder_test_vectors.length} test vector{sensor.decoder_test_vectors.length !== 1 ? "s" : ""} available for verification
+                    </div>
+                    <Button variant="outline" size="sm" onClick={runTestVectors}>
+                      <Play className="w-4 h-4 mr-1" /> Run Tests
+                    </Button>
+                  </div>
+                  {testResults && (
+                    <div className="space-y-2">
+                      {sensor.decoder_test_vectors.map((tv, i) => {
+                        const result = testResults[i];
+                        if (!result) return null;
+                        return (
+                          <div
+                            key={i}
+                            className={`p-3 rounded-lg border ${
+                              result.passed
+                                ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+                                : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              {result.passed ? (
+                                <Check className="w-4 h-4 text-green-600" />
+                              ) : (
+                                <X className="w-4 h-4 text-red-600" />
+                              )}
+                              <span className="text-sm font-medium">
+                                Vector {i + 1}: <code className="font-mono text-xs">{tv.raw_hex}</code> (port {tv.f_port})
+                              </span>
+                              <span className={`text-xs font-semibold ml-auto ${result.passed ? "text-green-600" : "text-red-600"}`}>
+                                {result.passed ? "PASS" : "FAIL"}
+                              </span>
+                            </div>
+                            {result.error && (
+                              <p className="text-xs text-red-600 mt-1 font-mono">Error: {result.error}</p>
+                            )}
+                            {!result.passed && result.actual && (
+                              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <p className="text-muted-foreground font-semibold mb-1">Expected:</p>
+                                  <pre className="font-mono bg-background p-2 rounded border overflow-auto max-h-32">{JSON.stringify(tv.expected_decoded, null, 2)}</pre>
+                                </div>
+                                <div>
+                                  <p className="text-muted-foreground font-semibold mb-1">Got:</p>
+                                  <pre className="font-mono bg-background p-2 rounded border overflow-auto max-h-32">{JSON.stringify(result.actual, null, 2)}</pre>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <div className={`text-sm font-semibold ${
+                        testResults.every((r) => r.passed) ? "text-green-600" : "text-red-600"
+                      }`}>
+                        {testResults.filter((r) => r.passed).length}/{testResults.length} tests passed
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               <JsonBlock data={sensor.decoder_js} maxHeight="500px" />
@@ -806,6 +913,74 @@ function SensorDetail({ sensor, onBack }: { sensor: SensorCatalogEntry; onBack: 
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Retire Sensor Dialog */}
+      <Dialog open={showRetireDialog} onOpenChange={setShowRetireDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Archive className="w-5 h-5" /> Retire Sensor Model
+            </DialogTitle>
+            <DialogDescription>
+              This will mark {sensor.manufacturer} {sensor.model} as deprecated and hide it from org users.
+              The entry remains in the database and can be restored later.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Label htmlFor="retire-reason">Reason for retiring</Label>
+            <Textarea
+              id="retire-reason"
+              value={retireReason}
+              onChange={(e) => setRetireReason(e.target.value)}
+              placeholder="e.g., Replaced by newer model LHT65N..."
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRetireDialog(false)}>Cancel</Button>
+            <Button onClick={() => { onRetire(retireReason); setShowRetireDialog(false); setRetireReason(""); }}>
+              <Archive className="w-4 h-4 mr-2" /> Retire Sensor
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hard Delete Confirmation Dialog */}
+      <Dialog open={showDeleteConfirm} onOpenChange={(open) => { setShowDeleteConfirm(open); if (!open) setDeleteConfirmText(""); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" /> Permanently Delete Sensor
+            </DialogTitle>
+            <DialogDescription>
+              This will permanently remove {sensor.manufacturer} {sensor.model} from the catalog.
+              This cannot be undone. Consider using Retire instead, which hides the entry but preserves the data.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Label htmlFor="delete-confirm">
+              Type <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">delete {sensor.model}</code> to confirm
+            </Label>
+            <Input
+              id="delete-confirm"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={`delete ${sensor.model}`}
+              className="mt-2 font-mono"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); }}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteConfirmText !== `delete ${sensor.model}`}
+              onClick={() => { onDelete(); setShowDeleteConfirm(false); setDeleteConfirmText(""); }}
+            >
+              <Trash2 className="w-4 h-4 mr-2" /> Permanently Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -966,6 +1141,7 @@ export default function PlatformSensorLibrary() {
   const { toast } = useToast();
   const { data: dbCatalog, isLoading, error, refetch } = useSensorCatalog();
   const addMutation = useAddSensorCatalogEntry();
+  const retireMutation = useRetireSensorCatalogEntry();
   const deleteMutation = useDeleteSensorCatalogEntry();
 
   const [search, setSearch] = useState("");
@@ -1025,13 +1201,46 @@ export default function PlatformSensorLibrary() {
     }
   }, [addMutation, logSuperAdminAction, toast]);
 
+  const handleRetireSensor = useCallback(async (reason: string) => {
+    if (!selectedSensorId) return;
+    const sensor = catalog.find((s) => s.id === selectedSensorId);
+    try {
+      await retireMutation.mutateAsync({ id: selectedSensorId, reason });
+      logSuperAdminAction("RETIRED_SENSOR", { id: selectedSensorId, model: sensor?.model, reason });
+      toast({ title: "Sensor retired", description: `${sensor?.manufacturer} ${sensor?.model} has been retired and hidden from org users.` });
+      setSelectedSensorId(null);
+    } catch (err) {
+      console.error("Failed to retire sensor:", err);
+      toast({ title: "Error", description: "Failed to retire sensor. Ensure the migration has been run.", variant: "destructive" });
+    }
+  }, [selectedSensorId, catalog, retireMutation, logSuperAdminAction, toast]);
+
+  const handleDeleteSensor = useCallback(async () => {
+    if (!selectedSensorId) return;
+    const sensor = catalog.find((s) => s.id === selectedSensorId);
+    try {
+      await deleteMutation.mutateAsync(selectedSensorId);
+      logSuperAdminAction("DELETED_SENSOR", { id: selectedSensorId, model: sensor?.model });
+      toast({ title: "Sensor deleted", description: `${sensor?.manufacturer} ${sensor?.model} permanently removed from catalog.` });
+      setSelectedSensorId(null);
+    } catch (err) {
+      console.error("Failed to delete sensor:", err);
+      toast({ title: "Error", description: "Failed to delete sensor.", variant: "destructive" });
+    }
+  }, [selectedSensorId, catalog, deleteMutation, logSuperAdminAction, toast]);
+
   const selectedSensor = selectedSensorId ? catalog.find((s) => s.id === selectedSensorId) : null;
 
   // Detail view
   if (selectedSensor) {
     return (
       <PlatformLayout title="Sensor Library">
-        <SensorDetail sensor={selectedSensor} onBack={() => setSelectedSensorId(null)} />
+        <SensorDetail
+          sensor={selectedSensor}
+          onBack={() => setSelectedSensorId(null)}
+          onRetire={handleRetireSensor}
+          onDelete={handleDeleteSensor}
+        />
       </PlatformLayout>
     );
   }

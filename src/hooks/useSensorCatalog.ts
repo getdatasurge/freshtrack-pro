@@ -63,6 +63,31 @@ export function useUpdateSensorCatalogEntry() {
   });
 }
 
+export function useRetireSensorCatalogEntry() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) => {
+      const { data, error } = await supabase
+        .from("sensor_catalog")
+        .update({
+          deprecated_at: new Date().toISOString(),
+          deprecated_reason: reason || null,
+          is_visible: false,
+        } as Record<string, unknown>)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data as unknown as SensorCatalogEntry;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: CATALOG_QUERY_KEY });
+    },
+  });
+}
+
 export function useDeleteSensorCatalogEntry() {
   const queryClient = useQueryClient();
 
