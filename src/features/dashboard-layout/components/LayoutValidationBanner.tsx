@@ -148,6 +148,8 @@ export function LayoutValidationBanner({ validation, entityId, entityType, class
                   <Link
                     to={resolveActionHref(issue.action.href, entityId, entityType)}
                     onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
                   >
                     {issue.action.label}
                   </Link>

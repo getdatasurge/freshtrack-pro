@@ -201,7 +201,12 @@ export function WidgetEmptyState({
             size={compact ? "sm" : "default"}
             className={cn("mt-1", compact && "h-7 text-xs px-2")}
           >
-            <Link to={state.action.href}>
+            <Link
+              to={state.action.href}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
               {ActionIcon && <ActionIcon className="w-3.5 h-3.5 mr-1.5" />}
               {state.action.label}
             </Link>
@@ -210,7 +215,12 @@ export function WidgetEmptyState({
           <Button
             variant="outline"
             size={compact ? "sm" : "default"}
-            onClick={state.action.onClick}
+            onClick={(e) => {
+              e.stopPropagation();
+              state.action?.onClick?.();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
             className={cn("mt-1", compact && "h-7 text-xs px-2")}
           >
             {ActionIcon && <ActionIcon className="w-3.5 h-3.5 mr-1.5" />}
