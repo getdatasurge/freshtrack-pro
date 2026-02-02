@@ -52,6 +52,9 @@ export function DeviceReadinessWidget({
   const effectiveSignalStrength = hasLoraData ? loraSensor.signal_strength : (primarySensor?.signal_strength ?? device?.signal_strength);
   const effectiveLastSeen = hasLoraData ? loraSensor.last_seen_at : (derivedStatus?.lastSeenAt || device?.last_seen_at);
   const deviceSerial = primarySensor?.dev_eui || device?.serial_number;
+  
+  // Check if voltage is available - determines "(Est.)" vs "(Reported)" label
+  const effectiveVoltage = loraSensor?.battery_voltage_filtered ?? loraSensor?.battery_voltage ?? null;
 
   // Compute installation status based on offline severity from alert rules
   const getSensorStatusFromSeverity = () => {
@@ -141,12 +144,13 @@ export function DeviceReadinessWidget({
 
   const StatusIcon = getStatusIcon();
 
-  const getBatteryStatus = (level: number | null | undefined, voltage?: number | null) => {
+  const getBatteryStatus = (level: number | null | undefined, hasVoltage: boolean) => {
     if (level === null || level === undefined) {
       return { label: "N/A", color: "text-muted-foreground", bg: "bg-muted", healthLabel: null };
     }
-    // Include "(Est.)" suffix to indicate derived percentage
-    const levelLabel = `${level}% (Est.)`;
+    // "(Est.)" when voltage exists (derived from voltage curve), "(Reported)" when just sensor-reported %
+    const suffix = hasVoltage ? "(Est.)" : "(Reported)";
+    const levelLabel = `${level}% ${suffix}`;
     
     if (level > 50) return { label: levelLabel, color: "text-safe", bg: "bg-safe/10", healthLabel: "OK" };
     if (level > 20) return { label: levelLabel, color: "text-warning", bg: "bg-warning/10", healthLabel: "Warning" };
@@ -177,7 +181,7 @@ export function DeviceReadinessWidget({
     };
   };
 
-  const batteryStatus = getBatteryStatus(effectiveBatteryLevel);
+  const batteryStatus = getBatteryStatus(effectiveBatteryLevel, effectiveVoltage !== null);
   const signalStatus = getSignalStatus(effectiveSignalStrength);
   const doorStatus = getDoorStatus(doorState, doorLastChangedAt);
   const DoorIcon = doorStatus.icon;

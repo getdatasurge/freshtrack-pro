@@ -51,18 +51,18 @@ interface SensorConfig {
 }
 
 export function useBatteryEstimate(
-  sensorId: string | null,
-  sensorData?: SensorData | null
+  sensorId: string | null
 ): BatteryEstimateResult {
   const [batteryProfile, setBatteryProfile] = useState<BatteryProfile | null>(null);
   const [profileSource, setProfileSource] = useState<"database" | "fallback" | "none">("none");
   const [readings, setReadings] = useState<UplinkReading[]>([]);
   const [configuredInterval, setConfiguredInterval] = useState<number | null>(null);
   const [sensorChemistry, setSensorChemistry] = useState<string | null>(null);
+  const [sensor, setSensor] = useState<SensorData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch all required data
+  // Fetch all required data - only on sensorId change (page load)
   useEffect(() => {
     if (!sensorId) {
       setLoading(false);
@@ -83,22 +83,20 @@ export function useBatteryEstimate(
           .eq("id", sensorId)
           .single();
         
-        // Merge with provided data
-        const sensor = sensorResult ? {
-          ...sensorData,
-          ...sensorResult,
-        } : sensorData;
-
         if (cancelled) return;
+        
+        // Store sensor data
+        const fetchedSensor = sensorResult as SensorData | null;
+        setSensor(fetchedSensor);
 
         // Parallel fetches for profile, readings, and config
         const [profileResult, readingsResult, configResult] = await Promise.all([
           // Fetch battery profile by model
-          sensor?.model
+          fetchedSensor?.model
             ? supabase
                 .from("battery_profiles")
                 .select("*")
-                .eq("model", sensor.model)
+                .eq("model", fetchedSensor.model)
                 .maybeSingle()
             : Promise.resolve({ data: null, error: null }),
           
@@ -121,17 +119,14 @@ export function useBatteryEstimate(
 
         if (cancelled) return;
 
-        // Set battery profile (database or fallback)
+        // Set battery profile - NO FALLBACK per user preference
+        // If no profile exists in DB, show MISSING_PROFILE state
         if (profileResult.data) {
           setBatteryProfile(profileResult.data as BatteryProfile);
           setProfileSource("database");
           setSensorChemistry(profileResult.data.chemistry || null);
-        } else if (sensor?.model) {
-          const fallbackProfile = getFallbackProfile(sensor.model);
-          setBatteryProfile(fallbackProfile);
-          setProfileSource("fallback");
-          setSensorChemistry(fallbackProfile.chemistry || null);
         } else {
+          // No fallback - profile source is "none", state becomes MISSING_PROFILE
           setBatteryProfile(null);
           setProfileSource("none");
           setSensorChemistry(null);
@@ -160,7 +155,7 @@ export function useBatteryEstimate(
     return () => {
       cancelled = true;
     };
-  }, [sensorId, sensorData]);
+  }, [sensorId]); // Only refetch on sensorId change (page load), not on realtime ticks
 
   // Compute the estimate
   return useMemo((): BatteryEstimateResult => {
@@ -221,11 +216,11 @@ export function useBatteryEstimate(
     const latestVoltage = voltageReadings.length > 0 
       ? voltageReadings[voltageReadings.length - 1].voltage 
       : null;
-    const currentVoltage = sensorData?.battery_voltage ?? latestVoltage;
+    const currentVoltage = sensor?.battery_voltage ?? latestVoltage;
     
     // Filtered voltage (median of recent readings)
     const recentVoltages = voltageReadings.slice(-10).map(r => r.voltage);
-    const filteredVoltage = sensorData?.battery_voltage_filtered ?? medianFilter(recentVoltages);
+    const filteredVoltage = sensor?.battery_voltage_filtered ?? medianFilter(recentVoltages);
     
     // Calculate voltage slope if enough data
     const dataSpanDays = voltageReadings.length >= 2
@@ -243,11 +238,11 @@ export function useBatteryEstimate(
     } else if (readings.length > 0) {
       currentSoc = readings[readings.length - 1].battery_level;
     } else {
-      currentSoc = sensorData?.battery_level ?? null;
+      currentSoc = sensor?.battery_level ?? null;
     }
     
     // Determine health state from voltage
-    const previousHealthState = (sensorData?.battery_health_state as BatteryHealthState) || "OK";
+    const previousHealthState = (sensor?.battery_health_state as BatteryHealthState) || "OK";
     const healthState = determineBatteryHealthState(
       filteredVoltage,
       previousHealthState,
@@ -270,7 +265,7 @@ export function useBatteryEstimate(
     // Check if sensor is offline
     const lastSeenAt = readings.length > 0 
       ? readings[readings.length - 1].recorded_at 
-      : sensorData?.last_seen_at ?? null;
+      : sensor?.last_seen_at ?? null;
     const isOffline = isSensorOffline(lastSeenAt, effectiveInterval);
 
     // Determine state and calculate estimate
@@ -361,7 +356,7 @@ export function useBatteryEstimate(
       loading: false,
       error,
     };
-  }, [sensorId, sensorData, batteryProfile, profileSource, readings, configuredInterval, sensorChemistry, loading, error]);
+  }, [sensorId, sensor, batteryProfile, profileSource, readings, configuredInterval, sensorChemistry, loading, error]);
 }
 
 /**

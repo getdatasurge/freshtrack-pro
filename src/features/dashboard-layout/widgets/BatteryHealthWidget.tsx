@@ -54,13 +54,9 @@ export function BatteryHealthWidget({
   const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
   const sensorId = primarySensor?.id || device?.id || null;
   
-  // Get battery estimate - pass partial data, hook will fetch model from DB
-  const estimate = useBatteryEstimate(sensorId, primarySensor ? {
-    id: primarySensor.id,
-    model: null, // Model fetched from lora_sensors table
-    last_seen_at: primarySensor.last_seen_at,
-    battery_level: primarySensor.battery_level,
-  } : null);
+  // Get battery estimate - sensorId only, hook fetches all data from DB
+  // This ensures fetches only happen on page load, not on realtime re-renders
+  const estimate = useBatteryEstimate(sensorId);
 
   // Battery icon based on level
   const BatteryIcon = useMemo(() => {
