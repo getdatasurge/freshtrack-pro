@@ -116,6 +116,9 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     decoder_js: `function decodeUplink(input) {\n  var bytes = input.bytes;\n  var port = input.fPort;\n  var data = {};\n\n  if (port === 2 || port === 4) {\n    var bat_v = ((bytes[0] << 8 | bytes[1]) >> 6) / 10;\n    data.battery_v = bat_v;\n    var temp_int = ((bytes[2] << 8 | bytes[3]) & 0xFFFF);\n    if (temp_int > 32767) temp_int -= 65536;\n    data.temperature_c = temp_int / 100;\n    data.humidity_pct = ((bytes[4] << 8 | bytes[5]) & 0xFFFF) / 10;\n    var ext_type = (bytes[0] << 8 | bytes[1]) & 0x3F;\n    if (ext_type === 1) {\n      var ext_temp = ((bytes[7] << 8 | bytes[8]) & 0xFFFF);\n      if (ext_temp > 32767) ext_temp -= 65536;\n      data.ext_temperature_c = ext_temp / 100;\n      data.ext_sensor_type = "DS18B20";\n    } else {\n      data.ext_sensor_type = "none";\n    }\n  }\n  return { data: data };\n}`,
     decoder_python: null,
     decoder_source_url: null,
+    decoder_provenance: { source: "vendor_github", url: "https://github.com/dragino/dragino-end-node-decoder" },
+    sample_payload_provenance: { source: "synthetic" },
+    decoder_test_vectors: [],
     image_url: null,
     datasheet_url: null,
     product_url: null,
@@ -125,6 +128,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     sort_order: 10,
     tags: ["refrigeration", "food-safety", "cold-chain", "temperature", "humidity", "probe"],
     notes: "Primary sensor for FrostGuard cooler/freezer monitoring. Most widely deployed.",
+    revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-01T00:00:00Z",
     updated_at: "2025-12-01T00:00:00Z",
     created_by: null,
@@ -167,10 +171,15 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
       { name: "Reset Open Count", hex_template: "04FF", description: "Reset the cumulative open counter" },
     ]},
     decoder_js: `function decodeUplink(input) {\n  var bytes = input.bytes;\n  var data = {};\n  data.battery_v = ((bytes[0] << 8) | bytes[1]) / 1000;\n  data.door_open = (bytes[2] & 0x01) === 1;\n  data.open_count = (bytes[3] << 8) | bytes[4];\n  data.open_duration_s = (bytes[5] << 16) | (bytes[6] << 8) | bytes[7];\n  return { data: data };\n}`,
-    decoder_python: null, decoder_source_url: null, image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
+    decoder_python: null, decoder_source_url: null,
+    decoder_provenance: { source: "vendor_github", url: "https://github.com/dragino/dragino-end-node-decoder" },
+    sample_payload_provenance: { source: "synthetic" },
+    decoder_test_vectors: [],
+    image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
     is_supported: true, is_visible: true, sort_order: 20,
     tags: ["refrigeration", "food-safety", "cold-chain", "door", "contact", "magnetic"],
     notes: "Primary door sensor for FrostGuard. Paired with LHT65 per walk-in unit.",
+    revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-01T00:00:00Z", updated_at: "2025-12-01T00:00:00Z", created_by: null,
   },
   {
@@ -209,10 +218,15 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     downlink_info: { supports_remote_config: true, config_port: 6, commands: [
       { name: "Set Reporting Interval", hex_template: "3E{seconds_2byte_hex}", description: "Set sample period in seconds" },
     ]},
-    decoder_js: null, decoder_python: null, decoder_source_url: null, image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
+    decoder_js: null, decoder_python: null, decoder_source_url: null,
+    decoder_provenance: {},
+    sample_payload_provenance: { source: "synthetic" },
+    decoder_test_vectors: [],
+    image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
     is_supported: true, is_visible: true, sort_order: 30,
     tags: ["indoor", "air-quality", "co2", "ventilation", "kitchen", "compliance"],
     notes: "Premium multi-sensor. Consider for kitchen air quality compliance monitoring.",
+    revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-15T00:00:00Z", updated_at: "2025-12-15T00:00:00Z", created_by: null,
   },
   {
@@ -242,10 +256,15 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     uplink_info: { encoding: "netvox_proprietary", default_interval_s: 3600, event_driven: true },
     battery_info: { type: "CR2450", chemistry: "lithium", voltage_nominal: 3.0, voltage_range: [2.1, 3.0], expected_life_years: 3 },
     downlink_info: { supports_remote_config: false },
-    decoder_js: null, decoder_python: null, decoder_source_url: null, image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
+    decoder_js: null, decoder_python: null, decoder_source_url: null,
+    decoder_provenance: {},
+    sample_payload_provenance: { source: "synthetic" },
+    decoder_test_vectors: [],
+    image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
     is_supported: true, is_visible: true, sort_order: 40,
     tags: ["door", "contact", "window", "simple"],
     notes: "Budget-friendly door sensor alternative.",
+    revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-20T00:00:00Z", updated_at: "2025-12-20T00:00:00Z", created_by: null,
   },
   {
@@ -280,10 +299,15 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     uplink_info: { encoding: "proprietary", default_interval_s: 7200, event_driven: true },
     battery_info: { type: "2x AAA", chemistry: "lithium", voltage_nominal: 3.0, expected_life_years: 3 },
     downlink_info: { supports_remote_config: true, config_port: 3 },
-    decoder_js: null, decoder_python: null, decoder_source_url: null, image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
+    decoder_js: null, decoder_python: null, decoder_source_url: null,
+    decoder_provenance: {},
+    sample_payload_provenance: { source: "synthetic" },
+    decoder_test_vectors: [],
+    image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
     is_supported: true, is_visible: true, sort_order: 50,
     tags: ["leak", "water", "flood", "drain", "ice-machine"],
     notes: "Detect water leaks near refrigeration equipment.",
+    revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2026-01-05T00:00:00Z", updated_at: "2026-01-05T00:00:00Z", created_by: null,
   },
 ];
@@ -439,8 +463,38 @@ function SensorDetail({ sensor, onBack }: { sensor: SensorCatalogEntry; onBack: 
               <strong>Admin Note:</strong> {sensor.notes}
             </div>
           )}
+          {sensor.deprecated_at && (
+            <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-sm text-red-800 dark:text-red-200">
+              <strong>Deprecated:</strong> {new Date(sensor.deprecated_at).toLocaleDateString()}
+              {sensor.deprecated_reason && ` — ${sensor.deprecated_reason}`}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Provenance & Versioning metadata */}
+      <div className="flex gap-3 flex-wrap items-center text-xs text-muted-foreground">
+        <span className="font-semibold text-foreground">Rev {sensor.revision}</span>
+        <span>Updated {new Date(sensor.updated_at).toLocaleDateString()}</span>
+        {sensor.decoder_provenance?.source && (
+          <Badge variant="outline" className="text-xs">
+            Decoder: {sensor.decoder_provenance.source.replace(/_/g, " ")}
+          </Badge>
+        )}
+        {sensor.sample_payload_provenance?.source && (
+          <Badge variant={sensor.sample_payload_provenance.source === "live_uplink" ? "default" : "secondary"} className={`text-xs ${sensor.sample_payload_provenance.source === "synthetic" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" : ""}`}>
+            Samples: {sensor.sample_payload_provenance.source.replace(/_/g, " ")}
+          </Badge>
+        )}
+        {sensor.decoder_test_vectors?.length > 0 && (
+          <Badge variant="outline" className="text-xs text-green-700 border-green-300">
+            {sensor.decoder_test_vectors.length} test vector{sensor.decoder_test_vectors.length !== 1 ? "s" : ""}
+          </Badge>
+        )}
+        {sensor.ttn_device_repo_id && (
+          <Badge variant="outline" className="text-xs">TTN: {sensor.ttn_device_repo_id}</Badge>
+        )}
+      </div>
 
       {/* Tags */}
       {sensor.tags?.length > 0 && (
@@ -652,7 +706,7 @@ function SensorDetail({ sensor, onBack }: { sensor: SensorCatalogEntry; onBack: 
         <TabsContent value="decoder">
           {sensor.decoder_js ? (
             <div className="space-y-3">
-              <div className="flex gap-2 items-center">
+              <div className="flex gap-2 items-center flex-wrap">
                 <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">JavaScript</Badge>
                 {sensor.decoder_source_url && (
                   <a
@@ -664,7 +718,27 @@ function SensorDetail({ sensor, onBack }: { sensor: SensorCatalogEntry; onBack: 
                     <ExternalLink className="w-3.5 h-3.5" /> Official Source
                   </a>
                 )}
+                {sensor.decoder_provenance?.source && (
+                  <Badge variant="outline" className="text-xs">
+                    Source: {sensor.decoder_provenance.source.replace(/_/g, " ")}
+                  </Badge>
+                )}
+                {sensor.decoder_provenance?.commit_sha && (
+                  <Badge variant="secondary" className="text-xs font-mono">
+                    {sensor.decoder_provenance.commit_sha.slice(0, 8)}
+                  </Badge>
+                )}
+                {sensor.decoder_provenance?.retrieved_at && (
+                  <span className="text-xs text-muted-foreground">
+                    Retrieved {new Date(sensor.decoder_provenance.retrieved_at).toLocaleDateString()}
+                  </span>
+                )}
               </div>
+              {sensor.decoder_test_vectors?.length > 0 && (
+                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-800 dark:text-green-200">
+                  {sensor.decoder_test_vectors.length} test vector{sensor.decoder_test_vectors.length !== 1 ? "s" : ""} available for verification
+                </div>
+              )}
               <JsonBlock data={sensor.decoder_js} maxHeight="500px" />
             </div>
           ) : (

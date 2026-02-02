@@ -62,6 +62,25 @@ export interface SensorCatalogDownlinkInfo {
   commands?: SensorCatalogDownlinkCommand[];
 }
 
+export interface SensorCatalogDecoderProvenance {
+  source?: "ttn_device_repo" | "vendor_github" | "internal" | "community";
+  url?: string;
+  commit_sha?: string;
+  retrieved_at?: string;
+}
+
+export interface SensorCatalogSampleProvenance {
+  source?: "live_uplink" | "vendor_docs" | "synthetic";
+  device_eui?: string;
+  captured_at?: string;
+}
+
+export interface SensorCatalogTestVector {
+  raw_hex: string;
+  f_port: number;
+  expected_decoded: Record<string, unknown>;
+}
+
 export type SensorKind =
   | "temp"
   | "door"
@@ -96,6 +115,9 @@ export interface SensorCatalogEntry {
   decoder_js: string | null;
   decoder_python: string | null;
   decoder_source_url: string | null;
+  decoder_provenance: SensorCatalogDecoderProvenance;
+  sample_payload_provenance: SensorCatalogSampleProvenance;
+  decoder_test_vectors: SensorCatalogTestVector[];
   uplink_info: SensorCatalogUplinkInfo;
   battery_info: SensorCatalogBatteryInfo;
   downlink_info: SensorCatalogDownlinkInfo;
@@ -108,6 +130,9 @@ export interface SensorCatalogEntry {
   sort_order: number;
   tags: string[];
   notes: string | null;
+  revision: number;
+  deprecated_at: string | null;
+  deprecated_reason: string | null;
   created_at: string;
   updated_at: string;
   created_by: string | null;

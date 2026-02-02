@@ -1,29 +1,17 @@
 -- ============================================================
 -- SENSOR CATALOG - Master Reference Library
 -- FrostGuard Admin: Centralized sensor model reference
+-- Platform-global table (no org_id). Writes restricted to
+-- super admins via is_super_admin(). Org users get read-only.
 -- ============================================================
 
--- Extended sensor_kind enum to cover all device categories
-DO $$
-BEGIN
-  -- Only add if enum type exists
-  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'sensor_kind') THEN
-    BEGIN ALTER TYPE sensor_kind ADD VALUE IF NOT EXISTS 'co2'; EXCEPTION WHEN others THEN NULL; END;
-    BEGIN ALTER TYPE sensor_kind ADD VALUE IF NOT EXISTS 'leak'; EXCEPTION WHEN others THEN NULL; END;
-    BEGIN ALTER TYPE sensor_kind ADD VALUE IF NOT EXISTS 'gps'; EXCEPTION WHEN others THEN NULL; END;
-    BEGIN ALTER TYPE sensor_kind ADD VALUE IF NOT EXISTS 'pulse'; EXCEPTION WHEN others THEN NULL; END;
-    BEGIN ALTER TYPE sensor_kind ADD VALUE IF NOT EXISTS 'soil'; EXCEPTION WHEN others THEN NULL; END;
-    BEGIN ALTER TYPE sensor_kind ADD VALUE IF NOT EXISTS 'air_quality'; EXCEPTION WHEN others THEN NULL; END;
-    BEGIN ALTER TYPE sensor_kind ADD VALUE IF NOT EXISTS 'vibration'; EXCEPTION WHEN others THEN NULL; END;
-    BEGIN ALTER TYPE sensor_kind ADD VALUE IF NOT EXISTS 'meter'; EXCEPTION WHEN others THEN NULL; END;
-    BEGIN ALTER TYPE sensor_kind ADD VALUE IF NOT EXISTS 'tilt'; EXCEPTION WHEN others THEN NULL; END;
-  END IF;
-END $$;
+-- NOTE: We intentionally use text + CHECK instead of the
+-- sensor_kind enum. Enums in Postgres can't be removed/reordered
+-- and cause migration pain long-term. Text with CHECK is equally
+-- fast with an index and fully reversible.
 
 -- ============================================================
 -- SENSOR_CATALOG table
--- Master reference for all supported sensor models
--- Lives in the master admin account, read-only for orgs
 -- ============================================================
 CREATE TABLE IF NOT EXISTS sensor_catalog (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -33,7 +21,14 @@ CREATE TABLE IF NOT EXISTS sensor_catalog (
   model               text NOT NULL,
   model_variant       text,
   display_name        text NOT NULL,
-  sensor_kind         text NOT NULL DEFAULT 'temp',
+  sensor_kind         text NOT NULL DEFAULT 'temp'
+                      CONSTRAINT sensor_catalog_kind_check CHECK (
+                        sensor_kind IN (
+                          'temp', 'door', 'combo', 'co2', 'leak', 'gps',
+                          'pulse', 'soil', 'air_quality', 'vibration',
+                          'meter', 'tilt'
+                        )
+                      ),
   description         text,
 
   -- LoRaWAN Configuration
@@ -58,6 +53,20 @@ CREATE TABLE IF NOT EXISTS sensor_catalog (
   decoder_python      text,
   decoder_source_url  text,
 
+  -- Provenance: where did the decoder come from?
+  -- {source: "ttn_device_repo"|"vendor_github"|"internal",
+  --  url: "https://...", commit_sha: "abc123", retrieved_at: "2025-12-01"}
+  decoder_provenance  jsonb DEFAULT '{}'::jsonb,
+
+  -- Provenance: where did sample payloads come from?
+  -- {source: "live_uplink"|"vendor_docs"|"synthetic",
+  --  device_eui: "...", captured_at: "2025-12-01"}
+  sample_payload_provenance jsonb DEFAULT '{}'::jsonb,
+
+  -- Test vectors: verify decoder correctness
+  -- [{raw_hex: "CBF1...", f_port: 2, expected_decoded: {...}}]
+  decoder_test_vectors jsonb DEFAULT '[]'::jsonb,
+
   -- Uplink Behavior
   uplink_info         jsonb DEFAULT '{}'::jsonb,
 
@@ -73,17 +82,20 @@ CREATE TABLE IF NOT EXISTS sensor_catalog (
   product_url         text,
   ttn_device_repo_id  text,
 
-  -- Admin
+  -- Admin & Versioning
   is_supported        boolean DEFAULT true,
-  is_visible          boolean DEFAULT true,
+  is_visible          boolean DEFAULT true,      -- soft-delete: set false instead of DELETE
   sort_order          integer DEFAULT 0,
   tags                text[] DEFAULT '{}',
   notes               text,
+  revision            integer NOT NULL DEFAULT 1, -- bumped on each edit
+  deprecated_at       timestamptz,                -- when this model was retired
+  deprecated_reason   text,                       -- why it was deprecated
 
   -- Timestamps
   created_at          timestamptz DEFAULT now(),
   updated_at          timestamptz DEFAULT now(),
-  created_by          text
+  created_by          uuid                        -- references auth.users(id)
 );
 
 -- Indexes
@@ -101,34 +113,67 @@ CREATE INDEX IF NOT EXISTS idx_sensor_catalog_search ON sensor_catalog
     coalesce(description,'')
   ));
 
--- Updated_at trigger
-CREATE OR REPLACE FUNCTION update_sensor_catalog_updated_at()
+-- Updated_at + auto-bump revision trigger
+CREATE OR REPLACE FUNCTION update_sensor_catalog_on_change()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.updated_at = now();
+  -- Auto-increment revision on any content change
+  NEW.revision = OLD.revision + 1;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_sensor_catalog_updated_at ON sensor_catalog;
-CREATE TRIGGER trg_sensor_catalog_updated_at
+CREATE TRIGGER trg_sensor_catalog_on_change
   BEFORE UPDATE ON sensor_catalog
   FOR EACH ROW
-  EXECUTE FUNCTION update_sensor_catalog_updated_at();
+  EXECUTE FUNCTION update_sensor_catalog_on_change();
 
--- RLS
+-- ============================================================
+-- RLS: Uses existing is_super_admin() from platform_roles
+--
+-- Super admins (checked via is_super_admin(auth.uid())) get
+-- full CRUD. All authenticated users get read-only on visible
+-- entries. No service_role check needed — service_role bypasses
+-- RLS entirely in Supabase by default.
+-- ============================================================
 ALTER TABLE sensor_catalog ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS "Service role full access" ON sensor_catalog;
-CREATE POLICY "Service role full access" ON sensor_catalog
-  FOR ALL
-  USING (auth.role() = 'service_role')
-  WITH CHECK (auth.role() = 'service_role');
-
-DROP POLICY IF EXISTS "Authenticated users can read" ON sensor_catalog;
-CREATE POLICY "Authenticated users can read" ON sensor_catalog
+-- Super admins: full read access (including hidden/deprecated)
+DROP POLICY IF EXISTS "Super admins can read all" ON sensor_catalog;
+CREATE POLICY "Super admins can read all" ON sensor_catalog
   FOR SELECT
-  USING (auth.role() = 'authenticated' AND is_visible = true);
+  USING (public.is_super_admin(auth.uid()));
+
+-- Super admins: insert
+DROP POLICY IF EXISTS "Super admins can insert" ON sensor_catalog;
+CREATE POLICY "Super admins can insert" ON sensor_catalog
+  FOR INSERT
+  WITH CHECK (public.is_super_admin(auth.uid()));
+
+-- Super admins: update
+DROP POLICY IF EXISTS "Super admins can update" ON sensor_catalog;
+CREATE POLICY "Super admins can update" ON sensor_catalog
+  FOR UPDATE
+  USING (public.is_super_admin(auth.uid()))
+  WITH CHECK (public.is_super_admin(auth.uid()));
+
+-- Super admins: delete (prefer soft-delete via is_visible, but allow hard delete)
+DROP POLICY IF EXISTS "Super admins can delete" ON sensor_catalog;
+CREATE POLICY "Super admins can delete" ON sensor_catalog
+  FOR DELETE
+  USING (public.is_super_admin(auth.uid()));
+
+-- Authenticated org users: read-only, visible + non-deprecated only
+DROP POLICY IF EXISTS "Authenticated users can read visible" ON sensor_catalog;
+CREATE POLICY "Authenticated users can read visible" ON sensor_catalog
+  FOR SELECT
+  USING (
+    auth.role() = 'authenticated'
+    AND is_visible = true
+    AND deprecated_at IS NULL
+  );
 
 -- ============================================================
 -- SEED DATA: Core sensors for FrostGuard
@@ -333,6 +378,8 @@ ON CONFLICT (manufacturer, model, COALESCE(model_variant, '')) DO NOTHING;
 
 -- ============================================================
 -- VIEW: Simplified sensor catalog for org-level access
+-- Excludes internal fields (provenance, notes, test vectors)
+-- Only shows visible, non-deprecated entries
 -- ============================================================
 CREATE OR REPLACE VIEW sensor_catalog_public AS
 SELECT
@@ -341,6 +388,7 @@ SELECT
   battery_info, is_supported, tags
 FROM sensor_catalog
 WHERE is_visible = true
+  AND deprecated_at IS NULL
 ORDER BY sort_order, manufacturer, model;
 
 -- ============================================================
