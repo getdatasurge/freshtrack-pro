@@ -7,15 +7,46 @@
 
 import { AlertTriangle, XCircle, Info, ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { LayoutValidationResult, ValidationIssue } from "../hooks/useLayoutValidation";
+import type { EntityType } from "../hooks/useEntityLayoutStorage";
 
 interface LayoutValidationBannerProps {
   validation: LayoutValidationResult;
+  entityId: string;
+  entityType: EntityType;
   className?: string;
+}
+
+/**
+ * Resolves relative action hrefs (e.g., "#sensors") into full navigation paths
+ */
+function resolveActionHref(
+  href: string | undefined,
+  entityId: string,
+  entityType: EntityType
+): string {
+  if (!href) return "#";
+
+  // Handle hash anchors like "#sensors"
+  if (href.startsWith("#sensors")) {
+    return entityType === "unit"
+      ? `/units/${entityId}?tab=settings`
+      : `/sites/${entityId}?tab=settings`;
+  }
+
+  // Handle settings paths
+  if (href.startsWith("/settings")) {
+    return entityType === "unit"
+      ? `/units/${entityId}${href.replace("/settings", "")}?tab=settings`
+      : href;
+  }
+
+  return href;
 }
 
 function getSeverityIcon(severity: ValidationIssue["severity"]) {
@@ -40,7 +71,7 @@ function getSeverityBadgeVariant(severity: ValidationIssue["severity"]) {
   }
 }
 
-export function LayoutValidationBanner({ validation, className }: LayoutValidationBannerProps) {
+export function LayoutValidationBanner({ validation, entityId, entityType, className }: LayoutValidationBannerProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   
   // Don't render if no issues
@@ -109,11 +140,17 @@ export function LayoutValidationBanner({ validation, className }: LayoutValidati
               </div>
               {issue.action && (
                 <Button
+                  asChild
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-xs shrink-0"
                 >
-                  {issue.action.label}
+                  <Link
+                    to={resolveActionHref(issue.action.href, entityId, entityType)}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {issue.action.label}
+                  </Link>
                 </Button>
               )}
             </div>

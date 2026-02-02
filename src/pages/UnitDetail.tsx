@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEntityDashboardUrl } from "@/hooks/useEntityDashboardUrl";
 import { supabase } from "@/integrations/supabase/client";
@@ -125,6 +125,8 @@ import { getAlertClearCondition } from "@/lib/alertConfig";
 const UnitDetail = () => {
   const { unitId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") || "dashboard";
   const { toast } = useToast();
   const { layoutKey } = useEntityDashboardUrl();
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
@@ -1021,7 +1023,7 @@ const UnitDetail = () => {
       />
 
       {/* Tab-based layout */}
-      <Tabs defaultValue="dashboard" className="space-y-4">
+      <Tabs defaultValue={initialTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="dashboard">
             <LayoutDashboard className="w-4 h-4 mr-2" />
