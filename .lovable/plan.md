@@ -1,260 +1,255 @@
 
-# Battery Life Estimation Widget — Production-Grade Implementation
+# Battery Health & Readiness System — Voltage as Source of Truth
 
 ## Overview
 
-Transform the Battery Health widget from a simple SOC-decline model into a production-grade LoRaWAN battery life estimator that incorporates:
-- Sensor model battery profiles (capacity, mAh/uplink, sleep current)
-- Observed uplink frequency analysis
-- Confidence scoring with explicit data thresholds
-- Clear user messaging for each widget state
+Refactor the battery system to treat **voltage as the canonical input** and derive all other metrics from it. This eliminates false precision from device-reported percentages, reduces alert noise, and provides a compliance-safe battery story for HACCP audits.
 
 ---
 
-## Phase 1: Database Schema
+## Phase 1: Data Model Changes
 
-### 1.1 Create `battery_profiles` Table
+### 1.1 Add Voltage Columns to Tables
 
-A lookup table storing battery specifications per sensor model.
+**lora_sensors** — add columns:
+- `battery_voltage` (NUMERIC(4,3)) — latest raw voltage reading
+- `battery_voltage_filtered` (NUMERIC(4,3)) — median-smoothed voltage
+- `battery_health_state` (TEXT) — OK, WARNING, LOW, CRITICAL, REPLACE_ASAP
+
+**sensor_readings** — add column:
+- `battery_voltage` (NUMERIC(4,3)) — raw voltage per reading
+
+### 1.2 Voltage-to-Percentage Mapping Curve
+
+For CR17450 (3.0V Li-MnO₂) with flat discharge curve:
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│ battery_profiles                                                │
-├─────────────────────────────────────────────────────────────────┤
-│ id                    UUID PRIMARY KEY                          │
-│ model                 TEXT NOT NULL UNIQUE                      │
-│ manufacturer          TEXT                                      │
-│ battery_type          TEXT           (e.g., "2×AA Lithium")     │
-│ nominal_capacity_mah  INTEGER        (e.g., 3600)               │
-│ mah_per_uplink        NUMERIC(6,4)   (e.g., 0.025)              │
-│ sleep_current_ua      INTEGER        (µA, e.g., 5)              │
-│ usable_capacity_pct   INTEGER        (default 85, for cold env) │
-│ replacement_threshold INTEGER        (default 10, % SOC)        │
-│ notes                 TEXT                                      │
-│ created_at            TIMESTAMPTZ DEFAULT NOW()                 │
-│ updated_at            TIMESTAMPTZ DEFAULT NOW()                 │
-└─────────────────────────────────────────────────────────────────┘
+Voltage Range   |  Percentage  |  Notes
+----------------|--------------|--------
+≥ 3.00V         |  100%        |  Fresh battery
+2.95–2.99V      |  80%         |  Good
+2.85–2.94V      |  50%         |  Mid-life plateau
+2.75–2.84V      |  20%         |  Warning zone
+2.60–2.74V      |  5%          |  Low
+< 2.60V         |  0%          |  Replace ASAP
 ```
 
-**Seed data for common models:**
-
-| Model | Battery Type | Capacity | mAh/uplink | Sleep µA |
-|-------|--------------|----------|------------|----------|
-| LDS02 | 2×AAA | 1000 | 0.02 | 3 |
-| EM300-TH | 2×AA Lithium | 3600 | 0.025 | 5 |
-| ERS | CR2032 | 230 | 0.015 | 2 |
-| LDDS75 | 2×AA Lithium | 3600 | 0.03 | 5 |
+This curve respects the flat discharge characteristic where most of battery life occurs at the ~2.85V plateau.
 
 ---
 
-## Phase 2: Enhanced Estimation Logic
+## Phase 2: Battery Health State Machine
 
-### 2.1 New Hook: `useBatteryEstimate`
+### 2.1 States
 
-Replace/extend `useBatteryForecast` with physics-based estimation.
+| State | Voltage Band | UI Color |
+|-------|--------------|----------|
+| OK | ≥ 2.85V | Green |
+| WARNING | 2.75–2.84V | Yellow |
+| LOW | 2.60–2.74V | Orange |
+| CRITICAL | < 2.60V | Red |
+| REPLACE_ASAP | < 2.50V OR consistent drop | Red + banner |
 
-**Input Data:**
-1. Sensor model → lookup battery profile
-2. Configured uplink interval (from `sensor_configurations.uplink_interval_s`)
-3. Inferred uplink interval (median delta from recent readings)
-4. Current SOC (latest `battery_level` %)
-5. Uplink history (count + time span)
+### 2.2 Hysteresis Logic
 
-**Core Estimation Formula:**
+State changes require **3 consecutive readings** in the new band to prevent flapping:
+- Store last 5 readings in a rolling buffer
+- Only transition when median of last 3 crosses threshold
+- Downgrade transitions (OK → WARNING) are immediate for safety
+- Upgrade transitions (WARNING → OK) require hysteresis
+
+---
+
+## Phase 3: Voltage Trend & Remaining Life
+
+### 3.1 Slope Calculation
+
+Calculate voltage slope over last 7 days:
 
 ```text
-Uplinks per day = 86,400 / effective_interval_seconds
-
-Daily sleep consumption (mAh) = (sleep_current_ua × 24) / 1000
-
-Daily uplink consumption (mAh) = uplinks_per_day × mah_per_uplink
-
-Total daily consumption = sleep + uplink
-
-Usable capacity = nominal_capacity × (usable_capacity_pct / 100)
-
-Remaining capacity = usable_capacity × (current_soc / 100)
-
-Days remaining = remaining_capacity / total_daily_consumption
-
-Replacement date = today + days_remaining
+slope_v_per_day = (V_now - V_7_days_ago) / 7
 ```
 
-### 2.2 Uplink Interval Inference
+Use linear regression for robustness against noise.
 
-When configured interval is not set:
-1. Query last 50 readings for the sensor
-2. Calculate time deltas between consecutive uplinks
-3. Use **median** delta (ignores outliers/gaps)
-4. Cap at 24h max to avoid skew from prolonged offline periods
-
-### 2.3 Confidence Scoring
-
-| Confidence Level | Criteria |
-|------------------|----------|
-| **None** | < 12 uplinks OR < 6h of data |
-| **Low** | 12–50 uplinks OR 6–24h of data |
-| **High** | ≥ 50 uplinks AND ≥ 48h of consistent data |
-
----
-
-## Phase 3: Widget State Machine
-
-### 3.1 Widget States (6 total)
+### 3.2 Remaining Life Estimation
 
 ```text
-┌──────────────────────────────────────────────────────────────┐
-│ State                    │ Condition                         │
-├──────────────────────────┼───────────────────────────────────┤
-│ NOT_CONFIGURED           │ No sensor assigned                │
-│ MISSING_PROFILE          │ Sensor model has no battery spec  │
-│ COLLECTING_DATA          │ < 12 uplinks OR < 6h span         │
-│ SENSOR_OFFLINE           │ No uplink in 3× expected interval │
-│ ESTIMATE_LOW_CONFIDENCE  │ 12–50 uplinks, 6–24h span         │
-│ ESTIMATE_HIGH_CONFIDENCE │ ≥ 50 uplinks, ≥ 48h span          │
-│ CRITICAL_BATTERY         │ SOC ≤ 10%                         │
-└──────────────────────────────────────────────────────────────┘
+service_threshold = 2.60V (LOW state entry)
+current_voltage = median of last 5 readings
+days_remaining = (current_voltage - service_threshold) / abs(slope_v_per_day)
 ```
 
-### 3.2 User-Facing Copy for Each State
-
-| State | Display |
-|-------|---------|
-| `NOT_CONFIGURED` | "No sensor assigned" + action button |
-| `MISSING_PROFILE` | "Battery estimate unavailable — battery profile not configured for this sensor model." |
-| `COLLECTING_DATA` | "Collecting data to estimate battery life (requires 6 hours of readings)." with progress indicator |
-| `SENSOR_OFFLINE` | "Sensor offline — battery estimate unavailable." |
-| `ESTIMATE_LOW_CONFIDENCE` | Shows estimate with "~" prefix and "Low confidence" badge |
-| `ESTIMATE_HIGH_CONFIDENCE` | Shows estimate with green checkmark |
-| `CRITICAL_BATTERY` | Red banner: "Critical — Replace Battery Now" + estimated days if calculable |
+**Confidence gating:**
+- Requires ≥ 14 days of data for estimate
+- Display "Projected" if < 30 days of data
+- Display "Estimated" if ≥ 30 days of data
+- If slope is positive or near-zero, show "12+ months"
 
 ---
 
-## Phase 4: File Changes
+## Phase 4: Updated UI Copy
+
+### 4.1 Device Readiness Widget
+
+```text
+┌─────────────────────────────────────┐
+│ Battery Level                       │
+│ 85% (Est.)        [OK]              │
+│ Last: 3m ago                        │
+└─────────────────────────────────────┘
+```
+
+- Show percentage with "(Est.)" suffix
+- State badge: OK / Warning / Low / Critical
+- Never claim exact remaining time
+
+### 4.2 Battery Health Widget (Expanded)
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│ Battery Health                              [OK]         │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│   2.91V              ≈ 85%                               │
+│   Current voltage    Est. level                          │
+│                                                          │
+│   [7-day voltage trend mini-chart]                       │
+│                                                          │
+│   ──────────────────────────────────────────────────     │
+│   Trend: -0.002 V/day       Est. ~8 months remaining     │
+│   Based on current reporting rate (10 min interval)      │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 4.3 Messaging Guidelines
+
+| Do Use | Do NOT Use |
+|--------|------------|
+| "Estimated" | "Exactly X days" |
+| "Projected" | "X% remaining" (without "Est.") |
+| "Based on current settings" | "Guaranteed to last" |
+| "Approximately" | "Battery will die on" |
+
+---
+
+## Phase 5: File Changes
 
 ### Database Migration
 
-Create `battery_profiles` table with seed data for known sensor models.
+Create migration to add voltage columns:
+- `lora_sensors.battery_voltage`
+- `lora_sensors.battery_voltage_filtered`
+- `lora_sensors.battery_health_state`
+- `sensor_readings.battery_voltage`
+
+### Backend Files
+
+| File | Change |
+|------|--------|
+| `supabase/functions/_shared/payloadNormalization.ts` | Extract and store raw voltage alongside percentage |
+| `supabase/functions/ingest-readings/index.ts` | Store battery_voltage in readings |
+| `supabase/functions/ttn-webhook/index.ts` | Pass voltage through to ingestion |
 
 ### Frontend Files
 
 | File | Change |
 |------|--------|
-| `src/lib/devices/types.ts` | Add `BatteryProfile` interface |
-| `src/lib/devices/batteryProfiles.ts` | New file: constants + utility functions |
-| `src/hooks/useBatteryEstimate.ts` | New hook replacing `useBatteryForecast` |
-| `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx` | Refactor to use new hook + state machine |
+| `src/lib/devices/batteryProfiles.ts` | Add CR17450 voltage curve, hysteresis logic |
+| `src/hooks/useBatteryEstimate.ts` | Switch to voltage-based estimation |
+| `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx` | Show voltage, trend chart, state badge |
+| `src/features/dashboard-layout/widgets/DeviceReadinessWidget.tsx` | Update to show "XX% (Est.)" and state badge |
 
-### Hook Interface
+---
 
-```text
-interface BatteryEstimateResult {
-  // Current state
-  state: BatteryWidgetState;
-  currentSoc: number | null;
+## Phase 6: Technical Implementation
+
+### 6.1 Voltage Curve Function
+
+```typescript
+interface VoltageToPercentCurve {
+  chemistry: "CR17450" | "LiFeS2_AA" | "Alkaline_AA";
+  minVoltage: number;
+  maxVoltage: number;
+  curve: Array<{ voltage: number; percent: number }>;
+}
+
+const CR17450_CURVE: VoltageToPercentCurve = {
+  chemistry: "CR17450",
+  minVoltage: 2.50,
+  maxVoltage: 3.00,
+  curve: [
+    { voltage: 3.00, percent: 100 },
+    { voltage: 2.95, percent: 80 },
+    { voltage: 2.85, percent: 50 },
+    { voltage: 2.75, percent: 20 },
+    { voltage: 2.60, percent: 5 },
+    { voltage: 2.50, percent: 0 },
+  ],
+};
+```
+
+### 6.2 Median Filter Function
+
+```typescript
+function medianFilter(readings: number[], windowSize = 5): number {
+  const sorted = [...readings].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+```
+
+### 6.3 Health State Determination
+
+```typescript
+function determineBatteryState(
+  filteredVoltage: number,
+  previousState: BatteryHealthState,
+  recentReadings: number[]
+): BatteryHealthState {
+  const medianRecent = medianFilter(recentReadings.slice(-3));
   
-  // Estimate (if available)
-  estimatedDaysRemaining: number | null;
-  estimatedReplacementDate: Date | null;
-  confidence: 'none' | 'low' | 'high';
+  // Immediate downgrade for safety
+  if (medianRecent < 2.50) return "REPLACE_ASAP";
+  if (medianRecent < 2.60) return "CRITICAL";
+  if (medianRecent < 2.75) return "LOW";
+  if (medianRecent < 2.85) return "WARNING";
   
-  // Profile info
-  batteryProfile: BatteryProfile | null;
-  profileSource: 'database' | 'fallback' | 'none';
+  // Hysteresis for upgrade (require 3 readings above threshold)
+  if (previousState !== "OK" && medianRecent >= 2.85) {
+    const allAbove = recentReadings.slice(-3).every(v => v >= 2.85);
+    if (allAbove) return "OK";
+    return previousState;
+  }
   
-  // Uplink analysis
-  inferredIntervalSeconds: number | null;
-  configuredIntervalSeconds: number | null;
-  uplinkCount: number;
-  dataSpanHours: number;
-  
-  // Loading state
-  loading: boolean;
-  error: string | null;
+  return "OK";
 }
 ```
 
 ---
 
-## Phase 5: Widget UI Redesign
+## Integration with Existing System
 
-### Layout Structure
+### Backward Compatibility
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ 🔋 Battery Health                          [Confidence Badge] │
-├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│   ████████████░░░░░░░░  68%    Est. ~4 months remaining      │
-│                                                              │
-│   [Mini trend chart - last 30 days]                          │
-│                                                              │
-│   ──────────────────────────────────────────────────────     │
-│   Profile: EM300-TH (3600 mAh)   Interval: 10 min            │
-│   Daily usage: ~2.4 mAh          Replace by: Jun 2026        │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-```
+- Existing `battery_level` (integer %) remains the UI-facing value
+- New `battery_voltage` is source of truth for calculations
+- If sensor only reports percentage (no voltage), fall back to existing logic
+- Gradual migration: new sensors use voltage, legacy sensors use percentage
 
-### Critical Battery State
+### Battery Profile Enhancement
 
-```text
-┌──────────────────────────────────────────────────────────────┐
-│ 🔋 Battery Health                                    ⚠ CRITICAL │
-├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│   🔴 Replace Battery Now                                     │
-│                                                              │
-│   Battery level at 8%                                        │
-│   Estimated ~3 days remaining                                │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Implementation Sequence
-
-1. **Migration**: Create `battery_profiles` table + seed data
-2. **Types**: Add `BatteryProfile` interface to device types
-3. **Hook**: Implement `useBatteryEstimate` with physics-based calculation
-4. **Widget**: Refactor `BatteryHealthWidget` to use new hook + states
-5. **Testing**: Add unit tests for estimation logic
-
----
-
-## Technical Notes
-
-### Gating Logic (Pseudocode)
-
-```text
-if (!sensorId) return NOT_CONFIGURED
-if (isOffline) return SENSOR_OFFLINE
-if (!batteryProfile) return MISSING_PROFILE
-if (uplinkCount < 12 || dataSpanHours < 6) return COLLECTING_DATA
-if (currentSoc <= 10) return CRITICAL_BATTERY
-if (uplinkCount < 50 || dataSpanHours < 48) return ESTIMATE_LOW_CONFIDENCE
-return ESTIMATE_HIGH_CONFIDENCE
-```
-
-### Offline Detection
-
-Sensor is offline if `now - last_seen_at > 3 × expected_interval`
-
-Where `expected_interval` = configured interval OR inferred interval OR 15 min default.
-
-### Fallback Logic
-
-When battery profile doesn't exist for a model:
-1. First try: Match by manufacturer (use similar model's profile)
-2. Second try: Use conservative generic profile (2×AA, 3000 mAh)
-3. Final: Show `MISSING_PROFILE` state
+Update `battery_profiles` table to include:
+- `chemistry` — CR17450, LiFeS2_AA, etc.
+- `nominal_voltage` — 3.0V for CR17450
+- `cutoff_voltage` — 2.5V service threshold
 
 ---
 
 ## Out of Scope (Future Enhancements)
 
 - Temperature compensation for cold environments
-- Historical accuracy tracking (predicted vs actual replacements)
-- Maintenance task integration (auto-create replacement tasks)
-- Multi-battery support (external power sources)
+- Load-adjusted estimation (airtime, SF impact)
+- Multi-cell configurations (2S, 3S)
+- Firmware-reported SOC calibration
