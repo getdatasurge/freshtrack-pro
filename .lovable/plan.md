@@ -1,85 +1,73 @@
 
 
-# Fix Plan: CORS Error on ttn-send-downlink Edge Function
+# Fix: Edge Function Using Wrong Authorization Table
 
 ## Problem
 
-When clicking a preset button in the Sensor Settings drawer, the downlink request fails with:
+The `ttn-send-downlink` edge function is returning a **403 "Not authorized for this sensor"** error because it's checking the wrong table for organization membership.
 
-```
-Access to fetch at '.../functions/v1/ttn-send-downlink' from origin 'https://safe-temps-everywhere.lovable.app' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: It does not have HTTP ok status.
-```
+The function queries `organization_members` table (which doesn't exist), but the project uses `user_roles` for organization membership.
 
-## Root Cause
-
-The `ttn-send-downlink` edge function has two issues preventing CORS preflight requests from succeeding:
-
-| Issue | Problem |
-|-------|---------|
-| Missing config.toml entry | Function defaults to `verify_jwt = true`, which blocks OPTIONS requests at the gateway level |
-| Incomplete CORS headers | Missing Supabase client headers like `x-supabase-client-platform` |
-
-## Fix Steps
-
-### Step 1: Add config.toml entry
-
-Add the function to `supabase/config.toml` with `verify_jwt = false` to allow CORS preflight requests:
-
-```toml
-# TTN downlink sender - handles CORS preflight and custom JWT verification
-[functions.ttn-send-downlink]
-verify_jwt = false
+```text
+Current Code (Broken):
+┌────────────────────────────────────────────┐
+│ db.from("organization_members")            │
+│    .select("id")                           │
+│    .eq("organization_id", sensor.org_id)   │
+│    .eq("user_id", user.id)                 │
+└────────────────────────────────────────────┘
+         ↓
+   Table doesn't exist → Query returns null → 403 Forbidden
 ```
 
-This allows the OPTIONS preflight request to reach the function, where it's handled properly.
+```text
+Required Pattern (Used by other functions):
+┌────────────────────────────────────────────┐
+│ db.from("user_roles")                      │
+│    .select("role")                         │
+│    .eq("organization_id", sensor.org_id)   │
+│    .eq("user_id", user.id)                 │
+└────────────────────────────────────────────┘
+         ↓
+   User has "owner" role → Authorized → Proceed
+```
 
-### Step 2: Update CORS headers
+## Evidence
 
-Update the `corsHeaders` in `supabase/functions/ttn-send-downlink/index.ts` to include all headers the Supabase client sends:
+User's current role in `user_roles` table:
+| user_id | organization_id | role |
+|---------|-----------------|------|
+| d7df62e3-... | 7873654e-... | owner |
+
+## Fix
+
+Update `supabase/functions/ttn-send-downlink/index.ts` lines 284-300 to use `user_roles` table instead of `organization_members`:
 
 ```typescript
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": 
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
-```
+// Verify user belongs to this org via user_roles table
+const { data: roleCheck } = await db
+  .from("user_roles")
+  .select("role")
+  .eq("organization_id", sensor.organization_id)
+  .eq("user_id", user.id)
+  .maybeSingle();
 
----
-
-## Technical Details
-
-### Why verify_jwt = false is safe
-
-The function already implements its own JWT verification at lines 223-241:
-
-```typescript
-const authHeader = req.headers.get("authorization") ?? "";
-const supabaseUser = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-  global: { headers: { Authorization: authHeader } },
-});
-
-const { data: { user }, error: authError } = await supabaseUser.auth.getUser();
-if (authError || !user) {
-  return new Response(JSON.stringify({ ok: false, error: "Unauthorized" }), {
-    status: 401,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+if (!roleCheck) {
+  return new Response(
+    JSON.stringify({ ok: false, error: "Not authorized for this sensor" }),
+    {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    }
+  );
 }
 ```
 
-It also checks organization membership at lines 284-299.
+## Secondary Fix (Same Issue)
 
-### Files to Modify
+The `ttn-deprovision-jobs` function also references `organization_members` and needs the same fix for consistency.
 
-1. **`supabase/config.toml`** - Add `[functions.ttn-send-downlink]` entry
-2. **`supabase/functions/ttn-send-downlink/index.ts`** - Expand CORS headers
+## After Deployment
 
-### After Deployment
-
-Once deployed, the Sensor Settings drawer will be able to:
-- Send uplink interval presets (Power Saver, Standard, Debug)
-- Apply custom settings (interval, ext mode, time sync, alarms)
-- Track pending changes in the Recent Changes section
+Once the fix is deployed, clicking preset buttons will successfully queue downlinks to TTN.
 
