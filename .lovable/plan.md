@@ -1,222 +1,170 @@
 
+## What I found (where the “Configure Sensor” actions come from)
 
-# Fix Plan: "Configure Sensor" Buttons Not Working in Validation Banner
+There are two “sensor configuration” action sources in the Unit dashboard UI:
 
-## Root Cause
+1) **Layout customization validation banner** (only shows in Customize mode)  
+- File: `src/features/dashboard-layout/components/LayoutValidationBanner.tsx`  
+- Issues are produced by: `src/features/dashboard-layout/hooks/useLayoutValidation.ts`  
+- It sets: `action: { label: "Configure Sensor", href: "#sensors" }`
 
-The **`LayoutValidationBanner`** component (lines 110-117) renders action buttons for each validation issue, but **the Button has no click handler at all**:
+2) **Widget-level empty/warning states** (inside the dashboard grid widgets)  
+- File: `src/features/dashboard-layout/components/WidgetEmptyState.tsx`  
+- States/actions are produced by: `src/features/dashboard-layout/hooks/useWidgetState.ts` (examples: “Assign Sensor”, “Configure Sensors”)
 
-```tsx
-{issue.action && (
-  <Button
-    variant="ghost"
-    size="sm"
-    className="h-6 px-2 text-xs shrink-0"
-  >
-    {issue.action.label}
-  </Button>
-)}
-```
-
-The button:
-- Has no `onClick` handler
-- Ignores the `issue.action.href` property
-- Is completely non-functional
-
-The `ValidationIssue.action` interface does include an `href` property:
-```typescript
-action?: {
-  label: string;
-  href?: string;  // <-- This is available but unused
-};
-```
+Your description (“click Customize, then click Configure… nothing happens”) strongly matches the **widget-level action buttons**, because in Customize mode widgets are intentionally made non-interactive.
 
 ---
 
-## Solution Overview
+## Root cause (why click does nothing)
 
-Wire the action buttons in `LayoutValidationBanner` to:
-1. **Use `Link`** when `issue.action.href` is provided (e.g., "#sensors")
-2. **Translate relative hash anchors** like `#sensors` into proper routes with the unit ID
-3. **Use `stopPropagation`** to prevent the customization grid from intercepting clicks
+### Primary root cause: widget content is non-interactive in Customize mode
+In `src/features/dashboard-layout/components/WidgetWrapper.tsx`, the widget content wrapper is rendered with:
 
-Since the UnitDetail page uses Radix Tabs without URL-based tab state, the simplest approach is to:
-- Navigate to `/units/${entityId}` with a **query parameter** (e.g., `?tab=settings`)  
-- Update the UnitDetail page to read this query param and set the initial tab value
+- `style={{ pointerEvents: isCustomizing ? "none" : "auto" }}`
 
----
+That means **all buttons/links inside widgets (including WidgetEmptyState “Configure/Assign Sensor”) cannot receive clicks** when Customize mode is ON. This exactly produces “nothing at all” (no URL change, no modal, no console error).
 
-## Files to Change
+### Secondary root cause (affects banner navigation): Tabs don’t react to query param changes
+`src/pages/UnitDetail.tsx` currently uses:
+- `<Tabs defaultValue={initialTab} … />` where `initialTab` is derived from `useSearchParams()`
 
-### 1. `src/features/dashboard-layout/components/LayoutValidationBanner.tsx`
+But Radix Tabs’ `defaultValue` is only used on initial mount. If you click a link that changes `?tab=settings` while you’re already on the Unit page, **the URL can update but the visible tab may remain “Dashboard”**, making it seem like nothing changed (especially if the URL update is subtle).
 
-**Changes:**
-- Accept `entityId` and `entityType` props to construct proper navigation URLs
-- Replace the non-functional Button with a Link-based approach
-- Map relative hrefs like `#sensors` to `/units/{entityId}?tab=settings`
-- Add `onClick` with `stopPropagation` to ensure clicks work in customizing mode
-
-```tsx
-interface LayoutValidationBannerProps {
-  validation: LayoutValidationResult;
-  entityId: string;       // NEW
-  entityType: EntityType; // NEW
-  className?: string;
-}
-
-// In the render, replace the Button with:
-{issue.action && (
-  <Button
-    asChild
-    variant="ghost"
-    size="sm"
-    className="h-6 px-2 text-xs shrink-0"
-    onClick={(e) => e.stopPropagation()} // Prevent grid capture
-  >
-    <Link to={resolveActionHref(issue.action.href, entityId, entityType)}>
-      {issue.action.label}
-    </Link>
-  </Button>
-)}
-```
-
-**Helper function:**
-```tsx
-function resolveActionHref(
-  href: string | undefined, 
-  entityId: string, 
-  entityType: EntityType
-): string {
-  if (!href) return "#";
-  
-  // Handle hash anchors like "#sensors"
-  if (href.startsWith("#sensors")) {
-    return entityType === "unit" 
-      ? `/units/${entityId}?tab=settings` 
-      : `/sites/${entityId}?tab=settings`;
-  }
-  
-  // Handle settings paths
-  if (href.startsWith("/settings")) {
-    return entityType === "unit"
-      ? `/units/${entityId}${href.replace("/settings", "")}?tab=settings`
-      : href;
-  }
-  
-  return href;
-}
-```
-
-### 2. `src/features/dashboard-layout/components/EntityDashboard.tsx`
-
-**Changes:**
-- Pass `entityId` and `entityType` to `LayoutValidationBanner`
-
-```tsx
-// Around line 435:
-{state.isCustomizing && validation.issues.length > 0 && (
-  <LayoutValidationBanner 
-    validation={validation}
-    entityId={entityId}        // NEW
-    entityType={entityType}    // NEW
-  />
-)}
-```
-
-### 3. `src/pages/UnitDetail.tsx`
-
-**Changes:**
-- Read `tab` query param from URL
-- Use it as the Tabs `defaultValue` (or controlled `value`)
-
-```tsx
-// Near top:
-import { useSearchParams } from "react-router-dom";
-
-// In component:
-const [searchParams] = useSearchParams();
-const initialTab = searchParams.get("tab") || "dashboard";
-
-// Replace Tabs:
-<Tabs defaultValue={initialTab} className="space-y-4">
-```
+Even if the user is clicking the banner action, this can make the UX appear broken.
 
 ---
 
-## Technical Notes
+## Minimal fix approach (meets constraints, no unrelated refactors)
 
-1. **Why `stopPropagation`?**: In customizing mode, the `react-grid-layout` library attaches mouse handlers for drag-and-drop. Without `stopPropagation`, clicks on buttons inside widgets could be captured by the grid.
+### Goal behavior
+- Clicking “Configure Sensor” in Customize mode should:
+  - Navigate to **Unit → Settings → Connected Sensors** (preferred), and ideally
+  - Jump/scroll to the sensors section so it’s obvious something happened.
 
-2. **Why URL-based tabs?**: The cleanest approach for deep-linking to the Settings tab. Using query params (`?tab=settings`) is less intrusive than changing the route structure.
+### Fix steps (small, targeted)
 
-3. **Export update**: The `EntityType` type needs to be imported in the banner file from `../hooks/useEntityLayoutStorage`.
+#### 1) Make widget actions clickable in Customize mode (core fix)
+**Files:**
+- `src/features/dashboard-layout/components/GridCanvas.tsx`
+- `src/features/dashboard-layout/components/WidgetWrapper.tsx`
+
+**Change:**
+- Stop globally disabling pointer events for widget content during Customize mode.
+- Instead, disable pointer events only while actively dragging/resizing, or remove the pointer-events restriction entirely (the grid already uses `draggableHandle=".widget-drag-handle"`).
+
+**Recommended minimal implementation:**
+- In `GridCanvas.tsx`, you already track `isDragging` and `isResizing`. Pass a boolean like `disableContentPointerEvents={isInteracting}` into `WidgetWrapper`.
+- In `WidgetWrapper.tsx`, change the pointerEvents rule to:
+  - `pointerEvents: isCustomizing && disableContentPointerEvents ? "none" : "auto"`
+
+This keeps customization safe during drag/resize, but restores click behavior the rest of the time.
+
+#### 2) Ensure all “configure sensors” actions go to the correct Unit page location
+**File:**
+- `src/features/dashboard-layout/hooks/useWidgetState.ts`
+
+**Change:**
+- Where widget actions currently link to `/settings?tab=sensors` or `/settings?tab=sensors&unitId=…`, update to a unit-scoped route:
+  - `/units/${unit.id}?tab=settings&section=sensors`
+
+This aligns with your requirement: Unit → Settings → Connected Sensors.
+
+(Keep existing global settings links for actions that are truly global, e.g. gateways.)
+
+#### 3) Make the Unit page Tabs respond to `?tab=` changes (so navigation is visible)
+**File:**
+- `src/pages/UnitDetail.tsx`
+
+**Change:**
+- Convert the top-level Unit tabs to a controlled Tabs:
+  - Read `tab` from `useSearchParams`
+  - Pass `value={tab}` to `<Tabs>`
+  - Add `onValueChange` that writes back to search params (preserving any existing params)
+
+This ensures that navigating to `?tab=settings` reliably switches to Settings, even if you’re already on the Unit page.
+
+#### 4) Optional but strongly recommended: auto-scroll to “Connected Sensors”
+**File:**
+- `src/pages/UnitDetail.tsx`
+
+**Change:**
+- Wrap the `UnitSensorsCard` section in a container with a stable id, e.g.:
+  - `<div id="connected-sensors"> … </div>`
+- When `tab === "settings"` and `section === "sensors"`, run a `useEffect` that calls:
+  - `document.getElementById("connected-sensors")?.scrollIntoView({ behavior: "smooth", block: "start" })`
+- If needed, do it in `requestAnimationFrame` or `setTimeout(0)` to ensure the Settings content is mounted.
+
+#### 5) Hardening against grid event capture (very small addition)
+Even with draggableHandle, I’ll add `stopPropagation` on pointer down for these action links:
+- `LayoutValidationBanner.tsx` action link
+- `WidgetEmptyState.tsx` action link/button
+
+Add handlers:
+- `onPointerDown={(e) => e.stopPropagation()}`
+- optionally also `onMouseDown={(e) => e.stopPropagation()}`
+
+This is minimal and prevents future “mousedown starts something else” issues.
 
 ---
 
-## Testing Plan
+## Test plan (small tests, feasible)
 
-### Manual Verification
-1. Navigate to Unit Dashboard with a widget that triggers validation warnings (e.g., Temperature Chart without a temperature sensor)
-2. Enable "Customizing" mode
-3. Click "Configure Sensor" button in the validation banner
-4. Verify:
-   - Navigates to `/units/{unitId}?tab=settings`
-   - Settings tab is active
-   - UnitSensorsCard is visible
+### A) Update the existing banner test to verify click actually navigates
+**File:**
+- `src/features/dashboard-layout/components/__tests__/LayoutValidationBanner.test.tsx`
 
-### Component Test (New)
+**Change:**
+- Instead of only checking `href`, render a `MemoryRouter` with `<Routes>` and a destination route, click “Configure Sensor”, and assert the destination content renders.
 
-Create `src/features/dashboard-layout/components/__tests__/LayoutValidationBanner.test.tsx`:
+This verifies click triggers navigation.
 
-```tsx
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { LayoutValidationBanner } from "../LayoutValidationBanner";
+### B) Add a tiny component test for WidgetWrapper interactivity in Customize mode
+**New test file:**
+- `src/features/dashboard-layout/components/__tests__/WidgetWrapper.test.tsx`
 
-const mockValidation = {
-  isValid: false,
-  hasErrors: false,
-  hasWarnings: true,
-  issues: [
-    {
-      id: "capability-temperature_chart",
-      widgetId: "temperature_chart",
-      widgetName: "Temperature Chart",
-      severity: "warning" as const,
-      message: "Missing temperature capability",
-      action: { label: "Configure Sensor", href: "#sensors" },
-    },
-  ],
-  errorCount: 0,
-  warningCount: 1,
-};
+**Approach:**
+- Mock `WidgetRenderer` to render a simple `<button onClick={mockFn}>Configure Sensor</button>`
+- Render `WidgetWrapper` with `isCustomizing={true}` and `disableContentPointerEvents={false}`
+- Assert clicking the button calls the handler
 
-describe("LayoutValidationBanner", () => {
-  it("renders action button as navigable link", () => {
-    render(
-      <MemoryRouter>
-        <LayoutValidationBanner
-          validation={mockValidation}
-          entityId="unit-123"
-          entityType="unit"
-        />
-      </MemoryRouter>
-    );
-
-    const link = screen.getByRole("link", { name: /configure sensor/i });
-    expect(link).toHaveAttribute("href", "/units/unit-123?tab=settings");
-  });
-});
-```
+Optionally add a second case with `disableContentPointerEvents={true}` to ensure clicks are blocked during drag/resize only.
 
 ---
 
-## Summary of Changes
+## Manual validation checklist (to confirm the bug is fixed)
+1) Open a Unit detail page.
+2) Toggle **Customize** ON.
+3) Click the “Configure Sensor” action:
+   - inside a widget empty/warning state, and
+   - in the validation banner (if present).
+4) Confirm:
+   - you land on the **Settings** tab
+   - you see **Connected Sensors** (and ideally it scrolls there)
+   - no console errors
+5) Repeat with Customize OFF to ensure behavior still works.
 
-| File | Change |
-|------|--------|
-| `LayoutValidationBanner.tsx` | Add `entityId`/`entityType` props, wire Button to Link with proper URL resolution |
-| `EntityDashboard.tsx` | Pass `entityId` and `entityType` to banner |
-| `UnitDetail.tsx` | Read `?tab=` query param for initial tab selection |
-| New test file | Component test verifying link behavior |
+---
 
+## Commands to run (and what “good” looks like)
+- `npx vitest run`  
+  - Expected: all tests pass
+- `npx tsc -p tsconfig.json --noEmit`  
+  - Expected: zero TS errors
+- (Optional) `npm run lint`  
+  - Expected: no eslint errors
+
+---
+
+## Files that will change (summary)
+- `src/features/dashboard-layout/components/WidgetWrapper.tsx` (fix pointer-events behavior)
+- `src/features/dashboard-layout/components/GridCanvas.tsx` (pass “isInteracting/disable pointer events” into WidgetWrapper)
+- `src/features/dashboard-layout/hooks/useWidgetState.ts` (unit-scoped “Configure/Assign Sensor” href)
+- `src/pages/UnitDetail.tsx` (controlled tabs + optional scroll-to-sensors)
+- `src/features/dashboard-layout/components/WidgetEmptyState.tsx` (stopPropagation hardening)
+- `src/features/dashboard-layout/components/LayoutValidationBanner.tsx` (stopPropagation hardening + ensure unit-scoped href includes section=sensors)
+- Tests:
+  - `src/features/dashboard-layout/components/__tests__/LayoutValidationBanner.test.tsx` (assert click navigates)
+  - `src/features/dashboard-layout/components/__tests__/WidgetWrapper.test.tsx` (assert click works in customize mode)
+
+No backend/database changes required.
