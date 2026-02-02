@@ -99,7 +99,7 @@ export function useBatteryEstimate(
                 .from("battery_profiles")
                 .select("*")
                 .eq("model", sensor.model)
-                .single()
+                .maybeSingle()
             : Promise.resolve({ data: null, error: null }),
           
           // Fetch recent readings with voltage (last 90 days)
@@ -116,7 +116,7 @@ export function useBatteryEstimate(
             .from("sensor_configurations")
             .select("uplink_interval_s")
             .eq("sensor_id", sensorId)
-            .single(),
+            .maybeSingle(),
         ]);
 
         if (cancelled) return;
