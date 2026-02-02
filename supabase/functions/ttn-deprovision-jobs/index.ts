@@ -125,9 +125,9 @@ serve(async (req) => {
     // Use service role for actual queries (bypasses RLS)
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get user's organization membership to validate access
+    // Get user's organization membership to validate access via user_roles table
     const { data: membership, error: membershipError } = await supabase
-      .from("organization_members")
+      .from("user_roles")
       .select("organization_id, role")
       .eq("user_id", user.id)
       .maybeSingle();
