@@ -2075,6 +2075,88 @@ export type Database = {
         }
         Relationships: []
       }
+      sensor_configurations: {
+        Row: {
+          alarm_check_minutes: number | null
+          alarm_enabled: boolean | null
+          alarm_high: number | null
+          alarm_low: number | null
+          created_at: string
+          default_fport: number | null
+          ext_mode: string | null
+          id: string
+          last_applied_at: string | null
+          organization_id: string
+          override_unit_alarm: boolean | null
+          pending_change_id: string | null
+          sensor_id: string
+          time_sync_days: number | null
+          time_sync_enabled: boolean | null
+          updated_at: string
+          uplink_interval_s: number | null
+        }
+        Insert: {
+          alarm_check_minutes?: number | null
+          alarm_enabled?: boolean | null
+          alarm_high?: number | null
+          alarm_low?: number | null
+          created_at?: string
+          default_fport?: number | null
+          ext_mode?: string | null
+          id?: string
+          last_applied_at?: string | null
+          organization_id: string
+          override_unit_alarm?: boolean | null
+          pending_change_id?: string | null
+          sensor_id: string
+          time_sync_days?: number | null
+          time_sync_enabled?: boolean | null
+          updated_at?: string
+          uplink_interval_s?: number | null
+        }
+        Update: {
+          alarm_check_minutes?: number | null
+          alarm_enabled?: boolean | null
+          alarm_high?: number | null
+          alarm_low?: number | null
+          created_at?: string
+          default_fport?: number | null
+          ext_mode?: string | null
+          id?: string
+          last_applied_at?: string | null
+          organization_id?: string
+          override_unit_alarm?: boolean | null
+          pending_change_id?: string | null
+          sensor_id?: string
+          time_sync_days?: number | null
+          time_sync_enabled?: boolean | null
+          updated_at?: string
+          uplink_interval_s?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_pending_change"
+            columns: ["pending_change_id"]
+            isOneToOne: false
+            referencedRelation: "sensor_pending_changes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sensor_configurations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sensor_configurations_sensor_id_fkey"
+            columns: ["sensor_id"]
+            isOneToOne: true
+            referencedRelation: "lora_sensors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sensor_dashboard_layouts_archived: {
         Row: {
           created_at: string
@@ -2128,6 +2210,84 @@ export type Database = {
           },
           {
             foreignKeyName: "sensor_dashboard_layouts_sensor_id_fkey"
+            columns: ["sensor_id"]
+            isOneToOne: false
+            referencedRelation: "lora_sensors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sensor_pending_changes: {
+        Row: {
+          applied_at: string | null
+          change_type: Database["public"]["Enums"]["sensor_change_type"]
+          command_params: Json | null
+          created_at: string
+          debug_response: Json | null
+          expected_result: string | null
+          failed_at: string | null
+          id: string
+          organization_id: string
+          requested_at: string
+          requested_by: string | null
+          requested_by_email: string | null
+          requested_fport: number | null
+          requested_payload_hex: string
+          sensor_id: string
+          sent_at: string | null
+          status: Database["public"]["Enums"]["sensor_change_status"]
+          updated_at: string
+        }
+        Insert: {
+          applied_at?: string | null
+          change_type: Database["public"]["Enums"]["sensor_change_type"]
+          command_params?: Json | null
+          created_at?: string
+          debug_response?: Json | null
+          expected_result?: string | null
+          failed_at?: string | null
+          id?: string
+          organization_id: string
+          requested_at?: string
+          requested_by?: string | null
+          requested_by_email?: string | null
+          requested_fport?: number | null
+          requested_payload_hex: string
+          sensor_id: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["sensor_change_status"]
+          updated_at?: string
+        }
+        Update: {
+          applied_at?: string | null
+          change_type?: Database["public"]["Enums"]["sensor_change_type"]
+          command_params?: Json | null
+          created_at?: string
+          debug_response?: Json | null
+          expected_result?: string | null
+          failed_at?: string | null
+          id?: string
+          organization_id?: string
+          requested_at?: string
+          requested_by?: string | null
+          requested_by_email?: string | null
+          requested_fport?: number | null
+          requested_payload_hex?: string
+          sensor_id?: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["sensor_change_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sensor_pending_changes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sensor_pending_changes_sensor_id_fkey"
             columns: ["sensor_id"]
             isOneToOne: false
             referencedRelation: "lora_sensors"
@@ -3671,6 +3831,16 @@ export type Database = {
         | "failed"
         | "expired"
       platform_role: "SUPER_ADMIN"
+      sensor_change_status: "queued" | "sent" | "applied" | "failed" | "timeout"
+      sensor_change_type:
+        | "uplink_interval"
+        | "ext_mode"
+        | "time_sync"
+        | "set_time"
+        | "alarm"
+        | "clear_datalog"
+        | "pnackmd"
+        | "raw"
       subscription_plan: "starter" | "pro" | "haccp" | "enterprise"
       subscription_status:
         | "trial"
@@ -3861,6 +4031,17 @@ export const Constants = {
         "expired",
       ],
       platform_role: ["SUPER_ADMIN"],
+      sensor_change_status: ["queued", "sent", "applied", "failed", "timeout"],
+      sensor_change_type: [
+        "uplink_interval",
+        "ext_mode",
+        "time_sync",
+        "set_time",
+        "alarm",
+        "clear_datalog",
+        "pnackmd",
+        "raw",
+      ],
       subscription_plan: ["starter", "pro", "haccp", "enterprise"],
       subscription_status: [
         "trial",
