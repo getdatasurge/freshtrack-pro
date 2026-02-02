@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   Home,
   Headphones,
+  BookOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,7 @@ interface PlatformLayoutProps {
 const platformNavItems = [
   { href: "/platform/organizations", label: "Organizations", icon: Building2 },
   { href: "/platform/users", label: "Users", icon: Users },
+  { href: "/platform/sensor-library", label: "Sensor Library", icon: BookOpen },
   { href: "/platform/audit", label: "Audit Log", icon: FileText },
   { href: "/platform/developer-tools", label: "Developer Tools", icon: Wrench },
 ];

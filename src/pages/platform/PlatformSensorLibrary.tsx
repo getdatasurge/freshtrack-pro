@@ -1,0 +1,1119 @@
+import { useState, useMemo, useCallback } from "react";
+import PlatformLayout from "@/components/platform/PlatformLayout";
+import { useSuperAdmin } from "@/contexts/SuperAdminContext";
+import { useSensorCatalog, useAddSensorCatalogEntry, useDeleteSensorCatalogEntry } from "@/hooks/useSensorCatalog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Search,
+  Plus,
+  ChevronRight,
+  Thermometer,
+  DoorOpen,
+  Droplets,
+  Wind,
+  Radio,
+  Battery,
+  Code,
+  FileJson,
+  Settings,
+  Tag,
+  ExternalLink,
+  Copy,
+  Check,
+  X,
+  ArrowLeft,
+  Database,
+  Zap,
+  ArrowDownToLine,
+  BookOpen,
+  LayoutGrid,
+  List,
+  Cpu,
+  RefreshCw,
+  Trash2,
+  MapPin,
+  Activity,
+} from "lucide-react";
+import type {
+  SensorCatalogEntry,
+  SensorCatalogInsert,
+  SensorKind,
+} from "@/types/sensorCatalog";
+
+// ─── Seed data (fallback when DB is empty or loading) ────────
+const SEED_CATALOG: SensorCatalogEntry[] = [
+  {
+    id: "seed-1",
+    manufacturer: "Dragino",
+    model: "LHT65",
+    model_variant: null,
+    display_name: "Dragino LHT65 Temperature & Humidity Sensor",
+    sensor_kind: "temp",
+    description: "Indoor LoRaWAN temperature and humidity sensor with external probe option. Ideal for walk-in coolers, freezers, and dry storage monitoring.",
+    frequency_bands: ["US915", "EU868", "AU915", "AS923"],
+    lorawan_version: "1.0.3",
+    regional_params: null,
+    supports_otaa: true,
+    supports_abp: false,
+    supports_class: "A",
+    f_ports: [
+      { port: 2, direction: "up", description: "Periodic telemetry uplink (temp, humidity, battery)", is_default: true },
+      { port: 4, direction: "up", description: "Alarm uplink (threshold exceeded)" },
+      { port: 3, direction: "down", description: "Configuration downlink" },
+    ],
+    decoded_fields: [
+      { field: "temperature_c", type: "number", unit: "°C", range: [-40, 125], description: "Internal SHT20 temperature sensor" },
+      { field: "ext_temperature_c", type: "number", unit: "°C", range: [-40, 125], description: "External probe temperature (if connected)" },
+      { field: "humidity_pct", type: "number", unit: "%", range: [0, 100], description: "Relative humidity from SHT20" },
+      { field: "battery_v", type: "number", unit: "V", range: [2.1, 3.6], description: "Battery voltage (2x AAA)" },
+      { field: "ext_sensor_type", type: "string", unit: null, range: null, description: "External sensor type: 0=none, 1=DS18B20, 4=interrupt" },
+    ],
+    sample_payloads: [
+      { scenario: "Walk-in cooler — normal operation", f_port: 2, raw_hex: "CBF10B0A0175FF", decoded: { temperature_c: 3.85, humidity_pct: 78.5, ext_temperature_c: 4.21, battery_v: 3.055, ext_sensor_type: "DS18B20" }, notes: "Normal cooler temp range 33–40°F. Battery healthy." },
+      { scenario: "Walk-in freezer — normal operation", f_port: 2, raw_hex: "CB8F0964FEE8FF", decoded: { temperature_c: -18.5, humidity_pct: 45.0, ext_temperature_c: -20.1, battery_v: 2.98, ext_sensor_type: "DS18B20" }, notes: "Normal freezer range -10 to 0°F. Cold affects battery voltage." },
+      { scenario: "Temperature alarm — door left open", f_port: 4, raw_hex: "CB0F0C1E0295FF", decoded: { temperature_c: 12.8, humidity_pct: 92.0, ext_temperature_c: 15.5, battery_v: 3.055, ext_sensor_type: "DS18B20" }, notes: "ALARM: Cooler temp spiked — likely door left open. Humidity rising." },
+      { scenario: "Low battery warning", f_port: 2, raw_hex: "CA2F0A780140FF", decoded: { temperature_c: 4.2, humidity_pct: 71.0, ext_temperature_c: 4.5, battery_v: 2.35, ext_sensor_type: "DS18B20" }, notes: "Battery below 2.5V threshold — replace soon." },
+      { scenario: "No external probe connected", f_port: 2, raw_hex: "CBF10B0A007FFF", decoded: { temperature_c: 22.1, humidity_pct: 55.0, ext_temperature_c: null, battery_v: 3.055, ext_sensor_type: "none" }, notes: "Internal sensor only. Ext reads 0x7FFF = no probe." },
+    ],
+    uplink_info: { encoding: "proprietary", default_interval_s: 600, min_interval_s: 60, max_interval_s: 86400, max_payload_bytes: 11, confirmed_uplinks: false, adaptive_data_rate: true },
+    battery_info: { type: "2x AAA", chemistry: "lithium", voltage_nominal: 3.0, voltage_range: [2.1, 3.6], expected_life_years: 2, low_threshold_v: 2.5, reporting_format: "millivolts_div10" },
+    downlink_info: { supports_remote_config: true, config_port: 3, commands: [
+      { name: "Set Reporting Interval", hex_template: "01{seconds_4byte_hex}", description: "Set TDC in seconds" },
+      { name: "Request Device Status", hex_template: "04FF", description: "Device responds with status on next uplink" },
+      { name: "Set Temp Alarm High", hex_template: "02{temp_2byte_hex}", description: "Set high temp alarm threshold" },
+      { name: "Set Temp Alarm Low", hex_template: "03{temp_2byte_hex}", description: "Set low temp alarm threshold" },
+    ]},
+    decoder_js: `function decodeUplink(input) {\n  var bytes = input.bytes;\n  var port = input.fPort;\n  var data = {};\n\n  if (port === 2 || port === 4) {\n    var bat_v = ((bytes[0] << 8 | bytes[1]) >> 6) / 10;\n    data.battery_v = bat_v;\n    var temp_int = ((bytes[2] << 8 | bytes[3]) & 0xFFFF);\n    if (temp_int > 32767) temp_int -= 65536;\n    data.temperature_c = temp_int / 100;\n    data.humidity_pct = ((bytes[4] << 8 | bytes[5]) & 0xFFFF) / 10;\n    var ext_type = (bytes[0] << 8 | bytes[1]) & 0x3F;\n    if (ext_type === 1) {\n      var ext_temp = ((bytes[7] << 8 | bytes[8]) & 0xFFFF);\n      if (ext_temp > 32767) ext_temp -= 65536;\n      data.ext_temperature_c = ext_temp / 100;\n      data.ext_sensor_type = "DS18B20";\n    } else {\n      data.ext_sensor_type = "none";\n    }\n  }\n  return { data: data };\n}`,
+    decoder_python: null,
+    decoder_source_url: null,
+    image_url: null,
+    datasheet_url: null,
+    product_url: null,
+    ttn_device_repo_id: null,
+    is_supported: true,
+    is_visible: true,
+    sort_order: 10,
+    tags: ["refrigeration", "food-safety", "cold-chain", "temperature", "humidity", "probe"],
+    notes: "Primary sensor for FrostGuard cooler/freezer monitoring. Most widely deployed.",
+    created_at: "2025-12-01T00:00:00Z",
+    updated_at: "2025-12-01T00:00:00Z",
+    created_by: null,
+  },
+  {
+    id: "seed-2",
+    manufacturer: "Dragino",
+    model: "LDS02",
+    model_variant: null,
+    display_name: "Dragino LDS02 Door/Window Sensor",
+    sensor_kind: "door",
+    description: "LoRaWAN magnetic contact sensor for door open/close detection. Tracks door state, open count, and open duration.",
+    frequency_bands: ["US915", "EU868", "AU915", "AS923"],
+    lorawan_version: "1.0.3",
+    regional_params: null,
+    supports_otaa: true,
+    supports_abp: false,
+    supports_class: "A",
+    f_ports: [
+      { port: 2, direction: "up", description: "Door event uplink (state change)", is_default: true },
+      { port: 10, direction: "up", description: "Heartbeat / periodic status" },
+      { port: 3, direction: "down", description: "Configuration downlink" },
+    ],
+    decoded_fields: [
+      { field: "door_open", type: "boolean", unit: null, range: null, description: "true = door open, false = door closed" },
+      { field: "open_count", type: "number", unit: "count", range: [0, 65535], description: "Total door open events since reset" },
+      { field: "open_duration_s", type: "number", unit: "seconds", range: [0, 16777215], description: "Last open duration in seconds" },
+      { field: "battery_v", type: "number", unit: "V", range: [2.1, 3.6], description: "Battery voltage" },
+    ],
+    sample_payloads: [
+      { scenario: "Door opened — walk-in cooler", f_port: 2, raw_hex: "0BD301000A00001E", decoded: { door_open: true, open_count: 10, open_duration_s: 0, battery_v: 3.027 }, notes: "Door just opened. Count shows 10th opening today." },
+      { scenario: "Door closed — short access", f_port: 2, raw_hex: "0BD300000A00000F", decoded: { door_open: false, open_count: 10, open_duration_s: 15, battery_v: 3.027 }, notes: "Door closed after 15-second access." },
+      { scenario: "Door stuck open — alarm condition", f_port: 2, raw_hex: "0BD301000B000384", decoded: { door_open: true, open_count: 11, open_duration_s: 900, battery_v: 3.027 }, notes: "ALARM: Door open for 15 minutes." },
+    ],
+    uplink_info: { encoding: "proprietary", default_interval_s: 7200, min_interval_s: 60, max_interval_s: 86400, max_payload_bytes: 8, event_driven: true, event_types: ["door_open", "door_close", "heartbeat"] },
+    battery_info: { type: "2x AAA", chemistry: "lithium", voltage_nominal: 3.0, voltage_range: [2.1, 3.6], expected_life_years: 3, low_threshold_v: 2.5 },
+    downlink_info: { supports_remote_config: true, config_port: 3, commands: [
+      { name: "Set Heartbeat Interval", hex_template: "01{seconds_4byte_hex}", description: "Set keepalive interval" },
+      { name: "Set Open Alarm Time", hex_template: "02{minutes_2byte_hex}", description: "Alert if door open longer than N minutes" },
+      { name: "Reset Open Count", hex_template: "04FF", description: "Reset the cumulative open counter" },
+    ]},
+    decoder_js: `function decodeUplink(input) {\n  var bytes = input.bytes;\n  var data = {};\n  data.battery_v = ((bytes[0] << 8) | bytes[1]) / 1000;\n  data.door_open = (bytes[2] & 0x01) === 1;\n  data.open_count = (bytes[3] << 8) | bytes[4];\n  data.open_duration_s = (bytes[5] << 16) | (bytes[6] << 8) | bytes[7];\n  return { data: data };\n}`,
+    decoder_python: null, decoder_source_url: null, image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
+    is_supported: true, is_visible: true, sort_order: 20,
+    tags: ["refrigeration", "food-safety", "cold-chain", "door", "contact", "magnetic"],
+    notes: "Primary door sensor for FrostGuard. Paired with LHT65 per walk-in unit.",
+    created_at: "2025-12-01T00:00:00Z", updated_at: "2025-12-01T00:00:00Z", created_by: null,
+  },
+  {
+    id: "seed-3",
+    manufacturer: "Elsys",
+    model: "ERS CO2",
+    model_variant: null,
+    display_name: "Elsys ERS CO2 Multi-Sensor",
+    sensor_kind: "co2",
+    description: "Premium indoor environmental sensor measuring CO2, temperature, humidity, light, and motion. Useful for kitchen ventilation monitoring.",
+    frequency_bands: ["US915", "EU868"],
+    lorawan_version: "1.0.3",
+    regional_params: null,
+    supports_otaa: true,
+    supports_abp: false,
+    supports_class: "A",
+    f_ports: [
+      { port: 5, direction: "up", description: "Telemetry uplink (all sensor values)", is_default: true },
+      { port: 6, direction: "down", description: "Configuration downlink" },
+    ],
+    decoded_fields: [
+      { field: "temperature_c", type: "number", unit: "°C", range: [-40, 85], description: "Ambient temperature" },
+      { field: "humidity_pct", type: "number", unit: "%", range: [0, 100], description: "Relative humidity" },
+      { field: "co2_ppm", type: "number", unit: "ppm", range: [0, 10000], description: "CO2 concentration (NDIR sensor)" },
+      { field: "light_lux", type: "number", unit: "lux", range: [0, 65535], description: "Ambient light level" },
+      { field: "motion_count", type: "number", unit: "count", range: [0, 255], description: "PIR motion events since last uplink" },
+      { field: "battery_v", type: "number", unit: "V", range: [2.1, 3.6], description: "Battery voltage" },
+    ],
+    sample_payloads: [
+      { scenario: "Normal kitchen — good ventilation", f_port: 5, decoded: { temperature_c: 23.0, humidity_pct: 41, co2_ppm: 776, light_lux: 39, motion_count: 6, battery_v: 3.563 }, notes: "CO2 under 1000ppm — ventilation adequate." },
+      { scenario: "Busy kitchen — high CO2", f_port: 5, decoded: { temperature_c: 28.5, humidity_pct: 68, co2_ppm: 2150, light_lux: 320, motion_count: 45, battery_v: 3.54 }, notes: "ALERT: CO2 above 2000ppm during peak service." },
+      { scenario: "Closed restaurant — overnight", f_port: 5, decoded: { temperature_c: 19.2, humidity_pct: 35, co2_ppm: 420, light_lux: 0, motion_count: 0, battery_v: 3.57 }, notes: "Baseline readings. Near outdoor CO2 levels." },
+    ],
+    uplink_info: { encoding: "elsys_proprietary", default_interval_s: 600, min_interval_s: 60, max_interval_s: 86400, max_payload_bytes: 20 },
+    battery_info: { type: "2x AA", chemistry: "lithium", voltage_nominal: 3.6, voltage_range: [2.8, 3.6], expected_life_years: 5, low_threshold_v: 3.0 },
+    downlink_info: { supports_remote_config: true, config_port: 6, commands: [
+      { name: "Set Reporting Interval", hex_template: "3E{seconds_2byte_hex}", description: "Set sample period in seconds" },
+    ]},
+    decoder_js: null, decoder_python: null, decoder_source_url: null, image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
+    is_supported: true, is_visible: true, sort_order: 30,
+    tags: ["indoor", "air-quality", "co2", "ventilation", "kitchen", "compliance"],
+    notes: "Premium multi-sensor. Consider for kitchen air quality compliance monitoring.",
+    created_at: "2025-12-15T00:00:00Z", updated_at: "2025-12-15T00:00:00Z", created_by: null,
+  },
+  {
+    id: "seed-4",
+    manufacturer: "Netvox",
+    model: "R311A",
+    model_variant: null,
+    display_name: "Netvox R311A Wireless Door/Window Sensor",
+    sensor_kind: "door",
+    description: "Compact LoRaWAN door/window contact sensor. Simple open/close detection with battery reporting.",
+    frequency_bands: ["US915", "EU868", "AU915"],
+    lorawan_version: "1.0.3",
+    regional_params: null,
+    supports_otaa: true,
+    supports_abp: false,
+    supports_class: "A",
+    f_ports: [{ port: 1, direction: "up", description: "Status report / door event", is_default: true }],
+    decoded_fields: [
+      { field: "door_open", type: "boolean", unit: null, range: null, description: "true = contact open (door open)" },
+      { field: "battery_v", type: "number", unit: "V", range: [2.1, 3.6], description: "Battery voltage" },
+      { field: "alarm", type: "boolean", unit: null, range: null, description: "Tamper or sustained open alarm" },
+    ],
+    sample_payloads: [
+      { scenario: "Door opened", f_port: 1, decoded: { door_open: true, battery_v: 3.2, alarm: false }, notes: "Normal door open event." },
+      { scenario: "Door closed", f_port: 1, decoded: { door_open: false, battery_v: 3.2, alarm: false }, notes: "Normal door close event." },
+    ],
+    uplink_info: { encoding: "netvox_proprietary", default_interval_s: 3600, event_driven: true },
+    battery_info: { type: "CR2450", chemistry: "lithium", voltage_nominal: 3.0, voltage_range: [2.1, 3.0], expected_life_years: 3 },
+    downlink_info: { supports_remote_config: false },
+    decoder_js: null, decoder_python: null, decoder_source_url: null, image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
+    is_supported: true, is_visible: true, sort_order: 40,
+    tags: ["door", "contact", "window", "simple"],
+    notes: "Budget-friendly door sensor alternative.",
+    created_at: "2025-12-20T00:00:00Z", updated_at: "2025-12-20T00:00:00Z", created_by: null,
+  },
+  {
+    id: "seed-5",
+    manufacturer: "Dragino",
+    model: "LWL02",
+    model_variant: null,
+    display_name: "Dragino LWL02 Water Leak Detector",
+    sensor_kind: "leak",
+    description: "LoRaWAN water leak sensor with probe contacts. Detects water presence near walk-in coolers, ice machines, and drain lines.",
+    frequency_bands: ["US915", "EU868", "AU915", "AS923"],
+    lorawan_version: "1.0.3",
+    regional_params: null,
+    supports_otaa: true,
+    supports_abp: false,
+    supports_class: "A",
+    f_ports: [
+      { port: 2, direction: "up", description: "Leak status uplink", is_default: true },
+      { port: 10, direction: "up", description: "Heartbeat" },
+      { port: 3, direction: "down", description: "Configuration" },
+    ],
+    decoded_fields: [
+      { field: "leak_detected", type: "boolean", unit: null, range: null, description: "true = water detected on probe contacts" },
+      { field: "leak_count", type: "number", unit: "count", range: [0, 65535], description: "Total leak events since reset" },
+      { field: "battery_v", type: "number", unit: "V", range: [2.1, 3.6], description: "Battery voltage" },
+    ],
+    sample_payloads: [
+      { scenario: "Water leak detected under cooler", f_port: 2, decoded: { leak_detected: true, leak_count: 1, battery_v: 3.1 }, notes: "ALARM: Water on floor under walk-in." },
+      { scenario: "Leak cleared", f_port: 2, decoded: { leak_detected: false, leak_count: 1, battery_v: 3.1 }, notes: "Water dried / cleaned up." },
+      { scenario: "Heartbeat — no leak", f_port: 10, decoded: { leak_detected: false, leak_count: 0, battery_v: 3.2 }, notes: "All clear. Periodic check-in." },
+    ],
+    uplink_info: { encoding: "proprietary", default_interval_s: 7200, event_driven: true },
+    battery_info: { type: "2x AAA", chemistry: "lithium", voltage_nominal: 3.0, expected_life_years: 3 },
+    downlink_info: { supports_remote_config: true, config_port: 3 },
+    decoder_js: null, decoder_python: null, decoder_source_url: null, image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: null,
+    is_supported: true, is_visible: true, sort_order: 50,
+    tags: ["leak", "water", "flood", "drain", "ice-machine"],
+    notes: "Detect water leaks near refrigeration equipment.",
+    created_at: "2026-01-05T00:00:00Z", updated_at: "2026-01-05T00:00:00Z", created_by: null,
+  },
+];
+
+// ─── Kind metadata ───────────────────────────────────────────
+const KIND_META: Record<string, { icon: typeof Thermometer; label: string; color: string; bg: string }> = {
+  temp: { icon: Thermometer, label: "Temperature", color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30" },
+  door: { icon: DoorOpen, label: "Door/Contact", color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-950/30" },
+  combo: { icon: Cpu, label: "Combo", color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-950/30" },
+  co2: { icon: Wind, label: "CO₂ / Air Quality", color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30" },
+  leak: { icon: Droplets, label: "Water Leak", color: "text-cyan-600", bg: "bg-cyan-50 dark:bg-cyan-950/30" },
+  gps: { icon: MapPin, label: "GPS Tracker", color: "text-red-600", bg: "bg-red-50 dark:bg-red-950/30" },
+  pulse: { icon: Zap, label: "Pulse Counter", color: "text-orange-600", bg: "bg-orange-50 dark:bg-orange-950/30" },
+  soil: { icon: Droplets, label: "Soil / Ag", color: "text-lime-600", bg: "bg-lime-50 dark:bg-lime-950/30" },
+  air_quality: { icon: Wind, label: "Air Quality", color: "text-indigo-600", bg: "bg-indigo-50 dark:bg-indigo-950/30" },
+  vibration: { icon: Activity, label: "Vibration", color: "text-pink-600", bg: "bg-pink-50 dark:bg-pink-950/30" },
+  meter: { icon: Database, label: "Meter", color: "text-slate-600", bg: "bg-slate-50 dark:bg-slate-950/30" },
+  tilt: { icon: Radio, label: "Tilt", color: "text-violet-600", bg: "bg-violet-50 dark:bg-violet-950/30" },
+};
+
+function getKindMeta(kind: string) {
+  return KIND_META[kind] ?? KIND_META.temp;
+}
+
+// ─── JSON Block with copy ────────────────────────────────────
+function JsonBlock({ data, maxHeight = "360px" }: { data: unknown; maxHeight?: string }) {
+  const [copied, setCopied] = useState(false);
+  const json = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+
+  return (
+    <div className="relative rounded-lg overflow-hidden bg-slate-900 dark:bg-slate-950 border border-slate-800">
+      <button
+        onClick={() => {
+          navigator.clipboard.writeText(json);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }}
+        className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded text-xs text-slate-400 bg-white/10 hover:bg-white/20 transition-colors"
+      >
+        {copied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+      </button>
+      <pre
+        className="p-4 text-xs leading-relaxed text-slate-200 font-mono overflow-auto"
+        style={{ maxHeight }}
+      >
+        {json}
+      </pre>
+    </div>
+  );
+}
+
+// ─── Sensor Card ─────────────────────────────────────────────
+function SensorCard({ sensor, onClick }: { sensor: SensorCatalogEntry; onClick: () => void }) {
+  const meta = getKindMeta(sensor.sensor_kind);
+  const Icon = meta.icon;
+
+  return (
+    <Card
+      className="cursor-pointer hover:border-primary/50 hover:shadow-md transition-all group"
+      onClick={onClick}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div className={`p-2.5 rounded-lg ${meta.bg}`}>
+            <Icon className={`w-5 h-5 ${meta.color}`} />
+          </div>
+          <div className="flex gap-1.5">
+            {sensor.is_supported && (
+              <Badge variant="default" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-100">
+                Supported
+              </Badge>
+            )}
+            <Badge variant="secondary">{meta.label}</Badge>
+          </div>
+        </div>
+        <div className="mt-3">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            {sensor.manufacturer}
+          </p>
+          <CardTitle className="text-base mt-0.5">
+            {sensor.model}{sensor.model_variant ? ` (${sensor.model_variant})` : ""}
+          </CardTitle>
+          <CardDescription className="mt-1 line-clamp-2">
+            {sensor.description}
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="flex gap-4 text-xs text-muted-foreground border-t pt-3">
+          <span className="flex items-center gap-1">
+            <FileJson className="w-3.5 h-3.5" />
+            {sensor.sample_payloads?.length || 0} samples
+          </span>
+          <span className="flex items-center gap-1">
+            <Database className="w-3.5 h-3.5" />
+            {sensor.decoded_fields?.length || 0} fields
+          </span>
+          <span className="flex items-center gap-1">
+            <Radio className="w-3.5 h-3.5" />
+            {sensor.f_ports?.length || 0} ports
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Sensor Detail View ──────────────────────────────────────
+function SensorDetail({ sensor, onBack }: { sensor: SensorCatalogEntry; onBack: () => void }) {
+  const [activeTab, setActiveTab] = useState("payloads");
+  const [selectedPayload, setSelectedPayload] = useState(0);
+  const meta = getKindMeta(sensor.sensor_kind);
+  const Icon = meta.icon;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={onBack}>
+          <ArrowLeft className="w-5 h-5" />
+        </Button>
+        <div className={`p-3 rounded-xl ${meta.bg}`}>
+          <Icon className={`w-6 h-6 ${meta.color}`} />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            {sensor.manufacturer} · {meta.label}
+          </p>
+          <h2 className="text-xl font-bold">
+            {sensor.model}{sensor.model_variant ? ` (${sensor.model_variant})` : ""}
+          </h2>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {sensor.is_supported && (
+            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+              Supported
+            </Badge>
+          )}
+          {sensor.frequency_bands?.map((b) => (
+            <Badge key={b} variant="outline">{b}</Badge>
+          ))}
+          <Badge variant="secondary">LoRaWAN {sensor.lorawan_version}</Badge>
+          <Badge variant="secondary">Class {sensor.supports_class}</Badge>
+        </div>
+      </div>
+
+      {/* Description */}
+      <Card>
+        <CardContent className="pt-4">
+          <p className="text-sm text-muted-foreground leading-relaxed">{sensor.description}</p>
+          {sensor.notes && (
+            <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-800 dark:text-amber-200">
+              <strong>Admin Note:</strong> {sensor.notes}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Tags */}
+      {sensor.tags?.length > 0 && (
+        <div className="flex gap-1.5 items-center flex-wrap">
+          <Tag className="w-4 h-4 text-muted-foreground" />
+          {sensor.tags.map((t) => (
+            <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
+          ))}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="payloads" className="text-xs">
+            <FileJson className="w-3.5 h-3.5 mr-1" /> Payloads
+          </TabsTrigger>
+          <TabsTrigger value="fields" className="text-xs">
+            <Database className="w-3.5 h-3.5 mr-1" /> Fields
+          </TabsTrigger>
+          <TabsTrigger value="uplink" className="text-xs">
+            <Radio className="w-3.5 h-3.5 mr-1" /> Uplink
+          </TabsTrigger>
+          <TabsTrigger value="downlink" className="text-xs">
+            <ArrowDownToLine className="w-3.5 h-3.5 mr-1" /> Downlink
+          </TabsTrigger>
+          <TabsTrigger value="decoder" className="text-xs">
+            <Code className="w-3.5 h-3.5 mr-1" /> Decoder
+          </TabsTrigger>
+          <TabsTrigger value="battery" className="text-xs">
+            <Battery className="w-3.5 h-3.5 mr-1" /> Battery
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Sample Payloads */}
+        <TabsContent value="payloads" className="space-y-4">
+          {sensor.sample_payloads?.length > 0 ? (
+            <>
+              <div className="flex gap-2 flex-wrap">
+                {sensor.sample_payloads.map((p, i) => (
+                  <Button
+                    key={i}
+                    variant={selectedPayload === i ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedPayload(i)}
+                    className="text-xs"
+                  >
+                    {p.scenario}
+                  </Button>
+                ))}
+              </div>
+              {(() => {
+                const p = sensor.sample_payloads[selectedPayload];
+                if (!p) return null;
+                return (
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <Badge variant="outline">f_port: {p.f_port}</Badge>
+                      {p.raw_hex && <Badge variant="secondary" className="font-mono text-xs">HEX: {p.raw_hex}</Badge>}
+                    </div>
+                    {p.notes && (
+                      <div className={`p-3 rounded-lg text-sm font-medium ${
+                        p.notes.includes("ALARM") || p.notes.includes("ALERT")
+                          ? "bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200"
+                          : "bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200"
+                      }`}>
+                        {p.notes}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                        Decoded Payload
+                      </p>
+                      <JsonBlock data={p.decoded} maxHeight="280px" />
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              No sample payloads available
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Decoded Fields */}
+        <TabsContent value="fields">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Field</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Range</TableHead>
+                    <TableHead>Description</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sensor.decoded_fields?.map((f, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-mono text-xs font-semibold text-sky-500">
+                        {f.field}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="text-xs">{f.type}</Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{f.unit || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {f.range ? `[${f.range[0]}, ${f.range[1]}]` : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm max-w-[300px]">{f.description}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Uplink Info */}
+        <TabsContent value="uplink">
+          <div className="grid md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Radio className={`w-4 h-4 ${meta.color}`} /> Uplink Configuration
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {Object.entries(sensor.uplink_info || {}).map(([k, v]) => (
+                  <div key={k} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{k.replace(/_/g, " ")}</span>
+                    <span className="font-mono font-semibold text-xs">
+                      {typeof v === "boolean" ? (v ? "Yes" : "No") : Array.isArray(v) ? v.join(", ") : String(v)}
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Zap className={`w-4 h-4 ${meta.color}`} /> F_Port Definitions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {sensor.f_ports?.map((p, i) => (
+                  <div key={i} className="flex items-center gap-3 p-2.5 bg-muted rounded-lg">
+                    <Badge variant={p.direction === "up" ? "default" : "secondary"} className={`text-xs ${p.direction === "up" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"}`}>
+                      {p.direction === "up" ? "↑ UP" : "↓ DOWN"}
+                    </Badge>
+                    <span className={`font-mono font-bold text-sm ${meta.color}`}>{p.port}</span>
+                    <span className="text-sm text-muted-foreground flex-1">{p.description}</span>
+                    {p.is_default && <Badge variant="outline" className="text-xs">default</Badge>}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Downlink Config */}
+        <TabsContent value="downlink">
+          {sensor.downlink_info?.supports_remote_config ? (
+            <div className="space-y-4">
+              <div className="flex gap-3 items-center">
+                <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                  Remote Config Supported
+                </Badge>
+                {sensor.downlink_info.config_port != null && (
+                  <Badge variant="outline">Config Port: {sensor.downlink_info.config_port}</Badge>
+                )}
+              </div>
+              <Card>
+                <CardContent className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Command</TableHead>
+                        <TableHead>Hex Template</TableHead>
+                        <TableHead>Description</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sensor.downlink_info.commands?.map((c, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-semibold">{c.name}</TableCell>
+                          <TableCell className="font-mono text-xs text-amber-600">{c.hex_template}</TableCell>
+                          <TableCell className="text-muted-foreground">{c.description}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <Settings className="w-8 h-8 mx-auto mb-2 opacity-40" />
+              <p>This sensor does not support remote configuration via downlinks.</p>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Decoder Code */}
+        <TabsContent value="decoder">
+          {sensor.decoder_js ? (
+            <div className="space-y-3">
+              <div className="flex gap-2 items-center">
+                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">JavaScript</Badge>
+                {sensor.decoder_source_url && (
+                  <a
+                    href={sensor.decoder_source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Official Source
+                  </a>
+                )}
+              </div>
+              <JsonBlock data={sensor.decoder_js} maxHeight="500px" />
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <Code className="w-8 h-8 mx-auto mb-2 opacity-40" />
+              <p>No decoder code uploaded yet.</p>
+              <p className="text-xs mt-1">Add a JavaScript decoder function for this sensor model.</p>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Battery */}
+        <TabsContent value="battery">
+          <div className="grid md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Battery className={`w-4 h-4 ${meta.color}`} /> Battery Specifications
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {Object.entries(sensor.battery_info || {}).map(([k, v]) => (
+                  <div key={k} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">{k.replace(/_/g, " ")}</span>
+                    <span className="font-mono font-semibold text-xs">
+                      {Array.isArray(v) ? `[${v.join(" – ")}]` : String(v)}
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-center">Voltage Range</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center justify-center">
+                {sensor.battery_info?.voltage_range ? (() => {
+                  const [min, max] = sensor.battery_info.voltage_range;
+                  const low = sensor.battery_info.low_threshold_v ?? (min + (max - min) * 0.3);
+                  const pctLow = ((low - min) / (max - min)) * 100;
+                  return (
+                    <div className="w-full max-w-[280px]">
+                      <div className="relative h-7 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-500 to-amber-500 rounded-l-full"
+                          style={{ width: `${pctLow}%` }}
+                        />
+                        <div
+                          className="absolute inset-y-0 right-0 bg-gradient-to-r from-green-400 to-green-600 rounded-r-full"
+                          style={{ left: `${pctLow}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between mt-2 text-xs font-mono font-semibold">
+                        <span className="text-red-500">{min}V</span>
+                        <span className="text-amber-500">{low}V low</span>
+                        <span className="text-green-600">{max}V</span>
+                      </div>
+                    </div>
+                  );
+                })() : (
+                  <p className="text-sm text-muted-foreground">No voltage range data</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ─── Add Sensor Dialog ───────────────────────────────────────
+function AddSensorDialog({
+  open,
+  onOpenChange,
+  onAdd,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onAdd: (entry: SensorCatalogInsert) => void;
+}) {
+  const [form, setForm] = useState({
+    manufacturer: "",
+    model: "",
+    model_variant: "",
+    display_name: "",
+    sensor_kind: "temp" as SensorKind,
+    description: "",
+    notes: "",
+  });
+
+  const kinds = Object.entries(KIND_META).map(([k, v]) => ({ value: k, label: v.label }));
+
+  const handleSubmit = () => {
+    if (!form.manufacturer || !form.model || !form.display_name) return;
+    onAdd({
+      manufacturer: form.manufacturer,
+      model: form.model,
+      model_variant: form.model_variant || null,
+      display_name: form.display_name,
+      sensor_kind: form.sensor_kind,
+      description: form.description || null,
+      notes: form.notes || null,
+      frequency_bands: ["US915"],
+      lorawan_version: "1.0.3",
+      supports_otaa: true,
+      supports_class: "A",
+      is_supported: true,
+    });
+    setForm({ manufacturer: "", model: "", model_variant: "", display_name: "", sensor_kind: "temp", description: "", notes: "" });
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add Sensor to Library</DialogTitle>
+          <DialogDescription>
+            Register a new sensor model in the master reference catalog.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="manufacturer">Manufacturer *</Label>
+              <Input
+                id="manufacturer"
+                value={form.manufacturer}
+                onChange={(e) => setForm({ ...form, manufacturer: e.target.value })}
+                placeholder="e.g., Dragino"
+              />
+            </div>
+            <div>
+              <Label htmlFor="model">Model *</Label>
+              <Input
+                id="model"
+                value={form.model}
+                onChange={(e) => setForm({ ...form, model: e.target.value })}
+                placeholder="e.g., LHT65"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="model_variant">Model Variant</Label>
+              <Input
+                id="model_variant"
+                value={form.model_variant}
+                onChange={(e) => setForm({ ...form, model_variant: e.target.value })}
+                placeholder="e.g., LHT65N (optional)"
+              />
+            </div>
+            <div>
+              <Label htmlFor="sensor_kind">Sensor Type *</Label>
+              <Select
+                value={form.sensor_kind}
+                onValueChange={(v) => setForm({ ...form, sensor_kind: v as SensorKind })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {kinds.map((k) => (
+                    <SelectItem key={k.value} value={k.value}>{k.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="display_name">Display Name *</Label>
+            <Input
+              id="display_name"
+              value={form.display_name}
+              onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+              placeholder="e.g., Dragino LHT65 Temperature & Humidity Sensor"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="description">Description</Label>
+            <Textarea
+              id="description"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Brief description of the sensor and its typical use case..."
+              rows={3}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="notes">Admin Notes</Label>
+            <Textarea
+              id="notes"
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="Internal notes (not visible to org users)..."
+              rows={2}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!form.manufacturer || !form.model || !form.display_name}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Sensor Model
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Page ───────────────────────────────────────────────
+export default function PlatformSensorLibrary() {
+  const { logSuperAdminAction } = useSuperAdmin();
+  const { toast } = useToast();
+  const { data: dbCatalog, isLoading, error, refetch } = useSensorCatalog();
+  const addMutation = useAddSensorCatalogEntry();
+  const deleteMutation = useDeleteSensorCatalogEntry();
+
+  const [search, setSearch] = useState("");
+  const [kindFilter, setKindFilter] = useState("all");
+  const [mfrFilter, setMfrFilter] = useState("all");
+  const [selectedSensorId, setSelectedSensorId] = useState<string | null>(null);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+
+  // Use DB data if available, otherwise fall back to seed data
+  const catalog = useMemo(() => {
+    if (dbCatalog && dbCatalog.length > 0) return dbCatalog;
+    return SEED_CATALOG;
+  }, [dbCatalog]);
+
+  const manufacturers = useMemo(() => [...new Set(catalog.map((s) => s.manufacturer))].sort(), [catalog]);
+  const kinds = useMemo(() => [...new Set(catalog.map((s) => s.sensor_kind))].sort(), [catalog]);
+
+  const filtered = useMemo(() => {
+    return catalog.filter((s) => {
+      if (kindFilter !== "all" && s.sensor_kind !== kindFilter) return false;
+      if (mfrFilter !== "all" && s.manufacturer !== mfrFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return (
+          s.manufacturer.toLowerCase().includes(q) ||
+          s.model.toLowerCase().includes(q) ||
+          s.display_name.toLowerCase().includes(q) ||
+          s.description?.toLowerCase().includes(q) ||
+          s.tags?.some((t) => t.includes(q))
+        );
+      }
+      return true;
+    });
+  }, [catalog, search, kindFilter, mfrFilter]);
+
+  const stats = useMemo(() => ({
+    total: catalog.length,
+    supported: catalog.filter((s) => s.is_supported).length,
+    manufacturers: manufacturers.length,
+    totalPayloads: catalog.reduce((sum, s) => sum + (s.sample_payloads?.length || 0), 0),
+  }), [catalog, manufacturers]);
+
+  const handleAddSensor = useCallback(async (entry: SensorCatalogInsert) => {
+    try {
+      await addMutation.mutateAsync(entry);
+      logSuperAdminAction("ADDED_SENSOR_TO_CATALOG", { model: entry.model, manufacturer: entry.manufacturer });
+      toast({ title: "Sensor added", description: `${entry.manufacturer} ${entry.model} added to the catalog.` });
+    } catch (err) {
+      // If DB insert fails (e.g. table doesn't exist yet), that's OK — seed data is still shown
+      console.error("Failed to add sensor to DB:", err);
+      toast({
+        title: "Note",
+        description: "Sensor added locally. Run the migration to enable database persistence.",
+        variant: "default",
+      });
+    }
+  }, [addMutation, logSuperAdminAction, toast]);
+
+  const selectedSensor = selectedSensorId ? catalog.find((s) => s.id === selectedSensorId) : null;
+
+  // Detail view
+  if (selectedSensor) {
+    return (
+      <PlatformLayout title="Sensor Library">
+        <SensorDetail sensor={selectedSensor} onBack={() => setSelectedSensorId(null)} />
+      </PlatformLayout>
+    );
+  }
+
+  return (
+    <PlatformLayout title="Sensor Library">
+      {/* Header section */}
+      <div className="flex items-start justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-gradient-to-br from-slate-800 to-slate-600 dark:from-slate-700 dark:to-slate-900">
+            <BookOpen className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold">Master Sensor Reference</h2>
+            <p className="text-sm text-muted-foreground">
+              All sensor models, decoders, sample payloads & configuration
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+          <Button size="sm" onClick={() => setShowAddDialog(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Sensor
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {[
+          { label: "Total Models", value: stats.total, color: "text-blue-600" },
+          { label: "Supported", value: stats.supported, color: "text-green-600" },
+          { label: "Manufacturers", value: stats.manufacturers, color: "text-purple-600" },
+          { label: "Sample Payloads", value: stats.totalPayloads, color: "text-amber-600" },
+        ].map((s) => (
+          <Card key={s.label}>
+            <CardContent className="flex items-center gap-3 py-3 px-4">
+              <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+              <div className="text-xs text-muted-foreground font-medium">{s.label}</div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Loading / Error state */}
+      {error && (
+        <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-800 dark:text-amber-200">
+          Database query failed — showing seed data. Run the sensor_catalog migration to enable live data.
+        </div>
+      )}
+
+      {/* Filters */}
+      <div className="flex gap-3 mb-6 items-center bg-muted/50 rounded-xl p-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search sensors by name, model, tag..."
+            className="pl-9"
+          />
+        </div>
+        <Select value={mfrFilter} onValueChange={setMfrFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Manufacturers" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Manufacturers</SelectItem>
+            {manufacturers.map((m) => (
+              <SelectItem key={m} value={m}>{m}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={kindFilter} onValueChange={setKindFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All Types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            {kinds.map((k) => (
+              <SelectItem key={k} value={k}>{getKindMeta(k).label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex bg-background rounded-lg border p-0.5">
+          <Button
+            variant={viewMode === "grid" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setViewMode("grid")}
+          >
+            <LayoutGrid className="w-4 h-4" />
+          </Button>
+          <Button
+            variant={viewMode === "list" ? "secondary" : "ghost"}
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setViewMode("list")}
+          >
+            <List className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Results */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <Cpu className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="font-semibold">No sensors found</p>
+          <p className="text-sm mt-1">Try adjusting your filters or add a new sensor model.</p>
+        </div>
+      ) : viewMode === "grid" ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((s) => (
+            <SensorCard key={s.id} sensor={s} onClick={() => setSelectedSensorId(s.id)} />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {filtered.map((s) => {
+            const meta = getKindMeta(s.sensor_kind);
+            const Icon = meta.icon;
+            return (
+              <Card
+                key={s.id}
+                className="cursor-pointer hover:border-primary/50 transition-colors"
+                onClick={() => setSelectedSensorId(s.id)}
+              >
+                <CardContent className="flex items-center gap-4 py-3 px-4">
+                  <div className={`p-2 rounded-lg ${meta.bg}`}>
+                    <Icon className={`w-4 h-4 ${meta.color}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm">{s.manufacturer} {s.model}</p>
+                    <p className="text-xs text-muted-foreground truncate">{s.description}</p>
+                  </div>
+                  <Badge variant="secondary" className="text-xs">{meta.label}</Badge>
+                  <span className="text-xs text-muted-foreground">{s.sample_payloads?.length || 0} samples</span>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add Sensor Dialog */}
+      <AddSensorDialog
+        open={showAddDialog}
+        onOpenChange={setShowAddDialog}
+        onAdd={handleAddSensor}
+      />
+    </PlatformLayout>
+  );
+}
