@@ -11,6 +11,10 @@
  *  - Pending/Applied/Failed status shown in the change history section.
  *  - Per-button loading states track which specific command is being sent.
  *  - Pending changes list auto-refreshes while there are 'sent' items.
+ *  - Zod validation with inline error messages on all form inputs.
+ *  - Apply buttons debounced (500ms guard) and disabled while a change is 'sent'.
+ *  - Class A timing education callout for users.
+ *  - Audit trail: "Applied by [email] X ago" in Recent Changes.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -27,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -48,6 +53,8 @@ import {
   ChevronDown,
   ChevronRight,
   RefreshCw,
+  Info,
+  User,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -63,6 +70,12 @@ import {
   useSensorPendingChanges,
   useSendDownlink,
 } from "@/hooks/useSensorConfig";
+import {
+  uplinkIntervalMinutesSchema,
+  alarmTempStringSchema,
+  alarmCheckMinutesSchema,
+  timeSyncDaysSchema,
+} from "@/lib/validation";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -132,6 +145,19 @@ type ActiveCommand =
   | { type: "alarm" }
   | null;
 
+/** Inline validation error display */
+function FieldError({ error }: { error: string | null }) {
+  if (!error) return null;
+  return <p className="text-[11px] text-red-500 mt-0.5">{error}</p>;
+}
+
+/** Validate a single Zod schema, return error message or null */
+function validate<T>(schema: { safeParse: (v: unknown) => { success: boolean; error?: { errors: { message: string }[] } } }, value: unknown): string | null {
+  const result = schema.safeParse(value);
+  if (result.success) return null;
+  return result.error?.errors[0]?.message ?? "Invalid value";
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -163,6 +189,15 @@ export function SensorSettingsDrawer({
     }
   }, [sendDownlink.isPending]);
 
+  // --- Debounce guard: prevent double-clicks within 500ms ---
+  const lastSendRef = useRef(0);
+  const canSend = useCallback(() => {
+    const now = Date.now();
+    if (now - lastSendRef.current < 500) return false;
+    lastSendRef.current = now;
+    return true;
+  }, []);
+
   // --- Auto-refresh when there are 'sent' changes ---
   const hasSentChanges = pendingChanges?.some((c) => c.status === "sent");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -181,6 +216,11 @@ export function SensorSettingsDrawer({
     };
   }, [open, hasSentChanges, refetchChanges]);
 
+  // --- Estimated confirmation time ---
+  const estimatedMinutes = config?.uplink_interval_s
+    ? Math.round(config.uplink_interval_s / 60)
+    : null;
+
   // --- Local form state ---
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [intervalMinutes, setIntervalMinutes] = useState("");
@@ -192,6 +232,60 @@ export function SensorSettingsDrawer({
   const [alarmLowF, setAlarmLowF] = useState("");
   const [alarmHighF, setAlarmHighF] = useState("");
   const [alarmCheckMin, setAlarmCheckMin] = useState("1");
+
+  // --- Inline validation errors (validated on change) ---
+  const [intervalError, setIntervalError] = useState<string | null>(null);
+  const [alarmLowError, setAlarmLowError] = useState<string | null>(null);
+  const [alarmHighError, setAlarmHighError] = useState<string | null>(null);
+  const [alarmCheckError, setAlarmCheckError] = useState<string | null>(null);
+  const [syncDaysError, setSyncDaysError] = useState<string | null>(null);
+
+  // Validate on value changes
+  useEffect(() => {
+    if (intervalMinutes) {
+      setIntervalError(validate(uplinkIntervalMinutesSchema, intervalMinutes));
+    } else {
+      setIntervalError(null);
+    }
+  }, [intervalMinutes]);
+
+  useEffect(() => {
+    if (alarmLowF) {
+      setAlarmLowError(validate(alarmTempStringSchema, alarmLowF));
+    } else {
+      setAlarmLowError(null);
+    }
+  }, [alarmLowF]);
+
+  useEffect(() => {
+    if (alarmHighF) {
+      setAlarmHighError(validate(alarmTempStringSchema, alarmHighF));
+      // Cross-field: high must be > low + 1
+      const lowN = parseFloat(alarmLowF);
+      const highN = parseFloat(alarmHighF);
+      if (!isNaN(lowN) && !isNaN(highN) && highN <= lowN + 1) {
+        setAlarmHighError("High must be at least 1°F above Low");
+      }
+    } else {
+      setAlarmHighError(null);
+    }
+  }, [alarmHighF, alarmLowF]);
+
+  useEffect(() => {
+    if (alarmCheckMin) {
+      setAlarmCheckError(validate(alarmCheckMinutesSchema, alarmCheckMin));
+    } else {
+      setAlarmCheckError(null);
+    }
+  }, [alarmCheckMin]);
+
+  useEffect(() => {
+    if (timeSyncDays) {
+      setSyncDaysError(validate(timeSyncDaysSchema, timeSyncDays));
+    } else {
+      setSyncDaysError(null);
+    }
+  }, [timeSyncDays]);
 
   // Sync form state from loaded config
   useEffect(() => {
@@ -218,10 +312,16 @@ export function SensorSettingsDrawer({
     }
   }, [config, unitAlarmLow, unitAlarmHigh]);
 
+  // --- Disable all Apply buttons while ANY change is 'sent' ---
+  const isBusy = sendDownlink.isPending;
+  const hasPendingSent = !!hasSentChanges;
+  const isDisabled = isBusy || hasPendingSent;
+
   // --- Apply handlers (one command = one downlink) ---
 
   const applyInterval = useCallback(
     (seconds: number, presetLabel?: string) => {
+      if (!canSend()) return;
       setActiveCmd(
         presetLabel ? { type: "preset", label: presetLabel } : { type: "interval" }
       );
@@ -231,21 +331,22 @@ export function SensorSettingsDrawer({
         commandParams: { type: "uplink_interval", seconds },
       });
     },
-    [sensor.id, sendDownlink]
+    [sensor.id, sendDownlink, canSend]
   );
 
   const applyExtMode = useCallback(() => {
-    if (!extMode) return;
+    if (!extMode || !canSend()) return;
     setActiveCmd({ type: "ext_mode" });
     sendDownlink.mutate({
       sensorId: sensor.id,
       commandType: "ext_mode",
       commandParams: { type: "ext_mode", mode: extMode },
     });
-  }, [sensor.id, extMode, sendDownlink]);
+  }, [sensor.id, extMode, sendDownlink, canSend]);
 
   const applyTimeSync = useCallback(
     (enable: boolean) => {
+      if (!canSend()) return;
       setActiveCmd({ type: "time_sync" });
       sendDownlink.mutate({
         sensorId: sensor.id,
@@ -253,10 +354,11 @@ export function SensorSettingsDrawer({
         commandParams: { type: "time_sync", enable },
       });
     },
-    [sensor.id, sendDownlink]
+    [sensor.id, sendDownlink, canSend]
   );
 
   const applyTimeSyncDays = useCallback(() => {
+    if (syncDaysError || !canSend()) return;
     const days = parseInt(timeSyncDays) || 10;
     setActiveCmd({ type: "time_sync_days" });
     sendDownlink.mutate({
@@ -264,9 +366,10 @@ export function SensorSettingsDrawer({
       commandType: "time_sync",
       commandParams: { type: "time_sync_days", days },
     });
-  }, [sensor.id, timeSyncDays, sendDownlink]);
+  }, [sensor.id, timeSyncDays, sendDownlink, syncDaysError, canSend]);
 
   const applySetTimeNow = useCallback(() => {
+    if (!canSend()) return;
     const unixTs = Math.floor(Date.now() / 1000);
     setActiveCmd({ type: "set_time" });
     sendDownlink.mutate({
@@ -274,9 +377,10 @@ export function SensorSettingsDrawer({
       commandType: "set_time",
       commandParams: { type: "set_time", unix_ts: unixTs },
     });
-  }, [sensor.id, sendDownlink]);
+  }, [sensor.id, sendDownlink, canSend]);
 
   const applyAlarm = useCallback(() => {
+    if (alarmLowError || alarmHighError || alarmCheckError || !canSend()) return;
     const lowF = parseFloat(alarmLowF);
     const highF = parseFloat(alarmHighF);
     const checkMin = parseInt(alarmCheckMin) || 1;
@@ -301,16 +405,19 @@ export function SensorSettingsDrawer({
     alarmLowF,
     alarmHighF,
     alarmCheckMin,
+    alarmLowError,
+    alarmHighError,
+    alarmCheckError,
     sendDownlink,
+    canSend,
   ]);
 
   const applyCustomInterval = useCallback(() => {
+    if (intervalError || !canSend()) return;
     const minutes = parseFloat(intervalMinutes);
     if (isNaN(minutes) || minutes < 1) return;
     applyInterval(Math.round(minutes * 60));
-  }, [intervalMinutes, applyInterval]);
-
-  const isBusy = sendDownlink.isPending;
+  }, [intervalMinutes, intervalError, applyInterval, canSend]);
 
   // Helper: is this specific button the one that's loading?
   const isLoading = (cmd: ActiveCommand): boolean => {
@@ -333,6 +440,35 @@ export function SensorSettingsDrawer({
             Configure device settings via LoRaWAN downlink
           </SheetDescription>
         </SheetHeader>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* Class A Timing Education                                            */}
+        {/* ------------------------------------------------------------------ */}
+        <Alert className="mb-4 border-blue-200 bg-blue-50/50">
+          <Info className="w-4 h-4 text-blue-500" />
+          <AlertDescription className="text-xs text-blue-700">
+            This is a <span className="font-semibold">Class A</span> LoRaWAN device.
+            Commands are queued and delivered when the sensor sends its next uplink.
+            {estimatedMinutes && (
+              <span className="block mt-1">
+                Current interval: <span className="font-semibold">{estimatedMinutes} min</span> — estimated confirmation in ~{estimatedMinutes} min.
+              </span>
+            )}
+          </AlertDescription>
+        </Alert>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* Pending sent warning                                                */}
+        {/* ------------------------------------------------------------------ */}
+        {hasPendingSent && !isBusy && (
+          <Alert className="mb-4 border-amber-200 bg-amber-50/50">
+            <AlertTriangle className="w-4 h-4 text-amber-500" />
+            <AlertDescription className="text-xs text-amber-700">
+              A change is waiting for sensor confirmation. New commands are disabled until
+              the current one is confirmed or times out.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* ------------------------------------------------------------------ */}
         {/* Device Info (read-only)                                             */}
@@ -401,7 +537,7 @@ export function SensorSettingsDrawer({
                       key={preset.label}
                       variant="outline"
                       size="sm"
-                      disabled={isBusy}
+                      disabled={isDisabled}
                       onClick={() =>
                         applyInterval(preset.interval_s, preset.label)
                       }
@@ -451,18 +587,21 @@ export function SensorSettingsDrawer({
                       Uplink Interval (minutes)
                     </Label>
                     <div className="flex gap-2">
-                      <Input
-                        type="number"
-                        min="1"
-                        max="279620"
-                        placeholder="e.g. 10"
-                        value={intervalMinutes}
-                        onChange={(e) => setIntervalMinutes(e.target.value)}
-                        className="flex-1"
-                      />
+                      <div className="flex-1">
+                        <Input
+                          type="number"
+                          min="1"
+                          max="1440"
+                          placeholder="e.g. 10"
+                          value={intervalMinutes}
+                          onChange={(e) => setIntervalMinutes(e.target.value)}
+                          className={cn(intervalError && "border-red-400")}
+                        />
+                        <FieldError error={intervalError} />
+                      </div>
                       <Button
                         size="sm"
-                        disabled={isBusy || !intervalMinutes}
+                        disabled={isDisabled || !intervalMinutes || !!intervalError}
                         onClick={applyCustomInterval}
                       >
                         {isLoading({ type: "interval" }) ? (
@@ -498,7 +637,7 @@ export function SensorSettingsDrawer({
                       </Select>
                       <Button
                         size="sm"
-                        disabled={isBusy || !extMode}
+                        disabled={isDisabled || !extMode}
                         onClick={applyExtMode}
                       >
                         {isLoading({ type: "ext_mode" }) ? (
@@ -526,28 +665,31 @@ export function SensorSettingsDrawer({
                             setTimeSyncEnabled(checked);
                             applyTimeSync(checked);
                           }}
-                          disabled={isBusy}
+                          disabled={isDisabled}
                         />
                       </div>
                     </div>
 
                     {timeSyncEnabled && (
-                      <div className="flex gap-2 items-end">
+                      <div className="flex gap-2 items-start">
                         <div className="flex-1 space-y-1">
                           <Label className="text-[10px] text-muted-foreground">
                             Sync interval (days)
                           </Label>
                           <Input
                             type="number"
-                            min="0"
-                            max="255"
+                            min="1"
+                            max="30"
                             value={timeSyncDays}
                             onChange={(e) => setTimeSyncDays(e.target.value)}
+                            className={cn(syncDaysError && "border-red-400")}
                           />
+                          <FieldError error={syncDaysError} />
                         </div>
                         <Button
                           size="sm"
-                          disabled={isBusy}
+                          className="mt-4"
+                          disabled={isDisabled || !!syncDaysError}
                           onClick={applyTimeSyncDays}
                         >
                           {isLoading({ type: "time_sync_days" }) ? (
@@ -562,7 +704,7 @@ export function SensorSettingsDrawer({
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={isBusy}
+                      disabled={isDisabled}
                       onClick={applySetTimeNow}
                       className="w-full"
                     >
@@ -594,14 +736,14 @@ export function SensorSettingsDrawer({
                       <Switch
                         checked={overrideAlarm}
                         onCheckedChange={setOverrideAlarm}
-                        disabled={isBusy}
+                        disabled={isDisabled}
                       />
                     </div>
 
                     {!overrideAlarm && (
                       <p className="text-xs text-muted-foreground italic">
-                        Using unit defaults: Low {unitAlarmLow ?? "\u2014"}°F /
-                        High {unitAlarmHigh ?? "\u2014"}°F
+                        Using unit defaults: Low {unitAlarmLow ?? "\u2014"}&deg;F /
+                        High {unitAlarmHigh ?? "\u2014"}&deg;F
                       </p>
                     )}
 
@@ -614,32 +756,36 @@ export function SensorSettingsDrawer({
                           <Switch
                             checked={alarmEnabled}
                             onCheckedChange={setAlarmEnabled}
-                            disabled={isBusy}
+                            disabled={isDisabled}
                           />
                         </div>
 
                         <div className="grid grid-cols-3 gap-2">
                           <div className="space-y-1">
                             <Label className="text-[10px] text-muted-foreground">
-                              Low (°F)
+                              Low (&deg;F)
                             </Label>
                             <Input
                               type="number"
                               step="0.1"
                               value={alarmLowF}
                               onChange={(e) => setAlarmLowF(e.target.value)}
+                              className={cn(alarmLowError && "border-red-400")}
                             />
+                            <FieldError error={alarmLowError} />
                           </div>
                           <div className="space-y-1">
                             <Label className="text-[10px] text-muted-foreground">
-                              High (°F)
+                              High (&deg;F)
                             </Label>
                             <Input
                               type="number"
                               step="0.1"
                               value={alarmHighF}
                               onChange={(e) => setAlarmHighF(e.target.value)}
+                              className={cn(alarmHighError && "border-red-400")}
                             />
+                            <FieldError error={alarmHighError} />
                           </div>
                           <div className="space-y-1">
                             <Label className="text-[10px] text-muted-foreground">
@@ -651,13 +797,20 @@ export function SensorSettingsDrawer({
                               max="65535"
                               value={alarmCheckMin}
                               onChange={(e) => setAlarmCheckMin(e.target.value)}
+                              className={cn(alarmCheckError && "border-red-400")}
                             />
+                            <FieldError error={alarmCheckError} />
                           </div>
                         </div>
 
                         <Button
                           size="sm"
-                          disabled={isBusy}
+                          disabled={
+                            isDisabled ||
+                            !!alarmLowError ||
+                            !!alarmHighError ||
+                            !!alarmCheckError
+                          }
                           onClick={applyAlarm}
                           className="w-full"
                         >
@@ -731,10 +884,20 @@ export function SensorSettingsDrawer({
                             { addSuffix: true }
                           )}
                         </span>
+                        {/* Audit: who requested it */}
+                        {change.requested_by_email && (
+                          <p className="text-muted-foreground mt-0.5 flex items-center gap-1">
+                            <User className="w-3 h-3" />
+                            {change.requested_by_email}
+                          </p>
+                        )}
                         {change.status === "sent" && (
                           <p className="text-muted-foreground mt-0.5 flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 text-amber-400" />
-                            Awaiting next uplink (Class A)
+                            Awaiting next uplink
+                            {estimatedMinutes && (
+                              <span> (~{estimatedMinutes} min)</span>
+                            )}
                           </p>
                         )}
                         {change.status === "applied" && change.applied_at && (
@@ -751,6 +914,21 @@ export function SensorSettingsDrawer({
                           <p className="text-amber-600 mt-0.5 flex items-center gap-1">
                             <Timer className="w-3 h-3" />
                             No confirmation received
+                          </p>
+                        )}
+                        {change.status === "failed" && (
+                          <p className="text-red-600 mt-0.5 flex items-center gap-1">
+                            <XCircle className="w-3 h-3" />
+                            Downlink failed
+                            {change.failed_at && (
+                              <span>
+                                {" "}
+                                {formatDistanceToNow(
+                                  new Date(change.failed_at),
+                                  { addSuffix: true }
+                                )}
+                              </span>
+                            )}
                           </p>
                         )}
                       </div>

@@ -124,6 +124,32 @@ export function useSendDownlink() {
 }
 
 // ---------------------------------------------------------------------------
+// Count active (sent/queued) pending changes per sensor — for badge display
+// ---------------------------------------------------------------------------
+
+export function usePendingChangeCounts(sensorIds: string[]) {
+  return useQuery({
+    queryKey: ["pending-change-counts", ...sensorIds.sort()],
+    queryFn: async (): Promise<Record<string, number>> => {
+      if (sensorIds.length === 0) return {};
+      const { data, error } = await supabase
+        .from("sensor_pending_changes")
+        .select("sensor_id, status")
+        .in("sensor_id", sensorIds)
+        .in("status", ["sent", "queued"]);
+      if (error) throw error;
+      const counts: Record<string, number> = {};
+      for (const row of data ?? []) {
+        counts[row.sensor_id] = (counts[row.sensor_id] || 0) + 1;
+      }
+      return counts;
+    },
+    enabled: sensorIds.length > 0,
+    refetchInterval: 30_000, // refresh every 30s for badge updates
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Upsert sensor configuration (local DB only, no downlink)
 // ---------------------------------------------------------------------------
 

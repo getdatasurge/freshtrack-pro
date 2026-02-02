@@ -21,6 +21,7 @@ import { useState } from "react";
 import { AssignSensorToUnitDialog } from "./AssignSensorToUnitDialog";
 import { SensorDetailsPopover } from "./SensorDetailsPopover";
 import { SensorSettingsDrawer } from "./SensorSettingsDrawer";
+import { usePendingChangeCounts } from "@/hooks/useSensorConfig";
 import { cn } from "@/lib/utils";
 import { UNIT_SENSOR_STATUS_CONFIG } from "@/lib/entityStatusConfig";
 
@@ -113,6 +114,10 @@ export function UnitSensorsCard({
   const setPrimarySensor = useSetPrimarySensor();
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [settingsSensor, setSettingsSensor] = useState<LoraSensor | null>(null);
+
+  // Pending change counts for gear icon badges
+  const sensorIds = sensors?.map(s => s.id) ?? [];
+  const { data: pendingCounts } = usePendingChangeCounts(sensorIds);
 
   // Count unassigned sensors (no unit_id)
   const unassignedSensorsCount = allSensors?.filter(s => !s.unit_id).length || 0;
@@ -256,17 +261,26 @@ export function UnitSensorsCard({
                               <TooltipTrigger asChild>
                                 <button
                                   type="button"
-                                  className="p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                                  className="relative p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSettingsSensor(sensor);
                                   }}
                                 >
                                   <Settings2 className="w-4 h-4" />
+                                  {(pendingCounts?.[sensor.id] ?? 0) > 0 && (
+                                    <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 text-[9px] font-bold text-white">
+                                      {pendingCounts[sensor.id]}
+                                    </span>
+                                  )}
                                 </button>
                               </TooltipTrigger>
                               <TooltipContent side="top">
-                                <span className="text-xs">Sensor settings</span>
+                                <span className="text-xs">
+                                  {(pendingCounts?.[sensor.id] ?? 0) > 0
+                                    ? `${pendingCounts[sensor.id]} pending change${pendingCounts[sensor.id] > 1 ? "s" : ""}`
+                                    : "Sensor settings"}
+                                </span>
                               </TooltipContent>
                             </Tooltip>
                           )}

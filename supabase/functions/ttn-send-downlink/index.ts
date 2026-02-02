@@ -313,6 +313,38 @@ async function sendTtnDownlink(
 }
 
 // ---------------------------------------------------------------------------
+// TTN error translation: map HTTP statuses to user-friendly messages
+// ---------------------------------------------------------------------------
+
+function translateTtnError(status: number, body: any): string {
+  // Try to extract TTN's own error message
+  const ttnMsg =
+    body?.message || body?.error?.message || body?.error || "";
+
+  switch (status) {
+    case 401:
+    case 403:
+      return "TTN credentials are invalid or expired. Ask your admin to update the API key in Settings → Integrations.";
+    case 404:
+      return "Sensor not found in the TTN application. Verify the device ID matches TTN.";
+    case 409:
+      return "Conflict: another downlink is already queued for this device. Wait for it to be sent, then retry.";
+    case 429:
+      return "Too many requests to TTN. Wait a moment and try again.";
+    default:
+      if (status >= 500) {
+        return `TTN server error (HTTP ${status}). The Things Network may be experiencing issues — try again later.`;
+      }
+      if (status === 0) {
+        return "Could not reach TTN servers. Check network connectivity.";
+      }
+      return ttnMsg
+        ? `TTN error (HTTP ${status}): ${ttnMsg}`
+        : `TTN downlink failed with HTTP ${status}`;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Decrypt TTN API key from ttn_connections
 // ---------------------------------------------------------------------------
 
@@ -530,6 +562,8 @@ serve(async (req: Request) => {
     // -----------------------------------------------------------------------
     // 6. Write pending_change record
     // -----------------------------------------------------------------------
+    const userEmail = user.email ?? null;
+
     const { data: pendingChange, error: insertErr } = await db
       .from("sensor_pending_changes")
       .insert({
@@ -552,6 +586,7 @@ serve(async (req: Request) => {
           attempts: ttnResult.attempts,
         },
         requested_by: user.id,
+        requested_by_email: userEmail,
       })
       .select()
       .single();
@@ -581,14 +616,16 @@ serve(async (req: Request) => {
     // 8. Return result
     // -----------------------------------------------------------------------
     if (!ttnResult.ok) {
+      const friendlyError = translateTtnError(ttnResult.status, ttnResult.body);
       return new Response(
         JSON.stringify({
           ok: false,
-          error: `TTN downlink failed: HTTP ${ttnResult.status}`,
+          error: friendlyError,
           pending_change_id: pendingChange?.id,
           debug: {
             ttn_status: ttnResult.status,
             ttn_body: ttnResult.body,
+            attempts: ttnResult.attempts,
           },
         }),
         {

@@ -78,6 +78,7 @@ export interface SensorPendingChange {
 
   debug_response: Record<string, unknown> | null;
   requested_by: string | null;
+  requested_by_email: string | null;
 
   created_at: string;
   updated_at: string;

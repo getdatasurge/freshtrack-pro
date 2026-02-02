@@ -123,3 +123,72 @@ export function sanitizeString(input: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#x27;");
 }
+
+// ============================================
+// Sensor Downlink Configuration Validation
+// ============================================
+
+/** Uplink interval: 60s (1 min) to 86400s (24h) */
+export const uplinkIntervalSecondsSchema = z.number()
+  .int("Interval must be a whole number")
+  .min(60, "Minimum interval is 60 seconds (1 minute)")
+  .max(86400, "Maximum interval is 86,400 seconds (24 hours)");
+
+/** Uplink interval entered as minutes string from form input */
+export const uplinkIntervalMinutesSchema = z.string()
+  .trim()
+  .min(1, "Interval is required")
+  .refine((v) => !isNaN(parseFloat(v)), "Must be a number")
+  .transform((v) => parseFloat(v))
+  .pipe(z.number()
+    .min(1, "Minimum interval is 1 minute")
+    .max(1440, "Maximum interval is 1,440 minutes (24 hours)")
+  );
+
+/** Alarm temperature in °F: -40 to 150 */
+export const alarmTempFSchema = z.number()
+  .min(-40, "Temperature cannot be below -40°F")
+  .max(150, "Temperature cannot exceed 150°F");
+
+/** Alarm temperature entered as string from form input */
+export const alarmTempStringSchema = z.string()
+  .trim()
+  .min(1, "Temperature is required")
+  .refine((v) => !isNaN(parseFloat(v)), "Invalid temperature")
+  .transform((v) => parseFloat(v))
+  .pipe(alarmTempFSchema);
+
+/** Alarm check interval: 1–65535 minutes */
+export const alarmCheckMinutesSchema = z.string()
+  .trim()
+  .min(1, "Check interval is required")
+  .refine((v) => !isNaN(parseInt(v)), "Must be a number")
+  .transform((v) => parseInt(v))
+  .pipe(z.number()
+    .int("Must be a whole number")
+    .min(1, "Minimum is 1 minute")
+    .max(65535, "Maximum is 65,535 minutes")
+  );
+
+/** Time sync days: 1–30 */
+export const timeSyncDaysSchema = z.string()
+  .trim()
+  .min(1, "Days is required")
+  .refine((v) => !isNaN(parseInt(v)), "Must be a number")
+  .transform((v) => parseInt(v))
+  .pipe(z.number()
+    .int("Must be a whole number")
+    .min(1, "Minimum is 1 day")
+    .max(30, "Maximum is 30 days")
+  );
+
+/** Full alarm form validation (validates high > low + 1°F gap) */
+export const alarmFormSchema = z.object({
+  enabled: z.boolean(),
+  lowF: alarmTempStringSchema,
+  highF: alarmTempStringSchema,
+  checkMinutes: alarmCheckMinutesSchema,
+}).refine(
+  (data) => data.highF > data.lowF + 1,
+  { message: "High must be at least 1°F above Low", path: ["highF"] }
+);
