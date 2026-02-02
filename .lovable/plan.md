@@ -1,73 +1,95 @@
 
 
-# Fix: Edge Function Using Wrong Authorization Table
+# Fix: TTN Send Downlink Base64 Decoding Error
 
 ## Problem
 
-The `ttn-send-downlink` edge function is returning a **403 "Not authorized for this sensor"** error because it's checking the wrong table for organization membership.
-
-The function queries `organization_members` table (which doesn't exist), but the project uses `user_roles` for organization membership.
-
-```text
-Current Code (Broken):
-┌────────────────────────────────────────────┐
-│ db.from("organization_members")            │
-│    .select("id")                           │
-│    .eq("organization_id", sensor.org_id)   │
-│    .eq("user_id", user.id)                 │
-└────────────────────────────────────────────┘
-         ↓
-   Table doesn't exist → Query returns null → 403 Forbidden
+When sending a downlink command, the edge function fails with:
+```
+InvalidCharacterError: Failed to decode base64
 ```
 
-```text
-Required Pattern (Used by other functions):
-┌────────────────────────────────────────────┐
-│ db.from("user_roles")                      │
-│    .select("role")                         │
-│    .eq("organization_id", sensor.org_id)   │
-│    .eq("user_id", user.id)                 │
-└────────────────────────────────────────────┘
-         ↓
-   User has "owner" role → Authorized → Proceed
+The error occurs at line 181 in `deobfuscateKey()`:
+```typescript
+const decoded = atob(encrypted);  // "b64:somedata" is not valid base64!
 ```
 
-## Evidence
+## Root Cause
 
-User's current role in `user_roles` table:
-| user_id | organization_id | role |
-|---------|-----------------|------|
-| d7df62e3-... | 7873654e-... | owner |
+The `ttn-send-downlink` function has its own local `deobfuscateKey` implementation that only handles the legacy XOR format:
+
+| Stored Format | Local Function | Shared Function |
+|---------------|----------------|-----------------|
+| `b64:abc...`  | Fails - tries `atob("b64:...")` | Works - strips prefix, decodes |
+| `v2:xyz...`   | Fails - tries `atob("v2:...")` | Works - strips prefix, XOR decodes |
+| Plain base64  | Works | Works |
+
+The TTN API keys in your database use the `b64:` prefix format (introduced to bypass XOR corruption issues), but the local function doesn't recognize this prefix.
 
 ## Fix
 
-Update `supabase/functions/ttn-send-downlink/index.ts` lines 284-300 to use `user_roles` table instead of `organization_members`:
+Replace the local `deobfuscateKey` function with an import from the shared module `_shared/ttnConfig.ts`, which correctly handles all obfuscation formats.
 
+### File: supabase/functions/ttn-send-downlink/index.ts
+
+**Remove lines 180-191** (local deobfuscateKey function):
 ```typescript
-// Verify user belongs to this org via user_roles table
-const { data: roleCheck } = await db
-  .from("user_roles")
-  .select("role")
-  .eq("organization_id", sensor.organization_id)
-  .eq("user_id", user.id)
-  .maybeSingle();
-
-if (!roleCheck) {
-  return new Response(
-    JSON.stringify({ ok: false, error: "Not authorized for this sensor" }),
-    {
-      status: 403,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    }
-  );
+// DELETE THIS:
+function deobfuscateKey(encrypted: string, salt: string): string {
+  const decoded = atob(encrypted);
+  const result: string[] = [];
+  for (let i = 0; i < decoded.length; i++) {
+    result.push(
+      String.fromCharCode(
+        decoded.charCodeAt(i) ^ salt.charCodeAt(i % salt.length)
+      )
+    );
+  }
+  return result.join("");
 }
 ```
 
-## Secondary Fix (Same Issue)
+**Add import at line 26** (with other ttnConfig imports):
+```typescript
+import {
+  hexToBase64,
+  buildCommand,
+  type BuiltCommand,
+} from "../_shared/downlinkCommands.ts";
+import { deobfuscateKey } from "../_shared/ttnConfig.ts";  // ADD THIS
+```
 
-The `ttn-deprovision-jobs` function also references `organization_members` and needs the same fix for consistency.
+## Technical Details
 
-## After Deployment
+### Shared deobfuscateKey Flow
 
-Once the fix is deployed, clicking preset buttons will successfully queue downlinks to TTN.
+The shared function (lines 293-319 in ttnConfig.ts) handles all formats:
+
+```text
+Input: "b64:TlJOUy5aMjRE..."
+       ↓
+Detects "b64:" prefix
+       ↓
+Strips prefix → "TlJOUy5aMjRE..."
+       ↓
+Base64 decode → raw bytes
+       ↓
+TextDecoder → API key string
+```
+
+### Why This Happened
+
+The `ttn-send-downlink` function was created before the versioned obfuscation system was finalized. It copied an early version of the deobfuscation logic instead of importing from the shared module.
+
+### No Database Changes Required
+
+The fix is purely in the edge function code. The stored TTN API keys are valid and don't need updating.
+
+## After Fix
+
+Clicking preset buttons (Power Saver, Standard, Debug) will successfully:
+1. Decode the TTN API key using the correct format
+2. Build the downlink command hex payload
+3. Send the REPLACE downlink to TTN
+4. Record the pending change for tracking
 
