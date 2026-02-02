@@ -9,9 +9,11 @@
  *  - Sensor inherits unit defaults unless "Override unit alarm" is toggled.
  *  - Each "Apply" creates one pending change + one downlink (REPLACE, unconfirmed).
  *  - Pending/Applied/Failed status shown in the change history section.
+ *  - Per-button loading states track which specific command is being sent.
+ *  - Pending changes list auto-refreshes while there are 'sent' items.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Sheet,
   SheetContent,
@@ -45,6 +47,7 @@ import {
   Settings2,
   ChevronDown,
   ChevronRight,
+  RefreshCw,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -118,6 +121,17 @@ function statusBadgeClass(status: SensorChangeStatus): string {
   }
 }
 
+/** Track which button triggered the current mutation */
+type ActiveCommand =
+  | { type: "preset"; label: string }
+  | { type: "interval" }
+  | { type: "ext_mode" }
+  | { type: "time_sync" }
+  | { type: "time_sync_days" }
+  | { type: "set_time" }
+  | { type: "alarm" }
+  | null;
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -132,24 +146,47 @@ export function SensorSettingsDrawer({
   const { data: config, isLoading: configLoading } = useSensorConfig(
     open ? sensor.id : null
   );
-  const { data: pendingChanges, isLoading: changesLoading } =
-    useSensorPendingChanges(open ? sensor.id : null);
+  const {
+    data: pendingChanges,
+    isLoading: changesLoading,
+    refetch: refetchChanges,
+  } = useSensorPendingChanges(open ? sensor.id : null);
   const sendDownlink = useSendDownlink();
+
+  // --- Per-button loading tracking ---
+  const [activeCmd, setActiveCmd] = useState<ActiveCommand>(null);
+
+  // Clear active command when mutation settles
+  useEffect(() => {
+    if (!sendDownlink.isPending) {
+      setActiveCmd(null);
+    }
+  }, [sendDownlink.isPending]);
+
+  // --- Auto-refresh when there are 'sent' changes ---
+  const hasSentChanges = pendingChanges?.some((c) => c.status === "sent");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (open && hasSentChanges) {
+      pollRef.current = setInterval(() => {
+        refetchChanges();
+      }, 15_000); // refresh every 15s while 'sent' changes exist
+    }
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [open, hasSentChanges, refetchChanges]);
 
   // --- Local form state ---
   const [advancedOpen, setAdvancedOpen] = useState(false);
-
-  // Uplink interval
   const [intervalMinutes, setIntervalMinutes] = useState("");
-
-  // External mode
   const [extMode, setExtMode] = useState<ExtMode | "">("");
-
-  // Time sync
   const [timeSyncEnabled, setTimeSyncEnabled] = useState(false);
   const [timeSyncDays, setTimeSyncDays] = useState("10");
-
-  // Alarm override
   const [overrideAlarm, setOverrideAlarm] = useState(false);
   const [alarmEnabled, setAlarmEnabled] = useState(false);
   const [alarmLowF, setAlarmLowF] = useState("");
@@ -164,12 +201,16 @@ export function SensorSettingsDrawer({
       }
       setExtMode(config.ext_mode || "");
       setTimeSyncEnabled(config.time_sync_enabled);
-      if (config.time_sync_days !== null) setTimeSyncDays(String(config.time_sync_days));
+      if (config.time_sync_days !== null)
+        setTimeSyncDays(String(config.time_sync_days));
       setOverrideAlarm(config.override_unit_alarm);
       setAlarmEnabled(config.alarm_enabled);
-      if (config.alarm_low !== null) setAlarmLowF(String(Math.round(cToF(config.alarm_low))));
-      if (config.alarm_high !== null) setAlarmHighF(String(Math.round(cToF(config.alarm_high))));
-      if (config.alarm_check_minutes !== null) setAlarmCheckMin(String(config.alarm_check_minutes));
+      if (config.alarm_low !== null)
+        setAlarmLowF(String(Math.round(cToF(config.alarm_low))));
+      if (config.alarm_high !== null)
+        setAlarmHighF(String(Math.round(cToF(config.alarm_high))));
+      if (config.alarm_check_minutes !== null)
+        setAlarmCheckMin(String(config.alarm_check_minutes));
     } else {
       // Defaults from unit settings
       if (unitAlarmLow !== null) setAlarmLowF(String(unitAlarmLow));
@@ -180,7 +221,10 @@ export function SensorSettingsDrawer({
   // --- Apply handlers (one command = one downlink) ---
 
   const applyInterval = useCallback(
-    (seconds: number) => {
+    (seconds: number, presetLabel?: string) => {
+      setActiveCmd(
+        presetLabel ? { type: "preset", label: presetLabel } : { type: "interval" }
+      );
       sendDownlink.mutate({
         sensorId: sensor.id,
         commandType: "uplink_interval",
@@ -192,6 +236,7 @@ export function SensorSettingsDrawer({
 
   const applyExtMode = useCallback(() => {
     if (!extMode) return;
+    setActiveCmd({ type: "ext_mode" });
     sendDownlink.mutate({
       sensorId: sensor.id,
       commandType: "ext_mode",
@@ -201,6 +246,7 @@ export function SensorSettingsDrawer({
 
   const applyTimeSync = useCallback(
     (enable: boolean) => {
+      setActiveCmd({ type: "time_sync" });
       sendDownlink.mutate({
         sensorId: sensor.id,
         commandType: "time_sync",
@@ -212,6 +258,7 @@ export function SensorSettingsDrawer({
 
   const applyTimeSyncDays = useCallback(() => {
     const days = parseInt(timeSyncDays) || 10;
+    setActiveCmd({ type: "time_sync_days" });
     sendDownlink.mutate({
       sensorId: sensor.id,
       commandType: "time_sync",
@@ -221,6 +268,7 @@ export function SensorSettingsDrawer({
 
   const applySetTimeNow = useCallback(() => {
     const unixTs = Math.floor(Date.now() / 1000);
+    setActiveCmd({ type: "set_time" });
     sendDownlink.mutate({
       sensorId: sensor.id,
       commandType: "set_time",
@@ -235,6 +283,7 @@ export function SensorSettingsDrawer({
     if (isNaN(lowF) || isNaN(highF)) return;
     const lowC = fToC(lowF);
     const highC = fToC(highF);
+    setActiveCmd({ type: "alarm" });
     sendDownlink.mutate({
       sensorId: sensor.id,
       commandType: "alarm",
@@ -246,7 +295,14 @@ export function SensorSettingsDrawer({
         high_c: Math.round(highC * 100) / 100,
       },
     });
-  }, [sensor.id, alarmEnabled, alarmLowF, alarmHighF, alarmCheckMin, sendDownlink]);
+  }, [
+    sensor.id,
+    alarmEnabled,
+    alarmLowF,
+    alarmHighF,
+    alarmCheckMin,
+    sendDownlink,
+  ]);
 
   const applyCustomInterval = useCallback(() => {
     const minutes = parseFloat(intervalMinutes);
@@ -255,6 +311,15 @@ export function SensorSettingsDrawer({
   }, [intervalMinutes, applyInterval]);
 
   const isBusy = sendDownlink.isPending;
+
+  // Helper: is this specific button the one that's loading?
+  const isLoading = (cmd: ActiveCommand): boolean => {
+    if (!isBusy || !activeCmd || !cmd) return false;
+    if (cmd.type === "preset" && activeCmd.type === "preset") {
+      return cmd.label === activeCmd.label;
+    }
+    return cmd.type === activeCmd.type;
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -275,7 +340,9 @@ export function SensorSettingsDrawer({
         <div className="space-y-1 text-sm mb-6 p-3 rounded-lg bg-muted/40">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Device ID</span>
-            <span className="font-mono text-xs">{sensor.ttn_device_id || sensor.name}</span>
+            <span className="font-mono text-xs">
+              {sensor.ttn_device_id || sensor.name}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">DevEUI</span>
@@ -284,13 +351,27 @@ export function SensorSettingsDrawer({
           {sensor.last_seen_at && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Last uplink</span>
-              <span>{formatDistanceToNow(new Date(sensor.last_seen_at), { addSuffix: true })}</span>
+              <span>
+                {formatDistanceToNow(new Date(sensor.last_seen_at), {
+                  addSuffix: true,
+                })}
+              </span>
             </div>
           )}
           {config?.uplink_interval_s && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Current interval</span>
+              <span className="text-muted-foreground">Uplink interval</span>
               <span>{Math.round(config.uplink_interval_s / 60)} min</span>
+            </div>
+          )}
+          {config?.last_applied_at && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Last confirmed</span>
+              <span>
+                {formatDistanceToNow(new Date(config.last_applied_at), {
+                  addSuffix: true,
+                })}
+              </span>
             </div>
           )}
         </div>
@@ -310,21 +391,37 @@ export function SensorSettingsDrawer({
                 Quick Presets
               </h3>
               <div className="grid grid-cols-3 gap-2">
-                {UPLINK_PRESETS.map((preset) => (
-                  <Button
-                    key={preset.label}
-                    variant="outline"
-                    size="sm"
-                    disabled={isBusy}
-                    onClick={() => applyInterval(preset.interval_s)}
-                    className="flex flex-col h-auto py-2.5 gap-0.5"
-                  >
-                    <span className="text-xs font-medium">{preset.label}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {preset.description}
-                    </span>
-                  </Button>
-                ))}
+                {UPLINK_PRESETS.map((preset) => {
+                  const loading = isLoading({
+                    type: "preset",
+                    label: preset.label,
+                  });
+                  return (
+                    <Button
+                      key={preset.label}
+                      variant="outline"
+                      size="sm"
+                      disabled={isBusy}
+                      onClick={() =>
+                        applyInterval(preset.interval_s, preset.label)
+                      }
+                      className="flex flex-col h-auto py-2.5 gap-0.5"
+                    >
+                      {loading ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <>
+                          <span className="text-xs font-medium">
+                            {preset.label}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {preset.description}
+                          </span>
+                        </>
+                      )}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
 
@@ -350,7 +447,9 @@ export function SensorSettingsDrawer({
                 <div className="mt-4 space-y-5">
                   {/* Custom Uplink Interval */}
                   <div className="space-y-2">
-                    <Label className="text-xs font-medium">Uplink Interval (minutes)</Label>
+                    <Label className="text-xs font-medium">
+                      Uplink Interval (minutes)
+                    </Label>
                     <div className="flex gap-2">
                       <Input
                         type="number"
@@ -366,7 +465,7 @@ export function SensorSettingsDrawer({
                         disabled={isBusy || !intervalMinutes}
                         onClick={applyCustomInterval}
                       >
-                        {isBusy ? (
+                        {isLoading({ type: "interval" }) ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         ) : (
                           "Apply"
@@ -377,7 +476,9 @@ export function SensorSettingsDrawer({
 
                   {/* External Mode (LHT65N) */}
                   <div className="space-y-2">
-                    <Label className="text-xs font-medium">External Mode (LHT65N)</Label>
+                    <Label className="text-xs font-medium">
+                      External Mode (LHT65N)
+                    </Label>
                     <div className="flex gap-2">
                       <Select
                         value={extMode}
@@ -387,8 +488,12 @@ export function SensorSettingsDrawer({
                           <SelectValue placeholder="Select mode" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="e3_ext1">E3 Temp Probe (ext=1)</SelectItem>
-                          <SelectItem value="e3_ext9">E3 + Timestamp (ext=9)</SelectItem>
+                          <SelectItem value="e3_ext1">
+                            E3 Temp Probe (ext=1)
+                          </SelectItem>
+                          <SelectItem value="e3_ext9">
+                            E3 + Timestamp (ext=9)
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <Button
@@ -396,7 +501,11 @@ export function SensorSettingsDrawer({
                         disabled={isBusy || !extMode}
                         onClick={applyExtMode}
                       >
-                        Apply
+                        {isLoading({ type: "ext_mode" }) ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          "Apply"
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -408,6 +517,9 @@ export function SensorSettingsDrawer({
                     <div className="flex items-center justify-between">
                       <Label className="text-xs font-medium">Time Sync</Label>
                       <div className="flex items-center gap-2">
+                        {isLoading({ type: "time_sync" }) && (
+                          <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                        )}
                         <Switch
                           checked={timeSyncEnabled}
                           onCheckedChange={(checked) => {
@@ -438,7 +550,11 @@ export function SensorSettingsDrawer({
                           disabled={isBusy}
                           onClick={applyTimeSyncDays}
                         >
-                          Apply
+                          {isLoading({ type: "time_sync_days" }) ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            "Apply"
+                          )}
                         </Button>
                       </div>
                     )}
@@ -450,7 +566,11 @@ export function SensorSettingsDrawer({
                       onClick={applySetTimeNow}
                       className="w-full"
                     >
-                      <Clock className="w-3.5 h-3.5 mr-1.5" />
+                      {isLoading({ type: "set_time" }) ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                      ) : (
+                        <Clock className="w-3.5 h-3.5 mr-1.5" />
+                      )}
                       Set Device Time to Now
                     </Button>
                   </div>
@@ -480,15 +600,17 @@ export function SensorSettingsDrawer({
 
                     {!overrideAlarm && (
                       <p className="text-xs text-muted-foreground italic">
-                        Using unit defaults: Low {unitAlarmLow ?? "—"}°F / High{" "}
-                        {unitAlarmHigh ?? "—"}°F
+                        Using unit defaults: Low {unitAlarmLow ?? "\u2014"}°F /
+                        High {unitAlarmHigh ?? "\u2014"}°F
                       </p>
                     )}
 
                     {overrideAlarm && (
                       <>
                         <div className="flex items-center justify-between">
-                          <Label className="text-xs">Enable on-device alarm</Label>
+                          <Label className="text-xs">
+                            Enable on-device alarm
+                          </Label>
                           <Switch
                             checked={alarmEnabled}
                             onCheckedChange={setAlarmEnabled}
@@ -498,7 +620,9 @@ export function SensorSettingsDrawer({
 
                         <div className="grid grid-cols-3 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground">Low (°F)</Label>
+                            <Label className="text-[10px] text-muted-foreground">
+                              Low (°F)
+                            </Label>
                             <Input
                               type="number"
                               step="0.1"
@@ -507,7 +631,9 @@ export function SensorSettingsDrawer({
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground">High (°F)</Label>
+                            <Label className="text-[10px] text-muted-foreground">
+                              High (°F)
+                            </Label>
                             <Input
                               type="number"
                               step="0.1"
@@ -516,7 +642,9 @@ export function SensorSettingsDrawer({
                             />
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-[10px] text-muted-foreground">Check (min)</Label>
+                            <Label className="text-[10px] text-muted-foreground">
+                              Check (min)
+                            </Label>
                             <Input
                               type="number"
                               min="1"
@@ -533,7 +661,7 @@ export function SensorSettingsDrawer({
                           onClick={applyAlarm}
                           className="w-full"
                         >
-                          {isBusy ? (
+                          {isLoading({ type: "alarm" }) ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
                           ) : (
                             <Send className="w-3.5 h-3.5 mr-1.5" />
@@ -553,7 +681,18 @@ export function SensorSettingsDrawer({
             {/* Recent Changes (pending / applied / failed)                     */}
             {/* -------------------------------------------------------------- */}
             <div>
-              <h3 className="text-sm font-semibold mb-3">Recent Changes</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">Recent Changes</h3>
+                {hasSentChanges && (
+                  <button
+                    onClick={() => refetchChanges()}
+                    className="p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                    title="Refresh"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               {changesLoading ? (
                 <div className="flex items-center justify-center py-4">
                   <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
@@ -569,7 +708,9 @@ export function SensorSettingsDrawer({
                       key={change.id}
                       className="flex items-start gap-2 p-2 rounded-lg bg-muted/30 text-xs"
                     >
-                      <div className="mt-0.5">{statusIcon(change.status)}</div>
+                      <div className="mt-0.5">
+                        {statusIcon(change.status)}
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium truncate">
@@ -585,14 +726,31 @@ export function SensorSettingsDrawer({
                           </Badge>
                         </div>
                         <span className="text-muted-foreground">
-                          {formatDistanceToNow(new Date(change.requested_at), {
-                            addSuffix: true,
-                          })}
+                          {formatDistanceToNow(
+                            new Date(change.requested_at),
+                            { addSuffix: true }
+                          )}
                         </span>
                         {change.status === "sent" && (
                           <p className="text-muted-foreground mt-0.5 flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 text-amber-400" />
                             Awaiting next uplink (Class A)
+                          </p>
+                        )}
+                        {change.status === "applied" && change.applied_at && (
+                          <p className="text-green-600 mt-0.5 flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Confirmed{" "}
+                            {formatDistanceToNow(
+                              new Date(change.applied_at),
+                              { addSuffix: true }
+                            )}
+                          </p>
+                        )}
+                        {change.status === "timeout" && (
+                          <p className="text-amber-600 mt-0.5 flex items-center gap-1">
+                            <Timer className="w-3 h-3" />
+                            No confirmation received
                           </p>
                         )}
                       </div>

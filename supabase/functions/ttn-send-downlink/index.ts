@@ -209,6 +209,11 @@ function buildCommand(params: any, defaultFport: number = 2): BuiltCommand {
 // TTN API call: REPLACE downlink queue (always unconfirmed)
 // ---------------------------------------------------------------------------
 
+/**
+ * Send downlink to TTN with retry logic for transient network errors.
+ * Retries up to 3 times with exponential backoff (1s, 2s, 4s).
+ * Only retries on network errors or 5xx responses, not 4xx client errors.
+ */
 async function sendTtnDownlink(
   baseUrl: string,
   appId: string,
@@ -216,11 +221,11 @@ async function sendTtnDownlink(
   apiKey: string,
   fport: number,
   hexPayload: string
-): Promise<{ ok: boolean; status: number; body: any }> {
+): Promise<{ ok: boolean; status: number; body: any; attempts: number }> {
   const url = `${baseUrl}/api/v3/as/applications/${appId}/devices/${deviceId}/down/replace`;
   const frmPayload = hexToBase64(hexPayload);
 
-  const body = {
+  const reqBody = {
     downlinks: [
       {
         f_port: fport,
@@ -231,30 +236,80 @@ async function sendTtnDownlink(
     ],
   };
 
-  console.log(`[TTN] POST ${url} fport=${fport} hex=${hexPayload}`);
+  const maxAttempts = 3;
+  let lastError: unknown = null;
 
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "User-Agent": `FrostGuard/${FUNCTION_VERSION}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  let respBody: any = null;
-  try {
-    respBody = await resp.json();
-  } catch {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      respBody = await resp.text();
-    } catch {
-      /* empty */
+      console.log(
+        `[TTN] POST ${url} fport=${fport} hex=${hexPayload} (attempt ${attempt}/${maxAttempts})`
+      );
+
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "User-Agent": `FrostGuard/${FUNCTION_VERSION}`,
+        },
+        body: JSON.stringify(reqBody),
+      });
+
+      let respBody: any = null;
+      try {
+        respBody = await resp.json();
+      } catch {
+        try {
+          respBody = await resp.text();
+        } catch {
+          /* empty */
+        }
+      }
+
+      // Don't retry 4xx client errors (bad request, unauthorized, etc.)
+      if (resp.status >= 400 && resp.status < 500) {
+        return { ok: false, status: resp.status, body: respBody, attempts: attempt };
+      }
+
+      // Success or non-retryable response
+      if (resp.ok) {
+        return { ok: true, status: resp.status, body: respBody, attempts: attempt };
+      }
+
+      // 5xx: retry if we have attempts left
+      console.warn(
+        `[TTN] Attempt ${attempt} failed with status ${resp.status}, ${
+          attempt < maxAttempts ? "retrying..." : "giving up"
+        }`
+      );
+      lastError = { status: resp.status, body: respBody };
+    } catch (fetchErr) {
+      // Network error (DNS, timeout, connection refused)
+      console.warn(
+        `[TTN] Attempt ${attempt} network error: ${fetchErr}, ${
+          attempt < maxAttempts ? "retrying..." : "giving up"
+        }`
+      );
+      lastError = fetchErr;
+    }
+
+    // Exponential backoff before retry: 1s, 2s, 4s
+    if (attempt < maxAttempts) {
+      const delayMs = Math.pow(2, attempt - 1) * 1000;
+      await new Promise((r) => setTimeout(r, delayMs));
     }
   }
 
-  return { ok: resp.ok, status: resp.status, body: respBody };
+  // All retries exhausted
+  const errBody =
+    lastError && typeof lastError === "object" && "body" in lastError
+      ? (lastError as any).body
+      : String(lastError);
+  const errStatus =
+    lastError && typeof lastError === "object" && "status" in lastError
+      ? (lastError as any).status
+      : 0;
+  return { ok: false, status: errStatus, body: errBody, attempts: maxAttempts };
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +549,7 @@ serve(async (req: Request) => {
           ttn_url: `${ttnBaseUrl}/api/v3/as/applications/${ttnAppId}/devices/${ttnDeviceId}/down/replace`,
           hex: built.hex,
           b64: hexToBase64(built.hex),
+          attempts: ttnResult.attempts,
         },
         requested_by: user.id,
       })
