@@ -1,52 +1,87 @@
 
-# COMPLETED: Fix "Configure Sensor" buttons not clickable in Customize mode
+# Fix Plan: LastKnownGoodWidget Disappears After Load
 
-## Status: ✅ DONE
+## Problem Summary
 
-## Summary of Changes Made
+The **Last Known Good** widget (middle card in your screenshot) shows "No Temperature History" initially, then becomes a blank white card after the page fully loads.
 
-### 1. Fixed pointer-events blocking in WidgetWrapper (Core Fix)
-**Files:** `GridCanvas.tsx`, `WidgetWrapper.tsx`
+## Root Cause
 
-- Added `isInteracting` prop to WidgetWrapper
-- Changed pointer-events from `isCustomizing ? "none" : "auto"` to `isCustomizing && isInteracting ? "none" : "auto"`
-- This allows clicks on widget content when in Customize mode, but blocks them during active drag/resize
+The `LastKnownGoodWidget` component intentionally returns `null` when the sensor is online and has valid temperature data:
 
-### 2. Made UnitDetail Tabs controlled for URL-based navigation
-**File:** `UnitDetail.tsx`
+```tsx
+// lines 25-28 of LastKnownGoodWidget.tsx
+if (isCurrentlyOnline && lastValidTemp !== null) {
+  return null;
+}
+```
 
-- Changed from `defaultValue={initialTab}` to controlled `value={currentTab}`
-- Added `onValueChange` handler that updates URL via `setSearchParams`
-- Added scroll-to-sensors effect when navigating with `?tab=settings&section=sensors`
-- Wrapped `UnitSensorsCard` in a `<div id="connected-sensors">` for scroll targeting
+However, the `WidgetWrapper` still renders its Card container around this `null` content, producing an empty white box.
 
-### 3. Updated action hrefs to unit-scoped routes
-**File:** `useWidgetState.ts`
+This directly violates the project design principle:
+> "No widget may render as a blank container"
 
-- Changed sensor config hrefs from `/settings?tab=sensors&unitId=...` to `/units/${unit.id}?tab=settings&section=sensors`
-- Applies to: temperature widgets, battery widget, door activity widget, connected sensors widget, humidity chart widget
+## Solution
 
-### 4. Added stopPropagation hardening
-**Files:** `WidgetEmptyState.tsx`, `LayoutValidationBanner.tsx`
+Instead of returning `null`, the widget should display a **healthy state** message when the sensor is online. This maintains visual consistency and provides positive feedback.
 
-- Added `onPointerDown`, `onMouseDown`, and `onClick` with `stopPropagation()` to action buttons/links
-- Prevents grid layout from capturing mouse events during interactions
+### When sensor is online and has readings
 
-### 5. Added/Updated Tests
-**Files:** 
-- `LayoutValidationBanner.test.tsx` - Added click navigation test
-- `WidgetWrapper.test.tsx` - New test file for widget interactivity in customize mode
+Show a brief "Real-time monitoring active" card with:
+- A green checkmark icon
+- "Monitoring Active" title
+- Current temperature snapshot
+- "Live data from sensor" subtext
 
-## Test Results
-All 10 tests pass:
-- 4 LayoutValidationBanner tests
-- 6 WidgetWrapper tests
+### Code Change
 
-## Manual Validation Checklist
-1. ✅ Open a Unit detail page
-2. ✅ Toggle **Customize** ON
-3. ✅ Click "Configure Sensor" action inside a widget empty/warning state
-4. ✅ Click "Configure Sensor" action in the validation banner
-5. ✅ Verify navigation to **Settings** tab with **Connected Sensors** visible
-6. ✅ Verify no console errors
-7. ✅ Repeat with Customize OFF to ensure behavior still works
+In `src/features/dashboard-layout/widgets/LastKnownGoodWidget.tsx`:
+
+**Before (lines 25-28):**
+```tsx
+if (isCurrentlyOnline && lastValidTemp !== null) {
+  return null;
+}
+```
+
+**After:**
+```tsx
+if (isCurrentlyOnline && lastValidTemp !== null) {
+  return (
+    <div className="h-full p-4 bg-safe/5">
+      <div className="flex items-center gap-2 mb-2">
+        <CheckCircle className="w-5 h-5 text-safe" />
+        <h3 className="text-lg font-semibold">Monitoring Active</h3>
+      </div>
+      <div className="space-y-1">
+        <span className="text-3xl font-bold text-safe">
+          {lastValidTemp.toFixed(1)}°F
+        </span>
+        <p className="text-sm text-muted-foreground">
+          Live data from sensor
+        </p>
+      </div>
+    </div>
+  );
+}
+```
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `src/features/dashboard-layout/widgets/LastKnownGoodWidget.tsx` | Replace `null` return with healthy state UI |
+
+## Technical Notes
+
+1. **Design alignment**: This follows the "widget-empty-state-v1" memory which states widgets should never render blank
+2. **Icon consistency**: Uses `CheckCircle` from lucide-react (already imported in the file)
+3. **Color palette**: Uses `text-safe` and `bg-safe/5` which are the project's "healthy" status colors
+
+## Manual Verification
+
+After fix:
+1. Navigate to Unit dashboard
+2. If sensor is online, the Last Known Good widget should show "Monitoring Active" with a green icon and current temp
+3. If sensor is offline, the widget should show the last known reading (existing behavior)
+4. If no history exists, the widget should show "No Temperature History" (existing behavior)
