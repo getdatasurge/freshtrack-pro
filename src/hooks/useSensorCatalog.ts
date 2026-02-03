@@ -3,7 +3,35 @@ import { supabase } from "@/integrations/supabase/client";
 import type { SensorCatalogEntry, SensorCatalogInsert } from "@/types/sensorCatalog";
 
 const CATALOG_QUERY_KEY = ["sensor-catalog"];
+const CATALOG_PUBLIC_QUERY_KEY = ["sensor-catalog-public"];
 
+/**
+ * Hook for org-level users to read visible, non-deprecated catalog entries.
+ * Used in the Add Sensor dialog for model selection.
+ * RLS enforces visibility: only is_visible=true AND deprecated_at IS NULL.
+ */
+export function useSensorCatalogPublic() {
+  return useQuery<SensorCatalogEntry[]>({
+    queryKey: CATALOG_PUBLIC_QUERY_KEY,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sensor_catalog")
+        .select("*")
+        .eq("is_visible", true)
+        .is("deprecated_at", null)
+        .order("manufacturer", { ascending: true })
+        .order("model", { ascending: true });
+
+      if (error) throw error;
+      return (data ?? []) as unknown as SensorCatalogEntry[];
+    },
+    staleTime: 5 * 60_000, // 5 min — catalog changes rarely
+  });
+}
+
+/**
+ * Hook for super admins to read all catalog entries (including deprecated).
+ */
 export function useSensorCatalog() {
   return useQuery<SensorCatalogEntry[]>({
     queryKey: CATALOG_QUERY_KEY,
