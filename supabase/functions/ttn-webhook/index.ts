@@ -77,6 +77,7 @@ interface LoraSensor {
   name: string;
   is_primary: boolean;
   model: string | null;
+  sensor_catalog_id: string | null;
 }
 
 interface LegacyDevice {
@@ -206,11 +207,17 @@ Deno.serve(async (req) => {
     // Extract raw payload for storage (decoder independence)
     const frmPayloadBase64 = ttnPayload.uplink_message?.frm_payload || null;
     const fPort = ttnPayload.uplink_message?.f_port ?? null;
-    const rawPayloadHex = frmPayloadBase64
-      ? Array.from(Uint8Array.from(atob(frmPayloadBase64), c => c.charCodeAt(0)))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('')
-      : null;
+    let rawPayloadHex: string | null = null;
+    let frmPayloadBytes: number[] | null = null;
+    if (frmPayloadBase64) {
+      try {
+        const raw = Uint8Array.from(atob(frmPayloadBase64), c => c.charCodeAt(0));
+        frmPayloadBytes = Array.from(raw);
+        rawPayloadHex = frmPayloadBytes.map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch (e) {
+        console.warn(`[TTN-WEBHOOK] ${requestId} | Failed to decode frm_payload base64: ${e}`);
+      }
+    }
 
     console.log(`[TTN-WEBHOOK] ${requestId} | Uplink: device=${deviceId}, dev_eui=${rawDevEui}, app=${applicationId}`);
 
@@ -252,7 +259,7 @@ Deno.serve(async (req) => {
     if (deviceId) {
       const { data: sensorByDeviceId } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id')
         .eq('ttn_device_id', deviceId)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -267,7 +274,7 @@ Deno.serve(async (req) => {
     if (!loraSensor) {
       const { data: sensorByDevEui } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id')
         .or(`dev_eui.eq.${devEuiLower},dev_eui.eq.${devEuiUpper},dev_eui.eq.${devEuiColonUpper},dev_eui.eq.${devEuiColonLower}`)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -291,6 +298,7 @@ Deno.serve(async (req) => {
         frmPayloadBase64,
         fPort,
         rawPayloadHex,
+        frmPayloadBytes,
       });
     }
 
@@ -356,9 +364,10 @@ async function handleLoraSensor(
     frmPayloadBase64: string | null;
     fPort: number | null;
     rawPayloadHex: string | null;
+    frmPayloadBytes: number[] | null;
   }
 ): Promise<Response> {
-  const { devEui, rssi, receivedAt, requestId, frmPayloadBase64, fPort, rawPayloadHex } = data;
+  const { devEui, rssi, receivedAt, requestId, frmPayloadBase64, fPort, rawPayloadHex, frmPayloadBytes } = data;
 
   // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
   const decoded = normalizeTelemetry(data.decoded);
@@ -491,6 +500,56 @@ async function handleLoraSensor(
     // Only set door_open if this is actually a door sensor
     if (hasDoorCapability && currentDoorOpen !== undefined) {
       readingData.door_open = currentDoorOpen;
+    }
+
+    // ========================================
+    // TRUST MODE: Server-side decoding via catalog decoder_js
+    // Only runs when sensor has a catalog entry with a decoder and we have raw bytes.
+    // Never fails the uplink — all errors are caught and logged.
+    // ========================================
+    if (sensor.sensor_catalog_id && frmPayloadBytes && fPort != null) {
+      try {
+        const { data: catalogEntry } = await supabase
+          .from('sensor_catalog')
+          .select('decoder_js, revision')
+          .eq('id', sensor.sensor_catalog_id)
+          .maybeSingle();
+
+        if (catalogEntry?.decoder_js) {
+          const decoderCode = `${catalogEntry.decoder_js}\nreturn decodeUplink(input);`;
+          const decoderFn = new Function('input', decoderCode);
+          const decoderResult = decoderFn({ bytes: frmPayloadBytes, fPort });
+          const appDecoded = (decoderResult?.data ?? decoderResult) as Record<string, unknown>;
+
+          readingData.app_decoded_payload = appDecoded;
+          readingData.decoder_id = `catalog:${sensor.sensor_catalog_id}:rev${catalogEntry.revision}`;
+
+          // Compare against TTN decoded payload (use original, pre-normalization)
+          const networkPayload = data.decoded;
+          if (Object.keys(networkPayload).length > 0) {
+            const appJson = JSON.stringify(appDecoded, Object.keys(appDecoded).sort());
+            const netJson = JSON.stringify(networkPayload, Object.keys(networkPayload).sort());
+            const match = appJson === netJson;
+            readingData.decode_match = match;
+            if (!match) {
+              // Find which keys differ for actionable debugging
+              const allKeys = new Set([...Object.keys(appDecoded), ...Object.keys(networkPayload)]);
+              const diffKeys = [...allKeys].filter(k =>
+                JSON.stringify(appDecoded[k]) !== JSON.stringify(networkPayload[k])
+              );
+              readingData.decode_mismatch_reason = `key_diff:${diffKeys.join(',')}`;
+              console.warn(`[TTN-WEBHOOK] ${requestId} | Decode mismatch: keys=${diffKeys.join(',')}`);
+            } else {
+              console.log(`[TTN-WEBHOOK] ${requestId} | Decode match confirmed (catalog rev${catalogEntry.revision})`);
+            }
+          }
+        }
+      } catch (decodeErr: unknown) {
+        const errMsg = decodeErr instanceof Error ? decodeErr.message : String(decodeErr);
+        console.warn(`[TTN-WEBHOOK] ${requestId} | Server-side decode failed: ${errMsg}`);
+        readingData.decode_match = false;
+        readingData.decode_mismatch_reason = `decode_error:${errMsg.slice(0, 200)}`;
+      }
     }
 
     // Insert reading
