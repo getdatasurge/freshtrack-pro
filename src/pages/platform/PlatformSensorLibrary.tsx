@@ -85,7 +85,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     model: "LHT65",
     model_variant: null,
     display_name: "Dragino LHT65 Temperature & Humidity Sensor",
-    sensor_kind: "temp",
+    sensor_kind: "temp_humidity",
     description: "Indoor LoRaWAN temperature and humidity sensor with external probe option. Ideal for walk-in coolers, freezers, and dry storage monitoring.",
     frequency_bands: ["US915", "EU868", "AU915", "AS923"],
     lorawan_version: "1.0.3",
@@ -322,6 +322,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
 // ─── Kind metadata ───────────────────────────────────────────
 const KIND_META: Record<string, { icon: typeof Thermometer; label: string; color: string; bg: string }> = {
   temp: { icon: Thermometer, label: "Temperature", color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30" },
+  temp_humidity: { icon: Droplets, label: "Temp & Humidity", color: "text-teal-600", bg: "bg-teal-50 dark:bg-teal-950/30" },
   door: { icon: DoorOpen, label: "Door/Contact", color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-950/30" },
   combo: { icon: Cpu, label: "Combo", color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-950/30" },
   co2: { icon: Wind, label: "CO₂ / Air Quality", color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30" },

@@ -83,6 +83,7 @@ export interface SensorCatalogTestVector {
 
 export type SensorKind =
   | "temp"
+  | "temp_humidity"
   | "door"
   | "combo"
   | "co2"
