@@ -1402,7 +1402,7 @@ export default function PlatformSensorLibrary() {
   const handleAddSensor = useCallback(async (entry: SensorCatalogInsert) => {
     try {
       await addMutation.mutateAsync(entry);
-      logSuperAdminAction("ADDED_SENSOR_TO_CATALOG", { model: entry.model, manufacturer: entry.manufacturer });
+      logSuperAdminAction("ADDED_SENSOR_TO_CATALOG", JSON.stringify({ model: entry.model, manufacturer: entry.manufacturer }));
       toast({ title: "Sensor added", description: `${entry.manufacturer} ${entry.model} added to the catalog.` });
     } catch (err) {
       // If DB insert fails (e.g. table doesn't exist yet), that's OK — seed data is still shown
@@ -1420,7 +1420,7 @@ export default function PlatformSensorLibrary() {
     const sensor = catalog.find((s) => s.id === selectedSensorId);
     try {
       await retireMutation.mutateAsync({ id: selectedSensorId, reason });
-      logSuperAdminAction("RETIRED_SENSOR", { id: selectedSensorId, model: sensor?.model, reason });
+      logSuperAdminAction("RETIRED_SENSOR", JSON.stringify({ id: selectedSensorId, model: sensor?.model, reason }));
       toast({ title: "Sensor retired", description: `${sensor?.manufacturer} ${sensor?.model} has been retired and hidden from org users.` });
       setSelectedSensorId(null);
     } catch (err) {
@@ -1434,7 +1434,7 @@ export default function PlatformSensorLibrary() {
     const sensor = catalog.find((s) => s.id === selectedSensorId);
     try {
       await deleteMutation.mutateAsync(selectedSensorId);
-      logSuperAdminAction("DELETED_SENSOR", { id: selectedSensorId, model: sensor?.model });
+      logSuperAdminAction("DELETED_SENSOR", JSON.stringify({ id: selectedSensorId, model: sensor?.model }));
       toast({ title: "Sensor deleted", description: `${sensor?.manufacturer} ${sensor?.model} permanently removed from catalog.` });
       setSelectedSensorId(null);
     } catch (err) {

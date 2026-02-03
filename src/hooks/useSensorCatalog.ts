@@ -15,7 +15,7 @@ export function useSensorCatalogPublic() {
     queryKey: CATALOG_PUBLIC_QUERY_KEY,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("sensor_catalog_public")
+        .from("sensor_catalog_public" as any)
         .select("*");
 
       if (error) throw error;
@@ -33,7 +33,7 @@ export function useSensorCatalog() {
     queryKey: CATALOG_QUERY_KEY,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("sensor_catalog")
+        .from("sensor_catalog" as any)
         .select("*")
         .order("sort_order", { ascending: true })
         .order("manufacturer", { ascending: true })
@@ -52,8 +52,8 @@ export function useAddSensorCatalogEntry() {
   return useMutation({
     mutationFn: async (entry: SensorCatalogInsert) => {
       const { data, error } = await supabase
-        .from("sensor_catalog")
-        .insert(entry as Record<string, unknown>)
+        .from("sensor_catalog" as any)
+        .insert(entry as unknown as Record<string, unknown>)
         .select()
         .single();
 
@@ -72,8 +72,8 @@ export function useUpdateSensorCatalogEntry() {
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<SensorCatalogEntry> & { id: string }) => {
       const { data, error } = await supabase
-        .from("sensor_catalog")
-        .update(updates as Record<string, unknown>)
+        .from("sensor_catalog" as any)
+        .update(updates as unknown as Record<string, unknown>)
         .eq("id", id)
         .select()
         .single();
@@ -93,12 +93,12 @@ export function useRetireSensorCatalogEntry() {
   return useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason?: string }) => {
       const { data, error } = await supabase
-        .from("sensor_catalog")
+        .from("sensor_catalog" as any)
         .update({
           deprecated_at: new Date().toISOString(),
           deprecated_reason: reason || null,
           is_visible: false,
-        } as Record<string, unknown>)
+        } as unknown as Record<string, unknown>)
         .eq("id", id)
         .select()
         .single();
@@ -118,7 +118,7 @@ export function useDeleteSensorCatalogEntry() {
   return useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
-        .from("sensor_catalog")
+        .from("sensor_catalog" as any)
         .delete()
         .eq("id", id);
 

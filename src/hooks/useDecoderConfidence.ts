@@ -34,7 +34,7 @@ export function useDecoderConfidence() {
     queryKey: ["decoder-confidence"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("decoder_confidence_rollup")
+        .from("decoder_confidence_rollup" as any)
         .select("*")
         .order("mismatch_count", { ascending: false });
 
@@ -55,7 +55,7 @@ export function useDecoderMismatches(decoderId: string | null, limit = 50) {
     enabled: !!decoderId,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("sensor_readings")
+        .from("sensor_readings" as any)
         .select(
           "id, recorded_at, lora_sensor_id, f_port, raw_payload_hex, " +
           "network_decoded_payload, app_decoded_payload, decode_mismatch_reason, " +
