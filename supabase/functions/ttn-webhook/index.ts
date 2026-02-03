@@ -203,6 +203,15 @@ Deno.serve(async (req) => {
     const rssi = rxMeta?.rssi ?? rxMeta?.channel_rssi;
     const receivedAt = ttnPayload.uplink_message?.received_at || ttnPayload.received_at || new Date().toISOString();
 
+    // Extract raw payload for storage (decoder independence)
+    const frmPayloadBase64 = ttnPayload.uplink_message?.frm_payload || null;
+    const fPort = ttnPayload.uplink_message?.f_port ?? null;
+    const rawPayloadHex = frmPayloadBase64
+      ? Array.from(Uint8Array.from(atob(frmPayloadBase64), c => c.charCodeAt(0)))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('')
+      : null;
+
     console.log(`[TTN-WEBHOOK] ${requestId} | Uplink: device=${deviceId}, dev_eui=${rawDevEui}, app=${applicationId}`);
 
     // Validate that the uplink comes from the expected TTN application
@@ -279,6 +288,9 @@ Deno.serve(async (req) => {
         rssi,
         receivedAt,
         requestId,
+        frmPayloadBase64,
+        fPort,
+        rawPayloadHex,
       });
     }
 
@@ -298,6 +310,9 @@ Deno.serve(async (req) => {
         rssi,
         receivedAt,
         requestId,
+        frmPayloadBase64,
+        fPort,
+        rawPayloadHex,
       });
     }
 
@@ -338,9 +353,12 @@ async function handleLoraSensor(
     rssi: number | undefined;
     receivedAt: string;
     requestId: string;
+    frmPayloadBase64: string | null;
+    fPort: number | null;
+    rawPayloadHex: string | null;
   }
 ): Promise<Response> {
-  const { devEui, rssi, receivedAt, requestId } = data;
+  const { devEui, rssi, receivedAt, requestId, frmPayloadBase64, fPort, rawPayloadHex } = data;
 
   // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
   const decoded = normalizeTelemetry(data.decoded);
@@ -463,6 +481,11 @@ async function handleLoraSensor(
       signal_strength: rssi,
       source: 'ttn',
       recorded_at: receivedAt,
+      // Raw payload storage for decoder independence
+      frm_payload_base64: frmPayloadBase64,
+      f_port: fPort,
+      raw_payload_hex: rawPayloadHex,
+      network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
     };
 
     // Only set door_open if this is actually a door sensor
@@ -691,9 +714,12 @@ async function handleLegacyDevice(
     rssi: number | undefined;
     receivedAt: string;
     requestId: string;
+    frmPayloadBase64: string | null;
+    fPort: number | null;
+    rawPayloadHex: string | null;
   }
 ): Promise<Response> {
-  const { rssi, receivedAt, requestId } = data;
+  const { rssi, receivedAt, requestId, frmPayloadBase64, fPort, rawPayloadHex } = data;
 
   // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
   const decoded = normalizeTelemetry(data.decoded);
@@ -732,6 +758,11 @@ async function handleLegacyDevice(
       door_open: decoded.door_open,
       source: 'ttn',
       recorded_at: receivedAt,
+      // Raw payload storage for decoder independence
+      frm_payload_base64: frmPayloadBase64,
+      f_port: fPort,
+      raw_payload_hex: rawPayloadHex,
+      network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
     });
 
     await supabase.from('units').update({
