@@ -472,9 +472,99 @@ async function handleLoraSensor(
   const { devEui, rssi, receivedAt, requestId, frmPayloadBase64, fPort, rawPayloadHex, frmPayloadBytes } = data;
 
   // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
-  const decoded = normalizeTelemetry(data.decoded);
+  let decoded = normalizeTelemetry(data.decoded);
+  const networkHadData = Object.keys(data.decoded).length > 0;
 
-  // Battery handling
+  // ========================================
+  // APP-SIDE DECODING: Run catalog decoder BEFORE extracting fields.
+  // When TTN's formatter is off/empty, the app decoder is the primary
+  // data source. When in trust mode with TTN data, we compare both.
+  // ========================================
+  let appDecoded: Record<string, unknown> | null = null;
+  let decoderIdStr: string | null = null;
+  let decoderWarnings: unknown[] | null = null;
+  let decoderErrors: unknown[] | null = null;
+  let decodeMatch: boolean | null = null;
+  let decodeMismatchReason: string | null = null;
+  let effectiveMode = 'ttn';
+
+  if (sensor.sensor_catalog_id && frmPayloadBytes && fPort != null) {
+    try {
+      const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
+      effectiveMode = sensor.decode_mode_override ?? catalogEntry?.decode_mode ?? 'trust';
+
+      if ((effectiveMode === 'trust' || effectiveMode === 'app') && catalogEntry?.decoder_js) {
+        // Guardrail: reject oversized decoder scripts
+        if (catalogEntry.decoder_js.length > MAX_DECODER_JS_BYTES) {
+          console.warn(`[TTN-WEBHOOK] ${requestId} | Decoder too large (${catalogEntry.decoder_js.length} bytes > ${MAX_DECODER_JS_BYTES}), skipping`);
+          decodeMatch = false;
+          decodeMismatchReason = `decode_error:decoder_js exceeds ${MAX_DECODER_JS_BYTES} byte limit`;
+        } else {
+          const decoderCode = `${catalogEntry.decoder_js}\nreturn decodeUplink(input);`;
+          const decoderFn = new Function('input', decoderCode);
+          const decoderResult = decoderFn({ bytes: frmPayloadBytes, fPort });
+
+          // TTN device repo decoders return { data, warnings, errors }
+          const rawAppDecoded = (decoderResult?.data ?? decoderResult) as Record<string, unknown>;
+
+          // Guardrail: cap output size to prevent DB bloat
+          const outputJson = JSON.stringify(rawAppDecoded);
+          if (outputJson.length > MAX_OUTPUT_JSON_BYTES) {
+            console.warn(`[TTN-WEBHOOK] ${requestId} | Decoder output too large (${outputJson.length} bytes), storing truncated`);
+            appDecoded = { _truncated: true, _size: outputJson.length } as Record<string, unknown>;
+            decodeMatch = false;
+            decodeMismatchReason = `decode_error:output exceeds ${MAX_OUTPUT_JSON_BYTES} byte limit`;
+          } else {
+            appDecoded = rawAppDecoded;
+          }
+          decoderIdStr = `catalog:${sensor.sensor_catalog_id}:rev${catalogEntry.revision}`;
+
+          // Capture decoder warnings/errors if present
+          if (Array.isArray(decoderResult?.warnings) && decoderResult.warnings.length > 0) {
+            decoderWarnings = decoderResult.warnings;
+          }
+          if (Array.isArray(decoderResult?.errors) && decoderResult.errors.length > 0) {
+            decoderErrors = decoderResult.errors;
+          }
+
+          // Compare against TTN decoded payload when both are available.
+          // Apply normalizeTelemetry to both sides so vendor key aliases
+          // (TempC_SHT→temperature, BatV→battery, etc.) don't cause false mismatches.
+          if (appDecoded && !('_truncated' in appDecoded) && networkHadData) {
+            const normalizedApp = normalizeTelemetry(appDecoded);
+            const normalizedNet = normalizeTelemetry(data.decoded);
+            const { match, diffKeys } = deepComparePayloads(normalizedApp, normalizedNet);
+            decodeMatch = match;
+            if (!match) {
+              decodeMismatchReason = `key_diff:${diffKeys.join(',')}`;
+              console.warn(`[TTN-WEBHOOK] ${requestId} | Decode mismatch [${effectiveMode}]: keys=${diffKeys.join(',')}`);
+            } else {
+              console.log(`[TTN-WEBHOOK] ${requestId} | Decode match [${effectiveMode}] (catalog rev${catalogEntry.revision})`);
+            }
+          }
+
+          // When app decoder is authoritative (app mode) or TTN had no data,
+          // use the app-decoded payload as the primary data source for readings.
+          if (appDecoded && !('_truncated' in appDecoded)) {
+            if (effectiveMode === 'app' || !networkHadData) {
+              const reason = !networkHadData ? 'TTN decoded_payload empty' : 'app mode authoritative';
+              console.log(`[TTN-WEBHOOK] ${requestId} | Using app-decoded payload (${reason})`);
+              decoded = normalizeTelemetry(appDecoded);
+            }
+          }
+        }
+      } else if (effectiveMode === 'ttn' || effectiveMode === 'off') {
+        console.log(`[TTN-WEBHOOK] ${requestId} | Decode mode '${effectiveMode}' — skipping app decode`);
+      }
+    } catch (decodeErr: unknown) {
+      const errMsg = decodeErr instanceof Error ? decodeErr.message : String(decodeErr);
+      console.warn(`[TTN-WEBHOOK] ${requestId} | Server-side decode failed: ${errMsg}`);
+      decodeMatch = false;
+      decodeMismatchReason = `decode_error:${errMsg.slice(0, 200)}`;
+    }
+  }
+
+  // Battery handling (after decode so app-decoded battery is available)
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
 
   // Temperature scaling
@@ -604,84 +694,13 @@ async function handleLoraSensor(
       readingData.door_open = currentDoorOpen;
     }
 
-    // ========================================
-    // DECODE MODE: Respect catalog + per-sensor decode mode.
-    //   ttn   → skip app decode, rely on TTN decoded payload
-    //   trust → run both decoders, compare, store both
-    //   app   → app decoder is authoritative, still compare if TTN data present
-    //   off   → store raw only, no decoding
-    // Never fails the uplink — all errors are caught and logged.
-    // ========================================
-    if (sensor.sensor_catalog_id && frmPayloadBytes && fPort != null) {
-      try {
-        const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
-        const effectiveMode = sensor.decode_mode_override ?? catalogEntry?.decode_mode ?? 'trust';
-
-        if ((effectiveMode === 'trust' || effectiveMode === 'app') && catalogEntry?.decoder_js) {
-          // Guardrail: reject oversized decoder scripts
-          if (catalogEntry.decoder_js.length > MAX_DECODER_JS_BYTES) {
-            console.warn(`[TTN-WEBHOOK] ${requestId} | Decoder too large (${catalogEntry.decoder_js.length} bytes > ${MAX_DECODER_JS_BYTES}), skipping`);
-            readingData.decode_match = false;
-            readingData.decode_mismatch_reason = `decode_error:decoder_js exceeds ${MAX_DECODER_JS_BYTES} byte limit`;
-          } else {
-          const decoderCode = `${catalogEntry.decoder_js}\nreturn decodeUplink(input);`;
-          const decoderFn = new Function('input', decoderCode);
-          const decoderResult = decoderFn({ bytes: frmPayloadBytes, fPort });
-
-          // TTN device repo decoders return { data, warnings, errors }
-          const appDecoded = (decoderResult?.data ?? decoderResult) as Record<string, unknown>;
-
-          // Guardrail: cap output size to prevent DB bloat
-          const outputJson = JSON.stringify(appDecoded);
-          const outputTruncated = outputJson.length > MAX_OUTPUT_JSON_BYTES;
-          if (outputTruncated) {
-            console.warn(`[TTN-WEBHOOK] ${requestId} | Decoder output too large (${outputJson.length} bytes), storing truncated`);
-            readingData.app_decoded_payload = { _truncated: true, _size: outputJson.length };
-            readingData.decode_match = false;
-            readingData.decode_mismatch_reason = `decode_error:output exceeds ${MAX_OUTPUT_JSON_BYTES} byte limit`;
-          } else {
-            readingData.app_decoded_payload = appDecoded;
-          }
-          readingData.decoder_id = `catalog:${sensor.sensor_catalog_id}:rev${catalogEntry.revision}`;
-
-          // Capture decoder warnings/errors if present
-          if (Array.isArray(decoderResult?.warnings) && decoderResult.warnings.length > 0) {
-            readingData.decoder_warnings = decoderResult.warnings;
-          }
-          if (Array.isArray(decoderResult?.errors) && decoderResult.errors.length > 0) {
-            readingData.decoder_errors = decoderResult.errors;
-          }
-
-          // Compare against TTN decoded payload (skip if output was truncated).
-          // Apply normalizeTelemetry to both sides so vendor key aliases
-          // (TempC_SHT→temperature, BatV→battery, etc.) don't cause false mismatches.
-          if (!outputTruncated) {
-          const networkPayload = data.decoded;
-          if (Object.keys(networkPayload).length > 0) {
-            const normalizedApp = normalizeTelemetry(appDecoded);
-            const normalizedNet = normalizeTelemetry(networkPayload);
-            const { match, diffKeys } = deepComparePayloads(normalizedApp, normalizedNet);
-            readingData.decode_match = match;
-            if (!match) {
-              readingData.decode_mismatch_reason = `key_diff:${diffKeys.join(',')}`;
-              console.warn(`[TTN-WEBHOOK] ${requestId} | Decode mismatch [${effectiveMode}]: keys=${diffKeys.join(',')}`);
-            } else {
-              console.log(`[TTN-WEBHOOK] ${requestId} | Decode match [${effectiveMode}] (catalog rev${catalogEntry.revision})`);
-            }
-          }
-          }
-          } // end decoder size ok (else branch)
-        } else if (effectiveMode === 'ttn' || effectiveMode === 'off') {
-          // No app decode — decode_match stays null (column default)
-          console.log(`[TTN-WEBHOOK] ${requestId} | Decode mode '${effectiveMode}' — skipping app decode`);
-        }
-      } catch (decodeErr: unknown) {
-        const errMsg = decodeErr instanceof Error ? decodeErr.message : String(decodeErr);
-        console.warn(`[TTN-WEBHOOK] ${requestId} | Server-side decode failed: ${errMsg}`);
-        readingData.decode_match = false;
-        readingData.decode_mismatch_reason = `decode_error:${errMsg.slice(0, 200)}`;
-      }
-    }
+    // Attach app-decode results (computed earlier, before field extraction)
+    if (appDecoded) readingData.app_decoded_payload = appDecoded;
+    if (decoderIdStr) readingData.decoder_id = decoderIdStr;
+    if (decodeMatch !== null) readingData.decode_match = decodeMatch;
+    if (decodeMismatchReason) readingData.decode_mismatch_reason = decodeMismatchReason;
+    if (decoderWarnings) readingData.decoder_warnings = decoderWarnings;
+    if (decoderErrors) readingData.decoder_errors = decoderErrors;
 
     // Insert reading
     const { data: insertedReading, error: insertError } = await supabase
