@@ -5,7 +5,7 @@
  * Uses voltage as source of truth with chemistry-specific curves.
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   type BatteryProfile,
@@ -61,9 +61,17 @@ export function useBatteryEstimate(
   const [sensor, setSensor] = useState<SensorData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Track which sensorId we've already fetched to prevent redundant fetches on remounts
+  const hasFetchedRef = useRef<string | null>(null);
 
   // Fetch all required data - only on sensorId change (page load)
   useEffect(() => {
+    // Skip if we've already fetched for this exact sensorId
+    if (hasFetchedRef.current === sensorId && sensorId !== null) {
+      return;
+    }
+    
     if (!sensorId) {
       setLoading(false);
       return;
@@ -146,6 +154,8 @@ export function useBatteryEstimate(
       } finally {
         if (!cancelled) {
           setLoading(false);
+          // Mark this sensorId as fetched
+          hasFetchedRef.current = sensorId;
         }
       }
     }
