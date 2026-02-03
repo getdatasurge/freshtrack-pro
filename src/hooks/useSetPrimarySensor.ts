@@ -56,7 +56,7 @@ export function useSetPrimarySensor() {
         .single();
 
       if (error) throw error;
-      return data as LoraSensor;
+      return data as unknown as LoraSensor;
     },
     onSuccess: async (data) => {
       // Use centralized invalidation for sensor assignment changes
