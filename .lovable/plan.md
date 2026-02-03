@@ -1,124 +1,59 @@
 
 
-# Fix Plan: Battery Health Widget Still Shows Spinner
+## Fix: Apply Database Migration for sensor_catalog
 
-## Problem Summary
+### Problem
 
-The Battery Health widget continues to show a loading spinner (pinwheel) even after all network requests complete successfully. Based on the debug analysis:
+The Sensor Library page shows 404 errors because the `sensor_catalog` table doesn't exist in the database yet. The migration file `20260202060000_sensor_catalog.sql` is in the codebase, but it hasn't been applied to the live database.
 
-1. All Supabase queries return 200 OK
-2. The sensor `ab0ba0e2-fa8a-4888-be8c-e0664dd6b6bc` has model `SENSOR-A840415A` 
-3. No battery profile exists for this model (returns empty array)
-4. The widget should show "MISSING_PROFILE" state but shows the spinner instead
+**Evidence:**
+- Database query for `sensor_catalog` returns empty (table doesn't exist)
+- Network requests to `/rest/v1/sensor_catalog` return 404
+- Toast shows "Save failed - Could not update. Ensure migrations are applied."
 
-## Root Cause Analysis
+---
 
-After tracing through the code, the most likely issue is that the `useMemo` dependency array includes all the state values, but there's a potential timing issue where:
+### Solution
 
-1. The hook's `useEffect` starts fetching data (`loading = true`)
-2. Component re-renders, `useMemo` returns early with `loading: true`
-3. Fetch completes, `setLoading(false)` is called
-4. BUT - if the component unmounts/remounts during this cycle (due to parent re-renders from `refreshTick` or other state changes), the `loading` state resets to `true`
+Apply the pending database migration to create the `sensor_catalog` table. This migration will:
 
-Additionally, the console shows the widget rendered 3 times in quick succession, suggesting parent re-renders may be causing repeated hook initializations.
+1. Create the `sensor_catalog` table with all required columns
+2. Set up indexes for search and lookups
+3. Configure RLS policies (super admins: full access, authenticated users: read-only on visible entries)
+4. Create the `sensor_catalog_public` view for org-level users
+5. Seed initial sensor data (Dragino LHT65, LDS02, Elsys ERS CO2, etc.)
 
-## Solution
+---
 
-### Part 1: Stabilize the sensor ID reference
+### Technical Details
 
-In `BatteryHealthWidget.tsx`, memoize the `sensorId` to prevent unnecessary re-computations:
+**Migration to apply:** `20260202060000_sensor_catalog.sql`
 
-**File:** `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx`
+**What it creates:**
+- Table: `sensor_catalog` (415 lines of SQL)
+  - 40+ columns for sensor metadata, decoder info, battery info, sample payloads
+  - Full-text search index
+  - Unique constraint on manufacturer/model/variant
+  - Auto-increment revision trigger
+- View: `sensor_catalog_public` (read-only subset for org users)
+- RLS Policies:
+  - Super admins can read/insert/update/delete all entries
+  - Authenticated users can read visible, non-deprecated entries only
+- Seed data: 4-5 pre-configured sensor models
 
-```typescript
-// Before:
-const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
-const sensorId = primarySensor?.id || device?.id || null;
+**Additional migrations to apply:**
+After `sensor_catalog` is created, these related migrations should also be applied:
+- `20260203060000_add_sensor_catalog_fk.sql` - Adds `sensor_catalog_id` FK to `lora_sensors`
+- `20260203070000_backfill_catalog_id_and_sync_trigger.sql` - Syncs existing sensors
+- `20260203100001_decoder_confidence_views.sql` - Creates decoder confidence rollup view
 
-// After:
-const sensorId = useMemo(() => {
-  const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
-  return primarySensor?.id || device?.id || null;
-}, [sensor?.id, loraSensors, device?.id]);
-```
+---
 
-### Part 2: Add early return for stable sensorId in the hook
+### Action Required
 
-In `useBatteryEstimate.ts`, cache the initial sensorId and only refetch if it truly changes (not just object reference changes):
-
-**File:** `src/hooks/useBatteryEstimate.ts`
-
-Add a `useRef` to track if the initial fetch has completed, preventing re-fetch on remounts within the same session:
-
-```typescript
-const hasFetchedRef = useRef<string | null>(null);
-
-useEffect(() => {
-  // Skip if we've already fetched for this exact sensorId
-  if (hasFetchedRef.current === sensorId) {
-    return;
-  }
-  
-  if (!sensorId) {
-    setLoading(false);
-    return;
-  }
-
-  // ... existing fetch logic ...
-  
-  // Mark as fetched when complete
-  hasFetchedRef.current = sensorId;
-}, [sensorId]);
-```
-
-### Part 3: Include missing fields in loraSensors mapping
-
-In `UnitDetail.tsx`, include `is_primary` and `sensor_type` when passing `loraSensors` to EntityDashboard:
-
-**File:** `src/pages/UnitDetail.tsx` (lines 1098-1105)
-
-```typescript
-// Before:
-loraSensors={loraSensors?.map(s => ({
-  id: s.id,
-  name: s.name,
-  battery_level: s.battery_level,
-  signal_strength: s.signal_strength,
-  last_seen_at: s.last_seen_at,
-  status: s.status,
-})) || []}
-
-// After:
-loraSensors={loraSensors?.map(s => ({
-  id: s.id,
-  name: s.name,
-  battery_level: s.battery_level,
-  signal_strength: s.signal_strength,
-  last_seen_at: s.last_seen_at,
-  status: s.status,
-  sensor_type: s.sensor_type,
-  is_primary: s.is_primary,
-})) || []}
-```
-
-## Files to Update
-
-| File | Change |
-|------|--------|
-| `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx` | Memoize `sensorId` computation |
-| `src/hooks/useBatteryEstimate.ts` | Add `hasFetchedRef` to prevent redundant fetches |
-| `src/pages/UnitDetail.tsx` | Include `is_primary` and `sensor_type` in loraSensors mapping |
-
-## Expected Behavior After Fix
-
-1. Widget renders once with stable `sensorId`
-2. Hook fetches data only once per page load
-3. When no battery profile exists, widget shows "Battery estimate unavailable" (MISSING_PROFILE state)
-4. No spinner loop
-
-## Technical Notes
-
-- The `refreshTick` prop is designed to trigger widget data refreshes, but Battery Health should only fetch on page load per the user's preference
-- The memoization ensures `sensorId` doesn't change reference between renders
-- The `hasFetchedRef` acts as a guard against redundant fetches when the component tree re-renders
+I'll use the database migration tool to apply the `sensor_catalog` table schema. Once applied:
+1. The Sensor Library page will load correctly
+2. Saves/updates will work (no more 404s)
+3. The auto-generated `src/integrations/supabase/types.ts` will include the new table
+4. The TypeScript workarounds (using `as any`) can be removed
 
