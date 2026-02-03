@@ -1102,6 +1102,8 @@ const UnitDetail = () => {
               signal_strength: s.signal_strength,
               last_seen_at: s.last_seen_at,
               status: s.status,
+              sensor_type: s.sensor_type,
+              is_primary: s.is_primary,
             })) || []}
             lastKnownGood={lastKnownGood}
             onLogTemp={() => setModalOpen(true)}

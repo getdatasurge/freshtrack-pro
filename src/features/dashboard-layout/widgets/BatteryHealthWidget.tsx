@@ -50,9 +50,11 @@ export function BatteryHealthWidget({
   loraSensors,
   device,
 }: WidgetProps) {
-  // Get primary sensor
-  const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
-  const sensorId = primarySensor?.id || device?.id || null;
+  // Memoize sensorId to prevent unnecessary re-fetches on parent re-renders
+  const sensorId = useMemo(() => {
+    const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
+    return primarySensor?.id || device?.id || null;
+  }, [sensor?.id, loraSensors, device?.id]);
   
   // Get battery estimate - sensorId only, hook fetches all data from DB
   // This ensures fetches only happen on page load, not on realtime re-renders
