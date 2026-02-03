@@ -2518,13 +2518,23 @@ export type Database = {
       }
       sensor_readings: {
         Row: {
+          app_decoded_payload: Json | null
           battery_level: number | null
           battery_voltage: number | null
+          decode_match: boolean | null
+          decode_mismatch_reason: string | null
+          decoder_errors: Json | null
+          decoder_id: string | null
+          decoder_warnings: Json | null
           device_id: string | null
           door_open: boolean | null
+          f_port: number | null
+          frm_payload_base64: string | null
           humidity: number | null
           id: string
           lora_sensor_id: string | null
+          network_decoded_payload: Json | null
+          raw_payload_hex: string | null
           received_at: string
           recorded_at: string
           signal_strength: number | null
@@ -2533,13 +2543,23 @@ export type Database = {
           unit_id: string
         }
         Insert: {
+          app_decoded_payload?: Json | null
           battery_level?: number | null
           battery_voltage?: number | null
+          decode_match?: boolean | null
+          decode_mismatch_reason?: string | null
+          decoder_errors?: Json | null
+          decoder_id?: string | null
+          decoder_warnings?: Json | null
           device_id?: string | null
           door_open?: boolean | null
+          f_port?: number | null
+          frm_payload_base64?: string | null
           humidity?: number | null
           id?: string
           lora_sensor_id?: string | null
+          network_decoded_payload?: Json | null
+          raw_payload_hex?: string | null
           received_at?: string
           recorded_at?: string
           signal_strength?: number | null
@@ -2548,13 +2568,23 @@ export type Database = {
           unit_id: string
         }
         Update: {
+          app_decoded_payload?: Json | null
           battery_level?: number | null
           battery_voltage?: number | null
+          decode_match?: boolean | null
+          decode_mismatch_reason?: string | null
+          decoder_errors?: Json | null
+          decoder_id?: string | null
+          decoder_warnings?: Json | null
           device_id?: string | null
           door_open?: boolean | null
+          f_port?: number | null
+          frm_payload_base64?: string | null
           humidity?: number | null
           id?: string
           lora_sensor_id?: string | null
+          network_decoded_payload?: Json | null
+          raw_payload_hex?: string | null
           received_at?: string
           recorded_at?: string
           signal_strength?: number | null
@@ -3823,6 +3853,19 @@ export type Database = {
       }
     }
     Views: {
+      decoder_confidence_rollup: {
+        Row: {
+          compared_count: number | null
+          decoder_id: string | null
+          first_seen_at: string | null
+          last_seen_at: string | null
+          match_count: number | null
+          match_rate_pct: number | null
+          mismatch_count: number | null
+          top_mismatch_reason: string | null
+        }
+        Relationships: []
+      }
       sensor_catalog_public: {
         Row: {
           battery_info: Json | null
