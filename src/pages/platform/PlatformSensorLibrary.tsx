@@ -72,6 +72,7 @@ import type {
   SensorCatalogInsert,
   SensorKind,
   DecodeMode,
+  TemperatureUnit,
 } from "@/types/sensorCatalog";
 
 // ─── Seed data (fallback when DB is empty or loading) ────────
@@ -132,7 +133,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     sort_order: 10,
     tags: ["refrigeration", "food-safety", "cold-chain", "temperature", "humidity", "probe"],
     notes: "Primary sensor for FrostGuard cooler/freezer monitoring. Most widely deployed.",
-    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-01T00:00:00Z",
     updated_at: "2025-12-01T00:00:00Z",
     created_by: null,
@@ -183,7 +184,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     is_supported: true, is_visible: true, sort_order: 20,
     tags: ["refrigeration", "food-safety", "cold-chain", "door", "contact", "magnetic"],
     notes: "Primary door sensor for FrostGuard. Paired with LHT65 per walk-in unit.",
-    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-01T00:00:00Z", updated_at: "2025-12-01T00:00:00Z", created_by: null,
   },
   {
@@ -230,7 +231,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     is_supported: true, is_visible: true, sort_order: 30,
     tags: ["indoor", "air-quality", "co2", "ventilation", "kitchen", "compliance"],
     notes: "Premium multi-sensor. Consider for kitchen air quality compliance monitoring.",
-    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-15T00:00:00Z", updated_at: "2025-12-15T00:00:00Z", created_by: null,
   },
   {
@@ -268,7 +269,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     is_supported: true, is_visible: true, sort_order: 40,
     tags: ["door", "contact", "window", "simple"],
     notes: "Budget-friendly door sensor alternative.",
-    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-20T00:00:00Z", updated_at: "2025-12-20T00:00:00Z", created_by: null,
   },
   {
@@ -311,7 +312,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     is_supported: true, is_visible: true, sort_order: 50,
     tags: ["leak", "water", "flood", "drain", "ice-machine"],
     notes: "Detect water leaks near refrigeration equipment.",
-    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2026-01-05T00:00:00Z", updated_at: "2026-01-05T00:00:00Z", created_by: null,
   },
 ];
@@ -542,6 +543,23 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
               <SelectItem value="trust">Trust</SelectItem>
               <SelectItem value="app">App</SelectItem>
               <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-1.5 ml-1">
+          <span className="font-medium text-foreground">Temp Unit:</span>
+          <Select
+            value={sensor.temperature_unit ?? "C"}
+            onValueChange={(val: string) =>
+              updateCatalog.mutate({ id: sensor.id, temperature_unit: val as TemperatureUnit })
+            }
+          >
+            <SelectTrigger className="h-6 w-[70px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="C">°C</SelectItem>
+              <SelectItem value="F">°F</SelectItem>
             </SelectContent>
           </Select>
         </div>
