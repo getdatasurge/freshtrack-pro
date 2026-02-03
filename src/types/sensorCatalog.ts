@@ -138,6 +138,29 @@ export interface SensorCatalogEntry {
   created_by: string | null;
 }
 
+/**
+ * Subset of SensorCatalogEntry returned by the sensor_catalog_public view.
+ * Used by org-level hooks — excludes internal fields like provenance,
+ * decoder code, sample payloads, and admin notes.
+ */
+export interface SensorCatalogPublicEntry {
+  id: string;
+  manufacturer: string;
+  model: string;
+  model_variant: string | null;
+  display_name: string;
+  sensor_kind: SensorKind;
+  description: string | null;
+  frequency_bands: string[];
+  supports_class: string;
+  f_ports: SensorCatalogFPort[];
+  decoded_fields: SensorCatalogDecodedField[];
+  uplink_info: SensorCatalogUplinkInfo;
+  battery_info: SensorCatalogBatteryInfo;
+  is_supported: boolean;
+  tags: string[];
+}
+
 export interface SensorCatalogInsert {
   manufacturer: string;
   model: string;

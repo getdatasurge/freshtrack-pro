@@ -1,29 +1,25 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { SensorCatalogEntry, SensorCatalogInsert } from "@/types/sensorCatalog";
+import type { SensorCatalogEntry, SensorCatalogPublicEntry, SensorCatalogInsert } from "@/types/sensorCatalog";
 
 const CATALOG_QUERY_KEY = ["sensor-catalog"];
 const CATALOG_PUBLIC_QUERY_KEY = ["sensor-catalog-public"];
 
 /**
  * Hook for org-level users to read visible, non-deprecated catalog entries.
- * Used in the Add Sensor dialog for model selection.
- * RLS enforces visibility: only is_visible=true AND deprecated_at IS NULL.
+ * Queries the sensor_catalog_public view which already filters for
+ * is_visible=true AND deprecated_at IS NULL, and excludes internal fields.
  */
 export function useSensorCatalogPublic() {
-  return useQuery<SensorCatalogEntry[]>({
+  return useQuery<SensorCatalogPublicEntry[]>({
     queryKey: CATALOG_PUBLIC_QUERY_KEY,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("sensor_catalog")
-        .select("*")
-        .eq("is_visible", true)
-        .is("deprecated_at", null)
-        .order("manufacturer", { ascending: true })
-        .order("model", { ascending: true });
+        .from("sensor_catalog_public")
+        .select("*");
 
       if (error) throw error;
-      return (data ?? []) as unknown as SensorCatalogEntry[];
+      return (data ?? []) as unknown as SensorCatalogPublicEntry[];
     },
     staleTime: 5 * 60_000, // 5 min — catalog changes rarely
   });

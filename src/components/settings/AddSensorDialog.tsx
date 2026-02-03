@@ -5,7 +5,7 @@ import { z } from "zod";
 import { useCreateLoraSensor } from "@/hooks/useLoraSensors";
 import { useSensorCatalogPublic } from "@/hooks/useSensorCatalog";
 import { LoraSensorType } from "@/types/ttn";
-import type { SensorCatalogEntry } from "@/types/sensorCatalog";
+import type { SensorCatalogPublicEntry } from "@/types/sensorCatalog";
 import { SENSOR_TYPE_OPTIONS, SENSOR_TYPE_VALUES } from "@/lib/sensorTypeOptions";
 import {
   Dialog,
@@ -111,7 +111,7 @@ export function AddSensorDialog({
   const createSensor = useCreateLoraSensor();
   const { data: catalogEntries = [] } = useSensorCatalogPublic();
   const [showAppKey, setShowAppKey] = useState(false);
-  const [selectedCatalogEntry, setSelectedCatalogEntry] = useState<SensorCatalogEntry | null>(null);
+  const [selectedCatalogEntry, setSelectedCatalogEntry] = useState<SensorCatalogPublicEntry | null>(null);
 
   const form = useForm<AddSensorFormData>({
     resolver: zodResolver(addSensorSchema),
