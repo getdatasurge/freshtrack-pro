@@ -101,6 +101,60 @@ function secureCompare(a: string, b: string): boolean {
   return result === 0;
 }
 
+/**
+ * Deep-compare two decoded payloads with numeric tolerance.
+ * Returns { match, diffKeys } where diffKeys lists which top-level keys differ.
+ *
+ * - Numbers within 0.01 absolute tolerance are considered equal
+ *   (handles float drift between runtimes, e.g. 3.0500000000000003 vs 3.05)
+ * - Booleans, strings compared strictly
+ * - Nested objects/arrays compared via JSON.stringify
+ * - Keys present in one but missing/undefined in the other count as a diff
+ */
+function deepComparePayloads(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): { match: boolean; diffKeys: string[] } {
+  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const diffKeys: string[] = [];
+  const TOLERANCE = 0.01;
+
+  for (const key of allKeys) {
+    const va = a[key];
+    const vb = b[key];
+
+    // Both undefined/missing → match
+    if (va === undefined && vb === undefined) continue;
+
+    // One missing → diff
+    if (va === undefined || vb === undefined) {
+      diffKeys.push(key);
+      continue;
+    }
+
+    // Both numbers → tolerance comparison
+    if (typeof va === 'number' && typeof vb === 'number') {
+      if (Math.abs(va - vb) > TOLERANCE) {
+        diffKeys.push(key);
+      }
+      continue;
+    }
+
+    // Same type, strict comparison for primitives
+    if (typeof va === typeof vb && (typeof va === 'boolean' || typeof va === 'string')) {
+      if (va !== vb) diffKeys.push(key);
+      continue;
+    }
+
+    // Fallback: JSON stringify for objects/arrays/mixed types
+    if (JSON.stringify(va) !== JSON.stringify(vb)) {
+      diffKeys.push(key);
+    }
+  }
+
+  return { match: diffKeys.length === 0, diffKeys };
+}
+
 Deno.serve(async (req) => {
   // Generate unique request ID for tracing
   const requestId = crypto.randomUUID().slice(0, 8);
@@ -519,24 +573,30 @@ async function handleLoraSensor(
           const decoderCode = `${catalogEntry.decoder_js}\nreturn decodeUplink(input);`;
           const decoderFn = new Function('input', decoderCode);
           const decoderResult = decoderFn({ bytes: frmPayloadBytes, fPort });
-          const appDecoded = (decoderResult?.data ?? decoderResult) as Record<string, unknown>;
 
+          // TTN device repo decoders return { data, warnings, errors }
+          const appDecoded = (decoderResult?.data ?? decoderResult) as Record<string, unknown>;
           readingData.app_decoded_payload = appDecoded;
           readingData.decoder_id = `catalog:${sensor.sensor_catalog_id}:rev${catalogEntry.revision}`;
 
-          // Compare against TTN decoded payload (use original, pre-normalization)
+          // Capture decoder warnings/errors if present
+          if (Array.isArray(decoderResult?.warnings) && decoderResult.warnings.length > 0) {
+            readingData.decoder_warnings = decoderResult.warnings;
+          }
+          if (Array.isArray(decoderResult?.errors) && decoderResult.errors.length > 0) {
+            readingData.decoder_errors = decoderResult.errors;
+          }
+
+          // Compare against TTN decoded payload (use original, pre-normalization).
+          // Apply normalizeTelemetry to both sides so vendor key aliases
+          // (TempC_SHT→temperature, BatV→battery, etc.) don't cause false mismatches.
           const networkPayload = data.decoded;
           if (Object.keys(networkPayload).length > 0) {
-            const appJson = JSON.stringify(appDecoded, Object.keys(appDecoded).sort());
-            const netJson = JSON.stringify(networkPayload, Object.keys(networkPayload).sort());
-            const match = appJson === netJson;
+            const normalizedApp = normalizeTelemetry(appDecoded);
+            const normalizedNet = normalizeTelemetry(networkPayload);
+            const { match, diffKeys } = deepComparePayloads(normalizedApp, normalizedNet);
             readingData.decode_match = match;
             if (!match) {
-              // Find which keys differ for actionable debugging
-              const allKeys = new Set([...Object.keys(appDecoded), ...Object.keys(networkPayload)]);
-              const diffKeys = [...allKeys].filter(k =>
-                JSON.stringify(appDecoded[k]) !== JSON.stringify(networkPayload[k])
-              );
               readingData.decode_mismatch_reason = `key_diff:${diffKeys.join(',')}`;
               console.warn(`[TTN-WEBHOOK] ${requestId} | Decode mismatch: keys=${diffKeys.join(',')}`);
             } else {

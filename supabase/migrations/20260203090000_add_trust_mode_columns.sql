@@ -39,3 +39,16 @@ COMMENT ON COLUMN public.sensor_readings.decode_match IS
   'true if network_decoded_payload matches app_decoded_payload, null if not compared';
 COMMENT ON COLUMN public.sensor_readings.decode_mismatch_reason IS
   'Reason for mismatch or decode error, e.g. "key_diff:temperature" or "decode_error:..."';
+
+-- Warnings emitted by the decoder (decodeUplink().warnings)
+ALTER TABLE public.sensor_readings
+  ADD COLUMN IF NOT EXISTS decoder_warnings JSONB;
+
+-- Errors emitted by the decoder (decodeUplink().errors)
+ALTER TABLE public.sensor_readings
+  ADD COLUMN IF NOT EXISTS decoder_errors JSONB;
+
+COMMENT ON COLUMN public.sensor_readings.decoder_warnings IS
+  'Warnings array from decodeUplink().warnings, if any';
+COMMENT ON COLUMN public.sensor_readings.decoder_errors IS
+  'Errors array from decodeUplink().errors, if any';
