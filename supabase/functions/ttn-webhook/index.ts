@@ -116,6 +116,10 @@ interface CachedDecoder {
 const decoderCache = new Map<string, CachedDecoder>();
 const DECODER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+// Decoder execution guardrails
+const MAX_DECODER_JS_BYTES = 50_000; // 50 KB — reject oversized decoders
+const MAX_OUTPUT_JSON_BYTES = 50_000; // 50 KB — truncate oversized output
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getCatalogDecoder(supabase: any, catalogId: string): Promise<CachedDecoder | null> {
   const now = Date.now();
@@ -614,13 +618,30 @@ async function handleLoraSensor(
         const effectiveMode = sensor.decode_mode_override ?? catalogEntry?.decode_mode ?? 'trust';
 
         if ((effectiveMode === 'trust' || effectiveMode === 'app') && catalogEntry?.decoder_js) {
+          // Guardrail: reject oversized decoder scripts
+          if (catalogEntry.decoder_js.length > MAX_DECODER_JS_BYTES) {
+            console.warn(`[TTN-WEBHOOK] ${requestId} | Decoder too large (${catalogEntry.decoder_js.length} bytes > ${MAX_DECODER_JS_BYTES}), skipping`);
+            readingData.decode_match = false;
+            readingData.decode_mismatch_reason = `decode_error:decoder_js exceeds ${MAX_DECODER_JS_BYTES} byte limit`;
+          } else {
           const decoderCode = `${catalogEntry.decoder_js}\nreturn decodeUplink(input);`;
           const decoderFn = new Function('input', decoderCode);
           const decoderResult = decoderFn({ bytes: frmPayloadBytes, fPort });
 
           // TTN device repo decoders return { data, warnings, errors }
           const appDecoded = (decoderResult?.data ?? decoderResult) as Record<string, unknown>;
-          readingData.app_decoded_payload = appDecoded;
+
+          // Guardrail: cap output size to prevent DB bloat
+          const outputJson = JSON.stringify(appDecoded);
+          const outputTruncated = outputJson.length > MAX_OUTPUT_JSON_BYTES;
+          if (outputTruncated) {
+            console.warn(`[TTN-WEBHOOK] ${requestId} | Decoder output too large (${outputJson.length} bytes), storing truncated`);
+            readingData.app_decoded_payload = { _truncated: true, _size: outputJson.length };
+            readingData.decode_match = false;
+            readingData.decode_mismatch_reason = `decode_error:output exceeds ${MAX_OUTPUT_JSON_BYTES} byte limit`;
+          } else {
+            readingData.app_decoded_payload = appDecoded;
+          }
           readingData.decoder_id = `catalog:${sensor.sensor_catalog_id}:rev${catalogEntry.revision}`;
 
           // Capture decoder warnings/errors if present
@@ -631,9 +652,10 @@ async function handleLoraSensor(
             readingData.decoder_errors = decoderResult.errors;
           }
 
-          // Compare against TTN decoded payload (use original, pre-normalization).
+          // Compare against TTN decoded payload (skip if output was truncated).
           // Apply normalizeTelemetry to both sides so vendor key aliases
           // (TempC_SHT→temperature, BatV→battery, etc.) don't cause false mismatches.
+          if (!outputTruncated) {
           const networkPayload = data.decoded;
           if (Object.keys(networkPayload).length > 0) {
             const normalizedApp = normalizeTelemetry(appDecoded);
@@ -647,6 +669,8 @@ async function handleLoraSensor(
               console.log(`[TTN-WEBHOOK] ${requestId} | Decode match [${effectiveMode}] (catalog rev${catalogEntry.revision})`);
             }
           }
+          }
+          } // end decoder size ok (else branch)
         } else if (effectiveMode === 'ttn' || effectiveMode === 'off') {
           // No app decode — decode_match stays null (column default)
           console.log(`[TTN-WEBHOOK] ${requestId} | Decode mode '${effectiveMode}' — skipping app decode`);
