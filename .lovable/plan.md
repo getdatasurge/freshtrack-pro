@@ -1,151 +1,124 @@
 
 
-# Fix Plan: Build Errors from Unapplied Database Migrations
+# Fix Plan: Battery Health Widget Still Shows Spinner
 
 ## Problem Summary
 
-The project has **21 build errors** caused by TypeScript code referencing database schema elements that don't exist yet in the auto-generated Supabase types file. The migrations exist in `supabase/migrations/` but haven't been applied to the live database.
+The Battery Health widget continues to show a loading spinner (pinwheel) even after all network requests complete successfully. Based on the debug analysis:
 
-## Root Cause
+1. All Supabase queries return 200 OK
+2. The sensor `ab0ba0e2-fa8a-4888-be8c-e0664dd6b6bc` has model `SENSOR-A840415A` 
+3. No battery profile exists for this model (returns empty array)
+4. The widget should show "MISSING_PROFILE" state but shows the spinner instead
 
-**Missing database objects** in `src/integrations/supabase/types.ts`:
+## Root Cause Analysis
 
-| Missing Element | Used By | Migration File |
-|----------------|---------|----------------|
-| `sensor_catalog` table | `useSensorCatalog.ts` | `20260202060000_sensor_catalog.sql` |
-| `sensor_catalog_public` view | `useSensorCatalog.ts` | `20260202060000_sensor_catalog.sql` |
-| `decoder_confidence_rollup` view | `useDecoderConfidence.ts` | `20260203100001_decoder_confidence_views.sql` |
-| `lora_sensors.sensor_catalog_id` column | `LoraSensor` type in `types/ttn.ts` | `20260203060000_add_sensor_catalog_fk.sql` |
-| `lora_sensors.decode_mode_override` column | `LoraSensor` type in `types/ttn.ts` | `20260203100000_add_decode_mode.sql` |
+After tracing through the code, the most likely issue is that the `useMemo` dependency array includes all the state values, but there's a potential timing issue where:
 
-The TypeScript types expect these to exist, but the database hasn't been updated yet. This creates a mismatch between code and schema.
+1. The hook's `useEffect` starts fetching data (`loading = true`)
+2. Component re-renders, `useMemo` returns early with `loading: true`
+3. Fetch completes, `setLoading(false)` is called
+4. BUT - if the component unmounts/remounts during this cycle (due to parent re-renders from `refreshTick` or other state changes), the `loading` state resets to `true`
 
----
+Additionally, the console shows the widget rendered 3 times in quick succession, suggesting parent re-renders may be causing repeated hook initializations.
 
-## Solution Options
+## Solution
 
-### Option A: Apply the Database Migrations (Recommended)
+### Part 1: Stabilize the sensor ID reference
 
-If you're ready to deploy the Sensor Catalog feature, apply the pending migrations using Lovable Cloud. This will:
-1. Create the `sensor_catalog` table and `sensor_catalog_public` view
-2. Add `sensor_catalog_id` and `decode_mode_override` to `lora_sensors`
-3. Create the `decoder_confidence_rollup` view
-4. Regenerate `types.ts` with all new schema elements
+In `BatteryHealthWidget.tsx`, memoize the `sensorId` to prevent unnecessary re-computations:
 
-**Pros**: Code and database stay in sync; no workarounds needed
-**Cons**: Requires deploying all pending migrations
-
----
-
-### Option B: Make TypeScript Tolerant of Missing Schema (Temporary Fix)
-
-If the migrations can't be applied yet, we can update the TypeScript code to be more defensive:
-
-1. **Update `LoraSensor` interface** to make the new fields optional with `| undefined`
-2. **Update hooks** to cast types through `unknown` to bypass PostgREST type inference
-3. **Update `PlatformSensorLibrary.tsx`** to fix the incorrect function call signatures
-
-This is a workaround that allows the build to succeed while the database migration is pending.
-
----
-
-## Recommended Approach
-
-Since the migrations already exist in the repository, **Option A is preferred**. The migrations need to be applied to the database so the types file can be regenerated.
-
-### Action Required by User
-
-If you're ready to apply the schema changes, they will be applied automatically when you publish/deploy through Lovable Cloud. The types file will regenerate to include:
-- `sensor_catalog` table
-- `sensor_catalog_public` view  
-- `decoder_confidence_rollup` view
-- New columns on `lora_sensors`
-
----
-
-## If Migrations Cannot Be Applied Yet (Option B)
-
-We'll make these code changes to fix the build:
-
-### 1. Fix LoraSensor Type (src/types/ttn.ts)
-
-Make the new fields explicitly optional in both `LoraSensor` and `LoraSensorInsert`:
+**File:** `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx`
 
 ```typescript
-// Already has these, but the DB types don't match yet
-sensor_catalog_id: string | null;
-decode_mode_override: string | null;
+// Before:
+const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
+const sensorId = primarySensor?.id || device?.id || null;
+
+// After:
+const sensorId = useMemo(() => {
+  const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
+  return primarySensor?.id || device?.id || null;
+}, [sensor?.id, loraSensors, device?.id]);
 ```
 
-### 2. Fix useLoraSensors.ts Type Casts
+### Part 2: Add early return for stable sensorId in the hook
 
-Change all `as LoraSensor` and `as LoraSensor[]` to cast through `unknown`:
+In `useBatteryEstimate.ts`, cache the initial sensorId and only refetch if it truly changes (not just object reference changes):
+
+**File:** `src/hooks/useBatteryEstimate.ts`
+
+Add a `useRef` to track if the initial fetch has completed, preventing re-fetch on remounts within the same session:
 
 ```typescript
-// Before
-return data as LoraSensor[];
+const hasFetchedRef = useRef<string | null>(null);
 
-// After  
-return data as unknown as LoraSensor[];
+useEffect(() => {
+  // Skip if we've already fetched for this exact sensorId
+  if (hasFetchedRef.current === sensorId) {
+    return;
+  }
+  
+  if (!sensorId) {
+    setLoading(false);
+    return;
+  }
+
+  // ... existing fetch logic ...
+  
+  // Mark as fetched when complete
+  hasFetchedRef.current = sensorId;
+}, [sensorId]);
 ```
 
-### 3. Fix useSensorCatalog.ts Supabase Queries
+### Part 3: Include missing fields in loraSensors mapping
 
-Cast the table names to bypass type checking until migrations run:
+In `UnitDetail.tsx`, include `is_primary` and `sensor_type` when passing `loraSensors` to EntityDashboard:
+
+**File:** `src/pages/UnitDetail.tsx` (lines 1098-1105)
 
 ```typescript
-// Before
-.from("sensor_catalog")
+// Before:
+loraSensors={loraSensors?.map(s => ({
+  id: s.id,
+  name: s.name,
+  battery_level: s.battery_level,
+  signal_strength: s.signal_strength,
+  last_seen_at: s.last_seen_at,
+  status: s.status,
+})) || []}
 
-// After
-.from("sensor_catalog" as any)
+// After:
+loraSensors={loraSensors?.map(s => ({
+  id: s.id,
+  name: s.name,
+  battery_level: s.battery_level,
+  signal_strength: s.signal_strength,
+  last_seen_at: s.last_seen_at,
+  status: s.status,
+  sensor_type: s.sensor_type,
+  is_primary: s.is_primary,
+})) || []}
 ```
 
-### 4. Fix useDecoderConfidence.ts
+## Files to Update
 
-Same pattern:
+| File | Change |
+|------|--------|
+| `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx` | Memoize `sensorId` computation |
+| `src/hooks/useBatteryEstimate.ts` | Add `hasFetchedRef` to prevent redundant fetches |
+| `src/pages/UnitDetail.tsx` | Include `is_primary` and `sensor_type` in loraSensors mapping |
 
-```typescript
-.from("decoder_confidence_rollup" as any)
-```
+## Expected Behavior After Fix
 
-### 5. Fix PlatformSensorLibrary.tsx Function Calls
+1. Widget renders once with stable `sensorId`
+2. Hook fetches data only once per page load
+3. When no battery profile exists, widget shows "Battery estimate unavailable" (MISSING_PROFILE state)
+4. No spinner loop
 
-Lines 1405, 1423, 1437 have incorrect argument types. The `logSuperAdminAction` function expects a string, but objects are being passed:
+## Technical Notes
 
-```typescript
-// Before (line 1405)
-logSuperAdminAction("ADDED_SENSOR_TO_CATALOG", { model: entry.model, manufacturer: entry.manufacturer });
-
-// After
-logSuperAdminAction("ADDED_SENSOR_TO_CATALOG", JSON.stringify({ model: entry.model, manufacturer: entry.manufacturer }));
-```
-
-Or update the function signature if it should accept objects.
-
----
-
-## Summary
-
-| File | Error Count | Fix |
-|------|-------------|-----|
-| `useLoraSensors.ts` | 8 errors | Cast through `unknown` |
-| `useSensorCatalog.ts` | 8 errors | Use `as any` for table names |
-| `useDecoderConfidence.ts` | 3 errors | Use `as any` for view name |
-| `useSetPrimarySensor.ts` | 1 error | Cast through `unknown` |
-| `PlatformSensorLibrary.tsx` | 3 errors | Fix function call arguments |
-
-**Total: 23 errors → 0 errors**
-
----
-
-## My Recommendation
-
-**Apply the migrations first.** This is the cleanest path:
-1. The migrations are already in the repo
-2. They're designed to be non-breaking (additive changes)
-3. The types file will regenerate automatically
-4. No workaround code needed
-
-If you confirm the migrations should be applied, I can help verify they're ready. If you want the temporary workaround instead, I'll implement Option B.
+- The `refreshTick` prop is designed to trigger widget data refreshes, but Battery Health should only fetch on page load per the user's preference
+- The memoization ensures `sensorId` doesn't change reference between renders
+- The `hasFetchedRef` acts as a guard against redundant fetches when the component tree re-renders
 
