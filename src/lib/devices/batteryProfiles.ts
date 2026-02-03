@@ -111,7 +111,7 @@ export const DEFAULT_INTERVAL_SECONDS = 900; // 15 min default
 export const MAX_INTERVAL_SECONDS = 86400; // 24h max for inference
 export const HYSTERESIS_READINGS = 3; // Readings needed for state upgrade
 
-// Fallback profile for unknown models
+// Fallback profile for unknown models (pack-level voltages for 2×AA LiFeS2)
 export const FALLBACK_BATTERY_PROFILE: Omit<BatteryProfile, "id" | "model"> = {
   manufacturer: "Generic",
   battery_type: "2×AA Lithium",
@@ -123,7 +123,7 @@ export const FALLBACK_BATTERY_PROFILE: Omit<BatteryProfile, "id" | "model"> = {
   notes: "Conservative fallback for unknown models",
   chemistry: "LiFeS2_AA",
   nominal_voltage: 3.0,
-  cutoff_voltage: 2.5,
+  cutoff_voltage: 1.80,
 };
 
 // ============================================================================
@@ -149,20 +149,21 @@ export const CR17450_CURVE: VoltageToPercentCurve = {
 };
 
 /**
- * LiFeS2 AA (1.5V Lithium-Iron Disulfide)
- * Energizer Ultimate Lithium type
+ * LiFeS2 AA — 2× cells in series (pack voltage 1.80–3.60V)
+ * Energizer Ultimate Lithium type, used by most Dragino/Milesight sensors
+ * Sensors report total pack voltage, not per-cell voltage.
  */
 export const LIFES2_AA_CURVE: VoltageToPercentCurve = {
   chemistry: "LiFeS2_AA",
-  minVoltage: 0.90,
-  maxVoltage: 1.80,
+  minVoltage: 1.80,
+  maxVoltage: 3.60,
   curve: [
-    { voltage: 1.80, percent: 100 },
-    { voltage: 1.60, percent: 80 },
-    { voltage: 1.40, percent: 50 },
-    { voltage: 1.20, percent: 20 },
-    { voltage: 1.00, percent: 5 },
-    { voltage: 0.90, percent: 0 },
+    { voltage: 3.60, percent: 100 },
+    { voltage: 3.20, percent: 80 },
+    { voltage: 2.80, percent: 50 },
+    { voltage: 2.40, percent: 20 },
+    { voltage: 2.00, percent: 5 },
+    { voltage: 1.80, percent: 0 },
   ],
 };
 
@@ -184,19 +185,21 @@ export const CR2032_CURVE: VoltageToPercentCurve = {
 };
 
 /**
- * Alkaline AA (1.5V) - Steeper discharge curve
+ * Alkaline AA/AAA — 2× cells in series (pack voltage 1.60–3.20V)
+ * Steeper discharge curve. Used by Dragino LDS02 and similar door sensors.
+ * Sensors report total pack voltage, not per-cell voltage.
  */
 export const ALKALINE_AA_CURVE: VoltageToPercentCurve = {
   chemistry: "Alkaline_AA",
-  minVoltage: 0.80,
-  maxVoltage: 1.60,
+  minVoltage: 1.60,
+  maxVoltage: 3.20,
   curve: [
-    { voltage: 1.60, percent: 100 },
-    { voltage: 1.40, percent: 70 },
-    { voltage: 1.20, percent: 40 },
-    { voltage: 1.00, percent: 15 },
-    { voltage: 0.90, percent: 5 },
-    { voltage: 0.80, percent: 0 },
+    { voltage: 3.20, percent: 100 },
+    { voltage: 2.80, percent: 70 },
+    { voltage: 2.40, percent: 40 },
+    { voltage: 2.00, percent: 15 },
+    { voltage: 1.80, percent: 5 },
+    { voltage: 1.60, percent: 0 },
   ],
 };
 
@@ -290,11 +293,13 @@ export function getVoltageThresholds(chemistry: string | null | undefined): Volt
     case "CR17450":
       return { ok: 2.85, warning: 2.75, low: 2.60, critical: 2.50 };
     case "LiFeS2_AA":
-      return { ok: 1.40, warning: 1.20, low: 1.00, critical: 0.90 };
+      // Pack-level (2× cells): 2.80V ok, 2.40V warning, 2.00V low, 1.80V critical
+      return { ok: 2.80, warning: 2.40, low: 2.00, critical: 1.80 };
     case "CR2032":
       return { ok: 2.70, warning: 2.50, low: 2.30, critical: 2.20 };
     case "Alkaline_AA":
-      return { ok: 1.20, warning: 1.00, low: 0.90, critical: 0.80 };
+      // Pack-level (2× cells): 2.40V ok, 2.00V warning, 1.80V low, 1.60V critical
+      return { ok: 2.40, warning: 2.00, low: 1.80, critical: 1.60 };
     default:
       return { ok: 2.85, warning: 2.75, low: 2.60, critical: 2.50 };
   }

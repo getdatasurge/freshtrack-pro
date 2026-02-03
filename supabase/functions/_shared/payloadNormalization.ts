@@ -83,19 +83,156 @@ const TELEMETRY_ALIASES: Record<string, string[]> = {
   battery_voltage: ['BatV', 'bat_v', 'battery_v', 'batteryVoltage', 'vbat'],
 };
 
-// Dragino battery voltage range (from Dragino documentation)
-// 3.0V = device minimum (0%), 3.6V = fully charged (100%)
+// ============================================================================
+// Chemistry-specific voltage curves (pack-level)
+//
+// Sensors report total battery pack voltage. Multi-cell packs (2×AA, 2×AAA)
+// report the sum of individual cell voltages. Curves below are at pack level.
+// ============================================================================
+
+interface VoltageCurvePoint {
+  voltage: number;
+  percent: number;
+}
+
+interface PackVoltageCurve {
+  minVoltage: number;
+  maxVoltage: number;
+  curve: VoltageCurvePoint[];
+}
+
+/** CR17450 (single 3.0V Li-MnO₂ cell) — flat discharge curve */
+const CR17450_PACK_CURVE: PackVoltageCurve = {
+  minVoltage: 2.50,
+  maxVoltage: 3.00,
+  curve: [
+    { voltage: 3.00, percent: 100 },
+    { voltage: 2.95, percent: 80 },
+    { voltage: 2.85, percent: 50 },
+    { voltage: 2.75, percent: 20 },
+    { voltage: 2.60, percent: 5 },
+    { voltage: 2.50, percent: 0 },
+  ],
+};
+
+/** LiFeS2 AA — 2× cells in series (pack voltage 1.80–3.60V) */
+const LIFES2_AA_PACK_CURVE: PackVoltageCurve = {
+  minVoltage: 1.80,
+  maxVoltage: 3.60,
+  curve: [
+    { voltage: 3.60, percent: 100 },
+    { voltage: 3.20, percent: 80 },
+    { voltage: 2.80, percent: 50 },
+    { voltage: 2.40, percent: 20 },
+    { voltage: 2.00, percent: 5 },
+    { voltage: 1.80, percent: 0 },
+  ],
+};
+
+/** Alkaline AA/AAA — 2× cells in series (pack voltage 1.60–3.20V) */
+const ALKALINE_AA_PACK_CURVE: PackVoltageCurve = {
+  minVoltage: 1.60,
+  maxVoltage: 3.20,
+  curve: [
+    { voltage: 3.20, percent: 100 },
+    { voltage: 2.80, percent: 70 },
+    { voltage: 2.40, percent: 40 },
+    { voltage: 2.00, percent: 15 },
+    { voltage: 1.80, percent: 5 },
+    { voltage: 1.60, percent: 0 },
+  ],
+};
+
+/** CR2032 (single 3.0V coin cell) */
+const CR2032_PACK_CURVE: PackVoltageCurve = {
+  minVoltage: 2.20,
+  maxVoltage: 3.00,
+  curve: [
+    { voltage: 3.00, percent: 100 },
+    { voltage: 2.90, percent: 80 },
+    { voltage: 2.70, percent: 50 },
+    { voltage: 2.50, percent: 20 },
+    { voltage: 2.30, percent: 5 },
+    { voltage: 2.20, percent: 0 },
+  ],
+};
+
+/**
+ * Map chemistry identifiers to pack-level voltage curves.
+ * Accepts both battery_profiles chemistry (e.g. "LiFeS2_AA") and
+ * sensor_catalog battery_info.chemistry (e.g. "lithium").
+ */
+function getPackCurve(chemistry: string | null | undefined): PackVoltageCurve {
+  switch (chemistry) {
+    case "CR17450":
+    case "li-mno2":
+      return CR17450_PACK_CURVE;
+    case "LiFeS2_AA":
+    case "lithium":
+    case "lifes2":
+      return LIFES2_AA_PACK_CURVE;
+    case "Alkaline_AA":
+    case "alkaline":
+      return ALKALINE_AA_PACK_CURVE;
+    case "CR2032":
+    case "cr2032":
+      return CR2032_PACK_CURVE;
+    default:
+      // Default to LiFeS2 AA pack — most common chemistry in this system
+      return LIFES2_AA_PACK_CURVE;
+  }
+}
+
+/**
+ * Convert battery voltage to integer percentage (0–100) using
+ * chemistry-specific discharge curves with linear interpolation.
+ *
+ * @param voltage - Pack-level battery voltage in volts
+ * @param chemistry - Battery chemistry identifier (from battery_profiles or sensor_catalog)
+ */
+export function convertVoltageToPercent(voltage: number, chemistry?: string | null): number {
+  const curve = getPackCurve(chemistry);
+
+  if (voltage >= curve.maxVoltage) return 100;
+  if (voltage <= curve.minVoltage) return 0;
+
+  const points = curve.curve;
+  for (let i = 0; i < points.length - 1; i++) {
+    const high = points[i];
+    const low = points[i + 1];
+    if (voltage <= high.voltage && voltage >= low.voltage) {
+      const range = high.voltage - low.voltage;
+      const percentRange = high.percent - low.percent;
+      const ratio = (voltage - low.voltage) / range;
+      return Math.round(low.percent + percentRange * ratio);
+    }
+  }
+  return 0;
+}
+
+// Legacy Dragino range kept for backward-compatible no-chemistry calls
 const DRAGINO_BATV_MIN = 3.0;
 const DRAGINO_BATV_MAX = 3.6;
 
 /**
- * Convert Dragino BatV voltage to integer battery percentage (0-100).
- * Clamps to valid range to handle edge cases.
+ * @deprecated Use convertVoltageToPercent with chemistry instead.
+ * Legacy Dragino BatV conversion (3.0V–3.6V linear).
  */
 function convertBatVToPercent(voltage: number): number {
   const clamped = Math.max(DRAGINO_BATV_MIN, Math.min(DRAGINO_BATV_MAX, voltage));
   const percent = ((clamped - DRAGINO_BATV_MIN) / (DRAGINO_BATV_MAX - DRAGINO_BATV_MIN)) * 100;
   return Math.round(percent);
+}
+
+/**
+ * Options for normalizeTelemetry.
+ *
+ * @param chemistry - Battery chemistry identifier (e.g. "LiFeS2_AA", "lithium").
+ *   When provided, voltage-to-percent conversion uses chemistry-specific
+ *   discharge curves instead of the legacy Dragino linear formula.
+ */
+export interface NormalizeTelemetryOptions {
+  chemistry?: string | null;
 }
 
 /**
@@ -106,15 +243,19 @@ function convertBatVToPercent(voltage: number): number {
  * If the canonical key already exists in the payload, no aliasing occurs
  * for that field (existing devices are unaffected).
  *
+ * @param decoded - Raw decoded payload from TTN or catalog decoder
+ * @param options - Optional context for chemistry-aware conversion
+ *
  * @example
- *   normalizeTelemetry({ TempC_SHT: 23.5, Hum_SHT: 62, BatV: 3.05 })
- *   // → { TempC_SHT: 23.5, Hum_SHT: 62, BatV: 3.05,
- *   //     temperature: 23.5, humidity: 62, battery: 3.05 }
+ *   normalizeTelemetry({ BatV: 3.05 }, { chemistry: "LiFeS2_AA" })
+ *   // → { BatV: 3.05, battery: 69, battery_voltage: 3.05 }
  */
 export function normalizeTelemetry(
   decoded: Record<string, unknown>,
+  options?: NormalizeTelemetryOptions,
 ): Record<string, unknown> {
   const result = { ...decoded };
+  const chemistry = options?.chemistry;
 
   for (const [canonical, aliases] of Object.entries(TELEMETRY_ALIASES)) {
     // Skip if canonical key already present
@@ -129,7 +270,10 @@ export function normalizeTelemetry(
           // BatV and battery_v are both voltage values (e.g. 3.05V)
           const isVoltageAlias = alias === 'BatV' || alias === 'battery_v';
           if (isVoltageAlias && canonical === 'battery') {
-            result[canonical] = convertBatVToPercent(value);
+            // Use chemistry-aware curve when available, legacy formula otherwise
+            result[canonical] = chemistry
+              ? convertVoltageToPercent(value, chemistry)
+              : convertBatVToPercent(value);
           }
           // Store raw voltage for battery_voltage field
           else if (canonical === 'battery_voltage') {
