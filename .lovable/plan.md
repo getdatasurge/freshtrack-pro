@@ -1,146 +1,151 @@
 
-## What’s happening (why the Battery Health widget stays on the pinwheel)
 
-From the code and your network snapshot:
+# Fix Plan: Build Errors from Unapplied Database Migrations
 
-- The `battery_profiles` request is now **200** (good; the 406 loop is fixed).
-- The Battery Health widget still shows the spinner because `estimate.loading` keeps flipping back to `true`.
+## Problem Summary
 
-The reason is in `BatteryHealthWidget.tsx`:
+The project has **21 build errors** caused by TypeScript code referencing database schema elements that don't exist yet in the auto-generated Supabase types file. The migrations exist in `supabase/migrations/` but haven't been applied to the live database.
 
-```ts
-const estimate = useBatteryEstimate(sensorId, primarySensor ? {
-  id: primarySensor.id,
-  model: null,
-  last_seen_at: primarySensor.last_seen_at,
-  battery_level: primarySensor.battery_level,
-} : null);
+## Root Cause
+
+**Missing database objects** in `src/integrations/supabase/types.ts`:
+
+| Missing Element | Used By | Migration File |
+|----------------|---------|----------------|
+| `sensor_catalog` table | `useSensorCatalog.ts` | `20260202060000_sensor_catalog.sql` |
+| `sensor_catalog_public` view | `useSensorCatalog.ts` | `20260202060000_sensor_catalog.sql` |
+| `decoder_confidence_rollup` view | `useDecoderConfidence.ts` | `20260203100001_decoder_confidence_views.sql` |
+| `lora_sensors.sensor_catalog_id` column | `LoraSensor` type in `types/ttn.ts` | `20260203060000_add_sensor_catalog_fk.sql` |
+| `lora_sensors.decode_mode_override` column | `LoraSensor` type in `types/ttn.ts` | `20260203100000_add_decode_mode.sql` |
+
+The TypeScript types expect these to exist, but the database hasn't been updated yet. This creates a mismatch between code and schema.
+
+---
+
+## Solution Options
+
+### Option A: Apply the Database Migrations (Recommended)
+
+If you're ready to deploy the Sensor Catalog feature, apply the pending migrations using Lovable Cloud. This will:
+1. Create the `sensor_catalog` table and `sensor_catalog_public` view
+2. Add `sensor_catalog_id` and `decode_mode_override` to `lora_sensors`
+3. Create the `decoder_confidence_rollup` view
+4. Regenerate `types.ts` with all new schema elements
+
+**Pros**: Code and database stay in sync; no workarounds needed
+**Cons**: Requires deploying all pending migrations
+
+---
+
+### Option B: Make TypeScript Tolerant of Missing Schema (Temporary Fix)
+
+If the migrations can't be applied yet, we can update the TypeScript code to be more defensive:
+
+1. **Update `LoraSensor` interface** to make the new fields optional with `| undefined`
+2. **Update hooks** to cast types through `unknown` to bypass PostgREST type inference
+3. **Update `PlatformSensorLibrary.tsx`** to fix the incorrect function call signatures
+
+This is a workaround that allows the build to succeed while the database migration is pending.
+
+---
+
+## Recommended Approach
+
+Since the migrations already exist in the repository, **Option A is preferred**. The migrations need to be applied to the database so the types file can be regenerated.
+
+### Action Required by User
+
+If you're ready to apply the schema changes, they will be applied automatically when you publish/deploy through Lovable Cloud. The types file will regenerate to include:
+- `sensor_catalog` table
+- `sensor_catalog_public` view  
+- `decoder_confidence_rollup` view
+- New columns on `lora_sensors`
+
+---
+
+## If Migrations Cannot Be Applied Yet (Option B)
+
+We'll make these code changes to fix the build:
+
+### 1. Fix LoraSensor Type (src/types/ttn.ts)
+
+Make the new fields explicitly optional in both `LoraSensor` and `LoraSensorInsert`:
+
+```typescript
+// Already has these, but the DB types don't match yet
+sensor_catalog_id: string | null;
+decode_mode_override: string | null;
 ```
 
-That inline object is **a brand-new object every render**.  
-`useBatteryEstimate` has:
+### 2. Fix useLoraSensors.ts Type Casts
 
-```ts
-useEffect(..., [sensorId, sensorData])
+Change all `as LoraSensor` and `as LoraSensor[]` to cast through `unknown`:
+
+```typescript
+// Before
+return data as LoraSensor[];
+
+// After  
+return data as unknown as LoraSensor[];
 ```
 
-So every re-render (and Unit Detail re-renders frequently due to realtime refreshTick + state replacement) retriggers the effect, which calls `setLoading(true)` again. Result: the widget never “settles” and looks stuck on the pinwheel.
+### 3. Fix useSensorCatalog.ts Supabase Queries
 
----
+Cast the table names to bypass type checking until migrations run:
 
-## Goals for the fix (aligned with your approved preferences)
+```typescript
+// Before
+.from("sensor_catalog")
 
-1. **Stop the infinite “loading” loop** (battery widget should resolve to a stable UI).
-2. **Missing profile behavior:** show **no estimate** when the model has no configured profile (show the MISSING_PROFILE UI).
-3. **No voltage available:** show battery percent as **(Reported)** in Device Readiness (not Estimated).
-4. **Update frequency:** Battery Health calculations should refresh **only on page load** (not on realtime ticks).
-
----
-
-## Implementation approach
-
-### A) Fix the pinwheel: make the hook call stable (page-load only)
-We will change the dashboard Battery Health widget to **stop passing an inline `sensorData` object**.
-
-Best option (and simplest):  
-- Call `useBatteryEstimate(sensorId)` with **only** the id.
-- The hook already fetches the sensor row from the backend, so it does not need the extra partial object.
-
-This prevents re-fetching on every re-render and matches your “only on page load” requirement.
-
-**File**
-- `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx`
-
-**Change**
-- Replace the current call with:
-  - `const estimate = useBatteryEstimate(sensorId);`
-
-(Alternative we will not use unless needed: memoize that object via `useMemo`, but removing it is cleaner and more deterministic.)
-
----
-
-### B) Enforce “No estimate without profile” in the hook
-Right now, `useBatteryEstimate` still sets a fallback profile when the profile lookup returns no rows:
-
-```ts
-} else if (sensor?.model) {
-  const fallbackProfile = getFallbackProfile(sensor.model);
-  setBatteryProfile(fallbackProfile);
-  setProfileSource("fallback");
-}
+// After
+.from("sensor_catalog" as any)
 ```
 
-That conflicts with your approved behavior. We will change it to:
+### 4. Fix useDecoderConfidence.ts
 
-- If no profile row exists → `batteryProfile = null`, `profileSource = "none"`, `sensorChemistry = null`.
+Same pattern:
 
-That ensures:
-- Widget state becomes `MISSING_PROFILE`
-- No days-remaining estimate is computed
-
-**File**
-- `src/hooks/useBatteryEstimate.ts`
-
-**Change**
-- Remove/disable fallback profile assignment for missing profiles (keep helper for future if you ever want a toggle).
-
----
-
-### C) Make the hook truly “page load only”
-To align with “only on page load” and avoid accidental loops in other callers:
-
-- Change the effect dependency from `[sensorId, sensorData]` to **only** `[sensorId]`.
-
-Because after step A we won’t pass `sensorData` anymore, this is also defensive and prevents future regressions if someone passes a new inline object again.
-
-**File**
-- `src/hooks/useBatteryEstimate.ts`
-
-**Change**
-- `useEffect(..., [sensorId])`
-
-Note: This means if some parent passes updated sensor fields later, Battery Health won’t refetch (which is exactly what you requested).
-
----
-
-### D) Device Readiness: label % as (Reported) when voltage is missing
-Currently `DeviceReadinessWidget` always renders:
-
-```ts
-const levelLabel = `${level}% (Est.)`;
+```typescript
+.from("decoder_confidence_rollup" as any)
 ```
 
-We will update it so:
-- If `battery_voltage_filtered` or `battery_voltage` exists (non-null) → label `% (Est.)`
-- Otherwise → label `% (Reported)`
+### 5. Fix PlatformSensorLibrary.tsx Function Calls
 
-Because `WidgetSensor` doesn’t currently type these voltage fields, we’ll safely read them from the existing `any` cast you already have (`const loraSensor = primarySensor as any;`) without changing the broader typing surface.
+Lines 1405, 1423, 1437 have incorrect argument types. The `logSuperAdminAction` function expects a string, but objects are being passed:
 
-**File**
-- `src/features/dashboard-layout/widgets/DeviceReadinessWidget.tsx`
+```typescript
+// Before (line 1405)
+logSuperAdminAction("ADDED_SENSOR_TO_CATALOG", { model: entry.model, manufacturer: entry.manufacturer });
 
-**Change**
-- Add `const effectiveVoltage = loraSensor?.battery_voltage_filtered ?? loraSensor?.battery_voltage ?? null;`
-- Pass that into `getBatteryStatus(level, effectiveVoltage)` and format the label accordingly.
+// After
+logSuperAdminAction("ADDED_SENSOR_TO_CATALOG", JSON.stringify({ model: entry.model, manufacturer: entry.manufacturer }));
+```
 
----
-
-## Verification checklist (what we’ll test after implementing)
-
-1. Open `/units/8d9a7c25-8340-45b2-82dd-52c6fe29e484`:
-   - Battery Health widget should stop spinning and resolve quickly.
-2. For model `SENSOR-A840415A` with no battery profile row:
-   - Battery Health should show **Battery estimate unavailable** (MISSING_PROFILE state), not an estimate.
-3. Device Readiness battery:
-   - Should show `4% (Reported)` (since voltage is null in your current data).
-4. Confirm no repeated backend calls:
-   - Battery-related calls should happen once on page load, not on realtime refresh ticks.
-5. Regression check:
-   - Switch between tabs (Dashboard/Settings/History) and back; Battery Health should still behave predictably.
+Or update the function signature if it should accept objects.
 
 ---
 
-## Files that will be updated (no new files required)
-- `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx`
-- `src/hooks/useBatteryEstimate.ts`
-- `src/features/dashboard-layout/widgets/DeviceReadinessWidget.tsx`
+## Summary
+
+| File | Error Count | Fix |
+|------|-------------|-----|
+| `useLoraSensors.ts` | 8 errors | Cast through `unknown` |
+| `useSensorCatalog.ts` | 8 errors | Use `as any` for table names |
+| `useDecoderConfidence.ts` | 3 errors | Use `as any` for view name |
+| `useSetPrimarySensor.ts` | 1 error | Cast through `unknown` |
+| `PlatformSensorLibrary.tsx` | 3 errors | Fix function call arguments |
+
+**Total: 23 errors → 0 errors**
+
+---
+
+## My Recommendation
+
+**Apply the migrations first.** This is the cleanest path:
+1. The migrations are already in the repo
+2. They're designed to be non-breaking (additive changes)
+3. The types file will regenerate automatically
+4. No workaround code needed
+
+If you confirm the migrations should be applied, I can help verify they're ready. If you want the temporary workaround instead, I'll implement Option B.
+
