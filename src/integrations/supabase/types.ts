@@ -1301,6 +1301,7 @@ export type Database = {
           battery_voltage_filtered: number | null
           created_at: string
           created_by: string | null
+          decode_mode_override: string | null
           deleted_at: string | null
           deleted_by: string | null
           description: string | null
@@ -1318,6 +1319,7 @@ export type Database = {
           organization_id: string
           provisioned_source: string | null
           provisioning_state: string
+          sensor_catalog_id: string | null
           sensor_type: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength: number | null
           site_id: string | null
@@ -1337,6 +1339,7 @@ export type Database = {
           battery_voltage_filtered?: number | null
           created_at?: string
           created_by?: string | null
+          decode_mode_override?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           description?: string | null
@@ -1354,6 +1357,7 @@ export type Database = {
           organization_id: string
           provisioned_source?: string | null
           provisioning_state?: string
+          sensor_catalog_id?: string | null
           sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength?: number | null
           site_id?: string | null
@@ -1373,6 +1377,7 @@ export type Database = {
           battery_voltage_filtered?: number | null
           created_at?: string
           created_by?: string | null
+          decode_mode_override?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           description?: string | null
@@ -1390,6 +1395,7 @@ export type Database = {
           organization_id?: string
           provisioned_source?: string | null
           provisioning_state?: string
+          sensor_catalog_id?: string | null
           sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength?: number | null
           site_id?: string | null
@@ -1406,6 +1412,20 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lora_sensors_sensor_catalog_id_fkey"
+            columns: ["sensor_catalog_id"]
+            isOneToOne: false
+            referencedRelation: "sensor_catalog"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lora_sensors_sensor_catalog_id_fkey"
+            columns: ["sensor_catalog_id"]
+            isOneToOne: false
+            referencedRelation: "sensor_catalog_public"
             referencedColumns: ["id"]
           },
           {
