@@ -1,172 +1,85 @@
 
-# Fix Plan: Temperature Decoding Not Working
+
+# Fix Plan: Apply Decoder Confidence Migrations
 
 ## Problem Summary
 
-The sensor is sending heartbeats (showing "1 minute ago"), but temperature readings are not being decoded. The edge function logs show:
+The Decoder Confidence page shows 404 errors because:
+1. The `decoder_confidence_rollup` view doesn't exist in the database
+2. The view depends on columns in `sensor_readings` that also don't exist yet
 
-```
-[TTN-WEBHOOK] | No temp or door data in payload. Keys:
-[TTN-WEBHOOK] | Processing sensor: sensor-a840415a61897757, temp: N/A
-```
-
-This indicates the incoming TTN payload doesn't have recognizable temperature keys, and the JavaScript decoder isn't being invoked to parse the raw payload.
-
----
-
-## Root Cause Analysis
-
-The decoding pipeline has **3 missing database components**:
-
-| Missing Component | Migration File | Purpose |
-|------------------|----------------|---------|
-| `lora_sensors.sensor_catalog_id` | `20260203060000_add_sensor_catalog_fk.sql` | Links each sensor to its catalog entry (containing the decoder_js) |
-| `lora_sensors.decode_mode_override` | `20260203100000_add_decode_mode.sql` | Per-sensor decode mode control |
-| Backfill trigger | `20260203070000_backfill_catalog_id_and_sync_trigger.sql` | Auto-links sensors by matching manufacturer/model |
-
-### How the Decoder is Supposed to Work
-
-The webhook logic (line 496 of `ttn-webhook/index.ts`) checks:
-
-```typescript
-if (sensor.sensor_catalog_id != null) {
-  const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
-  // ... runs catalogEntry.decoder_js to decode raw payload
-}
-```
-
-**Current state:** The `sensor_catalog_id` column doesn't exist on `lora_sensors`, so this check always fails and the decoder is never invoked.
-
-### Additional Issue: Model Mismatch
-
-The active sensor has model `SENSOR-A840415A` but the catalog only contains:
-- Dragino LHT65
-- Dragino LDS02  
-- Dragino LWL02
-- Elsys ERS CO2
-- Netvox R311A
-
-This sensor won't auto-match unless it's added to the catalog or the sensor's model is updated.
+**Evidence:**
+- Network request to `/rest/v1/decoder_confidence_rollup` returns 404
+- Database query confirms no decoder-related views exist
+- The required columns (`decoder_id`, `decode_match`, `decode_mismatch_reason`) are missing from `sensor_readings`
 
 ---
 
-## Solution
+## Solution: Apply 3 Dependent Migrations
 
-### Step 1: Apply the Missing Migrations
+These migrations must be applied in order:
 
-Apply these 3 migrations to enable the decoding pipeline:
+| Order | Migration File | Purpose |
+|-------|---------------|---------|
+| 1 | `20260203080000_add_raw_payload_columns.sql` | Adds `frm_payload_base64`, `f_port`, `raw_payload_hex`, `network_decoded_payload` to `sensor_readings` |
+| 2 | `20260203090000_add_trust_mode_columns.sql` | Adds `app_decoded_payload`, `decoder_id`, `decode_match`, `decode_mismatch_reason`, `decoder_warnings`, `decoder_errors` to `sensor_readings` |
+| 3 | `20260203100001_decoder_confidence_views.sql` | Creates the `decoder_confidence_rollup` view that aggregates match/mismatch stats |
 
-1. **`20260203060000_add_sensor_catalog_fk.sql`**
-   - Adds `sensor_catalog_id` column to `lora_sensors`
-   - Creates index for join performance
+---
 
-2. **`20260203100000_add_decode_mode.sql`**
-   - Adds `decode_mode_override` column to `lora_sensors`
-   - Already has `decode_mode` on `sensor_catalog` (applied earlier)
+## What Each Migration Does
 
-3. **`20260203070000_backfill_catalog_id_and_sync_trigger.sql`**
-   - Backfills `sensor_catalog_id` for existing sensors by matching manufacturer/model
-   - Creates trigger to auto-sync when catalog reference changes
+### Migration 1: Raw Payload Columns
+Adds columns to store the raw LoRaWAN payload for re-decoding and trust-mode comparison:
+- `frm_payload_base64` - Raw payload as received from TTN
+- `f_port` - LoRaWAN port number (determines decoder)
+- `raw_payload_hex` - Hex representation for debugging
+- `network_decoded_payload` - Full decoded object from TTN
 
-### Step 2: Add Sensor to Catalog (or Update Model)
+### Migration 2: Trust-Mode Columns
+Adds columns for side-by-side decoder comparison:
+- `app_decoded_payload` - Our decoder's output
+- `decoder_id` - Which decoder produced the output (e.g., `catalog:uuid:rev3`)
+- `decode_match` - Whether TTN and app outputs matched
+- `decode_mismatch_reason` - Why they didn't match
+- `decoder_warnings` / `decoder_errors` - Decoder diagnostic info
 
-After migrations are applied, either:
-
-**Option A:** Add the sensor model to the catalog
-- Add an entry for `SENSOR-A840415A` (appears to be a Milesight or similar temp/humidity sensor based on dev_eui prefix A840)
-
-**Option B:** Update the sensor's model to match an existing catalog entry
-- If this is actually a Dragino HT65N (which has decoder_js), update the sensor's model field to `HT65N`
-
-### Step 3: Redeploy Edge Function
-
-The `ttn-webhook` edge function needs to be redeployed after migrations so it can:
-1. Read `sensor_catalog_id` from `lora_sensors`
-2. Fetch the decoder from `sensor_catalog`
-3. Run the JavaScript decoder on incoming payloads
+### Migration 3: Confidence Rollup View
+Creates the aggregated view for the platform admin dashboard:
+```sql
+CREATE VIEW public.decoder_confidence_rollup AS
+SELECT
+  decoder_id,
+  COUNT(*) FILTER (WHERE decode_match IS NOT NULL) AS compared_count,
+  COUNT(*) FILTER (WHERE decode_match = true) AS match_count,
+  COUNT(*) FILTER (WHERE decode_match = false) AS mismatch_count,
+  ROUND(...) AS match_rate_pct,
+  MAX(recorded_at) AS last_seen_at,
+  MIN(recorded_at) AS first_seen_at,
+  (...) AS top_mismatch_reason
+FROM public.sensor_readings
+WHERE decoder_id IS NOT NULL
+GROUP BY decoder_id;
+```
 
 ---
 
 ## Expected Behavior After Fix
 
-1. **Webhook receives uplink** with raw payload (frmPayload)
-2. **Checks `sensor.sensor_catalog_id`** → finds linked catalog entry
-3. **Fetches `decoder_js`** from catalog
-4. **Executes decoder** on raw bytes → produces decoded temperature/humidity
-5. **Stores reading** with correct temperature value
-6. **UI displays** accurate temperature (not N/A)
+1. **Decoder Confidence page loads** without 404 errors
+2. **Table shows "No trust-mode data yet"** (empty state) until sensors with catalog decoders report data
+3. **Future readings** with `decode_match` data will populate the rollup statistics
+4. **The ttn-webhook** (already updated) will start populating these columns for incoming uplinks
 
 ---
 
-## Technical Details
+## Files Involved
 
-### Decoder Execution Flow (ttn-webhook lines 502-560)
+| File | Purpose |
+|------|---------|
+| `supabase/migrations/20260203080000_add_raw_payload_columns.sql` | Schema migration (raw payload) |
+| `supabase/migrations/20260203090000_add_trust_mode_columns.sql` | Schema migration (trust mode) |
+| `supabase/migrations/20260203100001_decoder_confidence_views.sql` | View creation |
+| `src/hooks/useDecoderConfidence.ts` | Frontend hook (already using correct table name) |
+| `src/pages/platform/PlatformDecoderConfidence.tsx` | UI component (already built) |
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                    Incoming TTN Uplink                      │
-│  frmPayload (Base64) → bytes[] → fPort                      │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Check: sensor.sensor_catalog_id != null ?                  │
-│  Currently: FAILS (column doesn't exist)                    │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Fetch catalog entry → getCatalogDecoder()                  │
-│  Returns: { decoder_js, decode_mode, temperature_unit }     │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Execute: new Function('input', decoderCode)(bytes, fPort)  │
-│  Result: { temperature: 23.5, humidity: 62, ... }           │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Temperature conversion (C → F if needed)                   │
-│  Store in sensor_readings                                   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Files Involved
-- `supabase/functions/ttn-webhook/index.ts` - Main ingestion logic
-- `supabase/functions/_shared/payloadNormalization.ts` - Key aliasing
-- `supabase/migrations/20260203060000_add_sensor_catalog_fk.sql` - FK column
-- `supabase/migrations/20260203100000_add_decode_mode.sql` - Decode mode column
-- `supabase/migrations/20260203070000_backfill_catalog_id_and_sync_trigger.sql` - Backfill + trigger
-
-### What the Migrations Do
-
-```sql
--- 1. Add sensor_catalog_id FK
-ALTER TABLE public.lora_sensors
-  ADD COLUMN sensor_catalog_id uuid NULL
-    REFERENCES public.sensor_catalog(id) ON DELETE SET NULL;
-
--- 2. Add decode_mode_override 
-ALTER TABLE public.lora_sensors
-  ADD COLUMN IF NOT EXISTS decode_mode_override TEXT
-    CHECK (decode_mode_override IN ('ttn', 'trust', 'app', 'off'));
-
--- 3. Backfill existing sensors
-UPDATE public.lora_sensors ls
-SET sensor_catalog_id = sc.id
-FROM public.sensor_catalog sc
-WHERE LOWER(ls.model) = LOWER(sc.model)
-  AND ls.sensor_catalog_id IS NULL;
-```
-
----
-
-## Summary
-
-| Action | Details |
-|--------|---------|
-| Apply 3 migrations | Creates `sensor_catalog_id` and `decode_mode_override` columns, backfills existing sensors |
-| Add/update catalog entry | Either add `SENSOR-A840415A` to catalog or update sensor's model to match existing entry |
-| Redeploy webhook | Edge function picks up new schema |
