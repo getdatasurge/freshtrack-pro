@@ -20,7 +20,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizeDevEui, formatDevEuiForDisplay, lookupOrgByWebhookSecret } from "../_shared/ttnConfig.ts";
 import { inferSensorTypeFromPayload, inferModelFromPayload, extractModelFromUnitId } from "../_shared/payloadRegistry.ts";
-import { normalizeDoorData, getDoorFieldSource, normalizeTelemetry } from "../_shared/payloadNormalization.ts";
+import { normalizeDoorData, getDoorFieldSource, normalizeTelemetry, convertVoltageToPercent } from "../_shared/payloadNormalization.ts";
 import { parseLHT65NUplink, matchChangeToUplink } from "../_shared/uplinkParser.ts";
 
 const corsHeaders = {
@@ -113,6 +113,7 @@ interface CachedDecoder {
   revision: number;
   decode_mode: string;
   temperature_unit: string; // 'C' or 'F'
+  battery_chemistry: string | null; // from battery_info.chemistry
   cachedAt: number;
 }
 const decoderCache = new Map<string, CachedDecoder>();
@@ -131,15 +132,18 @@ async function getCatalogDecoder(supabase: any, catalogId: string): Promise<Cach
   }
   const { data } = await supabase
     .from('sensor_catalog')
-    .select('decoder_js, revision, decode_mode, temperature_unit')
+    .select('decoder_js, revision, decode_mode, temperature_unit, battery_info')
     .eq('id', catalogId)
     .maybeSingle();
   if (!data) return null;
+  // Extract battery chemistry from battery_info JSONB
+  const batteryInfo = data.battery_info as Record<string, unknown> | null;
   const entry: CachedDecoder = {
     decoder_js: data.decoder_js,
     revision: data.revision,
     decode_mode: data.decode_mode ?? 'trust',
     temperature_unit: data.temperature_unit ?? 'C',
+    battery_chemistry: (batteryInfo?.chemistry as string) ?? null,
     cachedAt: now,
   };
   decoderCache.set(catalogId, entry);
@@ -476,6 +480,7 @@ async function handleLoraSensor(
   const { devEui, rssi, receivedAt, requestId, frmPayloadBase64, fPort, rawPayloadHex, frmPayloadBytes } = data;
 
   // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
+  // NOTE: initial normalize without chemistry; re-normalized after catalog lookup if chemistry is found
   let decoded = normalizeTelemetry(data.decoded);
   const networkHadData = Object.keys(data.decoded).length > 0;
 
@@ -492,14 +497,18 @@ async function handleLoraSensor(
   let decodeMismatchReason: string | null = null;
   let effectiveMode = 'ttn';
   let sensorTempUnit = 'C'; // default: most LoRaWAN sensors report Celsius
+  let batteryChemistry: string | null = null; // from sensor catalog battery_info
 
   console.log(`[TTN-WEBHOOK] ${requestId} | Catalog ID: ${sensor.sensor_catalog_id ?? 'NULL'}, raw payload: ${frmPayloadBase64 ? 'present' : 'MISSING'}, fPort: ${fPort ?? 'NULL'}`);
 
   if (sensor.sensor_catalog_id != null) {
     try {
       const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
-      console.log(`[TTN-WEBHOOK] ${requestId} | Catalog entry found: ${!!catalogEntry}, decoder_js: ${catalogEntry?.decoder_js ? `${catalogEntry.decoder_js.length} chars` : 'NULL'}, mode: ${catalogEntry?.decode_mode ?? 'N/A'}`);
-      if (catalogEntry) sensorTempUnit = catalogEntry.temperature_unit;
+      console.log(`[TTN-WEBHOOK] ${requestId} | Catalog entry found: ${!!catalogEntry}, decoder_js: ${catalogEntry?.decoder_js ? `${catalogEntry.decoder_js.length} chars` : 'NULL'}, mode: ${catalogEntry?.decode_mode ?? 'N/A'}, chemistry: ${catalogEntry?.battery_chemistry ?? 'NULL'}`);
+      if (catalogEntry) {
+        sensorTempUnit = catalogEntry.temperature_unit;
+        batteryChemistry = catalogEntry.battery_chemistry;
+      }
       effectiveMode = sensor.decode_mode_override ?? catalogEntry?.decode_mode ?? 'trust';
 
       if ((effectiveMode === 'trust' || effectiveMode === 'app') && catalogEntry?.decoder_js && frmPayloadBytes && fPort != null) {
@@ -560,7 +569,7 @@ async function handleLoraSensor(
             if (effectiveMode === 'app' || !networkHadData) {
               const reason = !networkHadData ? 'TTN decoded_payload empty' : 'app mode authoritative';
               console.log(`[TTN-WEBHOOK] ${requestId} | Using app-decoded payload (${reason})`);
-              decoded = normalizeTelemetry(appDecoded);
+              decoded = normalizeTelemetry(appDecoded, { chemistry: batteryChemistry });
               console.log(`[TTN-WEBHOOK] ${requestId} | After normalization: temperature=${decoded.temperature}, humidity=${decoded.humidity}, battery=${decoded.battery}`);
             }
           }
@@ -577,7 +586,20 @@ async function handleLoraSensor(
   }
 
   // Battery handling (after decode so app-decoded battery is available)
-  const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+  const batteryVoltage = decoded.battery_voltage as number | undefined;
+
+  // Recalculate battery percentage using chemistry-aware curves if we have
+  // both a raw voltage and a chemistry identifier from the sensor catalog.
+  // The initial normalizeTelemetry call may have used the legacy Dragino
+  // formula (3.0–3.6V linear), which produces wildly wrong percentages
+  // for other chemistries.
+  let battery: number | undefined;
+  if (batteryVoltage !== undefined && batteryChemistry) {
+    battery = convertVoltageToPercent(batteryVoltage, batteryChemistry);
+    console.log(`[TTN-WEBHOOK] ${requestId} | Battery: ${batteryVoltage}V → ${battery}% (chemistry: ${batteryChemistry})`);
+  } else {
+    battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+  }
 
   // Temperature: convert to Fahrenheit based on catalog temperature_unit.
   // The DB and UI expect Fahrenheit; most LoRaWAN sensors report Celsius.
@@ -603,6 +625,7 @@ async function handleLoraSensor(
   }
 
   if (battery !== undefined) sensorUpdate.battery_level = battery;
+  if (batteryVoltage !== undefined) sensorUpdate.battery_voltage = batteryVoltage;
   if (rssi !== undefined) sensorUpdate.signal_strength = rssi;
 
   // ========================================
@@ -686,6 +709,7 @@ async function handleLoraSensor(
       temperature: temperature ?? null,
       humidity: decoded.humidity,
       battery_level: battery,
+      battery_voltage: batteryVoltage ?? null,
       signal_strength: rssi,
       source: 'ttn',
       recorded_at: receivedAt,
@@ -956,6 +980,7 @@ async function handleLegacyDevice(
   // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
   const decoded = normalizeTelemetry(data.decoded);
 
+  const legacyBatteryVoltage = decoded.battery_voltage as number | undefined;
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
   let temperature = decoded.temperature as number | undefined;
 
@@ -973,6 +998,7 @@ async function handleLegacyDevice(
     status: 'active',
   };
   if (battery !== undefined) deviceUpdate.battery_level = battery;
+  if (legacyBatteryVoltage !== undefined) deviceUpdate.battery_voltage = legacyBatteryVoltage;
   if (rssi !== undefined) deviceUpdate.signal_strength = rssi;
 
   await supabase.from('devices').update(deviceUpdate).eq('id', device.id);
@@ -985,6 +1011,7 @@ async function handleLegacyDevice(
       temperature,
       humidity: decoded.humidity,
       battery_level: battery,
+      battery_voltage: legacyBatteryVoltage ?? null,
       signal_strength: rssi,
       door_open: decoded.door_open,
       source: 'ttn',
