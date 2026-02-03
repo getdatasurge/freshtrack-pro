@@ -77,8 +77,9 @@ interface LoraSensor {
   name: string;
   is_primary: boolean;
   model: string | null;
-  sensor_catalog_id: string | null;
-  decode_mode_override: string | null;
+  // These fields require migrations — may be undefined if not yet applied
+  sensor_catalog_id?: string | null;
+  decode_mode_override?: string | null;
 }
 
 interface LegacyDevice {
@@ -360,10 +361,11 @@ Deno.serve(async (req) => {
     let loraSensor: LoraSensor | null = null;
 
     // Try by ttn_device_id first
+    // Use select('*') so the query works whether or not catalog/decode migrations have been applied
     if (deviceId) {
       const { data: sensorByDeviceId } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id, decode_mode_override')
+        .select('*')
         .eq('ttn_device_id', deviceId)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -378,7 +380,7 @@ Deno.serve(async (req) => {
     if (!loraSensor) {
       const { data: sensorByDevEui } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id, decode_mode_override')
+        .select('*')
         .or(`dev_eui.eq.${devEuiLower},dev_eui.eq.${devEuiUpper},dev_eui.eq.${devEuiColonUpper},dev_eui.eq.${devEuiColonLower}`)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -491,7 +493,7 @@ async function handleLoraSensor(
   let effectiveMode = 'ttn';
   let sensorTempUnit = 'C'; // default: most LoRaWAN sensors report Celsius
 
-  if (sensor.sensor_catalog_id) {
+  if (sensor.sensor_catalog_id != null) {
     try {
       const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
       if (catalogEntry) sensorTempUnit = catalogEntry.temperature_unit;
@@ -670,7 +672,8 @@ async function handleLoraSensor(
       sensor.sensor_type === 'combo';
 
     // Build reading data - only include door_open for door-capable sensors
-    const readingData: Record<string, unknown> = {
+    // Core columns always exist on sensor_readings
+    const coreReadingData: Record<string, unknown> = {
       unit_id: sensor.unit_id,
       lora_sensor_id: sensor.id,
       device_id: null,
@@ -680,34 +683,50 @@ async function handleLoraSensor(
       signal_strength: rssi,
       source: 'ttn',
       recorded_at: receivedAt,
-      // Raw payload storage for decoder independence
+    };
+
+    // Only set door_open if this is actually a door sensor
+    if (hasDoorCapability && currentDoorOpen !== undefined) {
+      coreReadingData.door_open = currentDoorOpen;
+    }
+
+    // Extended columns (require migrations — may not exist yet)
+    const extendedColumns: Record<string, unknown> = {
       frm_payload_base64: frmPayloadBase64,
       f_port: fPort,
       raw_payload_hex: rawPayloadHex,
       network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
     };
+    if (appDecoded) extendedColumns.app_decoded_payload = appDecoded;
+    if (decoderIdStr) extendedColumns.decoder_id = decoderIdStr;
+    if (decodeMatch !== null) extendedColumns.decode_match = decodeMatch;
+    if (decodeMismatchReason) extendedColumns.decode_mismatch_reason = decodeMismatchReason;
+    if (decoderWarnings) extendedColumns.decoder_warnings = decoderWarnings;
+    if (decoderErrors) extendedColumns.decoder_errors = decoderErrors;
 
-    // Only set door_open if this is actually a door sensor
-    if (hasDoorCapability && currentDoorOpen !== undefined) {
-      readingData.door_open = currentDoorOpen;
-    }
-
-    // Attach app-decode results (computed earlier, before field extraction)
-    if (appDecoded) readingData.app_decoded_payload = appDecoded;
-    if (decoderIdStr) readingData.decoder_id = decoderIdStr;
-    if (decodeMatch !== null) readingData.decode_match = decodeMatch;
-    if (decodeMismatchReason) readingData.decode_mismatch_reason = decodeMismatchReason;
-    if (decoderWarnings) readingData.decoder_warnings = decoderWarnings;
-    if (decoderErrors) readingData.decoder_errors = decoderErrors;
-
-    // Insert reading
-    const { data: insertedReading, error: insertError } = await supabase
+    // Try inserting with all columns first; if it fails (columns don't exist yet),
+    // fall back to core-only insert so data always flows.
+    let insertedReading: { id: string } | null = null;
+    const fullReadingData = { ...coreReadingData, ...extendedColumns };
+    const { data: fullInsert, error: fullInsertError } = await supabase
       .from('sensor_readings')
-      .insert(readingData)
+      .insert(fullReadingData)
       .select('id')
       .single();
 
-    if (insertError) throw insertError;
+    if (fullInsertError) {
+      console.warn(`[TTN-WEBHOOK] ${requestId} | Full insert failed (${fullInsertError.message}), retrying with core columns only`);
+      const { data: coreInsert, error: coreInsertError } = await supabase
+        .from('sensor_readings')
+        .insert(coreReadingData)
+        .select('id')
+        .single();
+
+      if (coreInsertError) throw coreInsertError;
+      insertedReading = coreInsert;
+    } else {
+      insertedReading = fullInsert;
+    }
 
     // Update unit
     const unitUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -953,7 +972,8 @@ async function handleLegacyDevice(
   await supabase.from('devices').update(deviceUpdate).eq('id', device.id);
 
   if (device.unit_id && temperature !== undefined) {
-    await supabase.from('sensor_readings').insert({
+    // Core columns always exist on sensor_readings
+    const coreData: Record<string, unknown> = {
       unit_id: device.unit_id,
       device_id: device.id,
       temperature,
@@ -963,12 +983,22 @@ async function handleLegacyDevice(
       door_open: decoded.door_open,
       source: 'ttn',
       recorded_at: receivedAt,
-      // Raw payload storage for decoder independence
+    };
+    // Extended columns (require migrations — may not exist yet)
+    const extData: Record<string, unknown> = {
       frm_payload_base64: frmPayloadBase64,
       f_port: fPort,
       raw_payload_hex: rawPayloadHex,
       network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
-    });
+    };
+    // Try full insert, fall back to core-only
+    const { error: fullErr } = await supabase
+      .from('sensor_readings')
+      .insert({ ...coreData, ...extData });
+    if (fullErr) {
+      console.warn(`[TTN-WEBHOOK] ${requestId} | Legacy full insert failed (${fullErr.message}), retrying core-only`);
+      await supabase.from('sensor_readings').insert(coreData);
+    }
 
     await supabase.from('units').update({
       last_temp_reading: temperature,

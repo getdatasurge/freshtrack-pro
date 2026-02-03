@@ -66,6 +66,8 @@ import {
   AlertTriangle,
   Archive,
   Play,
+  Pencil,
+  Save,
 } from "lucide-react";
 import type {
   SensorCatalogEntry,
@@ -435,7 +437,74 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [testResults, setTestResults] = useState<{ passed: boolean; actual: Record<string, unknown> | null; error?: string }[] | null>(null);
   const updateCatalog = useUpdateSensorCatalogEntry();
-  const meta = getKindMeta(sensor.sensor_kind);
+  const { toast } = useToast();
+  // Local overrides for dropdowns — allows UI to respond even when DB mutation fails (e.g. seed data)
+  const [localDecodeMode, setLocalDecodeMode] = useState<DecodeMode>(sensor.decode_mode ?? "trust");
+  const [localTempUnit, setLocalTempUnit] = useState<TemperatureUnit>(sensor.temperature_unit ?? "C");
+
+  // Edit mode state
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    display_name: sensor.display_name,
+    manufacturer: sensor.manufacturer,
+    model: sensor.model,
+    model_variant: sensor.model_variant ?? "",
+    sensor_kind: sensor.sensor_kind as SensorKind,
+    description: sensor.description ?? "",
+    notes: sensor.notes ?? "",
+    is_supported: sensor.is_supported,
+    lorawan_version: sensor.lorawan_version ?? "",
+    supports_class: sensor.supports_class ?? "A",
+    tags: (sensor.tags ?? []).join(", "),
+    decoder_js: sensor.decoder_js ?? "",
+  });
+
+  const handleSaveEdit = () => {
+    const updates: Partial<SensorCatalogEntry> & { id: string } = {
+      id: sensor.id,
+      display_name: editForm.display_name,
+      manufacturer: editForm.manufacturer,
+      model: editForm.model,
+      model_variant: editForm.model_variant || null,
+      sensor_kind: editForm.sensor_kind,
+      description: editForm.description || null,
+      notes: editForm.notes || null,
+      is_supported: editForm.is_supported,
+      lorawan_version: editForm.lorawan_version || null,
+      supports_class: editForm.supports_class || null,
+      tags: editForm.tags.split(",").map((t) => t.trim()).filter(Boolean),
+      decoder_js: editForm.decoder_js || null,
+    };
+    updateCatalog.mutate(updates, {
+      onSuccess: () => {
+        setEditing(false);
+        toast({ title: "Saved", description: "Sensor catalog entry updated." });
+      },
+      onError: (err) => {
+        toast({ title: "Save failed", description: err instanceof Error ? err.message : "Could not update. Ensure migrations are applied.", variant: "destructive" });
+      },
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditForm({
+      display_name: sensor.display_name,
+      manufacturer: sensor.manufacturer,
+      model: sensor.model,
+      model_variant: sensor.model_variant ?? "",
+      sensor_kind: sensor.sensor_kind as SensorKind,
+      description: sensor.description ?? "",
+      notes: sensor.notes ?? "",
+      is_supported: sensor.is_supported,
+      lorawan_version: sensor.lorawan_version ?? "",
+      supports_class: sensor.supports_class ?? "A",
+      tags: (sensor.tags ?? []).join(", "),
+      decoder_js: sensor.decoder_js ?? "",
+    });
+    setEditing(false);
+  };
+
+  const meta = getKindMeta(editing ? editForm.sensor_kind : sensor.sensor_kind);
   const Icon = meta.icon;
 
   const runTestVectors = useCallback(() => {
@@ -469,50 +538,137 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
           <Icon className={`w-6 h-6 ${meta.color}`} />
         </div>
         <div className="flex-1">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            {sensor.manufacturer} · {meta.label}
-          </p>
-          <h2 className="text-xl font-bold">
-            {sensor.model}{sensor.model_variant ? ` (${sensor.model_variant})` : ""}
-          </h2>
+          {editing ? (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input className="h-7 text-xs w-[140px]" value={editForm.manufacturer} onChange={(e) => setEditForm({ ...editForm, manufacturer: e.target.value })} placeholder="Manufacturer" />
+                <Input className="h-7 text-xs w-[120px]" value={editForm.model} onChange={(e) => setEditForm({ ...editForm, model: e.target.value })} placeholder="Model" />
+                <Input className="h-7 text-xs w-[120px]" value={editForm.model_variant} onChange={(e) => setEditForm({ ...editForm, model_variant: e.target.value })} placeholder="Variant (optional)" />
+                <Select value={editForm.sensor_kind} onValueChange={(v) => setEditForm({ ...editForm, sensor_kind: v as SensorKind })}>
+                  <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(KIND_META).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Input className="h-7 text-xs" value={editForm.display_name} onChange={(e) => setEditForm({ ...editForm, display_name: e.target.value })} placeholder="Display name" />
+            </div>
+          ) : (
+            <>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                {sensor.manufacturer} · {meta.label}
+              </p>
+              <h2 className="text-xl font-bold">
+                {sensor.model}{sensor.model_variant ? ` (${sensor.model_variant})` : ""}
+              </h2>
+            </>
+          )}
         </div>
         <div className="flex gap-2 flex-wrap">
-          {sensor.is_supported && (
+          {editing ? (
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+              <input type="checkbox" checked={editForm.is_supported} onChange={(e) => setEditForm({ ...editForm, is_supported: e.target.checked })} className="rounded" />
+              Supported
+            </label>
+          ) : sensor.is_supported ? (
             <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
               Supported
             </Badge>
-          )}
+          ) : null}
           {sensor.frequency_bands?.map((b) => (
             <Badge key={b} variant="outline">{b}</Badge>
           ))}
-          <Badge variant="secondary">LoRaWAN {sensor.lorawan_version}</Badge>
-          <Badge variant="secondary">Class {sensor.supports_class}</Badge>
+          {editing ? (
+            <>
+              <Input className="h-6 w-[80px] text-xs" value={editForm.lorawan_version} onChange={(e) => setEditForm({ ...editForm, lorawan_version: e.target.value })} placeholder="LoRaWAN ver" />
+              <Input className="h-6 w-[60px] text-xs" value={editForm.supports_class} onChange={(e) => setEditForm({ ...editForm, supports_class: e.target.value })} placeholder="Class" />
+            </>
+          ) : (
+            <>
+              <Badge variant="secondary">LoRaWAN {sensor.lorawan_version}</Badge>
+              <Badge variant="secondary">Class {sensor.supports_class}</Badge>
+            </>
+          )}
         </div>
         <div className="flex gap-2 ml-2">
-          {!sensor.deprecated_at && (
-            <Button variant="outline" size="sm" onClick={() => setShowRetireDialog(true)}>
-              <Archive className="w-4 h-4 mr-1" /> Retire
-            </Button>
+          {editing ? (
+            <>
+              <Button size="sm" onClick={handleSaveEdit} disabled={updateCatalog.isPending}>
+                <Save className="w-4 h-4 mr-1" /> Save
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleCancelEdit}>
+                <X className="w-4 h-4 mr-1" /> Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                <Pencil className="w-4 h-4 mr-1" /> Edit
+              </Button>
+              {!sensor.deprecated_at && (
+                <Button variant="outline" size="sm" onClick={() => setShowRetireDialog(true)}>
+                  <Archive className="w-4 h-4 mr-1" /> Retire
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-1" /> Delete
+              </Button>
+            </>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
-            onClick={() => setShowDeleteConfirm(true)}
-          >
-            <Trash2 className="w-4 h-4 mr-1" /> Delete
-          </Button>
         </div>
       </div>
 
-      {/* Description */}
+      {/* Description / Notes */}
       <Card>
         <CardContent className="pt-4">
-          <p className="text-sm text-muted-foreground leading-relaxed">{sensor.description}</p>
-          {sensor.notes && (
-            <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-800 dark:text-amber-200">
-              <strong>Admin Note:</strong> {sensor.notes}
+          {editing ? (
+            <div className="space-y-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Description</Label>
+                <Textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  rows={3}
+                  className="text-sm mt-1"
+                  placeholder="Sensor description..."
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Admin Notes</Label>
+                <Textarea
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                  rows={2}
+                  className="text-sm mt-1"
+                  placeholder="Internal admin notes..."
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Tags (comma-separated)</Label>
+                <Input
+                  value={editForm.tags}
+                  onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })}
+                  className="text-sm mt-1"
+                  placeholder="refrigeration, food-safety, cold-chain"
+                />
+              </div>
             </div>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground leading-relaxed">{sensor.description}</p>
+              {sensor.notes && (
+                <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-800 dark:text-amber-200">
+                  <strong>Admin Note:</strong> {sensor.notes}
+                </div>
+              )}
+            </>
           )}
           {sensor.deprecated_at && (
             <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-sm text-red-800 dark:text-red-200">
@@ -530,10 +686,12 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
         <div className="flex items-center gap-1.5 ml-1">
           <span className="font-medium text-foreground">Decode:</span>
           <Select
-            value={sensor.decode_mode ?? "trust"}
-            onValueChange={(val: string) =>
-              updateCatalog.mutate({ id: sensor.id, decode_mode: val as DecodeMode })
-            }
+            value={localDecodeMode}
+            onValueChange={(val: string) => {
+              const mode = val as DecodeMode;
+              setLocalDecodeMode(mode);
+              updateCatalog.mutate({ id: sensor.id, decode_mode: mode });
+            }}
           >
             <SelectTrigger className="h-6 w-[100px] text-xs">
               <SelectValue />
@@ -549,10 +707,12 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
         <div className="flex items-center gap-1.5 ml-1">
           <span className="font-medium text-foreground">Temp Unit:</span>
           <Select
-            value={sensor.temperature_unit ?? "C"}
-            onValueChange={(val: string) =>
-              updateCatalog.mutate({ id: sensor.id, temperature_unit: val as TemperatureUnit })
-            }
+            value={localTempUnit}
+            onValueChange={(val: string) => {
+              const unit = val as TemperatureUnit;
+              setLocalTempUnit(unit);
+              updateCatalog.mutate({ id: sensor.id, temperature_unit: unit });
+            }}
           >
             <SelectTrigger className="h-6 w-[70px] text-xs">
               <SelectValue />
@@ -791,7 +951,21 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
 
         {/* Decoder Code */}
         <TabsContent value="decoder">
-          {sensor.decoder_js ? (
+          {editing ? (
+            <div className="space-y-3">
+              <Label className="text-xs text-muted-foreground">Decoder JavaScript (decodeUplink function)</Label>
+              <Textarea
+                value={editForm.decoder_js}
+                onChange={(e) => setEditForm({ ...editForm, decoder_js: e.target.value })}
+                rows={20}
+                className="font-mono text-xs leading-relaxed"
+                placeholder={`function decodeUplink(input) {\n  var bytes = input.bytes;\n  var port = input.fPort;\n  var data = {};\n  // ... decode bytes ...\n  return { data: data };\n}`}
+              />
+              <p className="text-xs text-muted-foreground">
+                Must export a <code className="bg-muted px-1 py-0.5 rounded">decodeUplink(input)</code> function that accepts <code className="bg-muted px-1 py-0.5 rounded">{`{ bytes, fPort }`}</code> and returns <code className="bg-muted px-1 py-0.5 rounded">{`{ data: {...} }`}</code>.
+              </p>
+            </div>
+          ) : sensor.decoder_js ? (
             <div className="space-y-3">
               <div className="flex gap-2 items-center flex-wrap">
                 <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">JavaScript</Badge>
@@ -887,13 +1061,13 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
               )}
               <JsonBlock data={sensor.decoder_js} maxHeight="500px" />
             </div>
-          ) : (
+          ) : !editing ? (
             <div className="text-center py-12 text-muted-foreground">
               <Code className="w-8 h-8 mx-auto mb-2 opacity-40" />
               <p>No decoder code uploaded yet.</p>
-              <p className="text-xs mt-1">Add a JavaScript decoder function for this sensor model.</p>
+              <p className="text-xs mt-1">Click Edit to add a JavaScript decoder function for this sensor model.</p>
             </div>
-          )}
+          ) : null}
         </TabsContent>
 
         {/* Battery */}
