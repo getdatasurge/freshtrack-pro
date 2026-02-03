@@ -102,6 +102,43 @@ function secureCompare(a: string, b: string): boolean {
 }
 
 /**
+ * In-memory cache for catalog decoder lookups.
+ * Persists across requests within the same Deno isolate.
+ * TTL keeps entries fresh when catalog revisions change.
+ */
+interface CachedDecoder {
+  decoder_js: string | null;
+  revision: number;
+  cachedAt: number;
+}
+const decoderCache = new Map<string, CachedDecoder>();
+const DECODER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getCatalogDecoder(supabase: any, catalogId: string): Promise<CachedDecoder | null> {
+  const now = Date.now();
+  const cached = decoderCache.get(catalogId);
+  if (cached && (now - cached.cachedAt) < DECODER_CACHE_TTL_MS) {
+    return cached;
+  }
+  const { data } = await supabase
+    .from('sensor_catalog')
+    .select('decoder_js, revision')
+    .eq('id', catalogId)
+    .maybeSingle();
+  if (!data) return null;
+  const entry: CachedDecoder = { decoder_js: data.decoder_js, revision: data.revision, cachedAt: now };
+  decoderCache.set(catalogId, entry);
+  // Evict stale entries periodically (keep cache bounded)
+  if (decoderCache.size > 100) {
+    for (const [key, val] of decoderCache) {
+      if (now - val.cachedAt > DECODER_CACHE_TTL_MS) decoderCache.delete(key);
+    }
+  }
+  return entry;
+}
+
+/**
  * Deep-compare two decoded payloads with numeric tolerance.
  * Returns { match, diffKeys } where diffKeys lists which top-level keys differ.
  *
@@ -563,11 +600,7 @@ async function handleLoraSensor(
     // ========================================
     if (sensor.sensor_catalog_id && frmPayloadBytes && fPort != null) {
       try {
-        const { data: catalogEntry } = await supabase
-          .from('sensor_catalog')
-          .select('decoder_js, revision')
-          .eq('id', sensor.sensor_catalog_id)
-          .maybeSingle();
+        const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
 
         if (catalogEntry?.decoder_js) {
           const decoderCode = `${catalogEntry.decoder_js}\nreturn decodeUplink(input);`;
