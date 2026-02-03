@@ -109,10 +109,11 @@ export function useBatteryEstimate(
             : Promise.resolve({ data: null, error: null }),
           
           // Fetch recent readings with voltage (last 90 days)
+          // Query by lora_sensor_id (LoRa sensors) OR device_id (legacy devices)
           supabase
             .from("sensor_readings")
             .select("recorded_at, battery_level, battery_voltage")
-            .eq("device_id", sensorId)
+            .or(`lora_sensor_id.eq.${sensorId},device_id.eq.${sensorId}`)
             .gte("recorded_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
             .order("recorded_at", { ascending: true })
             .limit(500),
@@ -127,17 +128,22 @@ export function useBatteryEstimate(
 
         if (cancelled) return;
 
-        // Set battery profile - NO FALLBACK per user preference
-        // If no profile exists in DB, show MISSING_PROFILE state
+        // Set battery profile and chemistry
         if (profileResult.data) {
           setBatteryProfile(profileResult.data as BatteryProfile);
           setProfileSource("database");
           setSensorChemistry(profileResult.data.chemistry || null);
+        } else if (fetchedSensor?.model) {
+          // No profile in DB — use fallback profile for estimation
+          const fallback = getFallbackProfile(fetchedSensor.model);
+          setBatteryProfile(fallback);
+          setProfileSource("fallback");
+          setSensorChemistry(fallback.chemistry || "LiFeS2_AA");
         } else {
-          // No fallback - profile source is "none", state becomes MISSING_PROFILE
+          // No model info at all — still use default chemistry for voltage→SOC
           setBatteryProfile(null);
           setProfileSource("none");
-          setSensorChemistry(null);
+          setSensorChemistry("LiFeS2_AA");
         }
 
         // Set readings
@@ -287,7 +293,7 @@ export function useBatteryEstimate(
 
     if (isOffline) {
       state = "SENSOR_OFFLINE";
-    } else if (!batteryProfile && profileSource === "none") {
+    } else if (!batteryProfile && profileSource === "none" && !sensorChemistry) {
       state = "MISSING_PROFILE";
     } else if (uplinkCount < MIN_UPLINKS_FOR_ESTIMATE || dataSpanHours < MIN_HOURS_FOR_ESTIMATE) {
       state = "COLLECTING_DATA";

@@ -6,13 +6,13 @@
  */
 
 import { Badge } from "@/components/ui/badge";
-import { 
-  Radio, 
-  Battery, 
-  Signal, 
-  Clock, 
-  CheckCircle, 
-  AlertTriangle, 
+import {
+  Radio,
+  Battery,
+  Signal,
+  Clock,
+  CheckCircle,
+  AlertTriangle,
   XCircle,
   DoorOpen,
   DoorClosed,
@@ -20,6 +20,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { voltageToPercent } from "@/lib/devices/batteryProfiles";
 import type { WidgetProps } from "../types";
 
 export function DeviceReadinessWidget({ 
@@ -48,13 +49,19 @@ export function DeviceReadinessWidget({
   const hasLoraData = loraSensor && (loraSensor.status === "active" || loraSensor.status === "offline");
 
   // Use LoRa sensor data if available and active, otherwise fall back to device data
-  const effectiveBatteryLevel = hasLoraData ? loraSensor.battery_level : (primarySensor?.battery_level ?? device?.battery_level);
   const effectiveSignalStrength = hasLoraData ? loraSensor.signal_strength : (primarySensor?.signal_strength ?? device?.signal_strength);
   const effectiveLastSeen = hasLoraData ? loraSensor.last_seen_at : (derivedStatus?.lastSeenAt || device?.last_seen_at);
   const deviceSerial = primarySensor?.dev_eui || device?.serial_number;
-  
+
   // Check if voltage is available - determines "(Est.)" vs "(Reported)" label
   const effectiveVoltage = loraSensor?.battery_voltage_filtered ?? loraSensor?.battery_voltage ?? null;
+
+  // Derive battery percentage from voltage + chemistry curves when voltage exists.
+  // Falls back to stored battery_level (may be stale for readings before the fix).
+  const storedBatteryLevel = hasLoraData ? loraSensor.battery_level : (primarySensor?.battery_level ?? device?.battery_level);
+  const effectiveBatteryLevel = effectiveVoltage != null
+    ? voltageToPercent(effectiveVoltage, loraSensor?.chemistry ?? "LiFeS2_AA")
+    : storedBatteryLevel;
 
   // Compute installation status based on offline severity from alert rules
   const getSensorStatusFromSeverity = () => {

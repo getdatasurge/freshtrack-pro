@@ -68,11 +68,12 @@ export function useBatteryForecast(deviceId: string | null): {
       const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
       // Fetch readings with voltage AND level (voltage preferred), plus sensor chemistry
+      // Query by lora_sensor_id (LoRa sensors) OR device_id (legacy devices)
       const [readingsResult, profileResult] = await Promise.all([
         supabase
           .from("sensor_readings")
           .select("battery_level, battery_voltage, recorded_at")
-          .eq("device_id", deviceId)
+          .or(`lora_sensor_id.eq.${deviceId},device_id.eq.${deviceId}`)
           .gte("recorded_at", ninetyDaysAgo)
           .order("recorded_at", { ascending: true })
           .limit(500),
