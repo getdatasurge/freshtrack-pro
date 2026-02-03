@@ -493,9 +493,12 @@ async function handleLoraSensor(
   let effectiveMode = 'ttn';
   let sensorTempUnit = 'C'; // default: most LoRaWAN sensors report Celsius
 
+  console.log(`[TTN-WEBHOOK] ${requestId} | Catalog ID: ${sensor.sensor_catalog_id ?? 'NULL'}, raw payload: ${frmPayloadBase64 ? 'present' : 'MISSING'}, fPort: ${fPort ?? 'NULL'}`);
+
   if (sensor.sensor_catalog_id != null) {
     try {
       const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
+      console.log(`[TTN-WEBHOOK] ${requestId} | Catalog entry found: ${!!catalogEntry}, decoder_js: ${catalogEntry?.decoder_js ? `${catalogEntry.decoder_js.length} chars` : 'NULL'}, mode: ${catalogEntry?.decode_mode ?? 'N/A'}`);
       if (catalogEntry) sensorTempUnit = catalogEntry.temperature_unit;
       effectiveMode = sensor.decode_mode_override ?? catalogEntry?.decode_mode ?? 'trust';
 
@@ -511,7 +514,9 @@ async function handleLoraSensor(
           const decoderResult = decoderFn({ bytes: frmPayloadBytes, fPort });
 
           // TTN device repo decoders return { data, warnings, errors }
+          console.log(`[TTN-WEBHOOK] ${requestId} | Decoder executed. Raw result keys: ${Object.keys(decoderResult ?? {}).join(', ')}`);
           const rawAppDecoded = (decoderResult?.data ?? decoderResult) as Record<string, unknown>;
+          console.log(`[TTN-WEBHOOK] ${requestId} | App-decoded fields: ${JSON.stringify(rawAppDecoded).slice(0, 500)}`);
 
           // Guardrail: cap output size to prevent DB bloat
           const outputJson = JSON.stringify(rawAppDecoded);
@@ -556,6 +561,7 @@ async function handleLoraSensor(
               const reason = !networkHadData ? 'TTN decoded_payload empty' : 'app mode authoritative';
               console.log(`[TTN-WEBHOOK] ${requestId} | Using app-decoded payload (${reason})`);
               decoded = normalizeTelemetry(appDecoded);
+              console.log(`[TTN-WEBHOOK] ${requestId} | After normalization: temperature=${decoded.temperature}, humidity=${decoded.humidity}, battery=${decoded.battery}`);
             }
           }
         }

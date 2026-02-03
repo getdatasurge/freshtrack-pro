@@ -38,10 +38,20 @@ export function useDecoderConfidence() {
         .select("*")
         .order("mismatch_count", { ascending: false });
 
-      if (error) throw error;
+      // View may not exist if migrations haven't been applied yet — return empty
+      if (error) {
+        const code = error.code ?? "";
+        const msg = error.message ?? "";
+        if (code === "PGRST204" || code === "42P01" || msg.includes("does not exist") || msg.includes("404") || msg.includes("Not Found")) {
+          console.warn("[DecoderConfidence] View not available yet (migrations pending):", msg);
+          return [];
+        }
+        throw error;
+      }
       return (data ?? []) as unknown as DecoderConfidenceRow[];
     },
     staleTime: 30_000, // 30s — live enough for monitoring
+    retry: false, // View-missing errors are caught in queryFn; no need to retry
   });
 }
 

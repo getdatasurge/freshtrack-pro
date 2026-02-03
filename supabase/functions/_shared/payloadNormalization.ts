@@ -69,15 +69,18 @@ export function normalizeDoorData(decoded: Record<string, unknown>): boolean | u
  */
 const TELEMETRY_ALIASES: Record<string, string[]> = {
   // Temperature: Dragino HT65N/LHT65/LHT52 use TempC_SHT (internal SHT sensor)
-  // and TempC_DS (external DS18B20 probe). Prefer SHT as it's always present.
-  temperature: ['TempC_SHT', 'TempC_DS'],
-  // Humidity: Dragino HT65N/LHT65/LHT52 use Hum_SHT
-  humidity: ['Hum_SHT'],
+  // and TempC_DS (external DS18B20 probe). Catalog decoders often output
+  // temperature_c or temp_c. Prefer SHT as it's always present on Dragino.
+  temperature: ['TempC_SHT', 'TempC_DS', 'temperature_c', 'temp_c', 'temp'],
+  // Humidity: Dragino HT65N/LHT65/LHT52 use Hum_SHT.
+  // Catalog decoders may output humidity_pct or relative_humidity.
+  humidity: ['Hum_SHT', 'humidity_pct', 'relative_humidity'],
   // Battery: Dragino uses BatV (voltage, e.g. 3.05).
-  // Converted to integer percentage for battery_level column (INTEGER type).
-  battery: ['BatV'],
+  // Catalog decoders may output battery_v. Both are voltages
+  // converted to integer percentage for battery_level column (INTEGER type).
+  battery: ['BatV', 'battery_v'],
   // Battery voltage: Store raw voltage for voltage-based estimation
-  battery_voltage: ['BatV', 'bat_v', 'batteryVoltage', 'vbat'],
+  battery_voltage: ['BatV', 'bat_v', 'battery_v', 'batteryVoltage', 'vbat'],
 };
 
 // Dragino battery voltage range (from Dragino documentation)
@@ -122,10 +125,12 @@ export function normalizeTelemetry(
         const value = decoded[alias];
         // Only map numeric values (guard against unexpected types)
         if (typeof value === 'number') {
-          // Convert BatV voltage to integer percentage for battery_level column
-          if (alias === 'BatV' && canonical === 'battery') {
+          // Convert battery voltage to integer percentage for battery_level column
+          // BatV and battery_v are both voltage values (e.g. 3.05V)
+          const isVoltageAlias = alias === 'BatV' || alias === 'battery_v';
+          if (isVoltageAlias && canonical === 'battery') {
             result[canonical] = convertBatVToPercent(value);
-          } 
+          }
           // Store raw voltage for battery_voltage field
           else if (canonical === 'battery_voltage') {
             // Store voltage as-is (already in volts)
