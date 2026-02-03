@@ -435,6 +435,9 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [testResults, setTestResults] = useState<{ passed: boolean; actual: Record<string, unknown> | null; error?: string }[] | null>(null);
   const updateCatalog = useUpdateSensorCatalogEntry();
+  // Local overrides for dropdowns — allows UI to respond even when DB mutation fails (e.g. seed data)
+  const [localDecodeMode, setLocalDecodeMode] = useState<DecodeMode>(sensor.decode_mode ?? "trust");
+  const [localTempUnit, setLocalTempUnit] = useState<TemperatureUnit>(sensor.temperature_unit ?? "C");
   const meta = getKindMeta(sensor.sensor_kind);
   const Icon = meta.icon;
 
@@ -530,10 +533,12 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
         <div className="flex items-center gap-1.5 ml-1">
           <span className="font-medium text-foreground">Decode:</span>
           <Select
-            value={sensor.decode_mode ?? "trust"}
-            onValueChange={(val: string) =>
-              updateCatalog.mutate({ id: sensor.id, decode_mode: val as DecodeMode })
-            }
+            value={localDecodeMode}
+            onValueChange={(val: string) => {
+              const mode = val as DecodeMode;
+              setLocalDecodeMode(mode);
+              updateCatalog.mutate({ id: sensor.id, decode_mode: mode });
+            }}
           >
             <SelectTrigger className="h-6 w-[100px] text-xs">
               <SelectValue />
@@ -549,10 +554,12 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
         <div className="flex items-center gap-1.5 ml-1">
           <span className="font-medium text-foreground">Temp Unit:</span>
           <Select
-            value={sensor.temperature_unit ?? "C"}
-            onValueChange={(val: string) =>
-              updateCatalog.mutate({ id: sensor.id, temperature_unit: val as TemperatureUnit })
-            }
+            value={localTempUnit}
+            onValueChange={(val: string) => {
+              const unit = val as TemperatureUnit;
+              setLocalTempUnit(unit);
+              updateCatalog.mutate({ id: sensor.id, temperature_unit: unit });
+            }}
           >
             <SelectTrigger className="h-6 w-[70px] text-xs">
               <SelectValue />
