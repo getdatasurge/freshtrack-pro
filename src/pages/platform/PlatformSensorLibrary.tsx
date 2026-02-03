@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import PlatformLayout from "@/components/platform/PlatformLayout";
 import { useSuperAdmin } from "@/contexts/SuperAdminContext";
-import { useSensorCatalog, useAddSensorCatalogEntry, useDeleteSensorCatalogEntry, useRetireSensorCatalogEntry } from "@/hooks/useSensorCatalog";
+import { useSensorCatalog, useAddSensorCatalogEntry, useUpdateSensorCatalogEntry, useDeleteSensorCatalogEntry, useRetireSensorCatalogEntry } from "@/hooks/useSensorCatalog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +71,7 @@ import type {
   SensorCatalogEntry,
   SensorCatalogInsert,
   SensorKind,
+  DecodeMode,
 } from "@/types/sensorCatalog";
 
 // ─── Seed data (fallback when DB is empty or loading) ────────
@@ -131,7 +132,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     sort_order: 10,
     tags: ["refrigeration", "food-safety", "cold-chain", "temperature", "humidity", "probe"],
     notes: "Primary sensor for FrostGuard cooler/freezer monitoring. Most widely deployed.",
-    revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-01T00:00:00Z",
     updated_at: "2025-12-01T00:00:00Z",
     created_by: null,
@@ -182,7 +183,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     is_supported: true, is_visible: true, sort_order: 20,
     tags: ["refrigeration", "food-safety", "cold-chain", "door", "contact", "magnetic"],
     notes: "Primary door sensor for FrostGuard. Paired with LHT65 per walk-in unit.",
-    revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-01T00:00:00Z", updated_at: "2025-12-01T00:00:00Z", created_by: null,
   },
   {
@@ -229,7 +230,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     is_supported: true, is_visible: true, sort_order: 30,
     tags: ["indoor", "air-quality", "co2", "ventilation", "kitchen", "compliance"],
     notes: "Premium multi-sensor. Consider for kitchen air quality compliance monitoring.",
-    revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-15T00:00:00Z", updated_at: "2025-12-15T00:00:00Z", created_by: null,
   },
   {
@@ -267,7 +268,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     is_supported: true, is_visible: true, sort_order: 40,
     tags: ["door", "contact", "window", "simple"],
     notes: "Budget-friendly door sensor alternative.",
-    revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-20T00:00:00Z", updated_at: "2025-12-20T00:00:00Z", created_by: null,
   },
   {
@@ -310,7 +311,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     is_supported: true, is_visible: true, sort_order: 50,
     tags: ["leak", "water", "flood", "drain", "ice-machine"],
     notes: "Detect water leaks near refrigeration equipment.",
-    revision: 1, deprecated_at: null, deprecated_reason: null,
+    decode_mode: "trust", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2026-01-05T00:00:00Z", updated_at: "2026-01-05T00:00:00Z", created_by: null,
   },
 ];
@@ -432,6 +433,7 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [testResults, setTestResults] = useState<{ passed: boolean; actual: Record<string, unknown> | null; error?: string }[] | null>(null);
+  const updateCatalog = useUpdateSensorCatalogEntry();
   const meta = getKindMeta(sensor.sensor_kind);
   const Icon = meta.icon;
 
@@ -524,6 +526,25 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
       <div className="flex gap-3 flex-wrap items-center text-xs text-muted-foreground">
         <span className="font-semibold text-foreground">Rev {sensor.revision}</span>
         <span>Updated {new Date(sensor.updated_at).toLocaleDateString()}</span>
+        <div className="flex items-center gap-1.5 ml-1">
+          <span className="font-medium text-foreground">Decode:</span>
+          <Select
+            value={sensor.decode_mode ?? "trust"}
+            onValueChange={(val: string) =>
+              updateCatalog.mutate({ id: sensor.id, decode_mode: val as DecodeMode })
+            }
+          >
+            <SelectTrigger className="h-6 w-[100px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ttn">TTN</SelectItem>
+              <SelectItem value="trust">Trust</SelectItem>
+              <SelectItem value="app">App</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
         {sensor.decoder_provenance?.source && (
           <Badge variant="outline" className="text-xs">
             Decoder: {sensor.decoder_provenance.source.replace(/_/g, " ")}

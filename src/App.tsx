@@ -42,6 +42,7 @@ import PlatformUserDetail from "./pages/platform/PlatformUserDetail";
 import PlatformAuditLog from "./pages/platform/PlatformAuditLog";
 import PlatformDeveloperTools from "./pages/platform/PlatformDeveloperTools";
 import PlatformSensorLibrary from "./pages/platform/PlatformSensorLibrary";
+import PlatformDecoderConfidence from "./pages/platform/PlatformDecoderConfidence";
 import { PlatformGuard, ImpersonationCacheSync } from "./components/platform";
 import { RequireImpersonationGuard } from "./components/guards/RequireImpersonationGuard";
 
@@ -108,6 +109,7 @@ const App = () => (
               <Route path="/platform/audit" element={<PlatformGuard><PlatformAuditLog /></PlatformGuard>} />
               <Route path="/platform/developer-tools" element={<PlatformGuard><PlatformDeveloperTools /></PlatformGuard>} />
               <Route path="/platform/sensor-library" element={<PlatformGuard><PlatformSensorLibrary /></PlatformGuard>} />
+              <Route path="/platform/decoder-confidence" element={<PlatformGuard><PlatformDecoderConfidence /></PlatformGuard>} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

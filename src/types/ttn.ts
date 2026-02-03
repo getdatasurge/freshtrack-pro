@@ -67,6 +67,9 @@ export interface LoraSensor {
   last_provision_check_at: string | null;
   last_provision_check_error: string | null;
   provisioned_source: ProvisionedSource | null;
+  // Sensor catalog reference
+  sensor_catalog_id: string | null;
+  decode_mode_override: string | null;
 }
 
 export interface GatewayInsert {
@@ -98,6 +101,8 @@ export interface LoraSensorInsert {
   created_by?: string | null;
   provisioning_state?: TtnProvisioningState;
   provisioned_source?: ProvisionedSource | null;
+  sensor_catalog_id?: string | null;
+  decode_mode_override?: string | null;
 }
 
 // ============================================================================

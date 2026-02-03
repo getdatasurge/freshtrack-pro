@@ -3,7 +3,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateLoraSensor } from "@/hooks/useLoraSensors";
+import { useSensorCatalogPublic } from "@/hooks/useSensorCatalog";
 import { LoraSensorType } from "@/types/ttn";
+import type { SensorCatalogPublicEntry } from "@/types/sensorCatalog";
 import { SENSOR_TYPE_OPTIONS, SENSOR_TYPE_VALUES } from "@/lib/sensorTypeOptions";
 import {
   Dialog,
@@ -32,13 +34,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Eye, EyeOff, BookOpen } from "lucide-react";
+
+// Maps catalog sensor_kind → lora_sensors sensor_type
+const CATALOG_KIND_TO_SENSOR_TYPE: Record<string, string> = {
+  temp: "temperature",
+  door: "door",
+  combo: "combo",
+  co2: "air_quality",
+  leak: "leak",
+  gps: "gps",
+  pulse: "metering",
+  soil: "temperature",
+  air_quality: "air_quality",
+  vibration: "multi_sensor",
+  meter: "metering",
+  tilt: "multi_sensor",
+};
 
 const EUI_REGEX = /^[0-9A-Fa-f]{16}$/;
 const APPKEY_REGEX = /^[0-9A-Fa-f]{32}$/;
 
 const addSensorSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name must be less than 100 characters"),
+  sensor_catalog_id: z.string().optional(),
   dev_eui: z
     .string()
     .min(1, "DevEUI is required")
@@ -90,12 +109,15 @@ export function AddSensorDialog({
   defaultUnitId,
 }: AddSensorDialogProps) {
   const createSensor = useCreateLoraSensor();
+  const { data: catalogEntries = [] } = useSensorCatalogPublic();
   const [showAppKey, setShowAppKey] = useState(false);
+  const [selectedCatalogEntry, setSelectedCatalogEntry] = useState<SensorCatalogPublicEntry | null>(null);
 
   const form = useForm<AddSensorFormData>({
     resolver: zodResolver(addSensorSchema),
     defaultValues: {
       name: "",
+      sensor_catalog_id: undefined,
       dev_eui: "",
       app_eui: "",
       app_key: "",
@@ -105,6 +127,23 @@ export function AddSensorDialog({
       description: "",
     },
   });
+
+  const handleCatalogSelect = (catalogId: string) => {
+    if (catalogId === "none") {
+      setSelectedCatalogEntry(null);
+      form.setValue("sensor_catalog_id", undefined);
+      return;
+    }
+    const entry = catalogEntries.find((e) => e.id === catalogId);
+    if (entry) {
+      setSelectedCatalogEntry(entry);
+      form.setValue("sensor_catalog_id", catalogId);
+      const mappedType = CATALOG_KIND_TO_SENSOR_TYPE[entry.sensor_kind];
+      if (mappedType && SENSOR_TYPE_VALUES.includes(mappedType)) {
+        form.setValue("sensor_type", mappedType);
+      }
+    }
+  };
 
   const selectedSiteId = form.watch("site_id");
 
@@ -125,11 +164,15 @@ export function AddSensorDialog({
         site_id: data.site_id || null,
         unit_id: data.unit_id || null,
         description: data.description || null,
+        sensor_catalog_id: data.sensor_catalog_id || null,
+        manufacturer: selectedCatalogEntry?.manufacturer || null,
+        model: selectedCatalogEntry?.model || null,
       },
       {
         onSuccess: () => {
           form.reset();
           setShowAppKey(false);
+          setSelectedCatalogEntry(null);
           onOpenChange(false);
         },
       }
@@ -140,6 +183,7 @@ export function AddSensorDialog({
     if (!newOpen) {
       form.reset({
         name: "",
+        sensor_catalog_id: undefined,
         dev_eui: "",
         app_eui: "",
         app_key: "",
@@ -149,6 +193,7 @@ export function AddSensorDialog({
         description: "",
       });
       setShowAppKey(false);
+      setSelectedCatalogEntry(null);
     }
     onOpenChange(newOpen);
   };
@@ -184,6 +229,72 @@ export function AddSensorDialog({
                 </FormItem>
               )}
             />
+
+            {catalogEntries.length > 0 && (
+              <FormField
+                control={form.control}
+                name="sensor_catalog_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5" /> Sensor Model
+                    </FormLabel>
+                    <Select
+                      onValueChange={handleCatalogSelect}
+                      value={field.value || "none"}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select from catalog (optional)" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">Manual entry (skip catalog)</SelectItem>
+                        {catalogEntries.map((entry) => (
+                          <SelectItem key={entry.id} value={entry.id}>
+                            {entry.manufacturer} {entry.model} — {entry.display_name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Choose a model to auto-fill type, manufacturer & specs
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {selectedCatalogEntry && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm space-y-1.5 border border-blue-200 dark:border-blue-800">
+                <p className="font-medium text-blue-800 dark:text-blue-200">
+                  {selectedCatalogEntry.display_name}
+                </p>
+                {selectedCatalogEntry.description && (
+                  <p className="text-blue-700 dark:text-blue-300 text-xs line-clamp-2">
+                    {selectedCatalogEntry.description}
+                  </p>
+                )}
+                <div className="flex gap-1.5 flex-wrap pt-1">
+                  {selectedCatalogEntry.frequency_bands?.map((b) => (
+                    <span key={b} className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200">
+                      {b}
+                    </span>
+                  ))}
+                  {selectedCatalogEntry.battery_info?.type && (
+                    <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200">
+                      Battery: {selectedCatalogEntry.battery_info.type}
+                    </span>
+                  )}
+                  {selectedCatalogEntry.supports_class && (
+                    <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-200">
+                      Class {selectedCatalogEntry.supports_class}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             <FormField
               control={form.control}

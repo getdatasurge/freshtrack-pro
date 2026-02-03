@@ -77,6 +77,8 @@ interface LoraSensor {
   name: string;
   is_primary: boolean;
   model: string | null;
+  sensor_catalog_id: string | null;
+  decode_mode_override: string | null;
 }
 
 interface LegacyDevice {
@@ -98,6 +100,107 @@ function secureCompare(a: string, b: string): boolean {
     result |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return result === 0;
+}
+
+/**
+ * In-memory cache for catalog decoder lookups.
+ * Persists across requests within the same Deno isolate.
+ * TTL keeps entries fresh when catalog revisions change.
+ */
+interface CachedDecoder {
+  decoder_js: string | null;
+  revision: number;
+  decode_mode: string;
+  cachedAt: number;
+}
+const decoderCache = new Map<string, CachedDecoder>();
+const DECODER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Decoder execution guardrails
+const MAX_DECODER_JS_BYTES = 50_000; // 50 KB — reject oversized decoders
+const MAX_OUTPUT_JSON_BYTES = 50_000; // 50 KB — truncate oversized output
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getCatalogDecoder(supabase: any, catalogId: string): Promise<CachedDecoder | null> {
+  const now = Date.now();
+  const cached = decoderCache.get(catalogId);
+  if (cached && (now - cached.cachedAt) < DECODER_CACHE_TTL_MS) {
+    return cached;
+  }
+  const { data } = await supabase
+    .from('sensor_catalog')
+    .select('decoder_js, revision, decode_mode')
+    .eq('id', catalogId)
+    .maybeSingle();
+  if (!data) return null;
+  const entry: CachedDecoder = {
+    decoder_js: data.decoder_js,
+    revision: data.revision,
+    decode_mode: data.decode_mode ?? 'trust',
+    cachedAt: now,
+  };
+  decoderCache.set(catalogId, entry);
+  // Evict stale entries periodically (keep cache bounded)
+  if (decoderCache.size > 100) {
+    for (const [key, val] of decoderCache) {
+      if (now - val.cachedAt > DECODER_CACHE_TTL_MS) decoderCache.delete(key);
+    }
+  }
+  return entry;
+}
+
+/**
+ * Deep-compare two decoded payloads with numeric tolerance.
+ * Returns { match, diffKeys } where diffKeys lists which top-level keys differ.
+ *
+ * - Numbers within 0.01 absolute tolerance are considered equal
+ *   (handles float drift between runtimes, e.g. 3.0500000000000003 vs 3.05)
+ * - Booleans, strings compared strictly
+ * - Nested objects/arrays compared via JSON.stringify
+ * - Keys present in one but missing/undefined in the other count as a diff
+ */
+function deepComparePayloads(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): { match: boolean; diffKeys: string[] } {
+  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const diffKeys: string[] = [];
+  const TOLERANCE = 0.01;
+
+  for (const key of allKeys) {
+    const va = a[key];
+    const vb = b[key];
+
+    // Both undefined/missing → match
+    if (va === undefined && vb === undefined) continue;
+
+    // One missing → diff
+    if (va === undefined || vb === undefined) {
+      diffKeys.push(key);
+      continue;
+    }
+
+    // Both numbers → tolerance comparison
+    if (typeof va === 'number' && typeof vb === 'number') {
+      if (Math.abs(va - vb) > TOLERANCE) {
+        diffKeys.push(key);
+      }
+      continue;
+    }
+
+    // Same type, strict comparison for primitives
+    if (typeof va === typeof vb && (typeof va === 'boolean' || typeof va === 'string')) {
+      if (va !== vb) diffKeys.push(key);
+      continue;
+    }
+
+    // Fallback: JSON stringify for objects/arrays/mixed types
+    if (JSON.stringify(va) !== JSON.stringify(vb)) {
+      diffKeys.push(key);
+    }
+  }
+
+  return { match: diffKeys.length === 0, diffKeys };
 }
 
 Deno.serve(async (req) => {
@@ -203,6 +306,21 @@ Deno.serve(async (req) => {
     const rssi = rxMeta?.rssi ?? rxMeta?.channel_rssi;
     const receivedAt = ttnPayload.uplink_message?.received_at || ttnPayload.received_at || new Date().toISOString();
 
+    // Extract raw payload for storage (decoder independence)
+    const frmPayloadBase64 = ttnPayload.uplink_message?.frm_payload || null;
+    const fPort = ttnPayload.uplink_message?.f_port ?? null;
+    let rawPayloadHex: string | null = null;
+    let frmPayloadBytes: number[] | null = null;
+    if (frmPayloadBase64) {
+      try {
+        const raw = Uint8Array.from(atob(frmPayloadBase64), c => c.charCodeAt(0));
+        frmPayloadBytes = Array.from(raw);
+        rawPayloadHex = frmPayloadBytes.map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch (e) {
+        console.warn(`[TTN-WEBHOOK] ${requestId} | Failed to decode frm_payload base64: ${e}`);
+      }
+    }
+
     console.log(`[TTN-WEBHOOK] ${requestId} | Uplink: device=${deviceId}, dev_eui=${rawDevEui}, app=${applicationId}`);
 
     // Validate that the uplink comes from the expected TTN application
@@ -243,7 +361,7 @@ Deno.serve(async (req) => {
     if (deviceId) {
       const { data: sensorByDeviceId } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id, decode_mode_override')
         .eq('ttn_device_id', deviceId)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -258,7 +376,7 @@ Deno.serve(async (req) => {
     if (!loraSensor) {
       const { data: sensorByDevEui } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id, decode_mode_override')
         .or(`dev_eui.eq.${devEuiLower},dev_eui.eq.${devEuiUpper},dev_eui.eq.${devEuiColonUpper},dev_eui.eq.${devEuiColonLower}`)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -279,6 +397,10 @@ Deno.serve(async (req) => {
         rssi,
         receivedAt,
         requestId,
+        frmPayloadBase64,
+        fPort,
+        rawPayloadHex,
+        frmPayloadBytes,
       });
     }
 
@@ -298,6 +420,9 @@ Deno.serve(async (req) => {
         rssi,
         receivedAt,
         requestId,
+        frmPayloadBase64,
+        fPort,
+        rawPayloadHex,
       });
     }
 
@@ -338,9 +463,13 @@ async function handleLoraSensor(
     rssi: number | undefined;
     receivedAt: string;
     requestId: string;
+    frmPayloadBase64: string | null;
+    fPort: number | null;
+    rawPayloadHex: string | null;
+    frmPayloadBytes: number[] | null;
   }
 ): Promise<Response> {
-  const { devEui, rssi, receivedAt, requestId } = data;
+  const { devEui, rssi, receivedAt, requestId, frmPayloadBase64, fPort, rawPayloadHex, frmPayloadBytes } = data;
 
   // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
   const decoded = normalizeTelemetry(data.decoded);
@@ -463,11 +592,95 @@ async function handleLoraSensor(
       signal_strength: rssi,
       source: 'ttn',
       recorded_at: receivedAt,
+      // Raw payload storage for decoder independence
+      frm_payload_base64: frmPayloadBase64,
+      f_port: fPort,
+      raw_payload_hex: rawPayloadHex,
+      network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
     };
 
     // Only set door_open if this is actually a door sensor
     if (hasDoorCapability && currentDoorOpen !== undefined) {
       readingData.door_open = currentDoorOpen;
+    }
+
+    // ========================================
+    // DECODE MODE: Respect catalog + per-sensor decode mode.
+    //   ttn   → skip app decode, rely on TTN decoded payload
+    //   trust → run both decoders, compare, store both
+    //   app   → app decoder is authoritative, still compare if TTN data present
+    //   off   → store raw only, no decoding
+    // Never fails the uplink — all errors are caught and logged.
+    // ========================================
+    if (sensor.sensor_catalog_id && frmPayloadBytes && fPort != null) {
+      try {
+        const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
+        const effectiveMode = sensor.decode_mode_override ?? catalogEntry?.decode_mode ?? 'trust';
+
+        if ((effectiveMode === 'trust' || effectiveMode === 'app') && catalogEntry?.decoder_js) {
+          // Guardrail: reject oversized decoder scripts
+          if (catalogEntry.decoder_js.length > MAX_DECODER_JS_BYTES) {
+            console.warn(`[TTN-WEBHOOK] ${requestId} | Decoder too large (${catalogEntry.decoder_js.length} bytes > ${MAX_DECODER_JS_BYTES}), skipping`);
+            readingData.decode_match = false;
+            readingData.decode_mismatch_reason = `decode_error:decoder_js exceeds ${MAX_DECODER_JS_BYTES} byte limit`;
+          } else {
+          const decoderCode = `${catalogEntry.decoder_js}\nreturn decodeUplink(input);`;
+          const decoderFn = new Function('input', decoderCode);
+          const decoderResult = decoderFn({ bytes: frmPayloadBytes, fPort });
+
+          // TTN device repo decoders return { data, warnings, errors }
+          const appDecoded = (decoderResult?.data ?? decoderResult) as Record<string, unknown>;
+
+          // Guardrail: cap output size to prevent DB bloat
+          const outputJson = JSON.stringify(appDecoded);
+          const outputTruncated = outputJson.length > MAX_OUTPUT_JSON_BYTES;
+          if (outputTruncated) {
+            console.warn(`[TTN-WEBHOOK] ${requestId} | Decoder output too large (${outputJson.length} bytes), storing truncated`);
+            readingData.app_decoded_payload = { _truncated: true, _size: outputJson.length };
+            readingData.decode_match = false;
+            readingData.decode_mismatch_reason = `decode_error:output exceeds ${MAX_OUTPUT_JSON_BYTES} byte limit`;
+          } else {
+            readingData.app_decoded_payload = appDecoded;
+          }
+          readingData.decoder_id = `catalog:${sensor.sensor_catalog_id}:rev${catalogEntry.revision}`;
+
+          // Capture decoder warnings/errors if present
+          if (Array.isArray(decoderResult?.warnings) && decoderResult.warnings.length > 0) {
+            readingData.decoder_warnings = decoderResult.warnings;
+          }
+          if (Array.isArray(decoderResult?.errors) && decoderResult.errors.length > 0) {
+            readingData.decoder_errors = decoderResult.errors;
+          }
+
+          // Compare against TTN decoded payload (skip if output was truncated).
+          // Apply normalizeTelemetry to both sides so vendor key aliases
+          // (TempC_SHT→temperature, BatV→battery, etc.) don't cause false mismatches.
+          if (!outputTruncated) {
+          const networkPayload = data.decoded;
+          if (Object.keys(networkPayload).length > 0) {
+            const normalizedApp = normalizeTelemetry(appDecoded);
+            const normalizedNet = normalizeTelemetry(networkPayload);
+            const { match, diffKeys } = deepComparePayloads(normalizedApp, normalizedNet);
+            readingData.decode_match = match;
+            if (!match) {
+              readingData.decode_mismatch_reason = `key_diff:${diffKeys.join(',')}`;
+              console.warn(`[TTN-WEBHOOK] ${requestId} | Decode mismatch [${effectiveMode}]: keys=${diffKeys.join(',')}`);
+            } else {
+              console.log(`[TTN-WEBHOOK] ${requestId} | Decode match [${effectiveMode}] (catalog rev${catalogEntry.revision})`);
+            }
+          }
+          }
+          } // end decoder size ok (else branch)
+        } else if (effectiveMode === 'ttn' || effectiveMode === 'off') {
+          // No app decode — decode_match stays null (column default)
+          console.log(`[TTN-WEBHOOK] ${requestId} | Decode mode '${effectiveMode}' — skipping app decode`);
+        }
+      } catch (decodeErr: unknown) {
+        const errMsg = decodeErr instanceof Error ? decodeErr.message : String(decodeErr);
+        console.warn(`[TTN-WEBHOOK] ${requestId} | Server-side decode failed: ${errMsg}`);
+        readingData.decode_match = false;
+        readingData.decode_mismatch_reason = `decode_error:${errMsg.slice(0, 200)}`;
+      }
     }
 
     // Insert reading
@@ -691,9 +904,12 @@ async function handleLegacyDevice(
     rssi: number | undefined;
     receivedAt: string;
     requestId: string;
+    frmPayloadBase64: string | null;
+    fPort: number | null;
+    rawPayloadHex: string | null;
   }
 ): Promise<Response> {
-  const { rssi, receivedAt, requestId } = data;
+  const { rssi, receivedAt, requestId, frmPayloadBase64, fPort, rawPayloadHex } = data;
 
   // Normalize vendor-specific keys (e.g. Dragino TempC_SHT → temperature)
   const decoded = normalizeTelemetry(data.decoded);
@@ -732,6 +948,11 @@ async function handleLegacyDevice(
       door_open: decoded.door_open,
       source: 'ttn',
       recorded_at: receivedAt,
+      // Raw payload storage for decoder independence
+      frm_payload_base64: frmPayloadBase64,
+      f_port: fPort,
+      raw_payload_hex: rawPayloadHex,
+      network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
     });
 
     await supabase.from('units').update({
