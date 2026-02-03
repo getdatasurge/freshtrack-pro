@@ -78,6 +78,7 @@ interface LoraSensor {
   is_primary: boolean;
   model: string | null;
   sensor_catalog_id: string | null;
+  decode_mode_override: string | null;
 }
 
 interface LegacyDevice {
@@ -109,6 +110,7 @@ function secureCompare(a: string, b: string): boolean {
 interface CachedDecoder {
   decoder_js: string | null;
   revision: number;
+  decode_mode: string;
   cachedAt: number;
 }
 const decoderCache = new Map<string, CachedDecoder>();
@@ -123,11 +125,16 @@ async function getCatalogDecoder(supabase: any, catalogId: string): Promise<Cach
   }
   const { data } = await supabase
     .from('sensor_catalog')
-    .select('decoder_js, revision')
+    .select('decoder_js, revision, decode_mode')
     .eq('id', catalogId)
     .maybeSingle();
   if (!data) return null;
-  const entry: CachedDecoder = { decoder_js: data.decoder_js, revision: data.revision, cachedAt: now };
+  const entry: CachedDecoder = {
+    decoder_js: data.decoder_js,
+    revision: data.revision,
+    decode_mode: data.decode_mode ?? 'trust',
+    cachedAt: now,
+  };
   decoderCache.set(catalogId, entry);
   // Evict stale entries periodically (keep cache bounded)
   if (decoderCache.size > 100) {
@@ -350,7 +357,7 @@ Deno.serve(async (req) => {
     if (deviceId) {
       const { data: sensorByDeviceId } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id, decode_mode_override')
         .eq('ttn_device_id', deviceId)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -365,7 +372,7 @@ Deno.serve(async (req) => {
     if (!loraSensor) {
       const { data: sensorByDevEui } = await supabase
         .from('lora_sensors')
-        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id')
+        .select('id, organization_id, site_id, unit_id, dev_eui, status, ttn_application_id, sensor_type, name, is_primary, model, sensor_catalog_id, decode_mode_override')
         .or(`dev_eui.eq.${devEuiLower},dev_eui.eq.${devEuiUpper},dev_eui.eq.${devEuiColonUpper},dev_eui.eq.${devEuiColonLower}`)
         .eq('organization_id', authenticatedOrgId)  // CRITICAL: Scope to authenticated org
         .maybeSingle();
@@ -594,15 +601,19 @@ async function handleLoraSensor(
     }
 
     // ========================================
-    // TRUST MODE: Server-side decoding via catalog decoder_js
-    // Only runs when sensor has a catalog entry with a decoder and we have raw bytes.
+    // DECODE MODE: Respect catalog + per-sensor decode mode.
+    //   ttn   → skip app decode, rely on TTN decoded payload
+    //   trust → run both decoders, compare, store both
+    //   app   → app decoder is authoritative, still compare if TTN data present
+    //   off   → store raw only, no decoding
     // Never fails the uplink — all errors are caught and logged.
     // ========================================
     if (sensor.sensor_catalog_id && frmPayloadBytes && fPort != null) {
       try {
         const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
+        const effectiveMode = sensor.decode_mode_override ?? catalogEntry?.decode_mode ?? 'trust';
 
-        if (catalogEntry?.decoder_js) {
+        if ((effectiveMode === 'trust' || effectiveMode === 'app') && catalogEntry?.decoder_js) {
           const decoderCode = `${catalogEntry.decoder_js}\nreturn decodeUplink(input);`;
           const decoderFn = new Function('input', decoderCode);
           const decoderResult = decoderFn({ bytes: frmPayloadBytes, fPort });
@@ -631,11 +642,14 @@ async function handleLoraSensor(
             readingData.decode_match = match;
             if (!match) {
               readingData.decode_mismatch_reason = `key_diff:${diffKeys.join(',')}`;
-              console.warn(`[TTN-WEBHOOK] ${requestId} | Decode mismatch: keys=${diffKeys.join(',')}`);
+              console.warn(`[TTN-WEBHOOK] ${requestId} | Decode mismatch [${effectiveMode}]: keys=${diffKeys.join(',')}`);
             } else {
-              console.log(`[TTN-WEBHOOK] ${requestId} | Decode match confirmed (catalog rev${catalogEntry.revision})`);
+              console.log(`[TTN-WEBHOOK] ${requestId} | Decode match [${effectiveMode}] (catalog rev${catalogEntry.revision})`);
             }
           }
+        } else if (effectiveMode === 'ttn' || effectiveMode === 'off') {
+          // No app decode — decode_match stays null (column default)
+          console.log(`[TTN-WEBHOOK] ${requestId} | Decode mode '${effectiveMode}' — skipping app decode`);
         }
       } catch (decodeErr: unknown) {
         const errMsg = decodeErr instanceof Error ? decodeErr.message : String(decodeErr);

@@ -130,6 +130,7 @@ export interface SensorCatalogEntry {
   sort_order: number;
   tags: string[];
   notes: string | null;
+  decode_mode: "ttn" | "trust" | "app" | "off";
   revision: number;
   deprecated_at: string | null;
   deprecated_reason: string | null;
@@ -159,7 +160,10 @@ export interface SensorCatalogPublicEntry {
   battery_info: SensorCatalogBatteryInfo;
   is_supported: boolean;
   tags: string[];
+  decode_mode: "ttn" | "trust" | "app" | "off";
 }
+
+export type DecodeMode = "ttn" | "trust" | "app" | "off";
 
 export interface SensorCatalogInsert {
   manufacturer: string;
