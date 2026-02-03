@@ -111,6 +111,7 @@ interface CachedDecoder {
   decoder_js: string | null;
   revision: number;
   decode_mode: string;
+  temperature_unit: string; // 'C' or 'F'
   cachedAt: number;
 }
 const decoderCache = new Map<string, CachedDecoder>();
@@ -129,7 +130,7 @@ async function getCatalogDecoder(supabase: any, catalogId: string): Promise<Cach
   }
   const { data } = await supabase
     .from('sensor_catalog')
-    .select('decoder_js, revision, decode_mode')
+    .select('decoder_js, revision, decode_mode, temperature_unit')
     .eq('id', catalogId)
     .maybeSingle();
   if (!data) return null;
@@ -137,6 +138,7 @@ async function getCatalogDecoder(supabase: any, catalogId: string): Promise<Cach
     decoder_js: data.decoder_js,
     revision: data.revision,
     decode_mode: data.decode_mode ?? 'trust',
+    temperature_unit: data.temperature_unit ?? 'C',
     cachedAt: now,
   };
   decoderCache.set(catalogId, entry);
@@ -487,13 +489,15 @@ async function handleLoraSensor(
   let decodeMatch: boolean | null = null;
   let decodeMismatchReason: string | null = null;
   let effectiveMode = 'ttn';
+  let sensorTempUnit = 'C'; // default: most LoRaWAN sensors report Celsius
 
-  if (sensor.sensor_catalog_id && frmPayloadBytes && fPort != null) {
+  if (sensor.sensor_catalog_id) {
     try {
       const catalogEntry = await getCatalogDecoder(supabase, sensor.sensor_catalog_id);
+      if (catalogEntry) sensorTempUnit = catalogEntry.temperature_unit;
       effectiveMode = sensor.decode_mode_override ?? catalogEntry?.decode_mode ?? 'trust';
 
-      if ((effectiveMode === 'trust' || effectiveMode === 'app') && catalogEntry?.decoder_js) {
+      if ((effectiveMode === 'trust' || effectiveMode === 'app') && catalogEntry?.decoder_js && frmPayloadBytes && fPort != null) {
         // Guardrail: reject oversized decoder scripts
         if (catalogEntry.decoder_js.length > MAX_DECODER_JS_BYTES) {
           console.warn(`[TTN-WEBHOOK] ${requestId} | Decoder too large (${catalogEntry.decoder_js.length} bytes > ${MAX_DECODER_JS_BYTES}), skipping`);
@@ -567,18 +571,12 @@ async function handleLoraSensor(
   // Battery handling (after decode so app-decoded battery is available)
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
 
-  // Temperature scaling
+  // Temperature: convert to Fahrenheit based on catalog temperature_unit.
+  // The DB and UI expect Fahrenheit; most LoRaWAN sensors report Celsius.
   let temperature = decoded.temperature as number | undefined;
-  if (temperature !== undefined) {
-    const tempScale = (decoded.temperature_scale ?? 1) as number;
-    if (tempScale !== 1) {
-      temperature = temperature * tempScale;
-    } else if (temperature > 0 && temperature < 10) {
-      const scaledTemp = temperature * 10;
-      if (scaledTemp >= 10 && scaledTemp <= 100) {
-        temperature = scaledTemp;
-      }
-    }
+  if (temperature !== undefined && sensorTempUnit === 'C') {
+    temperature = (temperature * 9 / 5) + 32;
+    console.log(`[TTN-WEBHOOK] ${requestId} | Converted ${decoded.temperature}°C → ${temperature.toFixed(2)}°F`);
   }
 
   console.log(`[TTN-WEBHOOK] ${requestId} | Processing sensor: ${sensor.name}, temp: ${temperature ?? 'N/A'}`);
@@ -936,11 +934,9 @@ async function handleLegacyDevice(
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
   let temperature = decoded.temperature as number | undefined;
 
-  if (temperature !== undefined && temperature > 0 && temperature < 10) {
-    const scaledTemp = temperature * 10;
-    if (scaledTemp >= 10 && scaledTemp <= 100) {
-      temperature = scaledTemp;
-    }
+  // Legacy devices: assume Celsius (most LoRaWAN sensors), convert to Fahrenheit
+  if (temperature !== undefined) {
+    temperature = (temperature * 9 / 5) + 32;
   }
 
   console.log(`[TTN-WEBHOOK] ${requestId} | Processing legacy device: ${device.id}`);

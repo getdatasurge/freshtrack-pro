@@ -131,6 +131,7 @@ export interface SensorCatalogEntry {
   tags: string[];
   notes: string | null;
   decode_mode: "ttn" | "trust" | "app" | "off";
+  temperature_unit: "C" | "F";
   revision: number;
   deprecated_at: string | null;
   deprecated_reason: string | null;
@@ -161,9 +162,11 @@ export interface SensorCatalogPublicEntry {
   is_supported: boolean;
   tags: string[];
   decode_mode: "ttn" | "trust" | "app" | "off";
+  temperature_unit: "C" | "F";
 }
 
 export type DecodeMode = "ttn" | "trust" | "app" | "off";
+export type TemperatureUnit = "C" | "F";
 
 export interface SensorCatalogInsert {
   manufacturer: string;
