@@ -1099,6 +1099,8 @@ const UnitDetail = () => {
               id: s.id,
               name: s.name,
               battery_level: s.battery_level,
+              battery_voltage: s.battery_voltage ?? null,
+              battery_voltage_filtered: s.battery_voltage_filtered ?? null,
               signal_strength: s.signal_strength,
               last_seen_at: s.last_seen_at,
               status: s.status,

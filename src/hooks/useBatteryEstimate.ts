@@ -33,6 +33,7 @@ import {
 interface SensorData {
   id: string;
   model: string | null;
+  status: string | null;
   last_seen_at: string | null;
   battery_level: number | null;
   battery_voltage?: number | null;
@@ -87,7 +88,7 @@ export function useBatteryEstimate(
         // Fetch sensor with voltage fields
         const { data: sensorResult } = await supabase
           .from("lora_sensors")
-          .select("id, model, last_seen_at, battery_level, battery_voltage, battery_voltage_filtered, battery_health_state")
+          .select("id, model, status, last_seen_at, battery_level, battery_voltage, battery_voltage_filtered, battery_health_state")
           .eq("id", sensorId)
           .single();
         
@@ -146,7 +147,10 @@ export function useBatteryEstimate(
           setSensorChemistry("LiFeS2_AA");
         }
 
-        // Set readings
+        // Set readings (log error but don't block — partial data is better than none)
+        if (readingsResult.error) {
+          console.warn("Error fetching sensor readings for battery estimate:", readingsResult.error);
+        }
         setReadings((readingsResult.data || []) as UplinkReading[]);
 
         // Set configured interval
@@ -278,11 +282,28 @@ export function useBatteryEstimate(
     const inferredIntervalSeconds = inferUplinkInterval(timestamps);
     const effectiveInterval = configuredInterval || inferredIntervalSeconds || DEFAULT_INTERVAL_SECONDS;
 
-    // Check if sensor is offline
-    const lastSeenAt = readings.length > 0 
-      ? readings[readings.length - 1].recorded_at 
-      : sensor?.last_seen_at ?? null;
-    const isOffline = isSensorOffline(lastSeenAt, effectiveInterval);
+    // Check if sensor is offline.
+    // Primary signal: the sensor's status field (set by webhook on uplink receipt).
+    // If the sensor row says "active", trust it — the sensor IS online.
+    // Only fall back to the interval-based heuristic when status is ambiguous.
+    const sensorStatus = sensor?.status;
+    const sensorLastSeen = sensor?.last_seen_at;
+    const lastReadingAt = readings.length > 0
+      ? readings[readings.length - 1].recorded_at
+      : null;
+
+    let isOffline: boolean;
+    if (sensorStatus === "active") {
+      // Sensor is actively reporting to LoRaWAN — not offline
+      isOffline = false;
+    } else if (sensorStatus === "offline") {
+      // Explicitly marked offline
+      isOffline = true;
+    } else {
+      // Ambiguous status (pending, joining, null) — use heuristic
+      const lastSeenAt = lastReadingAt || sensorLastSeen || null;
+      isOffline = isSensorOffline(lastSeenAt, effectiveInterval);
+    }
 
     // Determine state and calculate estimate
     let state: BatteryWidgetState;
