@@ -129,6 +129,8 @@ export interface EntityDashboardProps {
   refreshTick?: number;
   /** Callback when timeline range changes — syncs data fetching with dashboard controls */
   onTimeRangeChange?: (range: string) => void;
+  /** True count of readings in the period from the database (not capped by chart row limit) */
+  readingsTotalCount?: number;
 }
 
 function computeDateRange(state: TimelineState): { from: Date; to: Date } {
@@ -168,6 +170,7 @@ export function EntityDashboard({
   onSiteLocationChange,
   refreshTick,
   onTimeRangeChange,
+  readingsTotalCount,
 }: EntityDashboardProps) {
   const DEV = import.meta.env.DEV;
   
@@ -267,7 +270,7 @@ export function EntityDashboard({
       temperature: unit?.last_temp_reading,
       lastReadingAt: unit?.last_reading_at,
       unitType: unit?.unit_type,
-      count: filteredReadings.length,
+      count: readingsTotalCount ?? filteredReadings.length,
       site,
       areas,
       totalUnits,
@@ -294,7 +297,7 @@ export function EntityDashboard({
       result[w.i] = allProps as unknown as Record<string, unknown>;
     });
     return result;
-  }, [entityType, entityId, organizationId, siteId, sensor, unit, filteredReadings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange, refreshTick]);
+  }, [entityType, entityId, organizationId, siteId, sensor, unit, filteredReadings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange, refreshTick, readingsTotalCount]);
 
   // Apply preview mode mock data when not in live mode
   const effectiveWidgetProps = useMemo(() => {
