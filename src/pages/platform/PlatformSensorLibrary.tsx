@@ -72,10 +72,12 @@ import {
 import type {
   SensorCatalogEntry,
   SensorCatalogInsert,
+  SensorCatalogBatteryInfo,
   SensorKind,
   DecodeMode,
   TemperatureUnit,
 } from "@/types/sensorCatalog";
+import BatterySpecifications from "@/components/platform/BatterySpecifications";
 
 // ─── Seed data (fallback when DB is empty or loading) ────────
 const SEED_CATALOG: SensorCatalogEntry[] = [
@@ -113,7 +115,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
       { scenario: "No external probe connected", f_port: 2, raw_hex: "CBF10B0A007FFF", decoded: { temperature_c: 22.1, humidity_pct: 55.0, ext_temperature_c: null, battery_v: 3.055, ext_sensor_type: "none" }, notes: "Internal sensor only. Ext reads 0x7FFF = no probe." },
     ],
     uplink_info: { encoding: "proprietary", default_interval_s: 600, min_interval_s: 60, max_interval_s: 86400, max_payload_bytes: 11, confirmed_uplinks: false, adaptive_data_rate: true },
-    battery_info: { type: "2x AAA", chemistry: "lithium", voltage_nominal: 3.0, voltage_range: [2.1, 3.6], expected_life_years: 2, low_threshold_v: 2.5, reporting_format: "millivolts_div10" },
+    battery_info: { type: "1x AA Li-MnO\u2082", chemistry: "Li-MnO2", quantity: 1, capacity_mah: 2400, voltage_nominal: 3.0, voltage_range: [2.1, 3.6], expected_life_years: 2, low_threshold_v: 2.5, rechargeable: false, reporting_format: "millivolts_div10", notes: "Replaceable 2400mAh Li-MnO\u2082 AA battery. Use Dragino LHT65-BAT-CA kit or equivalent. Non-linear discharge curve \u2014 percentage estimates unreliable." },
     downlink_info: { supports_remote_config: true, config_port: 3, commands: [
       { name: "Set Reporting Interval", hex_template: "01{seconds_4byte_hex}", description: "Set TDC in seconds" },
       { name: "Request Device Status", hex_template: "04FF", description: "Device responds with status on next uplink" },
@@ -171,7 +173,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
       { scenario: "Door stuck open — alarm condition", f_port: 2, raw_hex: "0BD301000B000384", decoded: { door_open: true, open_count: 11, open_duration_s: 900, battery_v: 3.027 }, notes: "ALARM: Door open for 15 minutes." },
     ],
     uplink_info: { encoding: "proprietary", default_interval_s: 7200, min_interval_s: 60, max_interval_s: 86400, max_payload_bytes: 8, event_driven: true, event_types: ["door_open", "door_close", "heartbeat"] },
-    battery_info: { type: "2x AAA", chemistry: "lithium", voltage_nominal: 3.0, voltage_range: [2.1, 3.6], expected_life_years: 3, low_threshold_v: 2.5 },
+    battery_info: { type: "2x AAA Li-MnO\u2082", chemistry: "Li-MnO2", quantity: 2, capacity_mah: 2400, voltage_nominal: 3.0, voltage_range: [2.1, 3.6], expected_life_years: 3, low_threshold_v: 2.5, rechargeable: false, notes: "2x AAA Li-MnO\u2082 batteries. Non-linear discharge \u2014 percentage estimates unreliable. Replace both at the same time." },
     downlink_info: { supports_remote_config: true, config_port: 3, commands: [
       { name: "Set Heartbeat Interval", hex_template: "01{seconds_4byte_hex}", description: "Set keepalive interval" },
       { name: "Set Open Alarm Time", hex_template: "02{minutes_2byte_hex}", description: "Alert if door open longer than N minutes" },
@@ -221,7 +223,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
       { scenario: "Closed restaurant — overnight", f_port: 5, decoded: { temperature_c: 19.2, humidity_pct: 35, co2_ppm: 420, light_lux: 0, motion_count: 0, battery_v: 3.57 }, notes: "Baseline readings. Near outdoor CO2 levels." },
     ],
     uplink_info: { encoding: "elsys_proprietary", default_interval_s: 600, min_interval_s: 60, max_interval_s: 86400, max_payload_bytes: 20 },
-    battery_info: { type: "2x AA", chemistry: "lithium", voltage_nominal: 3.6, voltage_range: [2.8, 3.6], expected_life_years: 5, low_threshold_v: 3.0 },
+    battery_info: { type: "2x ER14505 AA", chemistry: "Li-SOCl2", quantity: 2, capacity_mah: 2600, voltage_nominal: 3.6, voltage_range: [2.8, 3.6], expected_life_years: 5, low_threshold_v: 3.0, rechargeable: false, notes: "Two ER14505 AA cells in parallel configuration (same voltage, ~2600 mAh total). 10-year shelf life. Watch for passivation on first use." },
     downlink_info: { supports_remote_config: true, config_port: 6, commands: [
       { name: "Set Reporting Interval", hex_template: "3E{seconds_2byte_hex}", description: "Set sample period in seconds" },
     ]},
@@ -261,7 +263,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
       { scenario: "Door closed", f_port: 1, decoded: { door_open: false, battery_v: 3.2, alarm: false }, notes: "Normal door close event." },
     ],
     uplink_info: { encoding: "netvox_proprietary", default_interval_s: 3600, event_driven: true },
-    battery_info: { type: "CR2450", chemistry: "lithium", voltage_nominal: 3.0, voltage_range: [2.1, 3.0], expected_life_years: 3 },
+    battery_info: { type: "CR2450", chemistry: "Li-MnO2", quantity: 1, capacity_mah: 620, voltage_nominal: 3.0, voltage_range: [2.1, 3.0], expected_life_years: 3, rechargeable: false, notes: "CR2450 coin cell. Non-replaceable in some enclosures. Non-linear discharge." },
     downlink_info: { supports_remote_config: false },
     decoder_js: null, decoder_python: null, decoder_source_url: null,
     decoder_provenance: {},
@@ -304,7 +306,7 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
       { scenario: "Heartbeat — no leak", f_port: 10, decoded: { leak_detected: false, leak_count: 0, battery_v: 3.2 }, notes: "All clear. Periodic check-in." },
     ],
     uplink_info: { encoding: "proprietary", default_interval_s: 7200, event_driven: true },
-    battery_info: { type: "2x AAA", chemistry: "lithium", voltage_nominal: 3.0, expected_life_years: 3 },
+    battery_info: { type: "2x AAA Li-MnO\u2082", chemistry: "Li-MnO2", quantity: 2, capacity_mah: 2400, voltage_nominal: 3.0, voltage_range: [2.1, 3.6], expected_life_years: 3, rechargeable: false, notes: "2x AAA Li-MnO\u2082 batteries. Non-linear discharge. Replace both at the same time." },
     downlink_info: { supports_remote_config: true, config_port: 3 },
     decoder_js: null, decoder_python: null, decoder_source_url: null,
     decoder_provenance: {},
@@ -1073,58 +1075,24 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
 
         {/* Battery */}
         <TabsContent value="battery">
-          <div className="grid md:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Battery className={`w-4 h-4 ${meta.color}`} /> Battery Specifications
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {Object.entries(sensor.battery_info || {}).map(([k, v]) => (
-                  <div key={k} className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">{k.replace(/_/g, " ")}</span>
-                    <span className="font-mono font-semibold text-xs">
-                      {Array.isArray(v) ? `[${v.join(" – ")}]` : String(v)}
-                    </span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm text-center">Voltage Range</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col items-center justify-center">
-                {sensor.battery_info?.voltage_range ? (() => {
-                  const [min, max] = sensor.battery_info.voltage_range;
-                  const low = sensor.battery_info.low_threshold_v ?? (min + (max - min) * 0.3);
-                  const pctLow = ((low - min) / (max - min)) * 100;
-                  return (
-                    <div className="w-full max-w-[280px]">
-                      <div className="relative h-7 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-500 to-amber-500 rounded-l-full"
-                          style={{ width: `${pctLow}%` }}
-                        />
-                        <div
-                          className="absolute inset-y-0 right-0 bg-gradient-to-r from-green-400 to-green-600 rounded-r-full"
-                          style={{ left: `${pctLow}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between mt-2 text-xs font-mono font-semibold">
-                        <span className="text-red-500">{min}V</span>
-                        <span className="text-amber-500">{low}V low</span>
-                        <span className="text-green-600">{max}V</span>
-                      </div>
-                    </div>
-                  );
-                })() : (
-                  <p className="text-sm text-muted-foreground">No voltage range data</p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+          <BatterySpecifications
+            batteryInfo={sensor.battery_info || {}}
+            sensorId={sensor.id}
+            onSave={(updatedBattery: SensorCatalogBatteryInfo) => {
+              updateCatalog.mutate(
+                { id: sensor.id, battery_info: updatedBattery },
+                {
+                  onSuccess: () => {
+                    toast({ title: "Saved", description: "Battery specifications updated." });
+                  },
+                  onError: (err) => {
+                    toast({ title: "Save failed", description: err instanceof Error ? err.message : "Could not update. Ensure migrations are applied.", variant: "destructive" });
+                  },
+                }
+              );
+            }}
+            isSaving={updateCatalog.isPending}
+          />
         </TabsContent>
       </Tabs>
 
