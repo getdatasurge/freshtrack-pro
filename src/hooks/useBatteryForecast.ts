@@ -97,7 +97,8 @@ export function useBatteryForecast(deviceId: string | null): {
       if (readingsResult.error) throw readingsResult.error;
 
       const readings = readingsResult.data ?? [];
-      const chemistry = profileResult.chemistry;
+      // Use chemistry from battery_profiles; default to LiFeS2_AA (most common)
+      const chemistry = profileResult.chemistry ?? "LiFeS2_AA";
 
       if (readings.length === 0) {
         setForecast({
