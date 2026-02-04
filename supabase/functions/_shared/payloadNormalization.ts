@@ -160,21 +160,24 @@ const CR2032_PACK_CURVE: PackVoltageCurve = {
 /**
  * Map chemistry identifiers to pack-level voltage curves.
  * Accepts both battery_profiles chemistry (e.g. "LiFeS2_AA") and
- * sensor_catalog battery_info.chemistry (e.g. "lithium").
+ * sensor_catalog battery_info.chemistry (e.g. "lithium", "Lithium").
+ * Comparison is case-insensitive to handle database inconsistencies.
  */
 function getPackCurve(chemistry: string | null | undefined): PackVoltageCurve {
-  switch (chemistry) {
-    case "CR17450":
+  const key = chemistry?.toLowerCase()?.trim();
+  switch (key) {
+    case "cr17450":
     case "li-mno2":
       return CR17450_PACK_CURVE;
-    case "LiFeS2_AA":
-    case "lithium":
+    case "lifes2_aa":
     case "lifes2":
+    case "lithium":
+    case "li":
+    case "li-fes2":
       return LIFES2_AA_PACK_CURVE;
-    case "Alkaline_AA":
+    case "alkaline_aa":
     case "alkaline":
       return ALKALINE_AA_PACK_CURVE;
-    case "CR2032":
     case "cr2032":
       return CR2032_PACK_CURVE;
     default:
@@ -240,8 +243,12 @@ export interface NormalizeTelemetryOptions {
  *
  * Returns a shallow copy of `decoded` with canonical keys added where they
  * were missing but a known alias was present. Original keys are preserved.
- * If the canonical key already exists in the payload, no aliasing occurs
- * for that field (existing devices are unaffected).
+ *
+ * Battery handling: When a voltage alias (BatV, battery_v) is found, the
+ * `battery` field is ALWAYS derived from voltage (using chemistry curves or
+ * the legacy Dragino formula). This overrides any existing `battery` value
+ * in the payload, because some TTN decoders set `battery` to the Dragino
+ * `Bat_status` enum (0-3) which is NOT a percentage.
  *
  * @param decoded - Raw decoded payload from TTN or catalog decoder
  * @param options - Optional context for chemistry-aware conversion
@@ -257,7 +264,26 @@ export function normalizeTelemetry(
   const result = { ...decoded };
   const chemistry = options?.chemistry;
 
+  // First pass: extract raw battery voltage from aliases (needed for override logic)
+  let rawBatteryVoltage: number | undefined;
+  for (const alias of TELEMETRY_ALIASES.battery_voltage) {
+    if (alias in decoded && typeof decoded[alias] === 'number') {
+      rawBatteryVoltage = decoded[alias] as number;
+      break;
+    }
+  }
+
   for (const [canonical, aliases] of Object.entries(TELEMETRY_ALIASES)) {
+    // For battery: ALWAYS override when we have a voltage value.
+    // Some TTN decoders set decoded.battery = Bat_status (0-3 enum),
+    // which is NOT a percentage. The voltage-derived value is authoritative.
+    if (canonical === 'battery' && rawBatteryVoltage !== undefined) {
+      result[canonical] = chemistry
+        ? convertVoltageToPercent(rawBatteryVoltage, chemistry)
+        : convertBatVToPercent(rawBatteryVoltage);
+      continue;
+    }
+
     // Skip if canonical key already present
     if (canonical in result && result[canonical] !== undefined) continue;
 
@@ -266,18 +292,8 @@ export function normalizeTelemetry(
         const value = decoded[alias];
         // Only map numeric values (guard against unexpected types)
         if (typeof value === 'number') {
-          // Convert battery voltage to integer percentage for battery_level column
-          // BatV and battery_v are both voltage values (e.g. 3.05V)
-          const isVoltageAlias = alias === 'BatV' || alias === 'battery_v';
-          if (isVoltageAlias && canonical === 'battery') {
-            // Use chemistry-aware curve when available, legacy formula otherwise
-            result[canonical] = chemistry
-              ? convertVoltageToPercent(value, chemistry)
-              : convertBatVToPercent(value);
-          }
           // Store raw voltage for battery_voltage field
-          else if (canonical === 'battery_voltage') {
-            // Store voltage as-is (already in volts)
+          if (canonical === 'battery_voltage') {
             result[canonical] = value;
           }
           else {

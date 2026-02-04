@@ -204,20 +204,29 @@ export const ALKALINE_AA_CURVE: VoltageToPercentCurve = {
 };
 
 /**
- * Get voltage curve for chemistry type
+ * Get voltage curve for chemistry type.
+ * Case-insensitive to handle inconsistent values from sensor_catalog
+ * (e.g. "lithium", "Lithium", "LiFeS2_AA" all map to LIFES2_AA_CURVE).
  */
 export function getVoltageCurve(chemistry: string | null | undefined): VoltageToPercentCurve {
-  switch (chemistry) {
-    case "CR17450":
+  const key = chemistry?.toLowerCase()?.trim();
+  switch (key) {
+    case "cr17450":
+    case "li-mno2":
       return CR17450_CURVE;
-    case "LiFeS2_AA":
+    case "lifes2_aa":
+    case "lifes2":
+    case "lithium":
+    case "li":
+    case "li-fes2":
       return LIFES2_AA_CURVE;
-    case "CR2032":
+    case "cr2032":
       return CR2032_CURVE;
-    case "Alkaline_AA":
+    case "alkaline_aa":
+    case "alkaline":
       return ALKALINE_AA_CURVE;
     default:
-      return CR17450_CURVE; // Default to CR17450 for 3V sensors
+      return LIFES2_AA_CURVE; // Default to LiFeS2 AA — most common chemistry
   }
 }
 
@@ -289,19 +298,27 @@ export interface VoltageThresholds {
 }
 
 export function getVoltageThresholds(chemistry: string | null | undefined): VoltageThresholds {
-  switch (chemistry) {
-    case "CR17450":
+  const key = chemistry?.toLowerCase()?.trim();
+  switch (key) {
+    case "cr17450":
+    case "li-mno2":
       return { ok: 2.85, warning: 2.75, low: 2.60, critical: 2.50 };
-    case "LiFeS2_AA":
+    case "lifes2_aa":
+    case "lifes2":
+    case "lithium":
+    case "li":
+    case "li-fes2":
       // Pack-level (2× cells): 2.80V ok, 2.40V warning, 2.00V low, 1.80V critical
       return { ok: 2.80, warning: 2.40, low: 2.00, critical: 1.80 };
-    case "CR2032":
+    case "cr2032":
       return { ok: 2.70, warning: 2.50, low: 2.30, critical: 2.20 };
-    case "Alkaline_AA":
+    case "alkaline_aa":
+    case "alkaline":
       // Pack-level (2× cells): 2.40V ok, 2.00V warning, 1.80V low, 1.60V critical
       return { ok: 2.40, warning: 2.00, low: 1.80, critical: 1.60 };
     default:
-      return { ok: 2.85, warning: 2.75, low: 2.60, critical: 2.50 };
+      // Default to LiFeS2_AA thresholds (most common chemistry)
+      return { ok: 2.80, warning: 2.40, low: 2.00, critical: 1.80 };
   }
 }
 

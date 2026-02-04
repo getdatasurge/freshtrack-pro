@@ -597,8 +597,24 @@ async function handleLoraSensor(
   if (batteryVoltage !== undefined && batteryChemistry) {
     battery = convertVoltageToPercent(batteryVoltage, batteryChemistry);
     console.log(`[TTN-WEBHOOK] ${requestId} | Battery: ${batteryVoltage}V → ${battery}% (chemistry: ${batteryChemistry})`);
+  } else if (batteryVoltage !== undefined) {
+    // Have voltage but no chemistry — use voltage-derived value from normalization
+    // (already set in decoded.battery by normalizeTelemetry)
+    battery = decoded.battery as number | undefined;
+    console.log(`[TTN-WEBHOOK] ${requestId} | Battery: ${batteryVoltage}V → ${battery}% (no chemistry, legacy formula)`);
   } else {
-    battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+    // No voltage data at all — use whatever the payload provides.
+    // Guard against Dragino Bat_status enum (0-3) being misread as percentage:
+    // if Bat_status exists in the raw payload and the value is 0-3, ignore it.
+    const rawBatStatus = data.decoded.Bat_status ?? data.decoded.bat_status;
+    const reportedBattery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+    if (rawBatStatus !== undefined && reportedBattery !== undefined && reportedBattery >= 0 && reportedBattery <= 3) {
+      // This looks like a Bat_status enum being used as battery_level — discard it
+      battery = undefined;
+      console.log(`[TTN-WEBHOOK] ${requestId} | Battery: discarding Bat_status enum value ${reportedBattery} (not a percentage)`);
+    } else {
+      battery = reportedBattery;
+    }
   }
 
   // Temperature: convert to Fahrenheit based on catalog temperature_unit.
