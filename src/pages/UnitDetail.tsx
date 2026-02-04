@@ -135,6 +135,7 @@ const UnitDetail = () => {
   const [unit, setUnit] = useState<UnitData | null>(null);
   const [siblingUnits, setSiblingUnits] = useState<BreadcrumbSibling[]>([]);
   const [readings, setReadings] = useState<SensorReading[]>([]);
+  const [readingsTotalCount, setReadingsTotalCount] = useState(0);
   const [manualLogs, setManualLogs] = useState<ManualLog[]>([]);
   const [events, setEvents] = useState<EventLog[]>([]);
   const [unitAlerts, setUnitAlerts] = useState<UnitAlert[]>([]);
@@ -647,6 +648,14 @@ const UnitDetail = () => {
 
       setReadings(chronologicalReadings);
 
+      // Get the true count of readings in the period (not capped by limit)
+      const { count: totalCount } = await supabase
+        .from("sensor_readings")
+        .select("id", { count: "exact", head: true })
+        .eq("unit_id", unitId)
+        .gte("recorded_at", fromDate);
+      setReadingsTotalCount(totalCount ?? chronologicalReadings.length);
+
       const { data: logsData } = await supabase
         .from("manual_temperature_logs")
         .select("id, temperature, notes, logged_at, is_in_range")
@@ -1086,6 +1095,7 @@ const UnitDetail = () => {
               sensor_type: primaryLoraSensor.sensor_type,
             } : undefined}
             readings={readings}
+            readingsTotalCount={readingsTotalCount}
             onTimeRangeChange={setTimeRange}
             derivedStatus={derivedStatus}
             alerts={unitAlerts}
