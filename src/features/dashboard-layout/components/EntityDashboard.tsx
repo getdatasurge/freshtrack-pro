@@ -127,6 +127,8 @@ export interface EntityDashboardProps {
   onSiteLocationChange?: () => void;
   /** Refresh tick counter - increments on realtime events to trigger widget re-fetches */
   refreshTick?: number;
+  /** Callback when timeline range changes — syncs data fetching with dashboard controls */
+  onTimeRangeChange?: (range: string) => void;
 }
 
 function computeDateRange(state: TimelineState): { from: Date; to: Date } {
@@ -165,6 +167,7 @@ export function EntityDashboard({
   totalUnits = 0,
   onSiteLocationChange,
   refreshTick,
+  onTimeRangeChange,
 }: EntityDashboardProps) {
   const DEV = import.meta.env.DEV;
   
@@ -226,6 +229,24 @@ export function EntityDashboard({
 
   const dateRange = useMemo(() => computeDateRange(state.activeLayout.timelineState), [state.activeLayout.timelineState]);
 
+  // Filter readings client-side to match the dashboard's timeline range
+  const filteredReadings = useMemo(() => {
+    if (!readings || readings.length === 0) return readings;
+    const { from, to } = dateRange;
+    return readings.filter(r => {
+      const t = new Date(r.recorded_at);
+      return t >= from && t <= to;
+    });
+  }, [readings, dateRange]);
+
+  // Wrap timeline change to also trigger data re-fetch in parent
+  const handleTimelineChange = useCallback((newState: Partial<TimelineState>) => {
+    actions.updateTimelineState(newState);
+    if (newState.range && onTimeRangeChange) {
+      onTimeRangeChange(newState.range);
+    }
+  }, [actions, onTimeRangeChange]);
+
   const widgetProps = useMemo(() => {
     const allProps = {
       timelineState: state.activeLayout.timelineState,
@@ -235,7 +256,7 @@ export function EntityDashboard({
       siteId,
       sensor,
       unit,
-      readings,
+      readings: filteredReadings,
       derivedStatus,
       alerts,
       onLogTemp: onLogTemp || (() => {}),
@@ -246,7 +267,7 @@ export function EntityDashboard({
       temperature: unit?.last_temp_reading,
       lastReadingAt: unit?.last_reading_at,
       unitType: unit?.unit_type,
-      count: readings.length,
+      count: filteredReadings.length,
       site,
       areas,
       totalUnits,
@@ -264,7 +285,7 @@ export function EntityDashboard({
       siteId,
       door_state: unit?.door_state,
       door_last_changed_at: unit?.door_last_changed_at,
-      readingsCount: readings?.length,
+      readingsCount: filteredReadings?.length,
       loraSensorsCount: loraSensors?.length,
     });
 
@@ -273,7 +294,7 @@ export function EntityDashboard({
       result[w.i] = allProps as unknown as Record<string, unknown>;
     });
     return result;
-  }, [entityType, entityId, organizationId, siteId, sensor, unit, readings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange, refreshTick]);
+  }, [entityType, entityId, organizationId, siteId, sensor, unit, filteredReadings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange, refreshTick]);
 
   // Apply preview mode mock data when not in live mode
   const effectiveWidgetProps = useMemo(() => {
@@ -422,11 +443,11 @@ export function EntityDashboard({
           />
         </div>
       </div>
-      <TimelineControls 
-        state={state.activeLayout.timelineState} 
-        onChange={actions.updateTimelineState} 
-        isDefaultLayout={state.activeLayout.isDefault} 
-        dateRange={dateRange} 
+      <TimelineControls
+        state={state.activeLayout.timelineState}
+        onChange={handleTimelineChange}
+        isDefaultLayout={state.activeLayout.isDefault}
+        dateRange={dateRange}
         isComparing={!!state.activeLayout.timelineState.compare}
         saveStatus={state.isSaving ? 'saving' : state.isDirty ? 'dirty' : 'saved'}
       />

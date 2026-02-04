@@ -625,34 +625,27 @@ const UnitDetail = () => {
 
       const fromDate = getTimeRangeDate().toISOString();
 
+      // Fetch descending to get the MOST RECENT 500, then reverse to chronological order
       const { data: readingsData, error: readingsError } = await supabase
         .from("sensor_readings")
         .select("id, temperature, humidity, recorded_at")
         .eq("unit_id", unitId)
         .gte("recorded_at", fromDate)
-        .order("recorded_at", { ascending: true })
+        .order("recorded_at", { ascending: false })
         .limit(500);
 
       // STEP 3: Telemetry query proof logging
+      const chronologicalReadings = (readingsData || []).reverse();
       DEV_LOAD && console.log('[READINGS]', {
         unitId,
         fromDate,
-        rows: readingsData?.length ?? 0,
-        first: readingsData?.[0],
-        last: readingsData?.[readingsData.length - 1],
+        rows: chronologicalReadings.length,
+        first: chronologicalReadings[0],
+        last: chronologicalReadings[chronologicalReadings.length - 1],
         error: readingsError?.message,
       });
 
-      // Also run a simple all-time check to verify data exists
-      const { data: allTimeCheck } = await supabase
-        .from('sensor_readings')
-        .select('id, recorded_at')
-        .eq('unit_id', unitId)
-        .order('recorded_at', { ascending: false })
-        .limit(5);
-      DEV_LOAD && console.log('[READINGS] all-time check', { count: allTimeCheck?.length ?? 0 });
-
-      setReadings(readingsData || []);
+      setReadings(chronologicalReadings);
 
       const { data: logsData } = await supabase
         .from("manual_temperature_logs")
@@ -1093,6 +1086,7 @@ const UnitDetail = () => {
               sensor_type: primaryLoraSensor.sensor_type,
             } : undefined}
             readings={readings}
+            onTimeRangeChange={setTimeRange}
             derivedStatus={derivedStatus}
             alerts={unitAlerts}
             loraSensors={loraSensors?.map(s => ({
