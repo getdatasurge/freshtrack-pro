@@ -1,85 +1,138 @@
 
 
-# Fix Plan: Apply Decoder Confidence Migrations
+# Re-Evaluated Fix Plan: Apply Battery Migrations
 
-## Problem Summary
+## Current State Summary
 
-The Decoder Confidence page shows 404 errors because:
-1. The `decoder_confidence_rollup` view doesn't exist in the database
-2. The view depends on columns in `sensor_readings` that also don't exist yet
+After the pull request, I've verified:
 
-**Evidence:**
-- Network request to `/rest/v1/decoder_confidence_rollup` returns 404
-- Database query confirms no decoder-related views exist
-- The required columns (`decoder_id`, `decode_match`, `decode_mismatch_reason`) are missing from `sensor_readings`
+| Component | Status | Details |
+|-----------|--------|---------|
+| Migration files in codebase | ✅ Present | `20260203140000_fix_pack_level_voltages.sql` and `20260203140001_backfill_battery_voltage.sql` exist |
+| Edge function code | ✅ Updated | `ttn-webhook` correctly extracts `battery_voltage` from normalized payload |
+| Battery profiles in DB | ❌ Wrong values | Still showing per-cell voltages (1.50V/0.90V) instead of pack (3.0V/1.80V) |
+| sensor_readings.battery_voltage | ❌ All NULL | 1,836 readings, 0 have battery_voltage populated |
+| app_decoded_payload has BatV | ✅ 654 readings | Data exists but not extracted to the column |
 
----
-
-## Solution: Apply 3 Dependent Migrations
-
-These migrations must be applied in order:
-
-| Order | Migration File | Purpose |
-|-------|---------------|---------|
-| 1 | `20260203080000_add_raw_payload_columns.sql` | Adds `frm_payload_base64`, `f_port`, `raw_payload_hex`, `network_decoded_payload` to `sensor_readings` |
-| 2 | `20260203090000_add_trust_mode_columns.sql` | Adds `app_decoded_payload`, `decoder_id`, `decode_match`, `decode_mismatch_reason`, `decoder_warnings`, `decoder_errors` to `sensor_readings` |
-| 3 | `20260203100001_decoder_confidence_views.sql` | Creates the `decoder_confidence_rollup` view that aggregates match/mismatch stats |
+**Root cause**: The migration files exist but have **not been executed** against the database.
 
 ---
 
-## What Each Migration Does
+## What Needs to Happen
 
-### Migration 1: Raw Payload Columns
-Adds columns to store the raw LoRaWAN payload for re-decoding and trust-mode comparison:
-- `frm_payload_base64` - Raw payload as received from TTN
-- `f_port` - LoRaWAN port number (determines decoder)
-- `raw_payload_hex` - Hex representation for debugging
-- `network_decoded_payload` - Full decoded object from TTN
+### Step 1: Apply Migration A — Fix Battery Profile Voltages
 
-### Migration 2: Trust-Mode Columns
-Adds columns for side-by-side decoder comparison:
-- `app_decoded_payload` - Our decoder's output
-- `decoder_id` - Which decoder produced the output (e.g., `catalog:uuid:rev3`)
-- `decode_match` - Whether TTN and app outputs matched
-- `decode_mismatch_reason` - Why they didn't match
-- `decoder_warnings` / `decoder_errors` - Decoder diagnostic info
+The `battery_profiles` table currently stores per-cell values but sensors report pack-level voltage:
 
-### Migration 3: Confidence Rollup View
-Creates the aggregated view for the platform admin dashboard:
+| Chemistry | Current (per-cell) | Correct (pack) |
+|-----------|-------------------|----------------|
+| LiFeS2_AA | 1.50V / 0.90V | 3.0V / 1.80V |
+| Alkaline_AA | 1.50V / 0.80V | 3.0V / 1.60V |
+
+**Migration A** (`20260203140000_fix_pack_level_voltages.sql`):
 ```sql
-CREATE VIEW public.decoder_confidence_rollup AS
-SELECT
-  decoder_id,
-  COUNT(*) FILTER (WHERE decode_match IS NOT NULL) AS compared_count,
-  COUNT(*) FILTER (WHERE decode_match = true) AS match_count,
-  COUNT(*) FILTER (WHERE decode_match = false) AS mismatch_count,
-  ROUND(...) AS match_rate_pct,
-  MAX(recorded_at) AS last_seen_at,
-  MIN(recorded_at) AS first_seen_at,
-  (...) AS top_mismatch_reason
-FROM public.sensor_readings
-WHERE decoder_id IS NOT NULL
-GROUP BY decoder_id;
+UPDATE public.battery_profiles 
+SET nominal_voltage = 3.0, cutoff_voltage = 1.80
+WHERE chemistry = 'LiFeS2_AA' 
+  AND (cutoff_voltage < 1.0 OR nominal_voltage < 2.0);
+
+UPDATE public.battery_profiles 
+SET nominal_voltage = 3.0, cutoff_voltage = 1.60
+WHERE chemistry = 'Alkaline_AA' 
+  AND (cutoff_voltage < 1.0 OR nominal_voltage < 2.0);
+```
+
+### Step 2: Apply Migration B — Backfill Battery Voltage
+
+Extract `BatV` from JSONB payloads into the `battery_voltage` column:
+
+**Migration B** (`20260203140001_backfill_battery_voltage.sql`):
+```sql
+-- From network_decoded_payload.BatV
+UPDATE public.sensor_readings
+SET battery_voltage = (network_decoded_payload->>'BatV')::numeric(4,3)
+WHERE battery_voltage IS NULL
+  AND network_decoded_payload->>'BatV' IS NOT NULL
+  AND (network_decoded_payload->>'BatV')::numeric BETWEEN 0.5 AND 5.0;
+
+-- From app_decoded_payload.BatV (where the 654 readings actually are)
+UPDATE public.sensor_readings
+SET battery_voltage = (app_decoded_payload->>'BatV')::numeric(4,3)
+WHERE battery_voltage IS NULL
+  AND app_decoded_payload->>'BatV' IS NOT NULL
+  AND (app_decoded_payload->>'BatV')::numeric BETWEEN 0.5 AND 5.0;
+
+-- Sync latest voltage to lora_sensors
+UPDATE public.lora_sensors ls
+SET battery_voltage = sub.latest_voltage
+FROM (
+  SELECT DISTINCT ON (lora_sensor_id)
+    lora_sensor_id,
+    battery_voltage AS latest_voltage
+  FROM public.sensor_readings
+  WHERE lora_sensor_id IS NOT NULL AND battery_voltage IS NOT NULL
+  ORDER BY lora_sensor_id, recorded_at DESC
+) sub
+WHERE ls.id = sub.lora_sensor_id AND ls.battery_voltage IS NULL;
+```
+
+### Step 3: Deploy Edge Function
+
+The edge function code is already correct but needs to be redeployed to production:
+
+```bash
+supabase functions deploy ttn-webhook
 ```
 
 ---
 
-## Expected Behavior After Fix
+## Expected Results After Fix
 
-1. **Decoder Confidence page loads** without 404 errors
-2. **Table shows "No trust-mode data yet"** (empty state) until sensors with catalog decoders report data
-3. **Future readings** with `decode_match` data will populate the rollup statistics
-4. **The ttn-webhook** (already updated) will start populating these columns for incoming uplinks
+| Metric | Before | After |
+|--------|--------|-------|
+| Battery % displayed | ~3% (wrong) | ~68% (correct) |
+| LHT65 cutoff voltage | 0.90V | 1.80V |
+| sensor_readings with battery_voltage | 0 | 654+ |
+| Battery Health widget | "Collecting data" | Trend graph with data |
+
+### Verification Query
+
+```sql
+SELECT 
+  bp.model, 
+  bp.nominal_voltage, 
+  bp.cutoff_voltage,
+  ls.battery_level, 
+  ls.battery_voltage,
+  (SELECT COUNT(*) FROM sensor_readings sr 
+   WHERE sr.lora_sensor_id = ls.id 
+   AND sr.battery_voltage IS NOT NULL) as readings_with_voltage
+FROM lora_sensors ls
+LEFT JOIN battery_profiles bp ON bp.model = ls.model
+WHERE ls.dev_eui = 'A840415A61897757';
+```
+
+**Expected output**:
+- `nominal_voltage: 3.0`
+- `cutoff_voltage: 1.80`
+- `battery_voltage: ~2.985`
+- `readings_with_voltage: 654+`
 
 ---
 
-## Files Involved
+## Technical Notes
 
-| File | Purpose |
-|------|---------|
-| `supabase/migrations/20260203080000_add_raw_payload_columns.sql` | Schema migration (raw payload) |
-| `supabase/migrations/20260203090000_add_trust_mode_columns.sql` | Schema migration (trust mode) |
-| `supabase/migrations/20260203100001_decoder_confidence_views.sql` | View creation |
-| `src/hooks/useDecoderConfidence.ts` | Frontend hook (already using correct table name) |
-| `src/pages/platform/PlatformDecoderConfidence.tsx` | UI component (already built) |
+### Why the migrations weren't auto-applied
+
+Lovable migrations are applied when:
+1. Created via the database migration tool, OR
+2. Already tracked in the migration history
+
+These migrations were added via pull request and exist as files, but Supabase doesn't know about them yet. They need to be executed manually.
+
+### Battery percentage calculation
+
+With voltage 2.985V on LiFeS2_AA pack curve (1.80V cutoff, 3.0V nominal):
+- Position on curve: (2.985 - 1.80) / (3.0 - 1.80) = 98.75% of range
+- Using the non-linear discharge curve, maps to approximately **68-70%**
 
