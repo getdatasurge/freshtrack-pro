@@ -54,6 +54,7 @@ export interface LoraSensor {
   status: LoraSensorStatus;
   battery_level: number | null;
   battery_voltage: number | null;
+  battery_voltage_filtered: number | null;
   signal_strength: number | null;
   last_seen_at: string | null;
   last_join_at: string | null;
