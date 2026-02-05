@@ -135,7 +135,7 @@ export function WidgetRenderer({ widgetId, props }: WidgetRendererProps) {
       );
     
     case "readings_count":
-      return <ReadingsCountWidget count={props.readings?.length ?? 0} />;
+      return <ReadingsCountWidget {...props} />;
     
     case "device_readiness":
       return <DeviceReadinessWidget {...props} />;
