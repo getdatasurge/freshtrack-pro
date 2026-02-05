@@ -46,6 +46,7 @@ export type BatteryHealthState =
 export type BatteryWidgetState =
   | "NOT_CONFIGURED"
   | "MISSING_PROFILE"
+  | "NO_BATTERY_DATA"
   | "COLLECTING_DATA"
   | "SENSOR_OFFLINE"
   | "ESTIMATE_LOW_CONFIDENCE"
@@ -567,6 +568,11 @@ export function getStateMessage(state: BatteryWidgetState): {
       return {
         title: "Battery estimate unavailable",
         description: "Battery profile not configured for this sensor model.",
+      };
+    case "NO_BATTERY_DATA":
+      return {
+        title: "No battery data",
+        description: "Sensor is reporting but no battery readings received yet.",
       };
     case "COLLECTING_DATA":
       return {

@@ -578,6 +578,7 @@ async function handleLoraSensor(
 
   // Battery handling (after decode so app-decoded battery is available)
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+  const batteryVoltage = decoded.battery_voltage as number | undefined;
 
   // Temperature: convert to Fahrenheit based on catalog temperature_unit.
   // The DB and UI expect Fahrenheit; most LoRaWAN sensors report Celsius.
@@ -603,6 +604,7 @@ async function handleLoraSensor(
   }
 
   if (battery !== undefined) sensorUpdate.battery_level = battery;
+  if (batteryVoltage !== undefined) sensorUpdate.battery_voltage = batteryVoltage;
   if (rssi !== undefined) sensorUpdate.signal_strength = rssi;
 
   // ========================================
@@ -703,6 +705,7 @@ async function handleLoraSensor(
       raw_payload_hex: rawPayloadHex,
       network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
     };
+    if (batteryVoltage !== undefined) extendedColumns.battery_voltage = batteryVoltage;
     if (appDecoded) extendedColumns.app_decoded_payload = appDecoded;
     if (decoderIdStr) extendedColumns.decoder_id = decoderIdStr;
     if (decodeMatch !== null) extendedColumns.decode_match = decodeMatch;
@@ -957,6 +960,7 @@ async function handleLegacyDevice(
   const decoded = normalizeTelemetry(data.decoded);
 
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+  const batteryVoltage = decoded.battery_voltage as number | undefined;
   let temperature = decoded.temperature as number | undefined;
 
   // Legacy devices: assume Celsius (most LoRaWAN sensors), convert to Fahrenheit
@@ -973,6 +977,7 @@ async function handleLegacyDevice(
     status: 'active',
   };
   if (battery !== undefined) deviceUpdate.battery_level = battery;
+  if (batteryVoltage !== undefined) deviceUpdate.battery_voltage = batteryVoltage;
   if (rssi !== undefined) deviceUpdate.signal_strength = rssi;
 
   await supabase.from('devices').update(deviceUpdate).eq('id', device.id);
@@ -997,6 +1002,7 @@ async function handleLegacyDevice(
       raw_payload_hex: rawPayloadHex,
       network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
     };
+    if (batteryVoltage !== undefined) extData.battery_voltage = batteryVoltage;
     // Try full insert, fall back to core-only
     const { error: fullErr } = await supabase
       .from('sensor_readings')
