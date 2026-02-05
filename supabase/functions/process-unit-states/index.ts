@@ -1,5 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateInternalApiKey, unauthorizedResponse } from "../_shared/validation.ts";
+import { STORAGE_UNIT, getUnitSymbol } from "../_shared/unitConversion.ts";
+
+// Unit symbol for storage unit (used in log messages)
+const TEMP_UNIT_SYMBOL = getUnitSymbol(STORAGE_UNIT);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -276,11 +280,12 @@ Deno.serve(async (req) => {
       }
 
       // === TEMPERATURE EXCURSION LOGIC ===
-      // Only check if we have recent data and unit is not in offline states
+      // All temperatures are in storage unit (°F) - both readings and thresholds
+      // This ensures unit-correct alarm evaluation
       if (missedCheckins === 0 && u.last_temp_reading !== null) {
-        const temp = u.last_temp_reading as number;
-        const highLimit = u.temp_limit_high as number;
-        const lowLimit = u.temp_limit_low as number | null;
+        const temp = u.last_temp_reading as number; // In storage unit (°F)
+        const highLimit = u.temp_limit_high as number; // In storage unit (°F)
+        const lowLimit = u.temp_limit_low as number | null; // In storage unit (°F)
         const hysteresis = u.temp_hysteresis as number;
 
         const isAboveLimit = temp > highLimit;
@@ -292,14 +297,14 @@ Deno.serve(async (req) => {
             console.log(`Unit ${u.name}: Temp out of range but door open (${doorOpenDuration}/${doorGraceMinutes}m grace)`);
           } else if (currentStatus === "ok" || currentStatus === "restoring") {
             newStatus = "excursion";
-            reason = `Temperature ${temp}°F ${isAboveLimit ? "above" : "below"} limit${doorState === "open" ? " (door open)" : ""}`;
+            reason = `Temperature ${temp}${TEMP_UNIT_SYMBOL} ${isAboveLimit ? "above" : "below"} limit${doorState === "open" ? " (door open)" : ""}`;
           } else if (currentStatus === "excursion") {
             const statusChangeTime = u.last_status_change ? new Date(u.last_status_change as string).getTime() : now;
             const timeInExcursion = now - statusChangeTime;
 
             if (timeInExcursion >= confirmTime) {
               newStatus = "alarm_active";
-              reason = `Temperature excursion confirmed after ${Math.floor(timeInExcursion / 60000)}m: ${temp}°F (door ${doorState})`;
+              reason = `Temperature excursion confirmed after ${Math.floor(timeInExcursion / 60000)}m: ${temp}${TEMP_UNIT_SYMBOL} (door ${doorState})`;
             } else {
               console.log(`Unit ${u.name}: Excursion pending confirmation (${Math.floor(timeInExcursion / 60000)}/${Math.floor(confirmTime / 60000)}m)`);
             }
@@ -333,6 +338,7 @@ Deno.serve(async (req) => {
                 first_active_at: nowIso,
                 metadata: {
                   current_temp: temp,
+                  temp_unit: STORAGE_UNIT, // Document the unit for display conversion
                   low_limit: lowLimit,
                   high_limit: highLimit,
                   reading_source: "sensor",
@@ -358,9 +364,10 @@ Deno.serve(async (req) => {
               .update({
                 severity: "critical",
                 title: `${u.name}: Temperature Alarm (${doorState !== "unknown" ? `door ${doorState}` : "confirmed"})`,
-                message: `Temperature excursion confirmed: ${temp}°F after ${durationMinutes}m`,
+                message: `Temperature excursion confirmed: ${temp}${TEMP_UNIT_SYMBOL} after ${durationMinutes}m`,
                 metadata: {
                   current_temp: temp,
+                  temp_unit: STORAGE_UNIT, // Document the unit for display conversion
                   low_limit: lowLimit,
                   high_limit: highLimit,
                   reading_source: "sensor",
@@ -418,11 +425,17 @@ Deno.serve(async (req) => {
                       area_id: getAreaId(unit),
                       source: "sensor",
                       title: `${u.name}: Suspected Cooling Failure`,
-                      message: `Door closed; temp not recovering; possible cooling system issue. Current: ${temp}°F`,
+                      message: `Door closed; temp not recovering; possible cooling system issue. Current: ${temp}${TEMP_UNIT_SYMBOL}`,
                       alert_type: "suspected_cooling_failure",
                       severity: "warning",
                       temp_reading: temp,
                       temp_limit: highLimit,
+                      metadata: {
+                        current_temp: temp,
+                        temp_unit: STORAGE_UNIT,
+                        high_limit: highLimit,
+                        low_limit: lowLimit,
+                      },
                     }).select("id").single();
                     
                     if (alertData) {

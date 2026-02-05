@@ -43,10 +43,26 @@ export const sensorSourceSchema = z.enum([
   "ttn", "ble", "simulator", "manual_sensor", "api"
 ]);
 
+/**
+ * Temperature unit schema.
+ * Defaults to 'C' (Celsius) as most LoRaWAN sensors report in Celsius.
+ * The ingest-readings function will convert to the storage unit (°F).
+ */
+export const temperatureUnitSchema = z.enum(["C", "F"]).default("C");
+
 export const normalizedReadingSchema = z.object({
   unit_id: uuidSchema,
   device_serial: z.string().max(50, "Device serial too long").optional(),
+  /** Temperature value in the unit specified by temperature_unit (defaults to °C) */
   temperature: temperatureSchema,
+  /**
+   * The unit of the temperature value being submitted.
+   * Defaults to 'C' (Celsius) as most LoRaWAN sensors report in Celsius.
+   * The system will convert to the canonical storage unit (°F).
+   */
+  temperature_unit: temperatureUnitSchema.optional(),
+  /** Device model for unit inference (e.g., "EM300-TH") */
+  device_model: z.string().max(100, "Device model too long").optional(),
   humidity: humiditySchema.optional(),
   battery_level: batteryLevelSchema.optional(),
   battery_voltage: z.number().min(0).max(10).optional(),
