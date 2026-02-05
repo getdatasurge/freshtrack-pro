@@ -40,14 +40,26 @@ export interface SensorCatalogUplinkInfo {
   event_types?: string[];
 }
 
+export type BatteryChemistry =
+  | "Li-SOCl2"
+  | "Li-MnO2"
+  | "Alkaline"
+  | "Li-ion"
+  | "LiFePO4"
+  | "Other";
+
 export interface SensorCatalogBatteryInfo {
   type?: string;
-  chemistry?: string;
+  chemistry?: BatteryChemistry | string;
+  quantity?: number;
+  capacity_mah?: number;
   voltage_nominal?: number;
   voltage_range?: [number, number];
   expected_life_years?: number;
   low_threshold_v?: number;
+  rechargeable?: boolean;
   reporting_format?: string;
+  notes?: string;
 }
 
 export interface SensorCatalogDownlinkCommand {
