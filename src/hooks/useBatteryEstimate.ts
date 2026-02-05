@@ -5,7 +5,7 @@
  * Uses voltage as source of truth with chemistry-specific curves.
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   type BatteryProfile,
@@ -33,6 +33,7 @@ import {
 interface SensorData {
   id: string;
   model: string | null;
+  status: string | null;
   last_seen_at: string | null;
   battery_level: number | null;
   battery_voltage?: number | null;
@@ -61,9 +62,17 @@ export function useBatteryEstimate(
   const [sensor, setSensor] = useState<SensorData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Track which sensorId we've already fetched to prevent redundant fetches on remounts
+  const hasFetchedRef = useRef<string | null>(null);
 
   // Fetch all required data - only on sensorId change (page load)
   useEffect(() => {
+    // Skip if we've already fetched for this exact sensorId
+    if (hasFetchedRef.current === sensorId && sensorId !== null) {
+      return;
+    }
+    
     if (!sensorId) {
       setLoading(false);
       return;
@@ -79,7 +88,7 @@ export function useBatteryEstimate(
         // Fetch sensor with voltage fields
         const { data: sensorResult } = await supabase
           .from("lora_sensors")
-          .select("id, model, last_seen_at, battery_level, battery_voltage, battery_voltage_filtered, battery_health_state")
+          .select("id, model, status, last_seen_at, battery_level, battery_voltage, battery_voltage_filtered, battery_health_state")
           .eq("id", sensorId)
           .single();
         
@@ -101,10 +110,11 @@ export function useBatteryEstimate(
             : Promise.resolve({ data: null, error: null }),
           
           // Fetch recent readings with voltage (last 90 days)
+          // Query by lora_sensor_id (LoRa sensors) OR device_id (legacy devices)
           supabase
             .from("sensor_readings")
             .select("recorded_at, battery_level, battery_voltage")
-            .eq("device_id", sensorId)
+            .or(`lora_sensor_id.eq.${sensorId},device_id.eq.${sensorId}`)
             .gte("recorded_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
             .order("recorded_at", { ascending: true })
             .limit(500),
@@ -119,20 +129,28 @@ export function useBatteryEstimate(
 
         if (cancelled) return;
 
-        // Set battery profile - NO FALLBACK per user preference
-        // If no profile exists in DB, show MISSING_PROFILE state
+        // Set battery profile and chemistry
         if (profileResult.data) {
           setBatteryProfile(profileResult.data as BatteryProfile);
           setProfileSource("database");
           setSensorChemistry(profileResult.data.chemistry || null);
+        } else if (fetchedSensor?.model) {
+          // No profile in DB — use fallback profile for estimation
+          const fallback = getFallbackProfile(fetchedSensor.model);
+          setBatteryProfile(fallback);
+          setProfileSource("fallback");
+          setSensorChemistry(fallback.chemistry || "LiFeS2_AA");
         } else {
-          // No fallback - profile source is "none", state becomes MISSING_PROFILE
+          // No model info at all — still use default chemistry for voltage→SOC
           setBatteryProfile(null);
           setProfileSource("none");
-          setSensorChemistry(null);
+          setSensorChemistry("LiFeS2_AA");
         }
 
-        // Set readings
+        // Set readings (log error but don't block — partial data is better than none)
+        if (readingsResult.error) {
+          console.warn("Error fetching sensor readings for battery estimate:", readingsResult.error);
+        }
         setReadings((readingsResult.data || []) as UplinkReading[]);
 
         // Set configured interval
@@ -146,6 +164,8 @@ export function useBatteryEstimate(
       } finally {
         if (!cancelled) {
           setLoading(false);
+          // Mark this sensorId as fetched
+          hasFetchedRef.current = sensorId;
         }
       }
     }
@@ -268,11 +288,28 @@ export function useBatteryEstimate(
     const inferredIntervalSeconds = inferUplinkInterval(timestamps);
     const effectiveInterval = configuredInterval || inferredIntervalSeconds || DEFAULT_INTERVAL_SECONDS;
 
-    // Check if sensor is offline
-    const lastSeenAt = readings.length > 0 
-      ? readings[readings.length - 1].recorded_at 
-      : sensor?.last_seen_at ?? null;
-    const isOffline = isSensorOffline(lastSeenAt, effectiveInterval);
+    // Check if sensor is offline.
+    // Primary signal: the sensor's status field (set by webhook on uplink receipt).
+    // If the sensor row says "active", trust it — the sensor IS online.
+    // Only fall back to the interval-based heuristic when status is ambiguous.
+    const sensorStatus = sensor?.status;
+    const sensorLastSeen = sensor?.last_seen_at;
+    const lastReadingAt = readings.length > 0
+      ? readings[readings.length - 1].recorded_at
+      : null;
+
+    let isOffline: boolean;
+    if (sensorStatus === "active") {
+      // Sensor is actively reporting to LoRaWAN — not offline
+      isOffline = false;
+    } else if (sensorStatus === "offline") {
+      // Explicitly marked offline
+      isOffline = true;
+    } else {
+      // Ambiguous status (pending, joining, null) — use heuristic
+      const lastSeenAt = lastReadingAt || sensorLastSeen || null;
+      isOffline = isSensorOffline(lastSeenAt, effectiveInterval);
+    }
 
     // Determine state and calculate estimate
     let state: BatteryWidgetState;
@@ -283,7 +320,7 @@ export function useBatteryEstimate(
 
     if (isOffline) {
       state = "SENSOR_OFFLINE";
-    } else if (!batteryProfile && profileSource === "none") {
+    } else if (!batteryProfile && profileSource === "none" && !sensorChemistry) {
       state = "MISSING_PROFILE";
     } else if (uplinkCount < MIN_UPLINKS_FOR_ESTIMATE || dataSpanHours < MIN_HOURS_FOR_ESTIMATE) {
       state = "COLLECTING_DATA";

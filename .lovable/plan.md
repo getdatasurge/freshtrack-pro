@@ -1,146 +1,138 @@
 
-## What’s happening (why the Battery Health widget stays on the pinwheel)
 
-From the code and your network snapshot:
+# Re-Evaluated Fix Plan: Apply Battery Migrations
 
-- The `battery_profiles` request is now **200** (good; the 406 loop is fixed).
-- The Battery Health widget still shows the spinner because `estimate.loading` keeps flipping back to `true`.
+## Current State Summary
 
-The reason is in `BatteryHealthWidget.tsx`:
+After the pull request, I've verified:
 
-```ts
-const estimate = useBatteryEstimate(sensorId, primarySensor ? {
-  id: primarySensor.id,
-  model: null,
-  last_seen_at: primarySensor.last_seen_at,
-  battery_level: primarySensor.battery_level,
-} : null);
+| Component | Status | Details |
+|-----------|--------|---------|
+| Migration files in codebase | ✅ Present | `20260203140000_fix_pack_level_voltages.sql` and `20260203140001_backfill_battery_voltage.sql` exist |
+| Edge function code | ✅ Updated | `ttn-webhook` correctly extracts `battery_voltage` from normalized payload |
+| Battery profiles in DB | ❌ Wrong values | Still showing per-cell voltages (1.50V/0.90V) instead of pack (3.0V/1.80V) |
+| sensor_readings.battery_voltage | ❌ All NULL | 1,836 readings, 0 have battery_voltage populated |
+| app_decoded_payload has BatV | ✅ 654 readings | Data exists but not extracted to the column |
+
+**Root cause**: The migration files exist but have **not been executed** against the database.
+
+---
+
+## What Needs to Happen
+
+### Step 1: Apply Migration A — Fix Battery Profile Voltages
+
+The `battery_profiles` table currently stores per-cell values but sensors report pack-level voltage:
+
+| Chemistry | Current (per-cell) | Correct (pack) |
+|-----------|-------------------|----------------|
+| LiFeS2_AA | 1.50V / 0.90V | 3.0V / 1.80V |
+| Alkaline_AA | 1.50V / 0.80V | 3.0V / 1.60V |
+
+**Migration A** (`20260203140000_fix_pack_level_voltages.sql`):
+```sql
+UPDATE public.battery_profiles 
+SET nominal_voltage = 3.0, cutoff_voltage = 1.80
+WHERE chemistry = 'LiFeS2_AA' 
+  AND (cutoff_voltage < 1.0 OR nominal_voltage < 2.0);
+
+UPDATE public.battery_profiles 
+SET nominal_voltage = 3.0, cutoff_voltage = 1.60
+WHERE chemistry = 'Alkaline_AA' 
+  AND (cutoff_voltage < 1.0 OR nominal_voltage < 2.0);
 ```
 
-That inline object is **a brand-new object every render**.  
-`useBatteryEstimate` has:
+### Step 2: Apply Migration B — Backfill Battery Voltage
 
-```ts
-useEffect(..., [sensorId, sensorData])
+Extract `BatV` from JSONB payloads into the `battery_voltage` column:
+
+**Migration B** (`20260203140001_backfill_battery_voltage.sql`):
+```sql
+-- From network_decoded_payload.BatV
+UPDATE public.sensor_readings
+SET battery_voltage = (network_decoded_payload->>'BatV')::numeric(4,3)
+WHERE battery_voltage IS NULL
+  AND network_decoded_payload->>'BatV' IS NOT NULL
+  AND (network_decoded_payload->>'BatV')::numeric BETWEEN 0.5 AND 5.0;
+
+-- From app_decoded_payload.BatV (where the 654 readings actually are)
+UPDATE public.sensor_readings
+SET battery_voltage = (app_decoded_payload->>'BatV')::numeric(4,3)
+WHERE battery_voltage IS NULL
+  AND app_decoded_payload->>'BatV' IS NOT NULL
+  AND (app_decoded_payload->>'BatV')::numeric BETWEEN 0.5 AND 5.0;
+
+-- Sync latest voltage to lora_sensors
+UPDATE public.lora_sensors ls
+SET battery_voltage = sub.latest_voltage
+FROM (
+  SELECT DISTINCT ON (lora_sensor_id)
+    lora_sensor_id,
+    battery_voltage AS latest_voltage
+  FROM public.sensor_readings
+  WHERE lora_sensor_id IS NOT NULL AND battery_voltage IS NOT NULL
+  ORDER BY lora_sensor_id, recorded_at DESC
+) sub
+WHERE ls.id = sub.lora_sensor_id AND ls.battery_voltage IS NULL;
 ```
 
-So every re-render (and Unit Detail re-renders frequently due to realtime refreshTick + state replacement) retriggers the effect, which calls `setLoading(true)` again. Result: the widget never “settles” and looks stuck on the pinwheel.
+### Step 3: Deploy Edge Function
 
----
+The edge function code is already correct but needs to be redeployed to production:
 
-## Goals for the fix (aligned with your approved preferences)
-
-1. **Stop the infinite “loading” loop** (battery widget should resolve to a stable UI).
-2. **Missing profile behavior:** show **no estimate** when the model has no configured profile (show the MISSING_PROFILE UI).
-3. **No voltage available:** show battery percent as **(Reported)** in Device Readiness (not Estimated).
-4. **Update frequency:** Battery Health calculations should refresh **only on page load** (not on realtime ticks).
-
----
-
-## Implementation approach
-
-### A) Fix the pinwheel: make the hook call stable (page-load only)
-We will change the dashboard Battery Health widget to **stop passing an inline `sensorData` object**.
-
-Best option (and simplest):  
-- Call `useBatteryEstimate(sensorId)` with **only** the id.
-- The hook already fetches the sensor row from the backend, so it does not need the extra partial object.
-
-This prevents re-fetching on every re-render and matches your “only on page load” requirement.
-
-**File**
-- `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx`
-
-**Change**
-- Replace the current call with:
-  - `const estimate = useBatteryEstimate(sensorId);`
-
-(Alternative we will not use unless needed: memoize that object via `useMemo`, but removing it is cleaner and more deterministic.)
-
----
-
-### B) Enforce “No estimate without profile” in the hook
-Right now, `useBatteryEstimate` still sets a fallback profile when the profile lookup returns no rows:
-
-```ts
-} else if (sensor?.model) {
-  const fallbackProfile = getFallbackProfile(sensor.model);
-  setBatteryProfile(fallbackProfile);
-  setProfileSource("fallback");
-}
+```bash
+supabase functions deploy ttn-webhook
 ```
 
-That conflicts with your approved behavior. We will change it to:
-
-- If no profile row exists → `batteryProfile = null`, `profileSource = "none"`, `sensorChemistry = null`.
-
-That ensures:
-- Widget state becomes `MISSING_PROFILE`
-- No days-remaining estimate is computed
-
-**File**
-- `src/hooks/useBatteryEstimate.ts`
-
-**Change**
-- Remove/disable fallback profile assignment for missing profiles (keep helper for future if you ever want a toggle).
-
 ---
 
-### C) Make the hook truly “page load only”
-To align with “only on page load” and avoid accidental loops in other callers:
+## Expected Results After Fix
 
-- Change the effect dependency from `[sensorId, sensorData]` to **only** `[sensorId]`.
+| Metric | Before | After |
+|--------|--------|-------|
+| Battery % displayed | ~3% (wrong) | ~68% (correct) |
+| LHT65 cutoff voltage | 0.90V | 1.80V |
+| sensor_readings with battery_voltage | 0 | 654+ |
+| Battery Health widget | "Collecting data" | Trend graph with data |
 
-Because after step A we won’t pass `sensorData` anymore, this is also defensive and prevents future regressions if someone passes a new inline object again.
+### Verification Query
 
-**File**
-- `src/hooks/useBatteryEstimate.ts`
-
-**Change**
-- `useEffect(..., [sensorId])`
-
-Note: This means if some parent passes updated sensor fields later, Battery Health won’t refetch (which is exactly what you requested).
-
----
-
-### D) Device Readiness: label % as (Reported) when voltage is missing
-Currently `DeviceReadinessWidget` always renders:
-
-```ts
-const levelLabel = `${level}% (Est.)`;
+```sql
+SELECT 
+  bp.model, 
+  bp.nominal_voltage, 
+  bp.cutoff_voltage,
+  ls.battery_level, 
+  ls.battery_voltage,
+  (SELECT COUNT(*) FROM sensor_readings sr 
+   WHERE sr.lora_sensor_id = ls.id 
+   AND sr.battery_voltage IS NOT NULL) as readings_with_voltage
+FROM lora_sensors ls
+LEFT JOIN battery_profiles bp ON bp.model = ls.model
+WHERE ls.dev_eui = 'A840415A61897757';
 ```
 
-We will update it so:
-- If `battery_voltage_filtered` or `battery_voltage` exists (non-null) → label `% (Est.)`
-- Otherwise → label `% (Reported)`
-
-Because `WidgetSensor` doesn’t currently type these voltage fields, we’ll safely read them from the existing `any` cast you already have (`const loraSensor = primarySensor as any;`) without changing the broader typing surface.
-
-**File**
-- `src/features/dashboard-layout/widgets/DeviceReadinessWidget.tsx`
-
-**Change**
-- Add `const effectiveVoltage = loraSensor?.battery_voltage_filtered ?? loraSensor?.battery_voltage ?? null;`
-- Pass that into `getBatteryStatus(level, effectiveVoltage)` and format the label accordingly.
+**Expected output**:
+- `nominal_voltage: 3.0`
+- `cutoff_voltage: 1.80`
+- `battery_voltage: ~2.985`
+- `readings_with_voltage: 654+`
 
 ---
 
-## Verification checklist (what we’ll test after implementing)
+## Technical Notes
 
-1. Open `/units/8d9a7c25-8340-45b2-82dd-52c6fe29e484`:
-   - Battery Health widget should stop spinning and resolve quickly.
-2. For model `SENSOR-A840415A` with no battery profile row:
-   - Battery Health should show **Battery estimate unavailable** (MISSING_PROFILE state), not an estimate.
-3. Device Readiness battery:
-   - Should show `4% (Reported)` (since voltage is null in your current data).
-4. Confirm no repeated backend calls:
-   - Battery-related calls should happen once on page load, not on realtime refresh ticks.
-5. Regression check:
-   - Switch between tabs (Dashboard/Settings/History) and back; Battery Health should still behave predictably.
+### Why the migrations weren't auto-applied
 
----
+Lovable migrations are applied when:
+1. Created via the database migration tool, OR
+2. Already tracked in the migration history
 
-## Files that will be updated (no new files required)
-- `src/features/dashboard-layout/widgets/BatteryHealthWidget.tsx`
-- `src/hooks/useBatteryEstimate.ts`
-- `src/features/dashboard-layout/widgets/DeviceReadinessWidget.tsx`
+These migrations were added via pull request and exist as files, but Supabase doesn't know about them yet. They need to be executed manually.
+
+### Battery percentage calculation
+
+With voltage 2.985V on LiFeS2_AA pack curve (1.80V cutoff, 3.0V nominal):
+- Position on curve: (2.985 - 1.80) / (3.0 - 1.80) = 98.75% of range
+- Using the non-linear discharge curve, maps to approximately **68-70%**
+

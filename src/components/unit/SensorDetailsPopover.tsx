@@ -84,6 +84,9 @@ export function SensorDetailsPopover({
               <p className="text-sm font-medium">
                 {sensor.battery_level !== null ? `${sensor.battery_level}%` : "—"}
               </p>
+              {sensor.battery_voltage !== null && sensor.battery_voltage !== undefined && (
+                <p className="text-xs text-muted-foreground">{sensor.battery_voltage.toFixed(2)}V</p>
+              )}
             </div>
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground flex items-center gap-1">

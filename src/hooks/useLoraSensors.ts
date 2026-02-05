@@ -37,7 +37,7 @@ export function useLoraSensors(orgId: string | null) {
         missing_appkey_count: data?.filter(s => !s.app_key).length ?? 0,
       });
       
-      return data as LoraSensor[];
+      return data as unknown as LoraSensor[];
     },
     enabled: !!orgId,
   });
@@ -59,7 +59,7 @@ export function useLoraSensor(sensorId: string | null) {
         .maybeSingle();
 
       if (error) throw error;
-      return data as LoraSensor | null;
+      return data as unknown as LoraSensor | null;
     },
     enabled: !!sensorId,
   });
@@ -81,7 +81,7 @@ export function useLoraSensorByDevEui(devEui: string | null) {
         .maybeSingle();
 
       if (error) throw error;
-      return data as LoraSensor | null;
+      return data as unknown as LoraSensor | null;
     },
     enabled: !!devEui,
   });
@@ -104,7 +104,7 @@ export function useLoraSensorsByUnit(unitId: string | null) {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return data as LoraSensor[];
+      return data as unknown as LoraSensor[];
     },
     enabled: !!unitId,
   });
@@ -134,7 +134,7 @@ export function useCreateLoraSensor() {
         .single();
 
       if (error) throw error;
-      return data as LoraSensor;
+      return data as unknown as LoraSensor;
     },
     onSuccess: async (data) => {
       await invalidateSensorAssignment(
@@ -175,7 +175,7 @@ export function useUpdateLoraSensor() {
         .single();
 
       if (error) throw error;
-      return { sensor: data as LoraSensor, previousUnitId };
+      return { sensor: data as unknown as LoraSensor, previousUnitId };
     },
     onSuccess: async ({ sensor, previousUnitId }) => {
       await invalidateSensorAssignment(
@@ -266,7 +266,7 @@ export function useLinkSensorToUnit() {
         .single();
 
       if (error) throw error;
-      return { sensor: data as LoraSensor, previousUnitId, orgId };
+      return { sensor: data as unknown as LoraSensor, previousUnitId, orgId };
     },
     onSuccess: async ({ sensor, previousUnitId, orgId }) => {
       await invalidateSensorAssignment(

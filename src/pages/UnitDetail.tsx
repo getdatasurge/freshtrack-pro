@@ -135,6 +135,7 @@ const UnitDetail = () => {
   const [unit, setUnit] = useState<UnitData | null>(null);
   const [siblingUnits, setSiblingUnits] = useState<BreadcrumbSibling[]>([]);
   const [readings, setReadings] = useState<SensorReading[]>([]);
+  const [readingsTotalCount, setReadingsTotalCount] = useState(0);
   const [manualLogs, setManualLogs] = useState<ManualLog[]>([]);
   const [events, setEvents] = useState<EventLog[]>([]);
   const [unitAlerts, setUnitAlerts] = useState<UnitAlert[]>([]);
@@ -625,34 +626,35 @@ const UnitDetail = () => {
 
       const fromDate = getTimeRangeDate().toISOString();
 
+      // Fetch descending to get the MOST RECENT 500, then reverse to chronological order
       const { data: readingsData, error: readingsError } = await supabase
         .from("sensor_readings")
         .select("id, temperature, humidity, recorded_at")
         .eq("unit_id", unitId)
         .gte("recorded_at", fromDate)
-        .order("recorded_at", { ascending: true })
+        .order("recorded_at", { ascending: false })
         .limit(500);
 
       // STEP 3: Telemetry query proof logging
+      const chronologicalReadings = (readingsData || []).reverse();
       DEV_LOAD && console.log('[READINGS]', {
         unitId,
         fromDate,
-        rows: readingsData?.length ?? 0,
-        first: readingsData?.[0],
-        last: readingsData?.[readingsData.length - 1],
+        rows: chronologicalReadings.length,
+        first: chronologicalReadings[0],
+        last: chronologicalReadings[chronologicalReadings.length - 1],
         error: readingsError?.message,
       });
 
-      // Also run a simple all-time check to verify data exists
-      const { data: allTimeCheck } = await supabase
-        .from('sensor_readings')
-        .select('id, recorded_at')
-        .eq('unit_id', unitId)
-        .order('recorded_at', { ascending: false })
-        .limit(5);
-      DEV_LOAD && console.log('[READINGS] all-time check', { count: allTimeCheck?.length ?? 0 });
+      setReadings(chronologicalReadings);
 
-      setReadings(readingsData || []);
+      // Get the true count of readings in the period (not capped by limit)
+      const { count: totalCount } = await supabase
+        .from("sensor_readings")
+        .select("id", { count: "exact", head: true })
+        .eq("unit_id", unitId)
+        .gte("recorded_at", fromDate);
+      setReadingsTotalCount(totalCount ?? chronologicalReadings.length);
 
       const { data: logsData } = await supabase
         .from("manual_temperature_logs")
@@ -1093,15 +1095,21 @@ const UnitDetail = () => {
               sensor_type: primaryLoraSensor.sensor_type,
             } : undefined}
             readings={readings}
+            readingsTotalCount={readingsTotalCount}
+            onTimeRangeChange={setTimeRange}
             derivedStatus={derivedStatus}
             alerts={unitAlerts}
             loraSensors={loraSensors?.map(s => ({
               id: s.id,
               name: s.name,
               battery_level: s.battery_level,
+              battery_voltage: s.battery_voltage ?? null,
+              battery_voltage_filtered: s.battery_voltage_filtered ?? null,
               signal_strength: s.signal_strength,
               last_seen_at: s.last_seen_at,
               status: s.status,
+              sensor_type: s.sensor_type,
+              is_primary: s.is_primary,
             })) || []}
             lastKnownGood={lastKnownGood}
             onLogTemp={() => setModalOpen(true)}

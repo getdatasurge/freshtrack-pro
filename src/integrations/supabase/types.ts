@@ -1301,6 +1301,7 @@ export type Database = {
           battery_voltage_filtered: number | null
           created_at: string
           created_by: string | null
+          decode_mode_override: string | null
           deleted_at: string | null
           deleted_by: string | null
           description: string | null
@@ -1318,6 +1319,7 @@ export type Database = {
           organization_id: string
           provisioned_source: string | null
           provisioning_state: string
+          sensor_catalog_id: string | null
           sensor_type: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength: number | null
           site_id: string | null
@@ -1337,6 +1339,7 @@ export type Database = {
           battery_voltage_filtered?: number | null
           created_at?: string
           created_by?: string | null
+          decode_mode_override?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           description?: string | null
@@ -1354,6 +1357,7 @@ export type Database = {
           organization_id: string
           provisioned_source?: string | null
           provisioning_state?: string
+          sensor_catalog_id?: string | null
           sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength?: number | null
           site_id?: string | null
@@ -1373,6 +1377,7 @@ export type Database = {
           battery_voltage_filtered?: number | null
           created_at?: string
           created_by?: string | null
+          decode_mode_override?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           description?: string | null
@@ -1390,6 +1395,7 @@ export type Database = {
           organization_id?: string
           provisioned_source?: string | null
           provisioning_state?: string
+          sensor_catalog_id?: string | null
           sensor_type?: Database["public"]["Enums"]["lora_sensor_type"]
           signal_strength?: number | null
           site_id?: string | null
@@ -1406,6 +1412,20 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lora_sensors_sensor_catalog_id_fkey"
+            columns: ["sensor_catalog_id"]
+            isOneToOne: false
+            referencedRelation: "sensor_catalog"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lora_sensors_sensor_catalog_id_fkey"
+            columns: ["sensor_catalog_id"]
+            isOneToOne: false
+            referencedRelation: "sensor_catalog_public"
             referencedColumns: ["id"]
           },
           {
@@ -2099,6 +2119,141 @@ export type Database = {
           },
         ]
       }
+      sensor_catalog: {
+        Row: {
+          battery_info: Json | null
+          created_at: string | null
+          created_by: string | null
+          datasheet_url: string | null
+          decode_mode: string | null
+          decoded_fields: Json | null
+          decoder_js: string | null
+          decoder_provenance: Json | null
+          decoder_python: string | null
+          decoder_source_url: string | null
+          decoder_test_vectors: Json | null
+          deprecated_at: string | null
+          deprecated_reason: string | null
+          description: string | null
+          display_name: string
+          downlink_info: Json | null
+          f_ports: Json | null
+          frequency_bands: string[] | null
+          id: string
+          image_url: string | null
+          is_supported: boolean | null
+          is_visible: boolean | null
+          lorawan_version: string | null
+          manufacturer: string
+          model: string
+          model_variant: string | null
+          notes: string | null
+          product_url: string | null
+          regional_params: string | null
+          revision: number
+          sample_payload_provenance: Json | null
+          sample_payloads: Json | null
+          sensor_kind: string
+          sort_order: number | null
+          supports_abp: boolean | null
+          supports_class: string | null
+          supports_otaa: boolean | null
+          tags: string[] | null
+          temperature_unit: string | null
+          ttn_device_repo_id: string | null
+          updated_at: string | null
+          uplink_info: Json | null
+        }
+        Insert: {
+          battery_info?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          datasheet_url?: string | null
+          decode_mode?: string | null
+          decoded_fields?: Json | null
+          decoder_js?: string | null
+          decoder_provenance?: Json | null
+          decoder_python?: string | null
+          decoder_source_url?: string | null
+          decoder_test_vectors?: Json | null
+          deprecated_at?: string | null
+          deprecated_reason?: string | null
+          description?: string | null
+          display_name: string
+          downlink_info?: Json | null
+          f_ports?: Json | null
+          frequency_bands?: string[] | null
+          id?: string
+          image_url?: string | null
+          is_supported?: boolean | null
+          is_visible?: boolean | null
+          lorawan_version?: string | null
+          manufacturer: string
+          model: string
+          model_variant?: string | null
+          notes?: string | null
+          product_url?: string | null
+          regional_params?: string | null
+          revision?: number
+          sample_payload_provenance?: Json | null
+          sample_payloads?: Json | null
+          sensor_kind?: string
+          sort_order?: number | null
+          supports_abp?: boolean | null
+          supports_class?: string | null
+          supports_otaa?: boolean | null
+          tags?: string[] | null
+          temperature_unit?: string | null
+          ttn_device_repo_id?: string | null
+          updated_at?: string | null
+          uplink_info?: Json | null
+        }
+        Update: {
+          battery_info?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          datasheet_url?: string | null
+          decode_mode?: string | null
+          decoded_fields?: Json | null
+          decoder_js?: string | null
+          decoder_provenance?: Json | null
+          decoder_python?: string | null
+          decoder_source_url?: string | null
+          decoder_test_vectors?: Json | null
+          deprecated_at?: string | null
+          deprecated_reason?: string | null
+          description?: string | null
+          display_name?: string
+          downlink_info?: Json | null
+          f_ports?: Json | null
+          frequency_bands?: string[] | null
+          id?: string
+          image_url?: string | null
+          is_supported?: boolean | null
+          is_visible?: boolean | null
+          lorawan_version?: string | null
+          manufacturer?: string
+          model?: string
+          model_variant?: string | null
+          notes?: string | null
+          product_url?: string | null
+          regional_params?: string | null
+          revision?: number
+          sample_payload_provenance?: Json | null
+          sample_payloads?: Json | null
+          sensor_kind?: string
+          sort_order?: number | null
+          supports_abp?: boolean | null
+          supports_class?: string | null
+          supports_otaa?: boolean | null
+          tags?: string[] | null
+          temperature_unit?: string | null
+          ttn_device_repo_id?: string | null
+          updated_at?: string | null
+          uplink_info?: Json | null
+        }
+        Relationships: []
+      }
       sensor_cleanup_queue: {
         Row: {
           created_at: string | null
@@ -2363,13 +2518,23 @@ export type Database = {
       }
       sensor_readings: {
         Row: {
+          app_decoded_payload: Json | null
           battery_level: number | null
           battery_voltage: number | null
+          decode_match: boolean | null
+          decode_mismatch_reason: string | null
+          decoder_errors: Json | null
+          decoder_id: string | null
+          decoder_warnings: Json | null
           device_id: string | null
           door_open: boolean | null
+          f_port: number | null
+          frm_payload_base64: string | null
           humidity: number | null
           id: string
           lora_sensor_id: string | null
+          network_decoded_payload: Json | null
+          raw_payload_hex: string | null
           received_at: string
           recorded_at: string
           signal_strength: number | null
@@ -2378,13 +2543,23 @@ export type Database = {
           unit_id: string
         }
         Insert: {
+          app_decoded_payload?: Json | null
           battery_level?: number | null
           battery_voltage?: number | null
+          decode_match?: boolean | null
+          decode_mismatch_reason?: string | null
+          decoder_errors?: Json | null
+          decoder_id?: string | null
+          decoder_warnings?: Json | null
           device_id?: string | null
           door_open?: boolean | null
+          f_port?: number | null
+          frm_payload_base64?: string | null
           humidity?: number | null
           id?: string
           lora_sensor_id?: string | null
+          network_decoded_payload?: Json | null
+          raw_payload_hex?: string | null
           received_at?: string
           recorded_at?: string
           signal_strength?: number | null
@@ -2393,13 +2568,23 @@ export type Database = {
           unit_id: string
         }
         Update: {
+          app_decoded_payload?: Json | null
           battery_level?: number | null
           battery_voltage?: number | null
+          decode_match?: boolean | null
+          decode_mismatch_reason?: string | null
+          decoder_errors?: Json | null
+          decoder_id?: string | null
+          decoder_warnings?: Json | null
           device_id?: string | null
           door_open?: boolean | null
+          f_port?: number | null
+          frm_payload_base64?: string | null
           humidity?: number | null
           id?: string
           lora_sensor_id?: string | null
+          network_decoded_payload?: Json | null
+          raw_payload_hex?: string | null
           received_at?: string
           recorded_at?: string
           signal_strength?: number | null
@@ -3668,7 +3853,76 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      decoder_confidence_rollup: {
+        Row: {
+          compared_count: number | null
+          decoder_id: string | null
+          first_seen_at: string | null
+          last_seen_at: string | null
+          match_count: number | null
+          match_rate_pct: number | null
+          mismatch_count: number | null
+          top_mismatch_reason: string | null
+        }
+        Relationships: []
+      }
+      sensor_catalog_public: {
+        Row: {
+          battery_info: Json | null
+          decode_mode: string | null
+          decoded_fields: Json | null
+          description: string | null
+          display_name: string | null
+          f_ports: Json | null
+          frequency_bands: string[] | null
+          id: string | null
+          is_supported: boolean | null
+          manufacturer: string | null
+          model: string | null
+          model_variant: string | null
+          sensor_kind: string | null
+          tags: string[] | null
+          temperature_unit: string | null
+          uplink_info: Json | null
+        }
+        Insert: {
+          battery_info?: Json | null
+          decode_mode?: string | null
+          decoded_fields?: Json | null
+          description?: string | null
+          display_name?: string | null
+          f_ports?: Json | null
+          frequency_bands?: string[] | null
+          id?: string | null
+          is_supported?: boolean | null
+          manufacturer?: string | null
+          model?: string | null
+          model_variant?: string | null
+          sensor_kind?: string | null
+          tags?: string[] | null
+          temperature_unit?: string | null
+          uplink_info?: Json | null
+        }
+        Update: {
+          battery_info?: Json | null
+          decode_mode?: string | null
+          decoded_fields?: Json | null
+          description?: string | null
+          display_name?: string | null
+          f_ports?: Json | null
+          frequency_bands?: string[] | null
+          id?: string | null
+          is_supported?: boolean | null
+          manufacturer?: string | null
+          model?: string | null
+          model_variant?: string | null
+          sensor_kind?: string | null
+          tags?: string[] | null
+          temperature_unit?: string | null
+          uplink_info?: Json | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       can_manage_annotations: {
@@ -3831,6 +4085,59 @@ export type Database = {
         Returns: string
       }
       process_sensor_cleanup_queue: { Args: never; Returns: Json }
+      search_sensor_catalog: {
+        Args: { search_term: string }
+        Returns: {
+          battery_info: Json | null
+          created_at: string | null
+          created_by: string | null
+          datasheet_url: string | null
+          decode_mode: string | null
+          decoded_fields: Json | null
+          decoder_js: string | null
+          decoder_provenance: Json | null
+          decoder_python: string | null
+          decoder_source_url: string | null
+          decoder_test_vectors: Json | null
+          deprecated_at: string | null
+          deprecated_reason: string | null
+          description: string | null
+          display_name: string
+          downlink_info: Json | null
+          f_ports: Json | null
+          frequency_bands: string[] | null
+          id: string
+          image_url: string | null
+          is_supported: boolean | null
+          is_visible: boolean | null
+          lorawan_version: string | null
+          manufacturer: string
+          model: string
+          model_variant: string | null
+          notes: string | null
+          product_url: string | null
+          regional_params: string | null
+          revision: number
+          sample_payload_provenance: Json | null
+          sample_payloads: Json | null
+          sensor_kind: string
+          sort_order: number | null
+          supports_abp: boolean | null
+          supports_class: string | null
+          supports_otaa: boolean | null
+          tags: string[] | null
+          temperature_unit: string | null
+          ttn_device_repo_id: string | null
+          updated_at: string | null
+          uplink_info: Json | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "sensor_catalog"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       soft_delete_organization: {
         Args: { p_org_id: string; p_user_id: string }
         Returns: Json

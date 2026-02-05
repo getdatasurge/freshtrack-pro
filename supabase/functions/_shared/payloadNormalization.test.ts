@@ -9,7 +9,7 @@
  */
 
 import { assertEquals } from "https://deno.land/std@0.168.0/testing/asserts.ts";
-import { normalizeTelemetry, normalizeDoorData } from "./payloadNormalization.ts";
+import { normalizeTelemetry, normalizeDoorData, convertVoltageToPercent } from "./payloadNormalization.ts";
 
 // ============================================================================
 // normalizeTelemetry
@@ -42,21 +42,23 @@ Deno.test("normalizeTelemetry - Dragino HT65N payload maps all fields", () => {
   assertEquals(result.Ext_sensor, "Temperature Sensor");
 });
 
-Deno.test("normalizeTelemetry - canonical keys already present are not overwritten", () => {
+Deno.test("normalizeTelemetry - canonical keys already present are not overwritten (except battery)", () => {
   const payload = {
     temperature: 22.0,
     humidity: 45.0,
     battery: 95,
     TempC_SHT: 99.9, // should NOT overwrite existing temperature
     Hum_SHT: 99.9,   // should NOT overwrite existing humidity
-    BatV: 2.5,        // should NOT overwrite existing battery
+    BatV: 2.5,        // SHOULD override existing battery (voltage is authoritative)
   };
 
   const result = normalizeTelemetry(payload);
 
   assertEquals(result.temperature, 22.0, "existing temperature must not be overwritten");
   assertEquals(result.humidity, 45.0, "existing humidity must not be overwritten");
-  assertEquals(result.battery, 95, "existing battery must not be overwritten");
+  // Battery is ALWAYS derived from voltage when BatV is present, even if
+  // battery was already set (could be Bat_status enum, not a real percentage)
+  assertEquals(result.battery, 0, "battery must be derived from BatV 2.5V → 0% (legacy formula)");
 });
 
 Deno.test("normalizeTelemetry - battery_level is recognized as existing battery alias", () => {
@@ -215,4 +217,117 @@ Deno.test("integration - door sensor payload still works", () => {
   assertEquals(hasTemperatureData, false, "LDS02 has no temperature");
   assertEquals(hasDoorData, true, "LDS02 has door data");
   assertEquals(normalizedDoorOpen, false, "door_status closed -> false");
+});
+
+// ============================================================================
+// Chemistry-aware voltage-to-percent conversion
+// ============================================================================
+
+Deno.test("convertVoltageToPercent - LiFeS2_AA pack curve (2×AA lithium)", () => {
+  // Pack voltage range: 1.80V (0%) to 3.60V (100%)
+  assertEquals(convertVoltageToPercent(3.60, "LiFeS2_AA"), 100, "3.60V = 100%");
+  assertEquals(convertVoltageToPercent(3.20, "LiFeS2_AA"), 80, "3.20V = 80%");
+  assertEquals(convertVoltageToPercent(2.80, "LiFeS2_AA"), 50, "2.80V = 50%");
+  assertEquals(convertVoltageToPercent(2.40, "LiFeS2_AA"), 20, "2.40V = 20%");
+  assertEquals(convertVoltageToPercent(1.80, "LiFeS2_AA"), 0, "1.80V = 0%");
+  // Clamp
+  assertEquals(convertVoltageToPercent(4.0, "LiFeS2_AA"), 100, "above max clamps to 100%");
+  assertEquals(convertVoltageToPercent(1.5, "LiFeS2_AA"), 0, "below min clamps to 0%");
+});
+
+Deno.test("convertVoltageToPercent - LiFeS2_AA interpolation for BatV=3.05", () => {
+  // 3.05V is between 2.80V (50%) and 3.20V (80%)
+  // ratio = (3.05 - 2.80) / (3.20 - 2.80) = 0.625
+  // percent = 50 + (30 * 0.625) = 68.75 → 69
+  const result = convertVoltageToPercent(3.05, "LiFeS2_AA");
+  assertEquals(result, 69, "3.05V LiFeS2_AA pack should be ~69%, not 3% from old formula");
+});
+
+Deno.test("convertVoltageToPercent - sensor catalog chemistry alias 'lithium'", () => {
+  // 'lithium' should map to LiFeS2_AA curve
+  assertEquals(convertVoltageToPercent(3.05, "lithium"), 69, "lithium alias matches LiFeS2_AA");
+});
+
+Deno.test("convertVoltageToPercent - Alkaline_AA pack curve (2×AAA alkaline)", () => {
+  assertEquals(convertVoltageToPercent(3.20, "Alkaline_AA"), 100, "3.20V = 100%");
+  assertEquals(convertVoltageToPercent(2.80, "Alkaline_AA"), 70, "2.80V = 70%");
+  assertEquals(convertVoltageToPercent(2.40, "Alkaline_AA"), 40, "2.40V = 40%");
+  assertEquals(convertVoltageToPercent(1.60, "Alkaline_AA"), 0, "1.60V = 0%");
+});
+
+Deno.test("convertVoltageToPercent - CR17450 single cell", () => {
+  assertEquals(convertVoltageToPercent(3.00, "CR17450"), 100, "3.00V = 100%");
+  assertEquals(convertVoltageToPercent(2.85, "CR17450"), 50, "2.85V = 50%");
+  assertEquals(convertVoltageToPercent(2.50, "CR17450"), 0, "2.50V = 0%");
+});
+
+Deno.test("convertVoltageToPercent - CR2032 coin cell", () => {
+  assertEquals(convertVoltageToPercent(3.00, "CR2032"), 100, "3.00V = 100%");
+  assertEquals(convertVoltageToPercent(2.70, "CR2032"), 50, "2.70V = 50%");
+  assertEquals(convertVoltageToPercent(2.20, "CR2032"), 0, "2.20V = 0%");
+});
+
+Deno.test("convertVoltageToPercent - default (no chemistry) uses LiFeS2_AA", () => {
+  // No chemistry = default LiFeS2_AA pack curve
+  assertEquals(convertVoltageToPercent(3.05), 69, "default curve gives same as LiFeS2_AA");
+  assertEquals(convertVoltageToPercent(3.05, null), 69, "null chemistry = default");
+  assertEquals(convertVoltageToPercent(3.05, undefined), 69, "undefined chemistry = default");
+});
+
+Deno.test("normalizeTelemetry - chemistry option uses correct curve", () => {
+  // With LiFeS2_AA chemistry: BatV 3.05 → 69% (not 8% from legacy formula)
+  const result = normalizeTelemetry({ BatV: 3.05 }, { chemistry: "LiFeS2_AA" });
+  assertEquals(result.battery, 69, "LiFeS2_AA chemistry gives 69% for 3.05V");
+  assertEquals(result.battery_voltage, 3.05, "raw voltage preserved in battery_voltage");
+});
+
+Deno.test("normalizeTelemetry - no chemistry uses legacy Dragino formula", () => {
+  // Without chemistry: BatV 3.05 → 8% (legacy formula)
+  const result = normalizeTelemetry({ BatV: 3.05 });
+  assertEquals(result.battery, 8, "legacy formula gives 8% for 3.05V");
+});
+
+// ============================================================================
+// Bat_status override protection
+// ============================================================================
+
+Deno.test("normalizeTelemetry - Bat_status enum does NOT become battery percentage", () => {
+  // Dragino payloads include Bat_status (0=ultra low, 1=low, 2=ok, 3=good)
+  // Some TTN decoders map this to 'battery'. When BatV exists, voltage must win.
+  const payload = {
+    BatV: 3.037,
+    Bat_status: 3,
+    battery: 3,  // TTN decoder set this from Bat_status
+    TempC_SHT: 23.45,
+    Hum_SHT: 62.0,
+  };
+
+  const result = normalizeTelemetry(payload);
+
+  // Battery should be derived from BatV, NOT from the Bat_status-sourced value
+  // 3.037V with legacy formula: ((3.037 - 3.0) / 0.6) * 100 = 6.17 → 6
+  assertEquals(result.battery, 6, "battery must come from BatV, not Bat_status");
+});
+
+Deno.test("normalizeTelemetry - Bat_status with chemistry uses correct curve", () => {
+  const payload = {
+    BatV: 3.037,
+    Bat_status: 3,
+    battery: 3,  // TTN decoder set this from Bat_status
+  };
+
+  const result = normalizeTelemetry(payload, { chemistry: "lithium" });
+
+  // 3.037V on LiFeS2_AA pack curve: between 2.80V (50%) and 3.20V (80%)
+  // ratio = (3.037 - 2.80) / (3.20 - 2.80) = 0.5925
+  // percent = 50 + (30 * 0.5925) = 67.775 → 68
+  assertEquals(result.battery, 68, "battery must be 68% from LiFeS2_AA curve, not 3 from Bat_status");
+});
+
+Deno.test("convertVoltageToPercent - case-insensitive chemistry aliases", () => {
+  // All of these should resolve to LiFeS2_AA pack curve
+  assertEquals(convertVoltageToPercent(3.05, "Lithium"), 69, "Lithium (capital L)");
+  assertEquals(convertVoltageToPercent(3.05, "LITHIUM"), 69, "LITHIUM (all caps)");
+  assertEquals(convertVoltageToPercent(3.05, "Li"), 69, "Li (short alias)");
+  assertEquals(convertVoltageToPercent(3.05, "li-fes2"), 69, "li-fes2");
 });

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { voltageToPercent } from "@/lib/devices/batteryProfiles";
 
 export interface BatteryDataPoint {
   battery_level: number;
@@ -19,8 +20,10 @@ const MIN_DATA_POINTS = 5;
 const REPLACEMENT_THRESHOLD = 10; // Replace at 10% battery
 
 /**
- * Hook to compute battery lifecycle forecast for a device
- * Uses linear regression on historical battery readings
+ * Hook to compute battery lifecycle forecast for a device.
+ *
+ * Prefers battery_voltage + chemistry-specific curves for accurate SOC.
+ * Falls back to stored battery_level for readings without voltage data.
  */
 export function useBatteryForecast(deviceId: string | null): {
   forecast: BatteryForecast;
@@ -62,23 +65,42 @@ export function useBatteryForecast(deviceId: string | null): {
     setError(null);
 
     try {
-      // Get battery readings over the last 90 days
       const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-      const { data: readings, error: queryError } = await supabase
-        .from("sensor_readings")
-        .select("battery_level, recorded_at")
-        .eq("device_id", deviceId)
-        .not("battery_level", "is", null)
-        .gte("recorded_at", ninetyDaysAgo)
-        .order("recorded_at", { ascending: true })
-        .limit(500);
+      // Fetch readings with voltage AND level (voltage preferred), plus sensor chemistry
+      // Query by lora_sensor_id (LoRa sensors) OR device_id (legacy devices)
+      const [readingsResult, profileResult] = await Promise.all([
+        supabase
+          .from("sensor_readings")
+          .select("battery_level, battery_voltage, recorded_at")
+          .or(`lora_sensor_id.eq.${deviceId},device_id.eq.${deviceId}`)
+          .gte("recorded_at", ninetyDaysAgo)
+          .order("recorded_at", { ascending: true })
+          .limit(500),
+        // Look up chemistry via the sensor's battery profile
+        supabase
+          .from("lora_sensors")
+          .select("model, battery_voltage, battery_voltage_filtered")
+          .eq("id", deviceId)
+          .maybeSingle()
+          .then(async (sensorRes) => {
+            if (!sensorRes.data?.model) return { chemistry: null as string | null };
+            const { data: profile } = await supabase
+              .from("battery_profiles")
+              .select("chemistry")
+              .eq("model", sensorRes.data.model)
+              .maybeSingle();
+            return { chemistry: profile?.chemistry ?? null };
+          }),
+      ]);
 
-      if (queryError) {
-        throw queryError;
-      }
+      if (readingsResult.error) throw readingsResult.error;
 
-      if (!readings || readings.length === 0) {
+      const readings = readingsResult.data ?? [];
+      // Use chemistry from battery_profiles; default to LiFeS2_AA (most common)
+      const chemistry = profileResult.chemistry ?? "LiFeS2_AA";
+
+      if (readings.length === 0) {
         setForecast({
           currentLevel: null,
           trend: "unknown",
@@ -91,14 +113,27 @@ export function useBatteryForecast(deviceId: string | null): {
         return;
       }
 
-      // Filter to only readings with battery data
-      const validReadings = readings.filter(
-        (r) => r.battery_level !== null && r.battery_level > 0
-      ) as BatteryDataPoint[];
+      // Derive battery_level from voltage + chemistry when voltage is available.
+      // Fall back to stored battery_level for historical readings without voltage.
+      const validReadings: BatteryDataPoint[] = [];
+      for (const r of readings) {
+        let level: number | null = null;
+        if (r.battery_voltage != null && chemistry) {
+          level = voltageToPercent(r.battery_voltage, chemistry);
+        } else if (r.battery_level != null && r.battery_level > 0) {
+          level = r.battery_level;
+        }
+        if (level != null && level > 0) {
+          validReadings.push({ battery_level: level, recorded_at: r.recorded_at });
+        }
+      }
+
+      const currentLevel = validReadings.length > 0
+        ? validReadings[validReadings.length - 1].battery_level
+        : null;
 
       // Get unique daily values (average per day to reduce noise)
       const dailyReadings = aggregateByDay(validReadings);
-      const currentLevel = validReadings[validReadings.length - 1]?.battery_level ?? null;
 
       if (dailyReadings.length < MIN_DATA_POINTS) {
         setForecast({
@@ -128,11 +163,11 @@ export function useBatteryForecast(deviceId: string | null): {
         estimatedMonthsRemaining = null; // Effectively infinite
       } else if (dailyDecayRate > 0) {
         trend = "declining";
-        
+
         // Calculate days until battery reaches threshold
         const currentBattery = intercept + slope * dailyReadings.length;
         const daysUntilThreshold = (currentBattery - REPLACEMENT_THRESHOLD) / dailyDecayRate;
-        
+
         if (daysUntilThreshold > 0) {
           estimatedMonthsRemaining = Math.round(daysUntilThreshold / 30);
         } else {
@@ -178,7 +213,7 @@ function aggregateByDay(readings: BatteryDataPoint[]): { day: number; level: num
 
   // Sort by date
   const sortedDays = Array.from(dayMap.keys()).sort();
-  
+
   sortedDays.forEach((day) => {
     const levels = dayMap.get(day)!;
     const avgLevel = levels.reduce((a, b) => a + b, 0) / levels.length;
