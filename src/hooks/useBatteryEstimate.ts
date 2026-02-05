@@ -39,6 +39,7 @@ interface SensorData {
   battery_voltage?: number | null;
   battery_voltage_filtered?: number | null;
   battery_health_state?: string | null;
+  sensor_catalog_id?: string | null;
 }
 
 interface UplinkReading {
@@ -85,10 +86,10 @@ export function useBatteryEstimate(
       setError(null);
 
       try {
-        // Fetch sensor with voltage fields
+        // Fetch sensor with voltage fields and catalog link
         const { data: sensorResult } = await supabase
           .from("lora_sensors")
-          .select("id, model, status, last_seen_at, battery_level, battery_voltage, battery_voltage_filtered, battery_health_state")
+          .select("id, model, status, last_seen_at, battery_level, battery_voltage, battery_voltage_filtered, battery_health_state, sensor_catalog_id")
           .eq("id", sensorId)
           .single();
         
@@ -98,9 +99,9 @@ export function useBatteryEstimate(
         const fetchedSensor = sensorResult as SensorData | null;
         setSensor(fetchedSensor);
 
-        // Parallel fetches for profile, readings, and config
-        const [profileResult, readingsResult, configResult] = await Promise.all([
-          // Fetch battery profile by model
+        // Parallel fetches for profile, catalog, readings, and config
+        const [profileResult, catalogResult, readingsResult, configResult] = await Promise.all([
+          // Fetch battery profile by model (legacy table)
           fetchedSensor?.model
             ? supabase
                 .from("battery_profiles")
@@ -108,7 +109,16 @@ export function useBatteryEstimate(
                 .eq("model", fetchedSensor.model)
                 .maybeSingle()
             : Promise.resolve({ data: null, error: null }),
-          
+
+          // Fetch sensor_catalog.battery_info via sensor_catalog_id (preferred source)
+          fetchedSensor?.sensor_catalog_id
+            ? supabase
+                .from("sensor_catalog")
+                .select("battery_info")
+                .eq("id", fetchedSensor.sensor_catalog_id)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+
           // Fetch recent readings with voltage (last 90 days)
           // Query by lora_sensor_id (LoRa sensors) OR device_id (legacy devices)
           supabase
@@ -118,7 +128,7 @@ export function useBatteryEstimate(
             .gte("recorded_at", new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString())
             .order("recorded_at", { ascending: true })
             .limit(500),
-          
+
           // Fetch sensor configuration
           supabase
             .from("sensor_configurations")
@@ -129,11 +139,42 @@ export function useBatteryEstimate(
 
         if (cancelled) return;
 
+        // Extract battery_info from sensor_catalog (preferred source for chemistry)
+        const catalogBatteryInfo = catalogResult.data?.battery_info as {
+          chemistry?: string;
+          capacity_mah?: number;
+          voltage_nominal?: number;
+          low_threshold_v?: number;
+        } | null;
+
         // Set battery profile and chemistry
+        // Priority: sensor_catalog.battery_info.chemistry > battery_profiles.chemistry > fallback
         if (profileResult.data) {
           setBatteryProfile(profileResult.data as BatteryProfile);
           setProfileSource("database");
-          setSensorChemistry(profileResult.data.chemistry || null);
+          // Prefer catalog chemistry over battery_profiles chemistry
+          setSensorChemistry(catalogBatteryInfo?.chemistry || profileResult.data.chemistry || null);
+        } else if (catalogBatteryInfo?.chemistry) {
+          // No battery_profiles entry but we have sensor_catalog with chemistry
+          // Build a minimal profile from catalog data
+          const catalogProfile: BatteryProfile = {
+            id: fetchedSensor?.sensor_catalog_id || "catalog",
+            model: fetchedSensor?.model || "Unknown",
+            manufacturer: null,
+            battery_type: catalogBatteryInfo.chemistry,
+            nominal_capacity_mah: catalogBatteryInfo.capacity_mah || 2400,
+            mah_per_uplink: 0.025,
+            sleep_current_ua: 5,
+            usable_capacity_pct: 85,
+            replacement_threshold: 10,
+            notes: "From sensor catalog",
+            chemistry: catalogBatteryInfo.chemistry,
+            nominal_voltage: catalogBatteryInfo.voltage_nominal || null,
+            cutoff_voltage: catalogBatteryInfo.low_threshold_v || null,
+          };
+          setBatteryProfile(catalogProfile);
+          setProfileSource("database");
+          setSensorChemistry(catalogBatteryInfo.chemistry);
         } else if (fetchedSensor?.model) {
           // No profile in DB — use fallback profile for estimation
           const fallback = getFallbackProfile(fetchedSensor.model);
