@@ -14,6 +14,7 @@ import {
   MailX,
 } from "lucide-react";
 import { getAlertTypeConfig, getSeverityConfig } from "@/lib/alertConfig";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 
 interface AlertRowProps {
   alert: {
@@ -54,6 +55,7 @@ const getTimeAgo = (dateStr: string) => {
 };
 
 const AlertRow = ({ alert, onLogTemp, onAcknowledge, onResolve, isSubmitting }: AlertRowProps) => {
+  const { formatTemp } = useUnitsSafe();
   const typeConfig = getAlertTypeConfig(alert.alertType);
   const severity = getSeverityConfig(alert.severity);
   const Icon = typeConfig?.icon || AlertTriangle;
@@ -116,9 +118,9 @@ const AlertRow = ({ alert, onLogTemp, onAcknowledge, onResolve, isSubmitting }: 
             {/* Temperature info */}
             {alert.temp_reading !== null && (
               <p className="text-sm">
-                <span className="text-alarm font-semibold">{alert.temp_reading}°F</span>
+                <span className="text-alarm font-semibold">{formatTemp(alert.temp_reading)}</span>
                 {alert.temp_limit && (
-                  <span className="text-muted-foreground"> (limit: {alert.temp_limit}°F)</span>
+                  <span className="text-muted-foreground"> (limit: {formatTemp(alert.temp_limit)})</span>
                 )}
               </p>
             )}

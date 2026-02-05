@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 import { LayoutGrid, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 import type { WidgetProps } from "../types";
 
 interface UnitHeatmapData {
@@ -33,6 +34,7 @@ const INITIAL_DISPLAY_COUNT = 24;
 export function TemperatureHeatmapWidget({ site, organizationId }: WidgetProps) {
   const navigate = useNavigate();
   const [showAll, setShowAll] = useState(false);
+  const { formatTemp } = useUnitsSafe();
 
   // Fetch all units for the site
   const { data: units, isLoading } = useQuery({
@@ -189,10 +191,10 @@ export function TemperatureHeatmapWidget({ site, organizationId }: WidgetProps) 
                     >
                       <p className="text-xs font-medium truncate">{unit.name}</p>
                       <p className="text-lg font-bold">
-                        {unit.status === "offline" 
-                          ? "—" 
-                          : unit.last_temp_reading !== null 
-                            ? `${unit.last_temp_reading.toFixed(1)}°` 
+                        {unit.status === "offline"
+                          ? "—"
+                          : unit.last_temp_reading !== null
+                            ? formatTemp(unit.last_temp_reading)
                             : "—"
                         }
                       </p>
@@ -202,9 +204,9 @@ export function TemperatureHeatmapWidget({ site, organizationId }: WidgetProps) 
                     <div className="text-xs">
                       <p className="font-medium">{unit.name}</p>
                       {unit.last_temp_reading !== null && (
-                        <p>Temperature: {unit.last_temp_reading.toFixed(1)}°</p>
+                        <p>Temperature: {formatTemp(unit.last_temp_reading)}</p>
                       )}
-                      <p>Limits: {unit.temp_limit_low ?? "—"}° to {unit.temp_limit_high}°</p>
+                      <p>Limits: {unit.temp_limit_low != null ? formatTemp(unit.temp_limit_low) : "—"} to {formatTemp(unit.temp_limit_high)}</p>
                       {unit.last_reading_at && (
                         <p>Last reading: {format(new Date(unit.last_reading_at), "MMM d, h:mm a")}</p>
                       )}

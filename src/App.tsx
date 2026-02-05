@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { DebugProvider } from "@/contexts/DebugContext";
 import { TTNConfigProvider } from "@/contexts/TTNConfigContext";
 import { SuperAdminProvider } from "@/contexts/SuperAdminContext";
+import { UnitsProvider } from "@/contexts/UnitsContext";
 import { DebugTerminal, RouteLogger } from "@/components/debug";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -68,6 +69,7 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <SuperAdminProvider>
+            <UnitsProvider>
             <ImpersonationCacheSync />
             <RouteLogger />
             <Routes>
@@ -114,6 +116,7 @@ const App = () => (
               <Route path="*" element={<NotFound />} />
             </Routes>
             <DebugTerminal />
+            </UnitsProvider>
             </SuperAdminProvider>
           </BrowserRouter>
         </TTNConfigProvider>

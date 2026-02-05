@@ -1,6 +1,6 @@
 /**
  * Last Known Good Widget
- * 
+ *
  * Displays the last known good temperature reading when sensor is offline.
  * Note: Card wrapper is provided by WidgetWrapper.
  */
@@ -8,13 +8,15 @@
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle, ThermometerSnowflake, Clock, AlertCircle } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 import type { WidgetProps } from "../types";
 
-export function LastKnownGoodWidget({ 
+export function LastKnownGoodWidget({
   unit,
   lastKnownGood,
   derivedStatus,
 }: WidgetProps) {
+  const { formatTemp } = useUnitsSafe();
   const lastValidTemp = lastKnownGood?.temp ?? null;
   const lastValidAt = lastKnownGood?.at ?? null;
   const source = lastKnownGood?.source ?? null;
@@ -32,7 +34,7 @@ export function LastKnownGoodWidget({
         </div>
         <div className="space-y-1">
           <span className="text-3xl font-bold text-safe">
-            {lastValidTemp.toFixed(1)}°F
+            {formatTemp(lastValidTemp)}
           </span>
           <p className="text-sm text-muted-foreground">
             Live data from sensor
@@ -82,7 +84,7 @@ export function LastKnownGoodWidget({
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className={`text-3xl font-bold ${isInRange ? "text-safe" : "text-alarm"}`}>
-              {lastValidTemp.toFixed(1)}°F
+              {formatTemp(lastValidTemp)}
             </span>
             {isInRange ? (
               <Badge className="bg-safe/10 text-safe border-0">

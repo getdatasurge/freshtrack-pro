@@ -1871,6 +1871,7 @@ export type Database = {
           ttn_application_created: boolean | null
           ttn_application_id: string | null
           ttn_webhook_configured: boolean | null
+          units_preference: string
           updated_at: string
         }
         Insert: {
@@ -1887,6 +1888,7 @@ export type Database = {
           ttn_application_created?: boolean | null
           ttn_application_id?: string | null
           ttn_webhook_configured?: boolean | null
+          units_preference?: string
           updated_at?: string
         }
         Update: {
@@ -1903,6 +1905,7 @@ export type Database = {
           ttn_application_created?: boolean | null
           ttn_application_id?: string | null
           ttn_webhook_configured?: boolean | null
+          units_preference?: string
           updated_at?: string
         }
         Relationships: []

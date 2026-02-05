@@ -11,8 +11,10 @@ import type { WidgetProps } from "../types";
 import { cn } from "@/lib/utils";
 import { createNotConfiguredState, createEmptyState, createHealthyState } from "../hooks/useWidgetState";
 import { WidgetEmptyState } from "../components/WidgetEmptyState";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 
 export function TemperatureTrendWidget({ readings = [], sensor, loraSensors }: WidgetProps) {
+  const { formatTempRate } = useUnitsSafe();
   const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
   
   const trend = useMemo(() => {
@@ -138,7 +140,7 @@ export function TemperatureTrendWidget({ readings = [], sensor, loraSensors }: W
           <div>
             <p className={cn("text-2xl font-bold", config.color)}>{config.label}</p>
             <p className="text-sm text-muted-foreground">
-              {Math.abs(trend.rate).toFixed(1)}°/hour
+              {formatTempRate(trend.rate)}
             </p>
           </div>
         </div>

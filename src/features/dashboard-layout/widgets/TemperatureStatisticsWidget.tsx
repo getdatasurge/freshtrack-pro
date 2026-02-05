@@ -1,15 +1,17 @@
 /**
  * Temperature Statistics Widget
- * 
+ *
  * Shows min, max, and average temperature for the selected period.
  */
 
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowDown, ArrowUp, Minus, BarChart3 } from "lucide-react";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 import type { WidgetProps } from "../types";
 
 export function TemperatureStatisticsWidget({ readings = [] }: WidgetProps) {
+  const { formatTemp } = useUnitsSafe();
   const stats = useMemo(() => {
     if (!readings || readings.length === 0) {
       return { min: null, max: null, avg: null, count: 0 };
@@ -58,21 +60,21 @@ export function TemperatureStatisticsWidget({ readings = [] }: WidgetProps) {
               <ArrowDown className="h-4 w-4" />
               <span className="text-xs font-medium">MIN</span>
             </div>
-            <p className="text-2xl font-bold">{stats.min?.toFixed(1)}°</p>
+            <p className="text-2xl font-bold">{formatTemp(stats.min)}</p>
           </div>
           <div className="text-center">
             <div className="flex items-center justify-center gap-1 text-muted-foreground">
               <Minus className="h-4 w-4" />
               <span className="text-xs font-medium">AVG</span>
             </div>
-            <p className="text-2xl font-bold">{stats.avg?.toFixed(1)}°</p>
+            <p className="text-2xl font-bold">{formatTemp(stats.avg)}</p>
           </div>
           <div className="text-center">
             <div className="flex items-center justify-center gap-1 text-red-500">
               <ArrowUp className="h-4 w-4" />
               <span className="text-xs font-medium">MAX</span>
             </div>
-            <p className="text-2xl font-bold">{stats.max?.toFixed(1)}°</p>
+            <p className="text-2xl font-bold">{formatTemp(stats.max)}</p>
           </div>
         </div>
         <p className="text-xs text-muted-foreground text-center mt-3">
