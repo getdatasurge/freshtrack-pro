@@ -1078,6 +1078,7 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
           <BatterySpecifications
             batteryInfo={sensor.battery_info || {}}
             sensorId={sensor.id}
+            parentEditing={editing}
             onSave={(updatedBattery: SensorCatalogBatteryInfo) => {
               updateCatalog.mutate(
                 { id: sensor.id, battery_info: updatedBattery },
