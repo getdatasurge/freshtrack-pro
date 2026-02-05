@@ -244,11 +244,16 @@ export function EntityDashboard({
 
   // Wrap timeline change to also trigger data re-fetch in parent
   const handleTimelineChange = useCallback((newState: Partial<TimelineState>) => {
-    actions.updateTimelineState(newState);
+   // Merge partial updates with current state to create full TimelineState
+   const mergedState: TimelineState = {
+     ...state.activeLayout.timelineState,
+     ...newState,
+   };
+   actions.updateTimelineState(mergedState);
     if (newState.range && onTimeRangeChange) {
       onTimeRangeChange(newState.range);
     }
-  }, [actions, onTimeRangeChange]);
+ }, [actions, onTimeRangeChange, state.activeLayout.timelineState]);
 
   const widgetProps = useMemo(() => {
     const allProps = {
