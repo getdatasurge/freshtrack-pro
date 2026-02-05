@@ -60,6 +60,7 @@ import { EmulatorSyncHistory } from "@/components/settings/EmulatorSyncHistory";
 import { EmulatorResyncCard } from "@/components/settings/EmulatorResyncCard";
 import { AccountDeletionModal } from "@/components/settings/AccountDeletionModal";
 import { SecurityTab } from "@/components/settings/SecurityTab";
+import { UnitsSettingsCard } from "@/components/settings/UnitsSettingsCard";
 
 // E.164 phone number validation regex
 const E164_REGEX = /^\+[1-9]\d{1,14}$/;
@@ -819,6 +820,11 @@ const Settings = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Temperature Units Settings */}
+          <div className="mt-6">
+            <UnitsSettingsCard canEdit={canEditOrg} />
+          </div>
 
           {/* Separator before Danger Zone */}
           <Separator className="my-8" />

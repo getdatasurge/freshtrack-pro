@@ -26,6 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 import {
   Settings,
   ChevronDown,
@@ -92,6 +93,7 @@ export default function UnitSettingsSection({
   onSettingsUpdated,
 }: UnitSettingsSectionProps) {
   const { toast } = useToast();
+  const { formatTemp, toDisplayTemp, fromDisplayTemp, unitSymbol } = useUnitsSafe();
   const [isOpen, setIsOpen] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -99,26 +101,30 @@ export default function UnitSettingsSection({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [history, setHistory] = useState<SettingsHistoryEntry[]>([]);
 
-  // Edit form state
+  // Edit form state - store values in display units for input
   const [editUnitType, setEditUnitType] = useState(unitType);
   const [editLowLimit, setEditLowLimit] = useState(
-    tempLimitLow !== null ? tempLimitLow.toString() : ""
+    tempLimitLow !== null ? (toDisplayTemp(tempLimitLow) ?? "").toString() : ""
   );
-  const [editHighLimit, setEditHighLimit] = useState(tempLimitHigh.toString());
+  const [editHighLimit, setEditHighLimit] = useState(
+    (toDisplayTemp(tempLimitHigh) ?? tempLimitHigh).toString()
+  );
   const [editNotes, setEditNotes] = useState(notes || "");
   const [editDoorSensorEnabled, setEditDoorSensorEnabled] = useState(doorSensorEnabled);
   const [editDoorGraceMinutes, setEditDoorGraceMinutes] = useState(doorOpenGraceMinutes.toString());
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  const formatTemp = (temp: number | null) => {
+  // Format temp for display - returns "Not set" if null
+  const formatTempDisplay = (temp: number | null) => {
     if (temp === null) return "Not set";
-    return `${temp}°F`;
+    return formatTemp(temp);
   };
 
   const openEditModal = () => {
     setEditUnitType(unitType);
-    setEditLowLimit(tempLimitLow !== null ? tempLimitLow.toString() : "");
-    setEditHighLimit(tempLimitHigh.toString());
+    // Convert to display units for editing
+    setEditLowLimit(tempLimitLow !== null ? (toDisplayTemp(tempLimitLow) ?? "").toString() : "");
+    setEditHighLimit((toDisplayTemp(tempLimitHigh) ?? tempLimitHigh).toString());
     setEditNotes(notes || "");
     setEditDoorSensorEnabled(doorSensorEnabled);
     setEditDoorGraceMinutes(doorOpenGraceMinutes.toString());
@@ -127,16 +133,17 @@ export default function UnitSettingsSection({
   };
 
   const validateAndSave = async () => {
-    const lowVal = editLowLimit ? parseFloat(editLowLimit) : null;
-    const highVal = parseFloat(editHighLimit);
+    // Values from input are in display units - convert to canonical (°F) for storage
+    const lowValDisplay = editLowLimit ? parseFloat(editLowLimit) : null;
+    const highValDisplay = parseFloat(editHighLimit);
     const graceVal = parseInt(editDoorGraceMinutes) || 20;
 
-    if (isNaN(highVal)) {
+    if (isNaN(highValDisplay)) {
       setValidationError("High limit is required");
       return;
     }
 
-    if (lowVal !== null && lowVal >= highVal) {
+    if (lowValDisplay !== null && lowValDisplay >= highValDisplay) {
       setValidationError("Low limit must be less than high limit");
       return;
     }
@@ -145,6 +152,10 @@ export default function UnitSettingsSection({
       setValidationError("Grace minutes must be between 1 and 60");
       return;
     }
+
+    // Convert from display units to canonical (°F) for storage
+    const lowVal = lowValDisplay !== null ? fromDisplayTemp(lowValDisplay) : null;
+    const highVal = fromDisplayTemp(highValDisplay) ?? highValDisplay;
 
     setIsSaving(true);
     setValidationError(null);
@@ -325,7 +336,7 @@ export default function UnitSettingsSection({
   const formatValue = (field: string, value: any): string => {
     if (value === null || value === undefined) return "Not set";
     if (field === "unit_type") return unitTypeLabels[value] || value;
-    if (field.includes("temp_limit")) return `${value}°F`;
+    if (field.includes("temp_limit")) return formatTemp(value);
     if (field === "door_sensor_enabled") return value ? "Enabled" : "Disabled";
     if (field === "door_open_grace_minutes") return `${value} min`;
     return String(value);
@@ -345,7 +356,7 @@ export default function UnitSettingsSection({
                 <div className="flex items-center gap-2">
                   {!isOpen && (
                     <span className="text-sm text-muted-foreground hidden sm:inline">
-                      {unitTypeLabels[unitType] || unitType} · Low: {formatTemp(tempLimitLow)} · High: {formatTemp(tempLimitHigh)}
+                      {unitTypeLabels[unitType] || unitType} · Low: {formatTempDisplay(tempLimitLow)} · High: {formatTempDisplay(tempLimitHigh)}
                     </span>
                   )}
                   {isOpen ? (
@@ -373,7 +384,7 @@ export default function UnitSettingsSection({
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Low Limit</p>
-                    <p className="font-medium">{formatTemp(tempLimitLow)}</p>
+                    <p className="font-medium">{formatTempDisplay(tempLimitLow)}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
@@ -382,7 +393,7 @@ export default function UnitSettingsSection({
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">High Limit</p>
-                    <p className="font-medium">{formatTemp(tempLimitHigh)}</p>
+                    <p className="font-medium">{formatTempDisplay(tempLimitHigh)}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 p-3 bg-muted/30 rounded-lg">
@@ -436,7 +447,7 @@ export default function UnitSettingsSection({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Low Limit (°F)</Label>
+                <Label>Low Limit ({unitSymbol})</Label>
                 <Input
                   type="number"
                   step="0.1"
@@ -449,7 +460,7 @@ export default function UnitSettingsSection({
                 </p>
               </div>
               <div className="space-y-2">
-                <Label>High Limit (°F)</Label>
+                <Label>High Limit ({unitSymbol})</Label>
                 <Input
                   type="number"
                   step="0.1"

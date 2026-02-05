@@ -1,12 +1,13 @@
 /**
  * Current Temperature Widget
- * 
+ *
  * Displays the current temperature with live/offline indicator.
  * Note: Card wrapper is provided by WidgetWrapper.
  */
 
 import { format } from "date-fns";
 import { Wifi, WifiOff } from "lucide-react";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 
 interface DerivedStatus {
   isOnline: boolean;
@@ -30,10 +31,7 @@ export function CurrentTempWidget({
   lastReadingAt,
   derivedStatus,
 }: CurrentTempWidgetProps) {
-  const formatTemp = (temp: number | null) => {
-    if (temp === null) return "--";
-    return `${temp.toFixed(1)}°F`;
-  };
+  const { formatTemp } = useUnitsSafe();
 
   const getTempColor = () => {
     if (temperature === null) return "text-muted-foreground";

@@ -11,6 +11,7 @@ import { Thermometer, Wifi, WifiOff, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 import type { WidgetProps } from "../types";
 
 interface UnitStatus {
@@ -23,9 +24,10 @@ interface UnitStatus {
   area_name: string;
 }
 
-export function UnitsStatusGridWidget({ 
+export function UnitsStatusGridWidget({
   entityId,
 }: WidgetProps) {
+  const { formatTemp } = useUnitsSafe();
   const [units, setUnits] = useState<UnitStatus[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -126,7 +128,7 @@ export function UnitsStatusGridWidget({
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {unit.last_temp_reading !== null && (
                         <span className={`font-bold ${status.color}`}>
-                          {unit.last_temp_reading.toFixed(0)}°F
+                          {formatTemp(unit.last_temp_reading, { decimals: 0 })}
                         </span>
                       )}
                       <Badge className={`${status.bg} ${status.color} border-0 text-xs`}>

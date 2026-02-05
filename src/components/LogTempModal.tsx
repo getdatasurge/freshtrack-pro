@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 import { temperatureSchema, notesSchema, validateInput } from "@/lib/validation";
 import { Session } from "@supabase/supabase-js";
 
@@ -51,6 +52,7 @@ const formatCadence = (seconds: number) => {
 const LogTempModal = ({ unit, open, onOpenChange, onSuccess, session }: LogTempModalProps) => {
   const { toast } = useToast();
   const { isOnline, saveLogOffline } = useOfflineSync();
+  const { formatTemp, toDisplayTemp, fromDisplayTemp, unitSymbol } = useUnitsSafe();
   const [temperature, setTemperature] = useState("");
   const [notes, setNotes] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
@@ -71,9 +73,16 @@ const LogTempModal = ({ unit, open, onOpenChange, onSuccess, session }: LogTempM
       return;
     }
 
-    // Validate temperature
-    const temp = parseFloat(temperature);
-    const tempResult = validateInput(temperatureSchema, temp);
+    // User input is in display units - convert to Fahrenheit for storage
+    const tempDisplay = parseFloat(temperature);
+    if (isNaN(tempDisplay)) {
+      toast({ title: "Please enter a valid temperature", variant: "destructive" });
+      return;
+    }
+    const tempFahrenheit = fromDisplayTemp(tempDisplay) ?? tempDisplay;
+
+    // Validate the Fahrenheit value
+    const tempResult = validateInput(temperatureSchema, tempFahrenheit);
     if (!tempResult.success) {
       toast({ title: (tempResult as { success: false; error: string }).error, variant: "destructive" });
       return;
@@ -86,9 +95,9 @@ const LogTempModal = ({ unit, open, onOpenChange, onSuccess, session }: LogTempM
       return;
     }
 
-    // Check if out of range and require corrective action
+    // Check if out of range and require corrective action (limits are in Fahrenheit)
     const validatedTemp = (tempResult as { success: true; data: number }).data;
-    const isOutOfRange = validatedTemp > unit.temp_limit_high || 
+    const isOutOfRange = validatedTemp > unit.temp_limit_high ||
       (unit.temp_limit_low !== null && validatedTemp < unit.temp_limit_low);
     
     if (isOutOfRange && !correctiveAction.trim()) {
@@ -192,9 +201,11 @@ const LogTempModal = ({ unit, open, onOpenChange, onSuccess, session }: LogTempM
     onOpenChange(newOpen);
   };
 
-  const isOutOfRange = temperature && unit && (
-    parseFloat(temperature) > unit.temp_limit_high || 
-    (unit.temp_limit_low !== null && parseFloat(temperature) < unit.temp_limit_low)
+  // Convert user input from display units to Fahrenheit for comparison with limits
+  const tempInFahrenheit = temperature ? fromDisplayTemp(parseFloat(temperature)) : null;
+  const isOutOfRange = tempInFahrenheit !== null && unit && (
+    tempInFahrenheit > unit.temp_limit_high ||
+    (unit.temp_limit_low !== null && tempInFahrenheit < unit.temp_limit_low)
   );
 
   return (
@@ -224,8 +235,8 @@ const LogTempModal = ({ unit, open, onOpenChange, onSuccess, session }: LogTempM
               </p>
               <div className="flex items-center gap-4 mt-2 text-xs">
                 <span className="text-muted-foreground">
-                  Limit: ≤{unit.temp_limit_high}°F
-                  {unit.temp_limit_low !== null && ` / ≥${unit.temp_limit_low}°F`}
+                  Limit: ≤{formatTemp(unit.temp_limit_high)}
+                  {unit.temp_limit_low !== null && ` / ≥${formatTemp(unit.temp_limit_low)}`}
                 </span>
                 <span className="text-muted-foreground border-l border-border pl-4">
                   <Clock className="w-3 h-3 inline mr-1" />
@@ -246,7 +257,7 @@ const LogTempModal = ({ unit, open, onOpenChange, onSuccess, session }: LogTempM
 
             <div>
               <label className="text-sm font-medium text-foreground mb-2 block">
-                Temperature (°F) *
+                Temperature ({unitSymbol}) *
               </label>
               <Input
                 type="number"
@@ -257,12 +268,12 @@ const LogTempModal = ({ unit, open, onOpenChange, onSuccess, session }: LogTempM
                 className="text-2xl font-bold h-14 text-center"
                 autoFocus
               />
-              {temperature && (
+              {temperature && tempInFahrenheit !== null && (
                 <div className="mt-2 text-center">
-                  {parseFloat(temperature) > unit.temp_limit_high ? (
+                  {tempInFahrenheit > unit.temp_limit_high ? (
                     <Badge variant="destructive">Above Limit!</Badge>
                   ) : unit.temp_limit_low !== null &&
-                    parseFloat(temperature) < unit.temp_limit_low ? (
+                    tempInFahrenheit < unit.temp_limit_low ? (
                     <Badge variant="destructive">Below Limit!</Badge>
                   ) : (
                     <Badge className="bg-safe/10 text-safe border-safe/20">In Range</Badge>

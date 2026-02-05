@@ -1,11 +1,11 @@
 /**
  * Temperature Chart Widget
- * 
+ *
  * Displays temperature readings over time with comparison overlay support.
  * Note: Card wrapper is provided by WidgetWrapper.
  */
 
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import {
   ComposedChart,
   Area,
@@ -19,6 +19,7 @@ import {
 } from "recharts";
 import { format } from "date-fns";
 import { Activity } from "lucide-react";
+import { useUnitsSafe } from "@/contexts/UnitsContext";
 import type { TimelineState } from "../types";
 
 interface SensorReading {
@@ -50,19 +51,23 @@ export function TemperatureChartWidget({
   timelineState,
   isCompact = false,
 }: TemperatureChartWidgetProps) {
+  const { toDisplayTemp, formatTemp, unitSymbol } = useUnitsSafe();
+
   const chartData = useMemo(() => {
-    // Build base chart data
+    // Build base chart data with temperatures converted to display units
     const baseData = readings.map((r, index) => ({
       time: format(new Date(r.recorded_at), "HH:mm"),
       fullTime: format(new Date(r.recorded_at), "MMM d, HH:mm"),
-      temperature: r.temperature,
+      temperature: toDisplayTemp(r.temperature),
       humidity: r.humidity,
       // Comparison data aligned by index
-      comparisonTemp: comparisonReadings?.[index]?.temperature ?? null,
+      comparisonTemp: comparisonReadings?.[index]?.temperature != null
+        ? toDisplayTemp(comparisonReadings[index].temperature)
+        : null,
     }));
 
     return baseData;
-  }, [readings, comparisonReadings]);
+  }, [readings, comparisonReadings, toDisplayTemp]);
 
   const showComparison = timelineState.compare !== null && comparisonReadings && comparisonReadings.length > 0;
 
@@ -126,19 +131,19 @@ export function TemperatureChartWidget({
               }}
               labelFormatter={(_, payload) => payload[0]?.payload?.fullTime || ""}
               formatter={(value: number, name: string) => [
-                `${value?.toFixed(1) ?? "--"}°F`,
+                `${value?.toFixed(1) ?? "--"}${unitSymbol}`,
                 name === "comparisonTemp" ? "Previous Period" : "Temperature",
               ]}
             />
             <ReferenceLine
-              y={tempLimitHigh}
+              y={toDisplayTemp(tempLimitHigh)}
               stroke="hsl(var(--alarm))"
               strokeDasharray="5 5"
-              label={{ value: `Limit: ${tempLimitHigh}°F`, fill: "hsl(var(--alarm))", fontSize: 11 }}
+              label={{ value: `Limit: ${formatTemp(tempLimitHigh)}`, fill: "hsl(var(--alarm))", fontSize: 11 }}
             />
             {tempLimitLow !== null && (
               <ReferenceLine
-                y={tempLimitLow}
+                y={toDisplayTemp(tempLimitLow)}
                 stroke="hsl(var(--accent))"
                 strokeDasharray="5 5"
               />
