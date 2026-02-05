@@ -270,10 +270,16 @@ export function useBatteryEstimate(
       sensorChemistry
     );
 
+    // Check if any readings contain battery data
+    const hasBatteryData = voltageReadings.length > 0
+      || readings.some(r => r.battery_level !== null)
+      || sensor?.battery_level !== null
+      || sensor?.battery_voltage !== null;
+
     // Calculate data span for confidence
     const uplinkCount = readings.length;
     const dataSpanHours = readings.length >= 2
-      ? (new Date(readings[readings.length - 1].recorded_at).getTime() - 
+      ? (new Date(readings[readings.length - 1].recorded_at).getTime() -
          new Date(readings[0].recorded_at).getTime()) / (1000 * 60 * 60)
       : 0;
 
@@ -318,7 +324,10 @@ export function useBatteryEstimate(
       state = "MISSING_PROFILE";
     } else if (uplinkCount < MIN_UPLINKS_FOR_ESTIMATE || dataSpanHours < MIN_HOURS_FOR_ESTIMATE) {
       state = "COLLECTING_DATA";
-    } else if (healthState === "CRITICAL" || healthState === "REPLACE_ASAP" || 
+    } else if (!hasBatteryData) {
+      // Sensor is reporting readings but none contain battery data
+      state = "NO_BATTERY_DATA";
+    } else if (healthState === "CRITICAL" || healthState === "REPLACE_ASAP" ||
                (currentSoc !== null && currentSoc <= CRITICAL_SOC_THRESHOLD)) {
       state = "CRITICAL_BATTERY";
       confidence = determineConfidence(uplinkCount, dataSpanHours);

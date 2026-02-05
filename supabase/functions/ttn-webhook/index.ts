@@ -743,6 +743,7 @@ async function handleLoraSensor(
       raw_payload_hex: rawPayloadHex,
       network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
     };
+    if (batteryVoltage !== undefined) extendedColumns.battery_voltage = batteryVoltage;
     if (appDecoded) extendedColumns.app_decoded_payload = appDecoded;
     if (decoderIdStr) extendedColumns.decoder_id = decoderIdStr;
     if (decodeMatch !== null) extendedColumns.decode_match = decodeMatch;
@@ -998,6 +999,7 @@ async function handleLegacyDevice(
 
   const legacyBatteryVoltage = decoded.battery_voltage as number | undefined;
   const battery = (decoded.battery ?? decoded.battery_level) as number | undefined;
+  const batteryVoltage = decoded.battery_voltage as number | undefined;
   let temperature = decoded.temperature as number | undefined;
 
   // Legacy devices: assume Celsius (most LoRaWAN sensors), convert to Fahrenheit
@@ -1040,6 +1042,7 @@ async function handleLegacyDevice(
       raw_payload_hex: rawPayloadHex,
       network_decoded_payload: Object.keys(data.decoded).length > 0 ? data.decoded : null,
     };
+    if (batteryVoltage !== undefined) extData.battery_voltage = batteryVoltage;
     // Try full insert, fall back to core-only
     const { error: fullErr } = await supabase
       .from('sensor_readings')

@@ -121,7 +121,7 @@ export function BatteryHealthWidget({
   }
 
   // Render non-estimate states
-  if (["NOT_CONFIGURED", "MISSING_PROFILE", "COLLECTING_DATA", "SENSOR_OFFLINE"].includes(estimate.state)) {
+  if (["NOT_CONFIGURED", "MISSING_PROFILE", "NO_BATTERY_DATA", "COLLECTING_DATA", "SENSOR_OFFLINE"].includes(estimate.state)) {
     return (
       <div className="h-full flex flex-col">
         <WidgetHeader />
@@ -342,6 +342,8 @@ function StateDisplay({
         return <Clock className="w-8 h-8 text-muted-foreground" />;
       case "MISSING_PROFILE":
         return <HelpCircle className="w-8 h-8 text-muted-foreground" />;
+      case "NO_BATTERY_DATA":
+        return <Battery className="w-8 h-8 text-muted-foreground" />;
       default:
         return <Battery className="w-8 h-8 text-muted-foreground" />;
     }
