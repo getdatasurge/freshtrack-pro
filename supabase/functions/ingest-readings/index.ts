@@ -1,12 +1,19 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { 
-  ingestRequestSchema, 
+import {
+  ingestRequestSchema,
   validateDeviceApiKey,
   validationErrorResponse,
   unauthorizedResponse,
-  type NormalizedReadingInput 
+  type NormalizedReadingInput
 } from "../_shared/validation.ts";
 import { normalizeDoorData, getDoorFieldSource } from "../_shared/payloadNormalization.ts";
+import {
+  sensorToStorage,
+  STORAGE_UNIT,
+  DEFAULT_SENSOR_NATIVE_UNIT,
+  type TemperatureUnit
+} from "../_shared/unitConversion.ts";
+import { getSensorNativeUnit } from "../_shared/deviceRegistry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -104,10 +111,43 @@ Deno.serve(async (req) => {
 
         const recordedAt = reading.recorded_at || new Date().toISOString();
 
+        // === TEMPERATURE UNIT CONVERSION ===
+        // Determine the native unit of the temperature reading
+        // Priority: explicit temperature_unit > device model inference > default (°C)
+        let sensorNativeUnit: TemperatureUnit = DEFAULT_SENSOR_NATIVE_UNIT;
+
+        if (reading.temperature_unit) {
+          // Explicit unit provided in the reading
+          sensorNativeUnit = reading.temperature_unit as TemperatureUnit;
+        } else if (reading.device_model) {
+          // Infer from device model
+          sensorNativeUnit = getSensorNativeUnit(reading.device_model);
+        } else if (reading.device_serial) {
+          // Try to look up device model from serial number
+          const { data: device } = await supabase
+            .from("devices")
+            .select("model")
+            .eq("serial_number", reading.device_serial)
+            .maybeSingle();
+          if (device?.model) {
+            sensorNativeUnit = getSensorNativeUnit(device.model);
+          }
+        }
+
+        // Convert temperature from sensor native unit to storage unit (°F)
+        const temperatureInStorageUnit = sensorToStorage(reading.temperature, sensorNativeUnit);
+
+        if (sensorNativeUnit !== STORAGE_UNIT) {
+          console.log(
+            `[ingest-readings] Unit conversion: ${reading.temperature}°${sensorNativeUnit} → ${temperatureInStorageUnit.toFixed(2)}°${STORAGE_UNIT} ` +
+            `(unit=${reading.device_serial || 'unknown'})`
+          );
+        }
+
         // Normalize door data - check explicit door_open field first, then try normalization
         // This handles various payload formats (door_status, door, open_close, etc.)
-        const normalizedDoorOpen = reading.door_open !== undefined 
-          ? reading.door_open 
+        const normalizedDoorOpen = reading.door_open !== undefined
+          ? reading.door_open
           : normalizeDoorData(reading as unknown as Record<string, unknown>);
         const hasDoorData = normalizedDoorOpen !== undefined;
 
@@ -117,16 +157,23 @@ Deno.serve(async (req) => {
         }
 
         // Insert sensor reading with source tag
+        // Temperature is stored in the canonical storage unit (°F)
         const readingData: Record<string, unknown> = {
           unit_id: reading.unit_id,
           device_id: deviceId,
-          temperature: reading.temperature,
+          temperature: temperatureInStorageUnit, // Converted to storage unit (°F)
           humidity: reading.humidity ?? null,
           battery_level: reading.battery_level ?? null,
           signal_strength: reading.signal_strength ?? null,
           source: reading.source,
           recorded_at: recordedAt,
           received_at: new Date().toISOString(),
+          // Store original sensor data for audit/debugging
+          source_metadata: {
+            ...(reading.source_metadata || {}),
+            temperature_native: reading.temperature,
+            temperature_native_unit: sensorNativeUnit,
+          },
         };
 
         // Only set door_open if door data is present (after normalization)
@@ -171,10 +218,11 @@ Deno.serve(async (req) => {
 
         // Track latest reading per unit for batch update
         // Include sensorType so we can gate door_state updates
+        // Temperature is in storage unit (°F)
         const existing = unitUpdates.get(reading.unit_id);
         if (!existing || new Date(recordedAt) > new Date(existing.time)) {
           unitUpdates.set(reading.unit_id, {
-            temp: reading.temperature,
+            temp: temperatureInStorageUnit, // Use converted temperature
             time: recordedAt,
             doorOpen: normalizedDoorOpen,
             sensorType: reading.source === 'simulator' ? 'door' : undefined, // Simulator always counts as door

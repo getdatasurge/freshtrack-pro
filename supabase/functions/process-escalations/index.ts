@@ -2,6 +2,12 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { Resend } from "https://esm.sh/resend@2.0.0";
 import { validateInternalApiKey, unauthorizedResponse } from "../_shared/validation.ts";
+import {
+  formatTemp,
+  storageToDisplay,
+  getDisplayUnitSymbol,
+  type SystemUnitsPreference
+} from "../_shared/unitConversion.ts";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
@@ -41,6 +47,9 @@ interface UnitInfo {
       name: string;
       organization_id: string;
       timezone: string;
+      organization: {
+        units_preference: SystemUnitsPreference;
+      };
     };
   };
 }
@@ -104,19 +113,26 @@ function generateAlertEmailHtml(
     timeStyle: "short",
   });
 
+  // Get the organization's display unit preference (default to imperial if not set)
+  const displayUnits: SystemUnitsPreference = unit.area.site.organization?.units_preference || "imperial";
+  const unitSymbol = getDisplayUnitSymbol(displayUnits);
+
   let tempInfo = "";
   if (alert.temp_reading !== null) {
+    // Convert temperature from storage unit to display unit
+    const displayTemp = formatTemp(alert.temp_reading, displayUnits);
     tempInfo = `
       <tr>
         <td style="padding: 8px 0; color: #6b7280;">Current Temperature:</td>
-        <td style="padding: 8px 0; font-weight: 600; color: ${severityColor};">${alert.temp_reading}°F</td>
+        <td style="padding: 8px 0; font-weight: 600; color: ${severityColor};">${displayTemp}</td>
       </tr>
     `;
     if (alert.temp_limit !== null) {
+      const displayLimit = formatTemp(alert.temp_limit, displayUnits);
       tempInfo += `
         <tr>
           <td style="padding: 8px 0; color: #6b7280;">Limit:</td>
-          <td style="padding: 8px 0;">${alert.temp_limit}°F</td>
+          <td style="padding: 8px 0;">${displayLimit}</td>
         </tr>
       `;
     }
@@ -125,10 +141,17 @@ function generateAlertEmailHtml(
   const metadata = alert.metadata || {};
   let metadataInfo = "";
   if (metadata.high_limit || metadata.low_limit) {
+    // Convert limits from storage unit to display unit
+    const displayLowLimit = metadata.low_limit !== null && metadata.low_limit !== undefined
+      ? formatTemp(metadata.low_limit as number, displayUnits, { showUnit: false })
+      : "N/A";
+    const displayHighLimit = metadata.high_limit !== null && metadata.high_limit !== undefined
+      ? formatTemp(metadata.high_limit as number, displayUnits, { showUnit: false })
+      : "N/A";
     metadataInfo = `
       <tr>
         <td style="padding: 8px 0; color: #6b7280;">Range:</td>
-        <td style="padding: 8px 0;">${metadata.low_limit || "N/A"}°F - ${metadata.high_limit || "N/A"}°F</td>
+        <td style="padding: 8px 0;">${displayLowLimit}${unitSymbol} - ${displayHighLimit}${unitSymbol}</td>
       </tr>
     `;
   }
@@ -432,43 +455,58 @@ function buildSmsMessage(alert: Alert, unit: UnitInfo): string {
     timeStyle: "short",
   });
 
+  // Get the organization's display unit preference (default to imperial if not set)
+  const displayUnits: SystemUnitsPreference = unit.area.site.organization?.units_preference || "imperial";
+  const unitSymbol = getDisplayUnitSymbol(displayUnits);
+
   switch (alert.alert_type) {
     case "alarm_active":
     case "temp_excursion": {
-      const temp = alert.temp_reading !== null ? `${alert.temp_reading}°F` : "unknown";
-      const limit = alert.temp_limit !== null ? `${alert.temp_limit}°F` : "limit";
+      // Convert temperatures to display unit
+      const temp = alert.temp_reading !== null
+        ? formatTemp(alert.temp_reading, displayUnits)
+        : "unknown";
+      const limit = alert.temp_limit !== null
+        ? formatTemp(alert.temp_limit, displayUnits)
+        : "limit";
       const metadata = alert.metadata || {};
-      const range = metadata.low_limit && metadata.high_limit 
-        ? `(${metadata.low_limit}°F-${metadata.high_limit}°F)` 
-        : `(limit: ${limit})`;
+      let range: string;
+      if (metadata.low_limit !== null && metadata.low_limit !== undefined &&
+          metadata.high_limit !== null && metadata.high_limit !== undefined) {
+        const displayLow = formatTemp(metadata.low_limit as number, displayUnits, { showUnit: false });
+        const displayHigh = formatTemp(metadata.high_limit as number, displayUnits, { showUnit: false });
+        range = `(${displayLow}${unitSymbol}-${displayHigh}${unitSymbol})`;
+      } else {
+        range = `(limit: ${limit})`;
+      }
       return `🚨 FreshTrack Alert: ${unitName} temp is ${temp} - outside safe range ${range}. Check immediately.`;
     }
-    
+
     case "monitoring_interrupted":
       return `⚠️ FreshTrack Alert: ${unitName} sensor has gone offline as of ${timestamp}. Please verify equipment status.`;
-    
+
     case "low_battery": {
       const battery = alert.metadata?.battery_level || "low";
       return `🔔 FreshTrack Notice: ${unitName} sensor battery low (${battery}%). Replace soon.`;
     }
-    
+
     case "door_open": {
       const duration = alert.metadata?.duration_minutes || "extended";
       return `⚠️ FreshTrack Alert: ${unitName} door open for ${duration} min. Check equipment.`;
     }
-    
+
     case "missed_manual_entry":
       return `📝 FreshTrack Notice: ${unitName} is due for a manual temperature log. Please record a reading.`;
-    
+
     case "sensor_fault":
       return `⚠️ FreshTrack Alert: ${unitName} sensor is reporting a fault. Check device status.`;
-    
+
     case "calibration_due":
       return `🔔 FreshTrack Notice: ${unitName} sensor is due for calibration.`;
-    
+
     case "suspected_cooling_failure":
       return `🚨 FreshTrack Alert: ${unitName} may have a cooling failure. Temperature rising consistently. Check immediately.`;
-    
+
     default:
       return `🔔 FreshTrack Alert: ${unitName} - ${alertTypeLabels[alert.alert_type] || alert.alert_type}. Please check.`;
   }
@@ -584,7 +622,10 @@ const handler = async (req: Request): Promise<Response> => {
           area:areas!inner(
             id, name,
             site:sites!inner(
-              id, name, organization_id, timezone
+              id, name, organization_id, timezone,
+              organization:organizations!inner(
+                units_preference
+              )
             )
           )
         `)
