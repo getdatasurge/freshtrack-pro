@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { computeUnitStatus, UnitStatusInfo, OfflineSeverity } from "./useUnitStatus";
 import { AlertRules, DEFAULT_ALERT_RULES } from "./useAlertRules";
+import { formatMissedCheckinsMessage, getMissedCheckinDuration } from "@/lib/missedCheckins";
 
 export type AlertSeverity = "critical" | "warning" | "info";
 export type AlertType = 
@@ -77,6 +78,8 @@ export function computeUnitAlerts(
 
     // OFFLINE - Split into warning and critical based on missed check-ins
     if (computed.offlineSeverity === "critical") {
+      const uplinkInterval = unit.checkin_interval_minutes || 5;
+      const duration = getMissedCheckinDuration(computed.missedCheckins, uplinkInterval);
       alerts.push({
         id: `${unit.id}-OFFLINE_CRITICAL`,
         unit_id: unit.id,
@@ -86,12 +89,14 @@ export function computeUnitAlerts(
         type: "OFFLINE_CRITICAL",
         severity: "critical",
         title: "Sensor Offline (Critical)",
-        message: `Missed ${computed.missedCheckins} check-ins (threshold: ${rules.offline_critical_missed_checkins})`,
+        message: `No uplink for ${duration.formatted} (${computed.missedCheckins} missed check-ins)`,
         created_at: new Date().toISOString(),
         missedCheckins: computed.missedCheckins,
       });
       hasAlert = true;
     } else if (computed.offlineSeverity === "warning") {
+      const uplinkInterval = unit.checkin_interval_minutes || 5;
+      const duration = getMissedCheckinDuration(computed.missedCheckins, uplinkInterval);
       alerts.push({
         id: `${unit.id}-OFFLINE_WARNING`,
         unit_id: unit.id,
@@ -101,7 +106,7 @@ export function computeUnitAlerts(
         type: "OFFLINE_WARNING",
         severity: "warning",
         title: "Sensor Offline (Warning)",
-        message: `Missed ${computed.missedCheckins} check-in${computed.missedCheckins > 1 ? 's' : ''} - monitoring may be interrupted`,
+        message: `No uplink for ${duration.formatted} (${computed.missedCheckins} missed check-in${computed.missedCheckins > 1 ? 's' : ''})`,
         created_at: new Date().toISOString(),
         missedCheckins: computed.missedCheckins,
       });

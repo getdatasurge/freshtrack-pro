@@ -174,6 +174,8 @@ export interface WidgetUnit {
   last_reading_at: string | null;
   door_state?: "open" | "closed" | "unknown" | null;
   door_last_changed_at?: string | null;
+  /** Check-in interval in minutes (synced from sensor's uplink_interval_s) */
+  checkin_interval_minutes?: number;
 }
 
 /**

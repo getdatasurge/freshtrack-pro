@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { qk } from "@/lib/queryKeys";
+import { calculateMissedCheckins } from "@/lib/missedCheckins";
 
 export interface AlertRules {
   manual_interval_minutes: number;
@@ -71,15 +72,16 @@ export const DEFAULT_ALERT_RULES: AlertRules = {
 /**
  * Compute missed check-ins based on last check-in time and interval
  * Returns 999 for null lastCheckinAt to indicate "never seen" (treated as critical offline)
+ *
+ * NOTE: This function wraps the shared utility calculateMissedCheckins for backward compatibility.
+ * All new code should use calculateMissedCheckins directly for full result details.
  */
 export function computeMissedCheckins(lastCheckinAt: string | null, intervalMinutes: number): number {
-  // If never checked in, treat as "always offline" - return max missed
-  if (!lastCheckinAt) return 999;
-  const elapsed = Date.now() - new Date(lastCheckinAt).getTime();
-  const intervalMs = intervalMinutes * 60 * 1000;
-  // Add 30-second buffer to avoid flapping
-  const bufferedElapsed = Math.max(0, elapsed - 30000);
-  return Math.max(0, Math.floor(bufferedElapsed / intervalMs) - 1);
+  const result = calculateMissedCheckins({
+    lastUplinkAt: lastCheckinAt,
+    uplinkIntervalMinutes: intervalMinutes,
+  });
+  return result.missedCheckins;
 }
 
 /**
