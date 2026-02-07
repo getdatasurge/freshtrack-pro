@@ -52,7 +52,8 @@ const Dashboard = () => {
   });
   const [units, setUnits] = useState<(UnitStatusInfo & { computed: ReturnType<typeof computeUnitStatus> })[]>([]);
   const [unitsRequiringAction, setUnitsRequiringAction] = useState<(UnitStatusInfo & { computed: ReturnType<typeof computeUnitStatus> })[]>([]);
-  
+  const [uplinkIntervalsMap, setUplinkIntervalsMap] = useState<Map<string, number>>(new Map());
+
   // Use effective identity for impersonation support
   const { effectiveOrgId, isImpersonating, isInitialized } = useEffectiveIdentity();
   
@@ -178,10 +179,34 @@ const Dashboard = () => {
         area: { name: u.area.name, site: { name: u.area.site.name } },
       }));
 
-      // Compute status for each unit using single source of truth
+      // Fetch actual uplink intervals from sensor_configurations (TRUE source of truth)
+      // This ensures accurate status calculations instead of using stale units.checkin_interval_minutes
+      const uplinkIntervalsMap = new Map<string, number>();
+
+      if (unitIds.length > 0) {
+        const { data: sensorConfigs } = await supabase
+          .from("lora_sensors")
+          .select(`
+            unit_id,
+            sensor_configurations!inner(uplink_interval_s)
+          `)
+          .in("unit_id", unitIds)
+          .eq("is_primary", true);
+
+        sensorConfigs?.forEach((sc: any) => {
+          if (sc.sensor_configurations?.uplink_interval_s) {
+            uplinkIntervalsMap.set(
+              sc.unit_id,
+              Math.round(sc.sensor_configurations.uplink_interval_s / 60)
+            );
+          }
+        });
+      }
+
+      // Compute status for each unit using actual uplink intervals
       const unitsWithComputed = formattedUnits.map(u => ({
         ...u,
-        computed: computeUnitStatus(u),
+        computed: computeUnitStatus(u, undefined, uplinkIntervalsMap.get(u.id)),
       }));
 
       // Sort units by action required priority
@@ -195,6 +220,7 @@ const Dashboard = () => {
 
       setUnits(unitsWithComputed);
       setUnitsRequiringAction(unitsWithComputed.filter(u => u.computed.actionRequired));
+      setUplinkIntervalsMap(uplinkIntervalsMap);
 
       setStats({
         totalUnits: unitsWithComputed.length,
@@ -208,8 +234,8 @@ const Dashboard = () => {
     setIsLoading(false);
   }, [session, organizationId, navigate]);
 
-  // Use unified alert computation - single source of truth
-  const alertsSummary = useUnitAlerts(units);
+  // Use unified alert computation with actual uplink intervals
+  const alertsSummary = useUnitAlerts(units, undefined, uplinkIntervalsMap);
 
   const formatTemp = (temp: number | null) => {
     if (temp === null) return "--";
