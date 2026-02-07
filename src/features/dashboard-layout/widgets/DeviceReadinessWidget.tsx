@@ -23,6 +23,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { voltageToPercent } from "@/lib/devices/batteryProfiles";
 import { formatMissedCheckinsMessage, formatUplinkInterval } from "@/lib/missedCheckins";
+import { useSensorUplinkInterval } from "@/hooks/useSensorUplinkInterval";
 import type { WidgetProps } from "../types";
 
 export function DeviceReadinessWidget({ 
@@ -45,9 +46,11 @@ export function DeviceReadinessWidget({
   const missedCheckins = derivedStatus?.missedCheckins ?? 0;
   const offlineSeverity = derivedStatus?.offlineSeverity ?? "none";
 
-  // Get uplink interval from unit (synced from sensor config)
-  // Default to 5 minutes if not configured
-  const uplinkIntervalMinutes = unit?.checkin_interval_minutes ?? 5;
+  // ⚠️ SINGLE SOURCE OF TRUTH for uplink interval ⚠️
+  // Fetch from sensor_config.uplink_interval_s (the actual configured value)
+  // NOT from units.checkin_interval_minutes (which may be stale/null)
+  const { data: sensorUplinkInterval } = useSensorUplinkInterval(unit?.id ?? null);
+  const uplinkIntervalMinutes = sensorUplinkInterval ?? unit?.checkin_interval_minutes ?? 5;
 
   // Determine if we have a LoRa sensor in pending/joining state
   const isLoraPending = loraSensor?.status === "pending";
