@@ -18,9 +18,11 @@ import {
   DoorClosed,
   Link as LinkIcon,
   Loader2,
+  Timer,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { voltageToPercent } from "@/lib/devices/batteryProfiles";
+import { formatMissedCheckinsMessage, formatUplinkInterval } from "@/lib/missedCheckins";
 import type { WidgetProps } from "../types";
 
 export function DeviceReadinessWidget({ 
@@ -42,6 +44,10 @@ export function DeviceReadinessWidget({
   const lastReadingAt = derivedStatus?.lastReadingAt ?? null;
   const missedCheckins = derivedStatus?.missedCheckins ?? 0;
   const offlineSeverity = derivedStatus?.offlineSeverity ?? "none";
+
+  // Get uplink interval from unit (synced from sensor config)
+  // Default to 5 minutes if not configured
+  const uplinkIntervalMinutes = unit?.checkin_interval_minutes ?? 5;
 
   // Determine if we have a LoRa sensor in pending/joining state
   const isLoraPending = loraSensor?.status === "pending";
@@ -85,19 +91,21 @@ export function DeviceReadinessWidget({
     }
 
     if (offlineSeverity === "critical") {
+      const missedMessage = formatMissedCheckinsMessage(missedCheckins, uplinkIntervalMinutes);
       return {
         status: "offline_critical",
         label: "Offline (Critical)",
-        description: `Sensor has missed ${missedCheckins} check-ins.`,
+        description: missedMessage,
         color: "text-alarm",
         bgColor: "bg-alarm/10",
       };
     }
     if (offlineSeverity === "warning") {
+      const missedMessage = formatMissedCheckinsMessage(missedCheckins, uplinkIntervalMinutes);
       return {
         status: "offline_warning",
         label: "Offline (Warning)",
-        description: `Sensor has missed ${missedCheckins} check-ins.`,
+        description: missedMessage,
         color: "text-warning",
         bgColor: "bg-warning/10",
       };
@@ -212,7 +220,7 @@ export function DeviceReadinessWidget({
         </h3>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {/* Sensor Installation Status */}
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
@@ -287,6 +295,17 @@ export function DeviceReadinessWidget({
             </p>
             <span className="text-sm font-medium text-foreground">
               {formatHeartbeat(lastReadingAt)}
+            </span>
+          </div>
+
+          {/* Uplink Interval */}
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground flex items-center gap-1">
+              <Timer className="w-3 h-3" />
+              Uplink Interval
+            </p>
+            <span className="text-sm font-medium text-foreground">
+              {formatUplinkInterval(uplinkIntervalMinutes)}
             </span>
           </div>
         </div>

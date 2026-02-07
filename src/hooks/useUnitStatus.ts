@@ -1,10 +1,15 @@
 import { useMemo } from "react";
-import { 
-  AlertRules, 
-  DEFAULT_ALERT_RULES, 
+import {
+  AlertRules,
+  DEFAULT_ALERT_RULES,
   computeMissedCheckins,
   computeOfflineSeverity,
 } from "./useAlertRules";
+import {
+  calculateMissedCheckins,
+  formatMissedCheckinsMessage,
+  getMissedCheckinDuration
+} from "@/lib/missedCheckins";
 
 export interface UnitStatusInfo {
   id: string;
@@ -25,9 +30,13 @@ export interface UnitStatusInfo {
   sensor_reliable?: boolean;
   manual_logging_enabled?: boolean;
   consecutive_checkins?: number;
-  // New fields for missed check-in tracking
+  // Missed check-in tracking fields
+  // IMPORTANT: checkin_interval_minutes should be kept in sync with the sensor's
+  // configured uplink_interval_s (converted to minutes). Backend processes
+  // (TTN webhook, downlink handlers) are responsible for updating this field
+  // when the sensor's uplink interval changes.
   last_checkin_at?: string | null;
-  checkin_interval_minutes?: number;
+  checkin_interval_minutes?: number; // Should match sensor's uplink interval
 }
 
 export type OfflineSeverity = "none" | "warning" | "critical";
@@ -60,17 +69,22 @@ export interface ComputedUnitStatus {
   statusBgColor: string;
 }
 
-// Default check-in interval (5 minutes)
+// Default check-in interval (5 minutes) - used as fallback only
+// IMPORTANT: In production, checkin_interval_minutes should always be populated
+// from the sensor's configured uplink_interval_s
 const DEFAULT_CHECKIN_INTERVAL_MINUTES = 5;
 
 export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): ComputedUnitStatus {
   const now = Date.now();
   const effectiveRules = rules || DEFAULT_ALERT_RULES;
-  
+
   // Get the unit's check-in interval (per-unit setting)
+  // This MUST reflect the sensor's actual configured uplink interval for accurate
+  // missed check-in calculations. Backend processes sync this from sensor_config.uplink_interval_s.
   const checkinIntervalMinutes = unit.checkin_interval_minutes || DEFAULT_CHECKIN_INTERVAL_MINUTES;
-  
+
   // Compute missed check-ins based on last_checkin_at (or fall back to last_reading_at)
+  // Uses the interval-based calculation: floor((now - last) / interval)
   const lastCheckinAt = unit.last_checkin_at || unit.last_reading_at;
   const missedCheckins = computeMissedCheckins(lastCheckinAt, checkinIntervalMinutes);
   
