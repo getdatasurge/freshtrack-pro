@@ -466,27 +466,59 @@ export function SensorSettingsDrawer({
   const applyAllChanges = useCallback(() => {
     if (!canSend() || !hasChanges) return;
 
+    console.log('[SensorSettings] Applying all changes', { initialValues, hasChanges });
+
     // Apply interval if changed
     if (intervalMinutes !== initialValues.intervalMinutes && !intervalError && intervalMinutes) {
       const minutes = parseFloat(intervalMinutes);
       if (!isNaN(minutes) && minutes >= 1) {
-        applyInterval(Math.round(minutes * 60));
+        console.log('[SensorSettings] Applying interval:', minutes);
+        const seconds = Math.round(minutes * 60);
+        setActiveCmd({ type: "interval" });
+        sendDownlink.mutate({
+          sensorId: sensor.id,
+          commandType: "uplink_interval",
+          commandParams: { type: "uplink_interval", seconds },
+        });
+        return; // Only send one command at a time
       }
     }
 
     // Apply ext mode if changed
     if (extMode !== initialValues.extMode && extMode) {
-      setTimeout(() => applyExtMode(), 100);
+      console.log('[SensorSettings] Applying ext mode:', extMode);
+      setActiveCmd({ type: "ext_mode" });
+      sendDownlink.mutate({
+        sensorId: sensor.id,
+        commandType: "ext_mode",
+        commandParams: { type: "ext_mode", mode: extMode },
+      });
+      return;
     }
 
     // Apply time sync if changed
     if (timeSyncEnabled !== initialValues.timeSyncEnabled) {
-      setTimeout(() => applyTimeSync(timeSyncEnabled), 200);
+      console.log('[SensorSettings] Applying time sync:', timeSyncEnabled);
+      setActiveCmd({ type: "time_sync" });
+      sendDownlink.mutate({
+        sensorId: sensor.id,
+        commandType: "time_sync",
+        commandParams: { type: "time_sync", enable: timeSyncEnabled },
+      });
+      return;
     }
 
     // Apply time sync days if changed
     if (timeSyncEnabled && timeSyncDays !== initialValues.timeSyncDays && !syncDaysError) {
-      setTimeout(() => applyTimeSyncDays(), 300);
+      console.log('[SensorSettings] Applying time sync days:', timeSyncDays);
+      const days = parseInt(timeSyncDays) || 10;
+      setActiveCmd({ type: "time_sync_days" });
+      sendDownlink.mutate({
+        sensorId: sensor.id,
+        commandType: "time_sync",
+        commandParams: { type: "time_sync_days", days },
+      });
+      return;
     }
 
     // Apply alarm if changed and override is enabled
@@ -497,9 +529,30 @@ export function SensorSettingsDrawer({
       alarmCheckMin !== initialValues.alarmCheckMin
     )) {
       if (!alarmLowError && !alarmHighError && !alarmCheckError) {
-        setTimeout(() => applyAlarm(), 400);
+        console.log('[SensorSettings] Applying alarm settings');
+        const lowF = parseFloat(alarmLowF);
+        const highF = parseFloat(alarmHighF);
+        const checkMin = parseInt(alarmCheckMin) || 1;
+        if (isNaN(lowF) || isNaN(highF)) return;
+        const lowC = fToC(lowF);
+        const highC = fToC(highF);
+        setActiveCmd({ type: "alarm" });
+        sendDownlink.mutate({
+          sensorId: sensor.id,
+          commandType: "alarm",
+          commandParams: {
+            type: "alarm",
+            enable: alarmEnabled,
+            check_minutes: checkMin,
+            low_c: Math.round(lowC * 100) / 100,
+            high_c: Math.round(highC * 100) / 100,
+          },
+        });
+        return;
       }
     }
+
+    console.log('[SensorSettings] No changes to apply');
   }, [
     canSend,
     hasChanges,
@@ -518,11 +571,8 @@ export function SensorSettingsDrawer({
     alarmLowError,
     alarmHighError,
     alarmCheckError,
-    applyInterval,
-    applyExtMode,
-    applyTimeSync,
-    applyTimeSyncDays,
-    applyAlarm,
+    sensor.id,
+    sendDownlink,
   ]);
 
   // Helper: is this specific button the one that's loading?
