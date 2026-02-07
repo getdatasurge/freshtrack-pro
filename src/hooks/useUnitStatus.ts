@@ -83,9 +83,22 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
   // missed check-in calculations. Backend processes sync this from sensor_config.uplink_interval_s.
   const checkinIntervalMinutes = unit.checkin_interval_minutes || DEFAULT_CHECKIN_INTERVAL_MINUTES;
 
-  // Compute missed check-ins based on last_checkin_at (or fall back to last_reading_at)
-  // Uses the interval-based calculation: floor((now - last) / interval)
-  const lastCheckinAt = unit.last_checkin_at || unit.last_reading_at;
+  // Compute missed check-ins based on the MOST RECENT timestamp
+  // CRITICAL FIX: Use the newer of last_checkin_at or last_reading_at to avoid
+  // showing "offline" when we actually have recent data.
+  // This handles cases where uplinks are received but check-in tracking isn't updated.
+  const getLatestTimestamp = (): string | null => {
+    if (!unit.last_checkin_at && !unit.last_reading_at) return null;
+    if (!unit.last_checkin_at) return unit.last_reading_at;
+    if (!unit.last_reading_at) return unit.last_checkin_at;
+
+    // Both exist - use the most recent
+    const checkinTime = new Date(unit.last_checkin_at).getTime();
+    const readingTime = new Date(unit.last_reading_at).getTime();
+    return checkinTime > readingTime ? unit.last_checkin_at : unit.last_reading_at;
+  };
+
+  const lastCheckinAt = getLatestTimestamp();
   const missedCheckins = computeMissedCheckins(lastCheckinAt, checkinIntervalMinutes);
   
   // Compute offline severity based on missed check-ins

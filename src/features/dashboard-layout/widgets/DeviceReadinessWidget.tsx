@@ -324,8 +324,8 @@ export function DeviceReadinessWidget({
           <div className={`mt-4 p-3 rounded-lg border border-dashed ${
             isLoraPending || isLoraJoining
               ? "bg-muted/50 border-accent/30"
-              : installationStatus.status === "not_paired" 
-                ? "bg-muted/50 border-border" 
+              : installationStatus.status === "not_paired"
+                ? "bg-muted/50 border-border"
                 : "bg-warning/5 border-warning/30"
           }`}>
             <div className="flex items-center gap-2 text-muted-foreground">
@@ -342,6 +342,15 @@ export function DeviceReadinessWidget({
               )}
               <span className="text-sm">{installationStatus.description}</span>
             </div>
+
+            {/* Debug: Show which timestamp is being used for offline calculation */}
+            {process.env.NODE_ENV === 'development' && missedCheckins > 0 && (
+              <div className="mt-2 pt-2 border-t border-dashed border-muted">
+                <p className="text-xs text-muted-foreground font-mono">
+                  Debug: Using {effectiveLastSeen ? 'sensor.last_seen_at' : lastReadingAt ? 'derivedStatus.lastReadingAt' : 'no timestamp'} for offline calc
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
