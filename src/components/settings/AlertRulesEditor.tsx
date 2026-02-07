@@ -6,15 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { Save, RotateCcw, Loader2, AlertTriangle, Clock, Wifi, DoorOpen, Thermometer, X } from "lucide-react";
+import { Save, RotateCcw, Loader2, AlertTriangle, Clock, Wifi, DoorOpen, Thermometer, X, Timer, Info } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { 
-  AlertRulesRow, 
-  DEFAULT_ALERT_RULES, 
-  upsertAlertRules, 
-  deleteAlertRules 
+import {
+  AlertRulesRow,
+  DEFAULT_ALERT_RULES,
+  upsertAlertRules,
+  deleteAlertRules
 } from "@/hooks/useAlertRules";
 import { insertAlertRulesHistory } from "@/hooks/useAlertRulesHistory";
+import { getMissedCheckinDuration, formatUplinkInterval } from "@/lib/missedCheckins";
 
 interface AlertRulesEditorProps {
   scope: { organization_id?: string; site_id?: string; unit_id?: string };
@@ -51,6 +52,7 @@ export function AlertRulesEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [clearingField, setClearingField] = useState<string | null>(null);
+  const [uplinkIntervalMinutes, setUplinkIntervalMinutes] = useState<number | null>(null);
 
   // Form state
   const [manualIntervalMinutes, setManualIntervalMinutes] = useState<string>("");
@@ -69,6 +71,20 @@ export function AlertRulesEditor({
   const [manualLogMissedCheckinsThreshold, setManualLogMissedCheckinsThreshold] = useState<string>("");
 
   const isOrgScope = !!scope.organization_id && !scope.site_id && !scope.unit_id;
+
+  // Fetch unit's uplink interval for unit-level editors
+  useEffect(() => {
+    if (scope.unit_id) {
+      supabase
+        .from("units")
+        .select("checkin_interval_minutes")
+        .eq("id", scope.unit_id)
+        .maybeSingle()
+        .then(({ data }) => {
+          setUplinkIntervalMinutes(data?.checkin_interval_minutes || null);
+        });
+    }
+  }, [scope.unit_id]);
 
   // Initialize form from existing rules
   useEffect(() => {
@@ -487,9 +503,104 @@ export function AlertRulesEditor({
               unit="missed"
             />
           </div>
-          <p className="text-xs text-muted-foreground">
-            Number of missed check-ins before triggering offline alerts. Manual logging only required when check-in threshold is met AND 4 hours since last reading.
-          </p>
+
+          {/* Helper text with uplink interval context */}
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Number of missed check-ins before triggering offline alerts. Manual logging only required when check-in threshold is met AND 4 hours since last reading.
+            </p>
+
+            {uplinkIntervalMinutes !== null && (
+              <div className="rounded-lg border border-accent/30 bg-accent/5 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-accent">
+                  <Info className="w-3.5 h-3.5" />
+                  Uplink Interval Context
+                </div>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <Timer className="w-3 h-3 text-accent" />
+                    <span className="font-medium">Current Uplink Interval:</span>
+                    <span className="font-mono text-foreground">{formatUplinkInterval(uplinkIntervalMinutes)}</span>
+                  </div>
+                  <div className="ml-5 space-y-0.5">
+                    {(() => {
+                      const warningValue = getEffectiveValue(
+                        offlineWarningMissedCheckins,
+                        parentRules?.offline_warning_missed_checkins,
+                        DEFAULT_ALERT_RULES.offline_warning_missed_checkins
+                      );
+                      const criticalValue = getEffectiveValue(
+                        offlineCriticalMissedCheckins,
+                        parentRules?.offline_critical_missed_checkins,
+                        DEFAULT_ALERT_RULES.offline_critical_missed_checkins
+                      );
+                      const warningDuration = getMissedCheckinDuration(warningValue.value, uplinkIntervalMinutes);
+                      const criticalDuration = getMissedCheckinDuration(criticalValue.value, uplinkIntervalMinutes);
+
+                      return (
+                        <>
+                          <div>
+                            • Offline Warning After: <span className="font-mono text-warning">{warningValue.value} missed = {warningDuration.formatted}</span> without uplink
+                          </div>
+                          <div>
+                            • Offline Critical After: <span className="font-mono text-alarm">{criticalValue.value} missed = {criticalDuration.formatted}</span> without uplink
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {uplinkIntervalMinutes === null && scope.unit_id && (
+              <div className="rounded-lg border border-muted bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground italic">
+                  Uplink interval not configured for this unit. Using default 5 min for calculations.
+                </p>
+              </div>
+            )}
+
+            {!scope.unit_id && (
+              <div className="rounded-lg border border-accent/30 bg-accent/5 p-3">
+                <div className="flex items-center gap-2 text-xs font-medium text-accent mb-2">
+                  <Info className="w-3.5 h-3.5" />
+                  Example Calculation
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  For a sensor with <span className="font-mono">15 min</span> uplink interval:
+                </p>
+                <div className="ml-4 mt-1 space-y-0.5 text-xs text-muted-foreground">
+                  {(() => {
+                    const warningValue = getEffectiveValue(
+                      offlineWarningMissedCheckins,
+                      parentRules?.offline_warning_missed_checkins,
+                      DEFAULT_ALERT_RULES.offline_warning_missed_checkins
+                    );
+                    const criticalValue = getEffectiveValue(
+                      offlineCriticalMissedCheckins,
+                      parentRules?.offline_critical_missed_checkins,
+                      DEFAULT_ALERT_RULES.offline_critical_missed_checkins
+                    );
+                    const exampleInterval = 15;
+                    const warningDuration = getMissedCheckinDuration(warningValue.value, exampleInterval);
+                    const criticalDuration = getMissedCheckinDuration(criticalValue.value, exampleInterval);
+
+                    return (
+                      <>
+                        <div>
+                          • Warning: <span className="font-mono">{warningValue.value} missed = {warningDuration.formatted}</span>
+                        </div>
+                        <div>
+                          • Critical: <span className="font-mono">{criticalValue.value} missed = {criticalDuration.formatted}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <Separator />
