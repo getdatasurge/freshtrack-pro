@@ -1,3 +1,46 @@
+/**
+ * ==================================================================================
+ * SINGLE SOURCE OF TRUTH FOR SENSOR ONLINE/OFFLINE STATUS
+ * ==================================================================================
+ *
+ * This module is the ONLY place where sensor online/offline status is calculated.
+ * All widgets and components MUST use the ComputedUnitStatus returned by this hook.
+ *
+ * ARCHITECTURE:
+ *
+ * 1. DATA FLOW:
+ *    Unit Data (DB) → computeUnitStatus() → ComputedUnitStatus → Widget Props
+ *
+ * 2. CONSUMERS (All widgets receive 'derivedStatus' prop):
+ *    ✅ CurrentTempWidget        - uses derivedStatus.isOnline
+ *    ✅ DeviceStatusWidget       - uses derivedStatus.statusLabel/Color
+ *    ✅ DeviceReadinessWidget    - uses derivedStatus.offlineSeverity
+ *    ✅ LastKnownGoodWidget      - uses derivedStatus.isOnline
+ *    ✅ Alert System             - uses computed.offlineSeverity
+ *
+ * 3. KEY FIELDS IN ComputedUnitStatus:
+ *    - sensorOnline: boolean              (true = online, false = offline)
+ *    - offlineSeverity: "none"|"warning"|"critical"  (severity level)
+ *    - missedCheckins: number             (count of missed check-ins)
+ *    - statusLabel: string                (UI label: "OK", "Offline", etc.)
+ *    - statusColor/statusBgColor          (UI colors)
+ *
+ * 4. CALCULATION LOGIC:
+ *    - Uses MOST RECENT timestamp (last_checkin_at OR last_reading_at)
+ *    - Formula: missedCheckins = floor((now - lastUplink) / uplinkInterval)
+ *    - Applies alert rules thresholds (warning/critical)
+ *    - Returns unified status for all UI components
+ *
+ * 5. ADDING NEW STATUS DISPLAYS:
+ *    - DO NOT calculate status independently
+ *    - MUST receive derivedStatus prop from parent
+ *    - Use derivedStatus.isOnline or derivedStatus.offlineSeverity
+ *    - Follow the existing widget pattern
+ *
+ * CRITICAL: Do NOT duplicate status logic in widgets. Always use derivedStatus.
+ * ==================================================================================
+ */
+
 import { useMemo } from "react";
 import {
   AlertRules,
