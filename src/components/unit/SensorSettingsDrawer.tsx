@@ -134,6 +134,25 @@ function statusBadgeClass(status: SensorChangeStatus): string {
   }
 }
 
+function changeTypeLabel(type: string): string {
+  switch (type) {
+    case "uplink_interval":
+      return "Reporting interval";
+    case "set_time":
+      return "Clock synced";
+    case "ext_mode":
+      return "External probe type";
+    case "time_sync":
+      return "Clock sync setting";
+    case "time_sync_days":
+      return "Clock sync frequency";
+    case "alarm":
+      return "Temperature alerts";
+    default:
+      return type;
+  }
+}
+
 /** Track which button triggered the current mutation */
 type ActiveCommand =
   | { type: "preset"; label: string }
@@ -437,7 +456,7 @@ export function SensorSettingsDrawer({
             Sensor Settings
           </SheetTitle>
           <SheetDescription>
-            Configure device settings via LoRaWAN downlink
+            {sensor.name}
           </SheetDescription>
         </SheetHeader>
 
@@ -447,13 +466,8 @@ export function SensorSettingsDrawer({
         <Alert className="mb-4 border-blue-200 bg-blue-50/50">
           <Info className="w-4 h-4 text-blue-500" />
           <AlertDescription className="text-xs text-blue-700">
-            This is a <span className="font-semibold">Class A</span> LoRaWAN device.
-            Commands are queued and delivered when the sensor sends its next uplink.
-            {estimatedMinutes && (
-              <span className="block mt-1">
-                Current interval: <span className="font-semibold">{estimatedMinutes} min</span> — estimated confirmation in ~{estimatedMinutes} min.
-              </span>
-            )}
+            This sensor reports every <span className="font-semibold">{estimatedMinutes || "10"} minutes</span>.
+            Any changes you make will apply on the next report.
           </AlertDescription>
         </Alert>
 
@@ -464,8 +478,7 @@ export function SensorSettingsDrawer({
           <Alert className="mb-4 border-amber-200 bg-amber-50/50">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
             <AlertDescription className="text-xs text-amber-700">
-              A change is waiting for sensor confirmation. New commands are disabled until
-              the current one is confirmed or times out.
+              Waiting for sensor to confirm previous change. New changes are disabled until confirmed.
             </AlertDescription>
           </Alert>
         )}
@@ -481,12 +494,12 @@ export function SensorSettingsDrawer({
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">DevEUI</span>
+            <span className="text-muted-foreground">Sensor ID</span>
             <span className="font-mono text-xs">{sensor.dev_eui}</span>
           </div>
           {sensor.last_seen_at && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Last uplink</span>
+              <span className="text-muted-foreground">Last report</span>
               <span>
                 {formatDistanceToNow(new Date(sensor.last_seen_at), {
                   addSuffix: true,
@@ -496,13 +509,13 @@ export function SensorSettingsDrawer({
           )}
           {config?.uplink_interval_s && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Uplink interval</span>
+              <span className="text-muted-foreground">Reports every</span>
               <span>{Math.round(config.uplink_interval_s / 60)} min</span>
             </div>
           )}
           {config?.last_applied_at && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Last confirmed</span>
+              <span className="text-muted-foreground">Last setting confirmed</span>
               <span>
                 {formatDistanceToNow(new Date(config.last_applied_at), {
                   addSuffix: true,
@@ -584,7 +597,7 @@ export function SensorSettingsDrawer({
                   {/* Custom Uplink Interval */}
                   <div className="space-y-2">
                     <Label className="text-xs font-medium">
-                      Uplink Interval (minutes)
+                      How often this sensor reports
                     </Label>
                     <div className="flex gap-2">
                       <div className="flex-1">
@@ -616,7 +629,7 @@ export function SensorSettingsDrawer({
                   {/* External Mode (LHT65N) */}
                   <div className="space-y-2">
                     <Label className="text-xs font-medium">
-                      External Mode (LHT65N)
+                      External probe type
                     </Label>
                     <div className="flex gap-2">
                       <Select
@@ -654,7 +667,7 @@ export function SensorSettingsDrawer({
                   {/* Time Sync */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium">Time Sync</Label>
+                      <Label className="text-xs font-medium">Keep sensor clock accurate</Label>
                       <div className="flex items-center gap-2">
                         {isLoading({ type: "time_sync" }) && (
                           <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
@@ -713,7 +726,7 @@ export function SensorSettingsDrawer({
                       ) : (
                         <Clock className="w-3.5 h-3.5 mr-1.5" />
                       )}
-                      Set Device Time to Now
+                      Sync clock now
                     </Button>
                   </div>
 
@@ -724,14 +737,14 @@ export function SensorSettingsDrawer({
                     <div className="flex items-center justify-between">
                       <Label className="text-xs font-medium flex items-center gap-1.5">
                         <Thermometer className="w-3.5 h-3.5" />
-                        Alarm Thresholds
+                        Temperature alerts
                       </Label>
                     </div>
 
                     {/* Override toggle */}
                     <div className="flex items-center justify-between p-2 rounded bg-muted/30">
                       <span className="text-xs text-muted-foreground">
-                        Override unit defaults
+                        Use custom alert temperatures
                       </span>
                       <Switch
                         checked={overrideAlarm}
@@ -740,10 +753,9 @@ export function SensorSettingsDrawer({
                       />
                     </div>
 
-                    {!overrideAlarm && (
+                    {!overrideAlarm && unitAlarmHigh && (
                       <p className="text-xs text-muted-foreground italic">
-                        Using unit defaults: Low {unitAlarmLow ?? "\u2014"}&deg;F /
-                        High {unitAlarmHigh ?? "\u2014"}&deg;F
+                        Alert if temperature goes above {unitAlarmHigh}&deg;F
                       </p>
                     )}
 
@@ -763,7 +775,7 @@ export function SensorSettingsDrawer({
                         <div className="grid grid-cols-3 gap-2">
                           <div className="space-y-1">
                             <Label className="text-[10px] text-muted-foreground">
-                              Low (&deg;F)
+                              Alert if below
                             </Label>
                             <Input
                               type="number"
@@ -776,7 +788,7 @@ export function SensorSettingsDrawer({
                           </div>
                           <div className="space-y-1">
                             <Label className="text-[10px] text-muted-foreground">
-                              High (&deg;F)
+                              Alert if above
                             </Label>
                             <Input
                               type="number"
@@ -819,7 +831,7 @@ export function SensorSettingsDrawer({
                           ) : (
                             <Send className="w-3.5 h-3.5 mr-1.5" />
                           )}
-                          Apply Alarm Settings
+                          Apply
                         </Button>
                       </>
                     )}
@@ -867,7 +879,7 @@ export function SensorSettingsDrawer({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium truncate">
-                            {change.expected_result || change.change_type}
+                            {changeTypeLabel(change.change_type)}
                           </span>
                           <Badge
                             className={cn(
@@ -875,7 +887,7 @@ export function SensorSettingsDrawer({
                               statusBadgeClass(change.status)
                             )}
                           >
-                            {change.status}
+                            {change.status === "sent" ? "⏳" : change.status === "applied" ? "✅" : change.status === "failed" ? "❌" : change.status}
                           </Badge>
                         </div>
                         <span className="text-muted-foreground">
@@ -894,7 +906,7 @@ export function SensorSettingsDrawer({
                         {change.status === "sent" && (
                           <p className="text-muted-foreground mt-0.5 flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3 text-amber-400" />
-                            Awaiting next uplink
+                            Waiting for next report
                             {estimatedMinutes && (
                               <span> (~{estimatedMinutes} min)</span>
                             )}
@@ -903,7 +915,7 @@ export function SensorSettingsDrawer({
                         {change.status === "applied" && change.applied_at && (
                           <p className="text-green-600 mt-0.5 flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" />
-                            Confirmed{" "}
+                            Applied{" "}
                             {formatDistanceToNow(
                               new Date(change.applied_at),
                               { addSuffix: true }
@@ -913,13 +925,13 @@ export function SensorSettingsDrawer({
                         {change.status === "timeout" && (
                           <p className="text-amber-600 mt-0.5 flex items-center gap-1">
                             <Timer className="w-3 h-3" />
-                            No confirmation received
+                            Timed out
                           </p>
                         )}
                         {change.status === "failed" && (
                           <p className="text-red-600 mt-0.5 flex items-center gap-1">
                             <XCircle className="w-3 h-3" />
-                            Downlink failed
+                            Failed — try again
                             {change.failed_at && (
                               <span>
                                 {" "}

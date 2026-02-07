@@ -116,9 +116,9 @@ export interface UplinkPreset {
 }
 
 export const UPLINK_PRESETS: UplinkPreset[] = [
-  { label: 'Power Saver', description: '30 min interval', interval_s: 1800 },
-  { label: 'Standard', description: '10 min interval', interval_s: 600 },
-  { label: 'Debug', description: '2 min interval', interval_s: 120 },
+  { label: 'Power Saver', description: 'Reports every 30 min', interval_s: 1800 },
+  { label: 'Standard', description: 'Reports every 10 min', interval_s: 600 },
+  { label: 'Frequent', description: 'Reports every 2 min', interval_s: 120 },
 ];
 
 // ---------------------------------------------------------------------------
