@@ -126,6 +126,7 @@ const Dashboard = () => {
             id, name, unit_type, status, last_temp_reading, last_reading_at,
             temp_limit_high, temp_limit_low, manual_log_cadence,
             sensor_reliable, manual_logging_enabled, consecutive_checkins,
+            last_checkin_at, last_manual_log_at, checkin_interval_minutes,
             area:areas!inner(name, site:sites!inner(name, organization_id))
           `)
           .eq("is_active", true)
@@ -168,7 +169,9 @@ const Dashboard = () => {
         temp_limit_high: u.temp_limit_high,
         temp_limit_low: u.temp_limit_low,
         manual_log_cadence: u.manual_log_cadence,
-        last_manual_log_at: latestLogByUnit[u.id] || null,
+        last_manual_log_at: u.last_manual_log_at || latestLogByUnit[u.id] || null,
+        last_checkin_at: u.last_checkin_at || null,
+        checkin_interval_minutes: u.checkin_interval_minutes || null,
         sensor_reliable: u.sensor_reliable,
         manual_logging_enabled: u.manual_logging_enabled,
         consecutive_checkins: u.consecutive_checkins,
@@ -176,10 +179,26 @@ const Dashboard = () => {
       }));
 
       // Compute status for each unit
-      const unitsWithComputed = formattedUnits.map(u => ({
-        ...u,
-        computed: computeUnitStatus(u),
-      }));
+      const unitsWithComputed = formattedUnits.map(u => {
+        const computed = computeUnitStatus(u);
+
+        // Debug: Log status calculation for offline units
+        if (!computed.sensorOnline) {
+          console.log('[Dashboard] Unit showing offline:', {
+            unitName: u.name,
+            lastReadingAt: u.last_reading_at,
+            lastCheckinAt: u.last_checkin_at,
+            checkinIntervalMinutes: u.checkin_interval_minutes,
+            missedCheckins: computed.missedCheckins,
+            offlineSeverity: computed.offlineSeverity,
+          });
+        }
+
+        return {
+          ...u,
+          computed,
+        };
+      });
 
       // Sort units by action required priority
       unitsWithComputed.sort((a, b) => {
@@ -253,8 +272,9 @@ const Dashboard = () => {
     if (!unit.last_manual_log_at) {
       return <span className="text-muted-foreground">No logs</span>;
     }
-    
-    const computed = computeUnitStatus(unit);
+
+    // Use the already computed status instead of recomputing
+    const computed = units.find(u => u.id === unit.id)?.computed || computeUnitStatus(unit);
 
     return (
       <span className={computed.manualRequired ? "text-warning" : "text-muted-foreground"}>
