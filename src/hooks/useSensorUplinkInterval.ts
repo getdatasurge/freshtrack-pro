@@ -15,8 +15,6 @@ export function useSensorUplinkInterval(unitId: string | null) {
     queryFn: async (): Promise<number | null> => {
       if (!unitId) return null;
 
-      console.log("[useSensorUplinkInterval] Fetching for unit:", unitId);
-
       // Get the primary sensor for this unit
       const { data: sensorData, error: sensorError } = await supabase
         .from("lora_sensors")
@@ -25,13 +23,9 @@ export function useSensorUplinkInterval(unitId: string | null) {
         .eq("is_primary", true)
         .maybeSingle();
 
-      if (sensorError) {
-        console.error("[useSensorUplinkInterval] Error fetching sensor:", sensorError);
-        return null;
-      }
+      if (sensorError) return null;
 
       if (!sensorData) {
-        console.warn("[useSensorUplinkInterval] No primary sensor found for unit:", unitId);
         // Try to get ANY sensor for this unit as fallback
         const { data: anySensor, error: anyError } = await supabase
           .from("lora_sensors")
@@ -40,16 +34,10 @@ export function useSensorUplinkInterval(unitId: string | null) {
           .limit(1)
           .maybeSingle();
 
-        if (anyError || !anySensor) {
-          console.warn("[useSensorUplinkInterval] No sensors at all for unit:", unitId);
-          return null;
-        }
-
-        console.log("[useSensorUplinkInterval] Using non-primary sensor:", anySensor.dev_eui);
+        if (anyError || !anySensor) return null;
         return fetchSensorConfig(anySensor.id);
       }
 
-      console.log("[useSensorUplinkInterval] Found primary sensor:", sensorData.dev_eui);
       return fetchSensorConfig(sensorData.id);
     },
     enabled: !!unitId,
@@ -59,25 +47,15 @@ export function useSensorUplinkInterval(unitId: string | null) {
 }
 
 async function fetchSensorConfig(sensorId: string): Promise<number | null> {
-  // Get the sensor configuration from sensor_configurations table
   const { data: configData, error: configError } = await supabase
     .from("sensor_configurations")
     .select("uplink_interval_s")
     .eq("sensor_id", sensorId)
     .maybeSingle();
 
-  if (configError) {
-    console.error("[useSensorUplinkInterval] Error fetching sensor config:", configError);
+  if (configError || !configData || !configData.uplink_interval_s) {
     return null;
   }
 
-  if (!configData || !configData.uplink_interval_s) {
-    console.warn("[useSensorUplinkInterval] No sensor config or uplink_interval_s for sensor:", sensorId);
-    return null;
-  }
-
-  const intervalMinutes = Math.round(configData.uplink_interval_s / 60);
-  console.log("[useSensorUplinkInterval] Uplink interval:", configData.uplink_interval_s, "seconds =", intervalMinutes, "minutes");
-
-  return intervalMinutes;
+  return Math.round(configData.uplink_interval_s / 60);
 }

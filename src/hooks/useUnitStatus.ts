@@ -112,10 +112,10 @@ export interface ComputedUnitStatus {
   statusBgColor: string;
 }
 
-// Default check-in interval (5 minutes) - used as fallback only
-// IMPORTANT: In production, checkin_interval_minutes should always be populated
-// from the sensor's configured uplink_interval_s
-const DEFAULT_CHECKIN_INTERVAL_MINUTES = 5;
+// Default check-in interval (10 minutes) - used as fallback only
+// 10 minutes is the most common LoRaWAN sensor uplink interval
+// IMPORTANT: In production, this should come from sensor_configurations.uplink_interval_s
+const DEFAULT_CHECKIN_INTERVAL_MINUTES = 10;
 
 export function computeUnitStatus(
   unit: UnitStatusInfo,
