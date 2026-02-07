@@ -50,7 +50,9 @@ export function DeviceReadinessWidget({
 
   // Use LoRa sensor data if available and active, otherwise fall back to device data
   const effectiveSignalStrength = hasLoraData ? loraSensor.signal_strength : (primarySensor?.signal_strength ?? device?.signal_strength);
-  const effectiveLastSeen = hasLoraData ? loraSensor.last_seen_at : (derivedStatus?.lastSeenAt || device?.last_seen_at);
+  // CRITICAL: Use derivedStatus.lastSeenAt for consistency with missedCheckins calculation.
+  // Both are computed from the same primaryLoraSensor in UnitDetail, ensuring they always match.
+  const effectiveLastSeen = derivedStatus?.lastSeenAt || (hasLoraData ? loraSensor.last_seen_at : device?.last_seen_at);
   const deviceSerial = primarySensor?.dev_eui || device?.serial_number;
 
   // Check if voltage is available - determines "(Est.)" vs "(Reported)" label
