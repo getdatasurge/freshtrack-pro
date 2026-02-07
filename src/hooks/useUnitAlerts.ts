@@ -57,7 +57,8 @@ export interface ExtendedUnitStatusInfo extends UnitStatusInfo {
  */
 export function computeUnitAlerts(
   units: (UnitStatusInfo | ExtendedUnitStatusInfo)[],
-  rulesMap?: Map<string, AlertRules>
+  rulesMap?: Map<string, AlertRules>,
+  uplinkIntervalsMap?: Map<string, number>
 ): UnitAlertsSummary {
   const alerts: ComputedAlert[] = [];
   let unitsOk = 0;
@@ -65,7 +66,8 @@ export function computeUnitAlerts(
 
   for (const unit of units) {
     const rules = rulesMap?.get(unit.id) || DEFAULT_ALERT_RULES;
-    const computed = computeUnitStatus(unit, rules);
+    const uplinkInterval = uplinkIntervalsMap?.get(unit.id);
+    const computed = computeUnitStatus(unit, rules, uplinkInterval);
     let hasAlert = false;
 
     // Type guard for extended info
@@ -78,8 +80,8 @@ export function computeUnitAlerts(
 
     // OFFLINE - Split into warning and critical based on missed check-ins
     if (computed.offlineSeverity === "critical") {
-      const uplinkInterval = unit.checkin_interval_minutes || 10;
-      const duration = getMissedCheckinDuration(computed.missedCheckins, uplinkInterval);
+      const intervalForMessage = uplinkInterval ?? unit.checkin_interval_minutes ?? 10;
+      const duration = getMissedCheckinDuration(computed.missedCheckins, intervalForMessage);
       alerts.push({
         id: `${unit.id}-OFFLINE_CRITICAL`,
         unit_id: unit.id,
@@ -95,8 +97,8 @@ export function computeUnitAlerts(
       });
       hasAlert = true;
     } else if (computed.offlineSeverity === "warning") {
-      const uplinkInterval = unit.checkin_interval_minutes || 10;
-      const duration = getMissedCheckinDuration(computed.missedCheckins, uplinkInterval);
+      const intervalForMessage = uplinkInterval ?? unit.checkin_interval_minutes ?? 10;
+      const duration = getMissedCheckinDuration(computed.missedCheckins, intervalForMessage);
       alerts.push({
         id: `${unit.id}-OFFLINE_WARNING`,
         unit_id: unit.id,
@@ -241,7 +243,8 @@ export function computeUnitAlerts(
  */
 export function useUnitAlerts(
   units: (UnitStatusInfo | ExtendedUnitStatusInfo)[],
-  rulesMap?: Map<string, AlertRules>
+  rulesMap?: Map<string, AlertRules>,
+  uplinkIntervalsMap?: Map<string, number>
 ): UnitAlertsSummary {
-  return useMemo(() => computeUnitAlerts(units, rulesMap), [units, rulesMap]);
+  return useMemo(() => computeUnitAlerts(units, rulesMap, uplinkIntervalsMap), [units, rulesMap, uplinkIntervalsMap]);
 }
