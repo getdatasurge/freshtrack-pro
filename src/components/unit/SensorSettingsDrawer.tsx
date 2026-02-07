@@ -331,6 +331,38 @@ export function SensorSettingsDrawer({
     }
   }, [config, unitAlarmLow, unitAlarmHigh]);
 
+  // Track initial values for dirty checking
+  const [initialValues, setInitialValues] = useState<any>(null);
+
+  useEffect(() => {
+    if (config && !initialValues) {
+      setInitialValues({
+        intervalMinutes: config.uplink_interval_s ? String(Math.round(config.uplink_interval_s / 60)) : "",
+        extMode: config.ext_mode || "",
+        timeSyncEnabled: config.time_sync_enabled,
+        timeSyncDays: config.time_sync_days !== null ? String(config.time_sync_days) : "10",
+        overrideAlarm: config.override_unit_alarm,
+        alarmEnabled: config.alarm_enabled,
+        alarmLowF: config.alarm_low !== null ? String(Math.round(cToF(config.alarm_low))) : "",
+        alarmHighF: config.alarm_high !== null ? String(Math.round(cToF(config.alarm_high))) : "",
+        alarmCheckMin: config.alarm_check_minutes !== null ? String(config.alarm_check_minutes) : "1",
+      });
+    }
+  }, [config, initialValues]);
+
+  // Check if any values have changed
+  const hasChanges = initialValues && (
+    intervalMinutes !== initialValues.intervalMinutes ||
+    extMode !== initialValues.extMode ||
+    timeSyncEnabled !== initialValues.timeSyncEnabled ||
+    timeSyncDays !== initialValues.timeSyncDays ||
+    overrideAlarm !== initialValues.overrideAlarm ||
+    alarmEnabled !== initialValues.alarmEnabled ||
+    alarmLowF !== initialValues.alarmLowF ||
+    alarmHighF !== initialValues.alarmHighF ||
+    alarmCheckMin !== initialValues.alarmCheckMin
+  );
+
   // --- Disable all Apply buttons while ANY change is 'sent' ---
   const isBusy = sendDownlink.isPending;
   const hasPendingSent = !!hasSentChanges;
@@ -431,12 +463,67 @@ export function SensorSettingsDrawer({
     canSend,
   ]);
 
-  const applyCustomInterval = useCallback(() => {
-    if (intervalError || !canSend()) return;
-    const minutes = parseFloat(intervalMinutes);
-    if (isNaN(minutes) || minutes < 1) return;
-    applyInterval(Math.round(minutes * 60));
-  }, [intervalMinutes, intervalError, applyInterval, canSend]);
+  const applyAllChanges = useCallback(() => {
+    if (!canSend() || !hasChanges) return;
+
+    // Apply interval if changed
+    if (intervalMinutes !== initialValues.intervalMinutes && !intervalError && intervalMinutes) {
+      const minutes = parseFloat(intervalMinutes);
+      if (!isNaN(minutes) && minutes >= 1) {
+        applyInterval(Math.round(minutes * 60));
+      }
+    }
+
+    // Apply ext mode if changed
+    if (extMode !== initialValues.extMode && extMode) {
+      setTimeout(() => applyExtMode(), 100);
+    }
+
+    // Apply time sync if changed
+    if (timeSyncEnabled !== initialValues.timeSyncEnabled) {
+      setTimeout(() => applyTimeSync(timeSyncEnabled), 200);
+    }
+
+    // Apply time sync days if changed
+    if (timeSyncEnabled && timeSyncDays !== initialValues.timeSyncDays && !syncDaysError) {
+      setTimeout(() => applyTimeSyncDays(), 300);
+    }
+
+    // Apply alarm if changed and override is enabled
+    if (overrideAlarm && (
+      alarmEnabled !== initialValues.alarmEnabled ||
+      alarmLowF !== initialValues.alarmLowF ||
+      alarmHighF !== initialValues.alarmHighF ||
+      alarmCheckMin !== initialValues.alarmCheckMin
+    )) {
+      if (!alarmLowError && !alarmHighError && !alarmCheckError) {
+        setTimeout(() => applyAlarm(), 400);
+      }
+    }
+  }, [
+    canSend,
+    hasChanges,
+    initialValues,
+    intervalMinutes,
+    intervalError,
+    extMode,
+    timeSyncEnabled,
+    timeSyncDays,
+    syncDaysError,
+    overrideAlarm,
+    alarmEnabled,
+    alarmLowF,
+    alarmHighF,
+    alarmCheckMin,
+    alarmLowError,
+    alarmHighError,
+    alarmCheckError,
+    applyInterval,
+    applyExtMode,
+    applyTimeSync,
+    applyTimeSyncDays,
+    applyAlarm,
+  ]);
 
   // Helper: is this specific button the one that's loading?
   const isLoading = (cmd: ActiveCommand): boolean => {
@@ -599,31 +686,16 @@ export function SensorSettingsDrawer({
                     <Label className="text-xs font-medium">
                       How often this sensor reports
                     </Label>
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <Input
-                          type="number"
-                          min="1"
-                          max="1440"
-                          placeholder="e.g. 10"
-                          value={intervalMinutes}
-                          onChange={(e) => setIntervalMinutes(e.target.value)}
-                          className={cn(intervalError && "border-red-400")}
-                        />
-                        <FieldError error={intervalError} />
-                      </div>
-                      <Button
-                        size="sm"
-                        disabled={isDisabled || !intervalMinutes || !!intervalError}
-                        onClick={applyCustomInterval}
-                      >
-                        {isLoading({ type: "interval" }) ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          "Apply"
-                        )}
-                      </Button>
-                    </div>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="1440"
+                      placeholder="e.g. 10"
+                      value={intervalMinutes}
+                      onChange={(e) => setIntervalMinutes(e.target.value)}
+                      className={cn(intervalError && "border-red-400")}
+                    />
+                    <FieldError error={intervalError} />
                   </div>
 
                   {/* External Mode (LHT65N) */}
@@ -631,35 +703,22 @@ export function SensorSettingsDrawer({
                     <Label className="text-xs font-medium">
                       External probe type
                     </Label>
-                    <div className="flex gap-2">
-                      <Select
-                        value={extMode}
-                        onValueChange={(v) => setExtMode(v as ExtMode)}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Select mode" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="e3_ext1">
-                            E3 Temp Probe (ext=1)
-                          </SelectItem>
-                          <SelectItem value="e3_ext9">
-                            E3 + Timestamp (ext=9)
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        size="sm"
-                        disabled={isDisabled || !extMode}
-                        onClick={applyExtMode}
-                      >
-                        {isLoading({ type: "ext_mode" }) ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          "Apply"
-                        )}
-                      </Button>
-                    </div>
+                    <Select
+                      value={extMode}
+                      onValueChange={(v) => setExtMode(v as ExtMode)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="e3_ext1">
+                          E3 Temp Probe (ext=1)
+                        </SelectItem>
+                        <SelectItem value="e3_ext9">
+                          E3 + Timestamp (ext=9)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <Separator />
@@ -684,33 +743,19 @@ export function SensorSettingsDrawer({
                     </div>
 
                     {timeSyncEnabled && (
-                      <div className="flex gap-2 items-start">
-                        <div className="flex-1 space-y-1">
-                          <Label className="text-[10px] text-muted-foreground">
-                            Sync interval (days)
-                          </Label>
-                          <Input
-                            type="number"
-                            min="1"
-                            max="30"
-                            value={timeSyncDays}
-                            onChange={(e) => setTimeSyncDays(e.target.value)}
-                            className={cn(syncDaysError && "border-red-400")}
-                          />
-                          <FieldError error={syncDaysError} />
-                        </div>
-                        <Button
-                          size="sm"
-                          className="mt-4"
-                          disabled={isDisabled || !!syncDaysError}
-                          onClick={applyTimeSyncDays}
-                        >
-                          {isLoading({ type: "time_sync_days" }) ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            "Apply"
-                          )}
-                        </Button>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-muted-foreground">
+                          Sync interval (days)
+                        </Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="30"
+                          value={timeSyncDays}
+                          onChange={(e) => setTimeSyncDays(e.target.value)}
+                          className={cn(syncDaysError && "border-red-400")}
+                        />
+                        <FieldError error={syncDaysError} />
                       </div>
                     )}
 
@@ -815,30 +860,41 @@ export function SensorSettingsDrawer({
                           </div>
                         </div>
 
-                        <Button
-                          size="sm"
-                          disabled={
-                            isDisabled ||
-                            !!alarmLowError ||
-                            !!alarmHighError ||
-                            !!alarmCheckError
-                          }
-                          onClick={applyAlarm}
-                          className="w-full"
-                        >
-                          {isLoading({ type: "alarm" }) ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
-                          ) : (
-                            <Send className="w-3.5 h-3.5 mr-1.5" />
-                          )}
-                          Apply
-                        </Button>
                       </>
                     )}
                   </div>
                 </div>
               )}
             </div>
+
+            {/* Apply All Changes Button */}
+            {hasChanges && (
+              <Button
+                size="lg"
+                disabled={
+                  isDisabled ||
+                  !!intervalError ||
+                  !!alarmLowError ||
+                  !!alarmHighError ||
+                  !!alarmCheckError ||
+                  !!syncDaysError
+                }
+                onClick={applyAllChanges}
+                className="w-full"
+              >
+                {isBusy ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    Applying Changes...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Apply All Changes
+                  </>
+                )}
+              </Button>
+            )}
 
             <Separator />
 
