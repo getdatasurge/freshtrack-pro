@@ -105,7 +105,10 @@ export const qk = {
     
     // Manual logs
     manualLogs: () => ['unit', unitId, 'manual-logs'] as const,
-    
+
+    // Sensor uplink interval (from sensor_config) - TRUE source of truth
+    sensorUplinkInterval: () => ['unit', unitId, 'sensor-uplink-interval'] as const,
+
     // Layouts (for unit dashboard)
     layouts: () => ['unit', unitId, 'layouts'] as const,
   }),
