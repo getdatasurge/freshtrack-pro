@@ -178,27 +178,11 @@ const Dashboard = () => {
         area: { name: u.area.name, site: { name: u.area.site.name } },
       }));
 
-      // Compute status for each unit
-      const unitsWithComputed = formattedUnits.map(u => {
-        const computed = computeUnitStatus(u);
-
-        // Debug: Log status calculation for offline units
-        if (!computed.sensorOnline) {
-          console.log('[Dashboard] Unit showing offline:', {
-            unitName: u.name,
-            lastReadingAt: u.last_reading_at,
-            lastCheckinAt: u.last_checkin_at,
-            checkinIntervalMinutes: u.checkin_interval_minutes,
-            missedCheckins: computed.missedCheckins,
-            offlineSeverity: computed.offlineSeverity,
-          });
-        }
-
-        return {
-          ...u,
-          computed,
-        };
-      });
+      // Compute status for each unit using single source of truth
+      const unitsWithComputed = formattedUnits.map(u => ({
+        ...u,
+        computed: computeUnitStatus(u),
+      }));
 
       // Sort units by action required priority
       unitsWithComputed.sort((a, b) => {
@@ -508,11 +492,7 @@ const Dashboard = () => {
           </div>
           <div className="grid gap-3">
             {units.map((unit) => {
-              // Use computed status when offline, otherwise use database status
-              const effectiveStatus = unit.computed.offlineSeverity !== 'none' 
-                ? 'offline' 
-                : unit.status;
-              const status = STATUS_CONFIG[effectiveStatus] || STATUS_CONFIG.offline;
+              // ✅ SINGLE SOURCE OF TRUTH: Use computed status for all displays
               const isOnline = unit.computed.sensorOnline;
               return (
                 <Link key={unit.id} to={`/units/${unit.id}`}>
@@ -520,13 +500,13 @@ const Dashboard = () => {
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-xl ${status.bgColor} flex items-center justify-center`}>
-                            <Thermometer className={`w-6 h-6 ${status.color}`} />
+                          <div className={`w-12 h-12 rounded-xl ${unit.computed.statusBgColor} flex items-center justify-center`}>
+                            <Thermometer className={`w-6 h-6 ${unit.computed.statusColor}`} />
                           </div>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
                               <h3 className="font-semibold text-foreground">{unit.name}</h3>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${status.bgColor} ${status.color}`}>{status.label}</span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${unit.computed.statusBgColor} ${unit.computed.statusColor}`}>{unit.computed.statusLabel}</span>
                               {getComplianceBadge(unit)}
                             </div>
                             <p className="text-sm text-muted-foreground">{unit.area.site.name} · {unit.area.name}</p>
@@ -534,7 +514,7 @@ const Dashboard = () => {
                         </div>
                         <div className="flex items-center gap-6">
                           <div className="text-right hidden sm:block">
-                            <div className={`temp-display text-xl font-semibold ${unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high ? "text-alarm" : status.color}`}>
+                            <div className={`temp-display text-xl font-semibold ${unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high ? "text-alarm" : unit.computed.statusColor}`}>
                               {formatTemp(unit.last_temp_reading)}
                             </div>
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">

@@ -78,7 +78,7 @@ export function computeUnitAlerts(
 
     // OFFLINE - Split into warning and critical based on missed check-ins
     if (computed.offlineSeverity === "critical") {
-      const uplinkInterval = unit.checkin_interval_minutes || 5;
+      const uplinkInterval = unit.checkin_interval_minutes || 10;
       const duration = getMissedCheckinDuration(computed.missedCheckins, uplinkInterval);
       alerts.push({
         id: `${unit.id}-OFFLINE_CRITICAL`,
@@ -95,7 +95,7 @@ export function computeUnitAlerts(
       });
       hasAlert = true;
     } else if (computed.offlineSeverity === "warning") {
-      const uplinkInterval = unit.checkin_interval_minutes || 5;
+      const uplinkInterval = unit.checkin_interval_minutes || 10;
       const duration = getMissedCheckinDuration(computed.missedCheckins, uplinkInterval);
       alerts.push({
         id: `${unit.id}-OFFLINE_WARNING`,
