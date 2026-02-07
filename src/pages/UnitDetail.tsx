@@ -69,6 +69,7 @@ import { computeUnitAlerts, ComputedAlert } from "@/hooks/useUnitAlerts";
 import { UnitStatusInfo, computeUnitStatus, ComputedUnitStatus } from "@/hooks/useUnitStatus";
 import { DeviceInfo } from "@/hooks/useSensorInstallationStatus";
 import { useUnitAlertRules, DEFAULT_ALERT_RULES, AlertRules } from "@/hooks/useAlertRules";
+import { useSensorUplinkInterval } from "@/hooks/useSensorUplinkInterval";
 
 interface UnitData {
   id: string;
@@ -163,9 +164,12 @@ const UnitDetail = () => {
 
   // Fetch LoRa sensors linked to this unit
   const { data: loraSensors } = useLoraSensorsByUnit(unitId || null);
-  
+
   // Fetch the effective alert rules for this unit (uses hierarchical cascade: unit → site → org → default)
   const { data: alertRules } = useUnitAlertRules(unitId || null);
+
+  // Fetch sensor uplink interval from sensor_configurations (TRUE source of truth)
+  const { data: sensorUplinkInterval } = useSensorUplinkInterval(unitId || null);
   
   // Select primary sensor: prefer is_primary flag, then most recent temperature sensor
   const primaryLoraSensor = useMemo(() => {
@@ -832,15 +836,17 @@ const UnitDetail = () => {
       last_reading_at: unit.last_reading_at,
       last_temp_reading: unit.last_temp_reading,
       last_checkin_at: primaryLoraSensor?.last_seen_at || unit.last_reading_at,
-      checkin_interval_minutes: effectiveRules.expected_reading_interval_seconds / 60,
+      // Use sensor uplink interval if available, otherwise fall back to alert rules expectation
+      checkin_interval_minutes: sensorUplinkInterval ?? (effectiveRules.expected_reading_interval_seconds / 60),
       area: { name: unit.area.name, site: { name: unit.area.site.name } },
     };
-  }, [unit, primaryLoraSensor?.last_seen_at, effectiveRules.expected_reading_interval_seconds]);
+  }, [unit, primaryLoraSensor?.last_seen_at, effectiveRules.expected_reading_interval_seconds, sensorUplinkInterval]);
 
   const computedStatus: ComputedUnitStatus | null = useMemo(() => {
     if (!unitStatusInfo) return null;
-    return computeUnitStatus(unitStatusInfo, effectiveRules);
-  }, [unitStatusInfo, effectiveRules]);
+    // Pass sensor uplink interval to ensure accurate missed check-in calculations
+    return computeUnitStatus(unitStatusInfo, effectiveRules, sensorUplinkInterval);
+  }, [unitStatusInfo, effectiveRules, sensorUplinkInterval]);
 
   // Derived status - SINGLE SOURCE OF TRUTH
   const derivedStatus = useMemo(() => {

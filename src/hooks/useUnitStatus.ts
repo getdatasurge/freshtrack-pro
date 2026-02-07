@@ -117,14 +117,24 @@ export interface ComputedUnitStatus {
 // from the sensor's configured uplink_interval_s
 const DEFAULT_CHECKIN_INTERVAL_MINUTES = 5;
 
-export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): ComputedUnitStatus {
+export function computeUnitStatus(
+  unit: UnitStatusInfo,
+  rules?: AlertRules,
+  /**
+   * Optional override for uplink interval in minutes.
+   * If provided, this takes precedence over unit.checkin_interval_minutes.
+   * Use this when you have the actual sensor uplink interval from sensor_configurations.
+   */
+  uplinkIntervalMinutes?: number
+): ComputedUnitStatus {
   const now = Date.now();
   const effectiveRules = rules || DEFAULT_ALERT_RULES;
 
   // Get the unit's check-in interval (per-unit setting)
-  // This MUST reflect the sensor's actual configured uplink interval for accurate
-  // missed check-in calculations. Backend processes sync this from sensor_config.uplink_interval_s.
-  const checkinIntervalMinutes = unit.checkin_interval_minutes || DEFAULT_CHECKIN_INTERVAL_MINUTES;
+  // Priority: explicit parameter > unit.checkin_interval_minutes > default
+  // The parameter allows components that fetch from sensor_configurations to pass
+  // the actual configured value, ensuring accurate missed check-in calculations.
+  const checkinIntervalMinutes = uplinkIntervalMinutes ?? unit.checkin_interval_minutes ?? DEFAULT_CHECKIN_INTERVAL_MINUTES;
 
   // Compute missed check-ins based on the MOST RECENT timestamp
   // CRITICAL FIX: Use the newer of last_checkin_at or last_reading_at to avoid
@@ -285,18 +295,30 @@ export function computeUnitStatus(unit: UnitStatusInfo, rules?: AlertRules): Com
   };
 }
 
-export function useUnitStatus(unit: UnitStatusInfo | null, rules?: AlertRules): ComputedUnitStatus | null {
+export function useUnitStatus(
+  unit: UnitStatusInfo | null,
+  rules?: AlertRules,
+  uplinkIntervalMinutes?: number
+): ComputedUnitStatus | null {
   return useMemo(() => {
     if (!unit) return null;
-    return computeUnitStatus(unit, rules);
-  }, [unit, rules]);
+    return computeUnitStatus(unit, rules, uplinkIntervalMinutes);
+  }, [unit, rules, uplinkIntervalMinutes]);
 }
 
-export function useUnitsStatus(units: UnitStatusInfo[], rulesMap?: Map<string, AlertRules>): Array<UnitStatusInfo & { computed: ComputedUnitStatus }> {
+export function useUnitsStatus(
+  units: UnitStatusInfo[],
+  rulesMap?: Map<string, AlertRules>,
+  uplinkIntervalsMap?: Map<string, number>
+): Array<UnitStatusInfo & { computed: ComputedUnitStatus }> {
   return useMemo(() => {
     return units.map(unit => ({
       ...unit,
-      computed: computeUnitStatus(unit, rulesMap?.get(unit.id)),
+      computed: computeUnitStatus(
+        unit,
+        rulesMap?.get(unit.id),
+        uplinkIntervalsMap?.get(unit.id)
+      ),
     }));
-  }, [units, rulesMap]);
+  }, [units, rulesMap, uplinkIntervalsMap]);
 }
