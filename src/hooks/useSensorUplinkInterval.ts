@@ -1,5 +1,5 @@
 /**
- * Hook to fetch sensor uplink interval from sensor_config table
+ * Hook to fetch sensor uplink interval from sensor_configurations table
  *
  * This is the TRUE source of truth for uplink intervals.
  * Returns the interval in MINUTES (converted from seconds).
@@ -59,9 +59,9 @@ export function useSensorUplinkInterval(unitId: string | null) {
 }
 
 async function fetchSensorConfig(sensorId: string): Promise<number | null> {
-  // Get the sensor configuration
+  // Get the sensor configuration from sensor_configurations table
   const { data: configData, error: configError } = await supabase
-    .from("sensor_config")
+    .from("sensor_configurations")
     .select("uplink_interval_s")
     .eq("sensor_id", sensorId)
     .maybeSingle();

@@ -191,10 +191,21 @@ If you see conflicting online/offline displays:
 2. **Verify timestamp usage**
    - All widgets should use `derivedStatus`
    - Check dev console for "Debug: Using..." messages (DeviceReadinessWidget)
+   - Check dev console for "[useSensorUplinkInterval]" messages showing fetched interval
 
-3. **Check uplink interval**
-   - Ensure `checkin_interval_minutes` matches sensor's `uplink_interval_s`
-   - Backend should sync these values
+3. **Check uplink interval source of truth**
+   - TRUE source: `sensor_configurations.uplink_interval_s` (in seconds)
+   - Frontend: `useSensorUplinkInterval` hook fetches from sensor_configurations
+   - `units.checkin_interval_minutes` is a cached field (may be stale)
+   - `computeUnitStatus` accepts optional `uplinkIntervalMinutes` parameter to override
+   - Query to verify:
+     ```sql
+     SELECT sc.uplink_interval_s, u.checkin_interval_minutes, ls.dev_eui
+     FROM sensor_configurations sc
+     JOIN lora_sensors ls ON ls.id = sc.sensor_id
+     JOIN units u ON u.id = ls.unit_id
+     WHERE u.id = 'your-unit-id';
+     ```
 
 4. **Review alert rules**
    - Check `offline_warning_missed_checkins` (default: 1)
@@ -220,6 +231,9 @@ If you see conflicting online/offline displays:
 
 | Date | Change |
 |------|--------|
+| 2026-02-07 | Fixed useSensorUplinkInterval to query sensor_configurations (was querying non-existent sensor_config) |
+| 2026-02-07 | Added uplinkIntervalMinutes parameter to computeUnitStatus for accurate calculations |
+| 2026-02-07 | Updated UnitDetail to fetch and pass sensor uplink interval to status computations |
 | 2024-02-07 | Fixed timestamp selection to use most recent |
 | 2024-02-07 | Added comprehensive documentation |
 | 2024-02-07 | Verified all widgets use single source |
