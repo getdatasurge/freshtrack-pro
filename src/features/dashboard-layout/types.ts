@@ -225,16 +225,38 @@ export interface WidgetDevice {
 
 /**
  * Derived status passed to widgets.
+ *
+ * ⚠️ SINGLE SOURCE OF TRUTH for sensor online/offline status ⚠️
+ *
+ * Calculated by useUnitStatus hook, passed to all widgets via derivedStatus prop.
+ * ALL status displays MUST use this instead of calculating independently.
+ *
+ * Usage:
+ * - Use isOnline for online/offline boolean checks
+ * - Use offlineSeverity for warning/critical levels
+ * - Use statusLabel/Color for UI display
+ * - Use missedCheckins for diagnostic info
+ *
+ * DO NOT calculate status in widgets - always consume this prop.
  */
 export interface WidgetDerivedStatus {
+  /** TRUE if sensor is online (offlineSeverity === "none") */
   isOnline: boolean;
+  /** Raw status from database (legacy, prefer statusLabel) */
   status: string;
+  /** Display label: "OK", "Offline", "Alarm", etc. */
   statusLabel: string;
+  /** Tailwind color class for status text */
   statusColor: string;
+  /** Tailwind background color class for status */
   statusBgColor: string;
+  /** Offline severity level based on missed check-ins */
   offlineSeverity: "none" | "warning" | "critical";
+  /** Number of missed check-ins (using uplink interval) */
   missedCheckins: number;
+  /** Last time sensor was seen (from sensor data) */
   lastSeenAt: string | null;
+  /** Last time reading was recorded (from unit data) */
   lastReadingAt: string | null;
 }
 
