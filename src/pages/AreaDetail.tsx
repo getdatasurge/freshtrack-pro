@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -6,6 +6,7 @@ import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBr
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteArea } from "@/hooks/useSoftDelete";
+import { computeUnitStatus, UnitStatusInfo } from "@/hooks/useUnitStatus";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -49,8 +50,16 @@ interface Unit {
   status: string;
   last_temp_reading: number | null;
   last_reading_at: string | null;
+  last_checkin_at: string | null;
+  checkin_interval_minutes: number | null;
   temp_limit_high: number;
   temp_limit_low: number | null;
+  manual_log_cadence: number;
+  last_manual_log_at: string | null;
+  area: {
+    name: string;
+    site: { name: string };
+  };
 }
 
 interface AreaData {
@@ -71,8 +80,6 @@ const unitTypes: { value: UnitType; label: string }[] = [
   { value: "display_case", label: "Display Case" },
   { value: "blast_chiller", label: "Blast Chiller" },
 ];
-
-import { STATUS_CONFIG } from "@/lib/statusConfig";
 
 const AreaDetail = () => {
   const { siteId, areaId } = useParams();
@@ -159,7 +166,7 @@ const AreaDetail = () => {
       })));
     }
 
-    // Load units
+    // Load units with all fields needed for status calculation
     const { data: unitsData, error: unitsError } = await supabase
       .from("units")
       .select(`
@@ -169,8 +176,16 @@ const AreaDetail = () => {
         status,
         last_temp_reading,
         last_reading_at,
+        last_checkin_at,
+        checkin_interval_minutes,
         temp_limit_high,
-        temp_limit_low
+        temp_limit_low,
+        manual_log_cadence,
+        last_manual_log_at,
+        area:areas!inner(
+          name,
+          site:sites!inner(name)
+        )
       `)
       .eq("area_id", areaId)
       .eq("is_active", true)
@@ -455,8 +470,9 @@ const AreaDetail = () => {
           {units.length > 0 ? (
             <div className="grid gap-3">
               {units.map((unit) => {
-                const status = STATUS_CONFIG[unit.status] || STATUS_CONFIG.offline;
-                const isOnline = unit.status !== "offline" && unit.last_reading_at;
+                // ✅ Use single source of truth for status
+                const computed = computeUnitStatus(unit as UnitStatusInfo);
+                const isOnline = computed.sensorOnline;
 
                 return (
                   <Link key={unit.id} to={`/units/${unit.id}`}>
@@ -464,14 +480,14 @@ const AreaDetail = () => {
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-xl ${status.bgColor} flex items-center justify-center`}>
-                              <Thermometer className={`w-6 h-6 ${status.color}`} />
+                            <div className={`w-12 h-12 rounded-xl ${computed.statusBgColor} flex items-center justify-center`}>
+                              <Thermometer className={`w-6 h-6 ${computed.statusColor}`} />
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
                                 <h3 className="font-semibold text-foreground">{unit.name}</h3>
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${status.bgColor} ${status.color}`}>
-                                  {status.label}
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${computed.statusBgColor} ${computed.statusColor}`}>
+                                  {computed.statusLabel}
                                 </span>
                               </div>
                               <p className="text-sm text-muted-foreground capitalize">
@@ -485,7 +501,7 @@ const AreaDetail = () => {
                               <div className={`temp-display text-xl font-semibold ${
                                 unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high
                                   ? "text-alarm"
-                                  : status.color
+                                  : computed.statusColor
                               }`}>
                                 {formatTemp(unit.last_temp_reading)}
                               </div>
@@ -515,7 +531,7 @@ const AreaDetail = () => {
                           <div className={`temp-display text-xl font-semibold ${
                             unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high
                               ? "text-alarm"
-                              : status.color
+                              : computed.statusColor
                           }`}>
                             {formatTemp(unit.last_temp_reading)}
                           </div>
