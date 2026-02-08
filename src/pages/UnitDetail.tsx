@@ -20,8 +20,15 @@ import { LayoutHeaderDropdown } from "@/components/LayoutHeaderDropdown";
 import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteUnit, getActiveChildrenCount } from "@/hooks/useSoftDelete";
 import { useLoraSensorsByUnit } from "@/hooks/useLoraSensors";
-import { FixedWidgetLayout } from "@/components/frostguard/layouts/FixedWidgetLayout";
-import type { AlertItem } from "@/components/frostguard/widgets/AlertsWidget";
+import { TemperatureChartWidget } from "@/features/dashboard-layout/widgets/TemperatureChartWidget";
+import { CurrentTempWidget } from "@/features/dashboard-layout/widgets/CurrentTempWidget";
+import { DeviceStatusWidget } from "@/features/dashboard-layout/widgets/DeviceStatusWidget";
+import { TempLimitsWidget } from "@/features/dashboard-layout/widgets/TempLimitsWidget";
+import { DeviceReadinessWidget } from "@/features/dashboard-layout/widgets/DeviceReadinessWidget";
+import { ReadingsCountWidget } from "@/features/dashboard-layout/widgets/ReadingsCountWidget";
+import { BatteryHealthWidget } from "@/features/dashboard-layout/widgets/BatteryHealthWidget";
+import { ConnectedSensorsWidget } from "@/features/dashboard-layout/widgets/ConnectedSensorsWidget";
+import type { TimelineState } from "@/features/dashboard-layout/types";
 import { UnitDebugBanner } from "@/components/debug";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -920,67 +927,28 @@ const UnitDetail = () => {
     effectiveRules.expected_reading_interval_seconds,
   ]);
 
-  // Map LoRa sensor_type to FixedWidgetLayout sensorKind
-  const sensorKind = useMemo(() => {
-    const st = primaryLoraSensor?.sensor_type;
-    if (st === 'door' || st === 'contact') return 'door';
-    if (st === 'combo') return 'combo';
-    return 'temp'; // temperature, temperature_humidity, or fallback
-  }, [primaryLoraSensor?.sensor_type]);
+  // Dashboard timeline state mapped from timeRange for dashboard widgets
+  const dashboardTimeline = useMemo<TimelineState>(() => ({
+    range: timeRange as TimelineState["range"],
+    compare: null,
+    zoomLevel: 1,
+  }), [timeRange]);
 
-  // Build the flat props bag passed to every widget via FixedWidgetLayout
-  const fixedWidgetProps = useMemo<Record<string, unknown>>(() => {
-    const latestReading = readings.length > 0 ? readings[readings.length - 1] : null;
-    const prevReading = readings.length >= 2 ? readings[readings.length - 2] : null;
-
-    const alerts: AlertItem[] = unitAlerts
-      .filter((a) => a.severity === 'warning' || a.severity === 'critical')
-      .map((a) => ({
-        id: a.id,
-        severity: a.severity as 'warning' | 'critical',
-        message: a.title,
-        timestamp: new Date().toISOString(),
-      }));
-
+  // Widget-compatible unit object (uses effective door state)
+  const widgetUnit = useMemo(() => {
+    if (!unit) return undefined;
     return {
-      // Shared identifiers
-      sensorId: primaryLoraSensor?.id || '',
-      unitId: unitId || '',
-      siteId: unit?.area.site.id,
-
-      // TemperatureWidget
-      currentTemp: unit?.last_temp_reading ?? null,
-      previousTemp: prevReading?.temperature ?? null,
-      lastReadingAt: unit?.last_reading_at ?? null,
-      criticalHigh: unit?.temp_limit_high ?? null,
-      criticalLow: unit?.temp_limit_low ?? null,
-
-      // HumidityWidget
-      currentHumidity: latestReading?.humidity ?? null,
-      previousHumidity: prevReading?.humidity ?? null,
-
-      // DoorSensorWidget
-      currentState: effectiveDoorState.state === 'unknown' ? null : effectiveDoorState.state,
-      stateChangedAt: effectiveDoorState.since,
-
-      // BatteryWidget
-      voltage: primaryLoraSensor?.battery_voltage ?? null,
-
-      // AlertsWidget
-      alerts,
-
-      // ComplianceScoreWidget (data not yet computed on this page)
-      score: null,
+      id: unit.id,
+      name: unit.name,
+      unit_type: unit.unit_type,
+      temp_limit_high: unit.temp_limit_high,
+      temp_limit_low: unit.temp_limit_low,
+      last_temp_reading: unit.last_temp_reading,
+      last_reading_at: unit.last_reading_at,
+      door_state: effectiveDoorState.state as "open" | "closed" | "unknown",
+      door_last_changed_at: effectiveDoorState.since,
     };
-  }, [
-    unit,
-    unitId,
-    primaryLoraSensor?.id,
-    primaryLoraSensor?.battery_voltage,
-    readings,
-    effectiveDoorState,
-    unitAlerts,
-  ]);
+  }, [unit, effectiveDoorState]);
 
   if (isLoading && !unit) {
     return (
@@ -1136,12 +1104,80 @@ const UnitDetail = () => {
           </TabsTrigger>
         </TabsList>
 
-        {/* Dashboard Tab - Customizable Grid */}
+        {/* Dashboard Tab - Real data widgets */}
         <TabsContent value="dashboard" className="space-y-4">
-          <FixedWidgetLayout
-            sensorKind={sensorKind}
-            widgetProps={fixedWidgetProps}
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Temperature History Chart */}
+            <Card className="lg:col-span-2 min-h-[300px]">
+              <TemperatureChartWidget
+                readings={readings}
+                tempLimitHigh={unit.temp_limit_high}
+                tempLimitLow={unit.temp_limit_low}
+                timelineState={dashboardTimeline}
+              />
+            </Card>
+            {/* Current Temperature */}
+            <Card>
+              <CurrentTempWidget
+                temperature={unit.last_temp_reading}
+                tempLimitHigh={unit.temp_limit_high}
+                tempLimitLow={unit.temp_limit_low}
+                lastReadingAt={unit.last_reading_at}
+                derivedStatus={derivedStatus}
+              />
+            </Card>
+            {/* Device Status */}
+            <Card>
+              <DeviceStatusWidget
+                derivedStatus={derivedStatus}
+                unitType={unit.unit_type}
+              />
+            </Card>
+            {/* Configured Limits */}
+            <Card>
+              <TempLimitsWidget
+                tempLimitHigh={unit.temp_limit_high}
+                tempLimitLow={unit.temp_limit_low}
+              />
+            </Card>
+            {/* Readings in Period */}
+            <Card>
+              <ReadingsCountWidget
+                sensor={primaryLoraSensor || undefined}
+                loraSensors={loraSensors || undefined}
+                readings={readings}
+                timelineState={dashboardTimeline}
+                count={readingsTotalCount}
+              />
+            </Card>
+            {/* Device Readiness */}
+            <Card className="lg:col-span-3 sm:col-span-2">
+              <DeviceReadinessWidget
+                unit={widgetUnit}
+                sensor={primaryLoraSensor || undefined}
+                derivedStatus={derivedStatus}
+                loraSensors={loraSensors || undefined}
+                device={device || undefined}
+              />
+            </Card>
+            {/* Battery Health */}
+            <Card>
+              <BatteryHealthWidget
+                sensor={primaryLoraSensor || undefined}
+                loraSensors={loraSensors || undefined}
+                device={device || undefined}
+              />
+            </Card>
+            {/* Connected Sensors */}
+            <Card className="lg:col-span-2">
+              <ConnectedSensorsWidget
+                unit={widgetUnit}
+                entityId={unitId}
+                organizationId={unit.area.site.organization_id}
+                siteId={unit.area.site.id}
+              />
+            </Card>
+          </div>
         </TabsContent>
 
         {/* Settings Tab */}
