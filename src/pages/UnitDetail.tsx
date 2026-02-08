@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEntityDashboardUrl } from "@/hooks/useEntityDashboardUrl";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,31 +7,20 @@ import { invalidateUnitCaches } from "@/lib/unitCacheInvalidation";
 import { qk } from "@/lib/queryKeys";
 import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
-import DeviceReadinessCard from "@/components/unit/DeviceReadinessCard";
-import LastKnownGoodCard from "@/components/unit/LastKnownGoodCard";
 import UnitSettingsSection from "@/components/unit/UnitSettingsSection";
 import UnitAlertThresholdsSection from "@/components/unit/UnitAlertThresholdsSection";
-import UnitAlertsBanner from "@/components/unit/UnitAlertsBanner";
 import BatteryHealthCard from "@/components/unit/BatteryHealthCard";
 import UnitSensorsCard from "@/components/unit/UnitSensorsCard";
-import LogTempModal, { LogTempUnit } from "@/components/LogTempModal";
+import LogTempModal from "@/components/LogTempModal";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { LayoutHeaderDropdown } from "@/components/LayoutHeaderDropdown";
 import { usePermissions } from "@/hooks/useUserRole";
-import { softDeleteUnit, getActiveChildrenCount } from "@/hooks/useSoftDelete";
+import { softDeleteUnit } from "@/hooks/useSoftDelete";
 import { useLoraSensorsByUnit } from "@/hooks/useLoraSensors";
-import { TemperatureChartWidget } from "@/features/dashboard-layout/widgets/TemperatureChartWidget";
-import { CurrentTempWidget } from "@/features/dashboard-layout/widgets/CurrentTempWidget";
-import { DeviceStatusWidget } from "@/features/dashboard-layout/widgets/DeviceStatusWidget";
-import { TempLimitsWidget } from "@/features/dashboard-layout/widgets/TempLimitsWidget";
-import { DeviceReadinessWidget } from "@/features/dashboard-layout/widgets/DeviceReadinessWidget";
-import { ReadingsCountWidget } from "@/features/dashboard-layout/widgets/ReadingsCountWidget";
-import { BatteryHealthWidget } from "@/features/dashboard-layout/widgets/BatteryHealthWidget";
-import { ConnectedSensorsWidget } from "@/features/dashboard-layout/widgets/ConnectedSensorsWidget";
-import type { TimelineState } from "@/features/dashboard-layout/types";
+import { EntityDashboard } from "@/features/dashboard-layout/components/EntityDashboard";
 import { UnitDebugBanner } from "@/components/debug";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -42,15 +31,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Thermometer,
   Loader2,
   Download,
-  Wifi,
-  WifiOff,
   AlertTriangle,
   Clock,
   FileText,
-  Activity,
   ClipboardEdit,
   Trash2,
   Copy,
@@ -59,21 +44,9 @@ import {
   History,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  Area,
-  ComposedChart,
-} from "recharts";
 import { format } from "date-fns";
 import { Session } from "@supabase/supabase-js";
-import { computeUnitAlerts, ComputedAlert } from "@/hooks/useUnitAlerts";
+import { computeUnitAlerts } from "@/hooks/useUnitAlerts";
 import { UnitStatusInfo, computeUnitStatus, ComputedUnitStatus } from "@/hooks/useUnitStatus";
 import { DeviceInfo } from "@/hooks/useSensorInstallationStatus";
 import { useUnitAlertRules, DEFAULT_ALERT_RULES, AlertRules } from "@/hooks/useAlertRules";
@@ -339,6 +312,16 @@ const UnitDetail = () => {
       localStorage.setItem("lastViewedUnitId", unitId);
     }
   }, [unitId]);
+
+  // Sync URL layout key to sessionStorage so EntityDashboard picks it up on mount
+  useEffect(() => {
+    if (!unitId) return;
+    if (layoutKey && layoutKey !== "default") {
+      sessionStorage.setItem(`layout-active-unit-${unitId}`, layoutKey);
+    } else {
+      sessionStorage.removeItem(`layout-active-unit-${unitId}`);
+    }
+  }, [unitId, layoutKey]);
 
   // Scroll to sensors section when navigating via ?tab=settings&section=sensors
   useEffect(() => {
@@ -927,13 +910,6 @@ const UnitDetail = () => {
     effectiveRules.expected_reading_interval_seconds,
   ]);
 
-  // Dashboard timeline state mapped from timeRange for dashboard widgets
-  const dashboardTimeline = useMemo<TimelineState>(() => ({
-    range: timeRange as TimelineState["range"],
-    compare: null,
-    zoomLevel: 1,
-  }), [timeRange]);
-
   // Widget-compatible unit object (uses effective door state)
   const widgetUnit = useMemo(() => {
     if (!unit) return undefined;
@@ -1104,80 +1080,28 @@ const UnitDetail = () => {
           </TabsTrigger>
         </TabsList>
 
-        {/* Dashboard Tab - Real data widgets */}
+        {/* Dashboard Tab - EntityDashboard with customization & timeline controls */}
         <TabsContent value="dashboard" className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Temperature History Chart */}
-            <Card className="lg:col-span-2 min-h-[300px]">
-              <TemperatureChartWidget
-                readings={readings}
-                tempLimitHigh={unit.temp_limit_high}
-                tempLimitLow={unit.temp_limit_low}
-                timelineState={dashboardTimeline}
-              />
-            </Card>
-            {/* Current Temperature */}
-            <Card>
-              <CurrentTempWidget
-                temperature={unit.last_temp_reading}
-                tempLimitHigh={unit.temp_limit_high}
-                tempLimitLow={unit.temp_limit_low}
-                lastReadingAt={unit.last_reading_at}
-                derivedStatus={derivedStatus}
-              />
-            </Card>
-            {/* Device Status */}
-            <Card>
-              <DeviceStatusWidget
-                derivedStatus={derivedStatus}
-                unitType={unit.unit_type}
-              />
-            </Card>
-            {/* Configured Limits */}
-            <Card>
-              <TempLimitsWidget
-                tempLimitHigh={unit.temp_limit_high}
-                tempLimitLow={unit.temp_limit_low}
-              />
-            </Card>
-            {/* Readings in Period */}
-            <Card>
-              <ReadingsCountWidget
-                sensor={primaryLoraSensor || undefined}
-                loraSensors={loraSensors || undefined}
-                readings={readings}
-                timelineState={dashboardTimeline}
-                count={readingsTotalCount}
-              />
-            </Card>
-            {/* Device Readiness */}
-            <Card className="lg:col-span-3 sm:col-span-2">
-              <DeviceReadinessWidget
-                unit={widgetUnit}
-                sensor={primaryLoraSensor || undefined}
-                derivedStatus={derivedStatus}
-                loraSensors={loraSensors || undefined}
-                device={device || undefined}
-              />
-            </Card>
-            {/* Battery Health */}
-            <Card>
-              <BatteryHealthWidget
-                sensor={primaryLoraSensor || undefined}
-                loraSensors={loraSensors || undefined}
-                device={device || undefined}
-              />
-            </Card>
-            {/* Connected Sensors */}
-            <Card className="lg:col-span-2">
-              <ConnectedSensorsWidget
-                unit={widgetUnit}
-                entityId={unitId}
-                organizationId={unit.area.site.organization_id}
-                siteId={unit.area.site.id}
-              />
-            </Card>
-          </div>
+          <EntityDashboard
+            key={layoutKey}
+            entityType="unit"
+            entityId={unitId!}
+            organizationId={unit.area.site.organization_id}
+            siteId={unit.area.site.id}
+            userId={session?.user?.id}
+            unit={widgetUnit}
+            sensor={primaryLoraSensor || undefined}
+            readings={readings}
+            derivedStatus={derivedStatus}
+            alerts={unitAlerts}
+            onLogTemp={() => setModalOpen(true)}
+            loraSensors={loraSensors || []}
+            lastKnownGood={lastKnownGood}
+            refreshTick={refreshTick}
+            onTimeRangeChange={setTimeRange}
+            readingsTotalCount={readingsTotalCount}
+            device={device || undefined}
+          />
         </TabsContent>
 
         {/* Settings Tab */}
