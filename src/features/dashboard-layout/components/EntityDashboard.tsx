@@ -131,6 +131,16 @@ export interface EntityDashboardProps {
   onTimeRangeChange?: (range: string) => void;
   /** True count of readings in the period from the database (not capped by chart row limit) */
   readingsTotalCount?: number;
+  /** Device data for device readiness widgets */
+  device?: {
+    id: string;
+    unit_id: string | null;
+    last_seen_at: string | null;
+    serial_number: string | null;
+    battery_level: number | null;
+    signal_strength: number | null;
+    status: string;
+  };
 }
 
 function computeDateRange(state: TimelineState): { from: Date; to: Date } {
@@ -171,6 +181,7 @@ export function EntityDashboard({
   refreshTick,
   onTimeRangeChange,
   readingsTotalCount,
+  device,
 }: EntityDashboardProps) {
   const DEV = import.meta.env.DEV;
   
@@ -283,6 +294,7 @@ export function EntityDashboard({
       onClearRecentlyAdded: handleClearRecentlyAdded,
       onSiteLocationChange,
       refreshTick,
+      device,
     };
 
     // STEP 4: EntityDashboard widgetProps debug logging
@@ -302,7 +314,7 @@ export function EntityDashboard({
       result[w.i] = allProps as unknown as Record<string, unknown>;
     });
     return result;
-  }, [entityType, entityId, organizationId, siteId, sensor, unit, filteredReadings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange, refreshTick, readingsTotalCount]);
+  }, [entityType, entityId, organizationId, siteId, sensor, unit, filteredReadings, derivedStatus, alerts, onLogTemp, loraSensors, lastKnownGood, site, areas, totalUnits, state.activeLayout.timelineState, state.activeLayout.config.widgets, recentlyAddedWidgetId, handleClearRecentlyAdded, onSiteLocationChange, refreshTick, readingsTotalCount, device]);
 
   // Apply preview mode mock data when not in live mode
   const effectiveWidgetProps = useMemo(() => {
