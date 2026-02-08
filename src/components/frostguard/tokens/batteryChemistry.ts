@@ -13,16 +13,16 @@ export type VoltageCurve = [voltage: number, percent: number][];
  * Between points, linear interpolation is used.
  */
 export const BATTERY_CURVES: Record<string, VoltageCurve> = {
+  /** 2x AA LiFeS2 in series — pack-level voltages (1.80–3.60V). Most Dragino/Milesight sensors. */
   LiFeS2_AA: [
-    [1.8, 100],
-    [1.7, 90],
-    [1.6, 70],
-    [1.5, 50],
-    [1.4, 30],
-    [1.3, 15],
-    [1.2, 5],
-    [1.0, 0],
+    [3.60, 100],
+    [3.20, 80],
+    [2.80, 50],
+    [2.40, 20],
+    [2.00, 5],
+    [1.80, 0],
   ],
+  /** 3.6V Li-SOCl2 (ER14505) — used by industrial sensors */
   ER14505: [
     [3.65, 100],
     [3.6, 90],
@@ -32,6 +32,33 @@ export const BATTERY_CURVES: Record<string, VoltageCurve> = {
     [3.2, 15],
     [3.0, 5],
     [2.5, 0],
+  ],
+  /** 3.0V Li-MnO2 (CR17450) — flat discharge curve, Dragino LHT65 */
+  CR17450: [
+    [3.00, 100],
+    [2.95, 80],
+    [2.85, 50],
+    [2.75, 20],
+    [2.60, 5],
+    [2.50, 0],
+  ],
+  /** 3.0V Li coin cell (CR2032) */
+  CR2032: [
+    [3.00, 100],
+    [2.90, 80],
+    [2.70, 50],
+    [2.50, 20],
+    [2.30, 5],
+    [2.20, 0],
+  ],
+  /** 2x AA Alkaline in series — pack-level (1.60–3.20V). Dragino LDS02 door sensors. */
+  Alkaline_AA: [
+    [3.20, 100],
+    [2.80, 70],
+    [2.40, 40],
+    [2.00, 15],
+    [1.80, 5],
+    [1.60, 0],
   ],
   CR123A: [
     [3.3, 100],
@@ -50,12 +77,26 @@ export const BATTERY_CURVES: Record<string, VoltageCurve> = {
  * Maps catalog names to the canonical curve key in BATTERY_CURVES.
  */
 export const CHEMISTRY_ALIASES: Record<string, string> = {
+  // LiFeS2 AA (most common — Dragino/Milesight default)
   lithium: 'LiFeS2_AA',
   'lithium-aa': 'LiFeS2_AA',
   lifes2: 'LiFeS2_AA',
   'lifes2-aa': 'LiFeS2_AA',
+  li: 'LiFeS2_AA',
+  'li-fes2': 'LiFeS2_AA',
+  lifes2_aa: 'LiFeS2_AA',
+  // ER14505 (Li-SOCl2)
   er14505: 'ER14505',
   'li-socl2': 'ER14505',
+  // CR17450 (Li-MnO2) — Dragino LHT65
+  cr17450: 'CR17450',
+  'li-mno2': 'CR17450',
+  // CR2032 (coin cell)
+  cr2032: 'CR2032',
+  // Alkaline AA
+  alkaline_aa: 'Alkaline_AA',
+  alkaline: 'Alkaline_AA',
+  // CR123A
   cr123a: 'CR123A',
   cr123: 'CR123A',
   'lithium-cr123a': 'CR123A',

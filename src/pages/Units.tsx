@@ -20,6 +20,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { computeUnitStatus } from "@/components/frostguard";
 
 interface UnitWithHierarchy {
   id: string;
@@ -191,11 +192,10 @@ const Units = () => {
   }, {} as Record<string, { siteName: string; units: UnitWithHierarchy[] }>);
 
   const getStatusBadge = (unit: UnitWithHierarchy) => {
-    const isOnline = unit.status === "online" || unit.status === "normal";
-    const isAlerting = unit.status === "alarm" || unit.status === "critical";
-    const isWarning = unit.status === "warning";
+    // Use computed status from Layer 2 — never read stale unit.status from DB
+    const computed = computeUnitStatus(unit.last_reading_at, 600);
 
-    if (isAlerting) {
+    if (computed.status === 'critical') {
       return (
         <Badge variant="destructive" className="gap-1">
           <AlertTriangle className="w-3 h-3" />
@@ -203,7 +203,7 @@ const Units = () => {
         </Badge>
       );
     }
-    if (isWarning) {
+    if (computed.status === 'warning') {
       return (
         <Badge variant="outline" className="gap-1 border-warning text-warning">
           <AlertTriangle className="w-3 h-3" />
@@ -211,7 +211,7 @@ const Units = () => {
         </Badge>
       );
     }
-    if (isOnline) {
+    if (computed.status === 'online') {
       return (
         <Badge variant="outline" className="gap-1 border-safe text-safe">
           <Wifi className="w-3 h-3" />
