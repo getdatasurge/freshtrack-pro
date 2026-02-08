@@ -20,7 +20,8 @@ import { LayoutHeaderDropdown } from "@/components/LayoutHeaderDropdown";
 import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteUnit, getActiveChildrenCount } from "@/hooks/useSoftDelete";
 import { useLoraSensorsByUnit } from "@/hooks/useLoraSensors";
-import { EntityDashboard } from "@/features/dashboard-layout";
+import { FixedWidgetLayout } from "@/components/frostguard/layouts/FixedWidgetLayout";
+import type { AlertItem } from "@/components/frostguard/widgets/AlertsWidget";
 import { UnitDebugBanner } from "@/components/debug";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -919,6 +920,68 @@ const UnitDetail = () => {
     effectiveRules.expected_reading_interval_seconds,
   ]);
 
+  // Map LoRa sensor_type to FixedWidgetLayout sensorKind
+  const sensorKind = useMemo(() => {
+    const st = primaryLoraSensor?.sensor_type;
+    if (st === 'door' || st === 'contact') return 'door';
+    if (st === 'combo') return 'combo';
+    return 'temp'; // temperature, temperature_humidity, or fallback
+  }, [primaryLoraSensor?.sensor_type]);
+
+  // Build the flat props bag passed to every widget via FixedWidgetLayout
+  const fixedWidgetProps = useMemo<Record<string, unknown>>(() => {
+    const latestReading = readings.length > 0 ? readings[readings.length - 1] : null;
+    const prevReading = readings.length >= 2 ? readings[readings.length - 2] : null;
+
+    const alerts: AlertItem[] = unitAlerts
+      .filter((a) => a.severity === 'warning' || a.severity === 'critical')
+      .map((a) => ({
+        id: a.id,
+        severity: a.severity as 'warning' | 'critical',
+        message: a.title,
+        timestamp: new Date().toISOString(),
+      }));
+
+    return {
+      // Shared identifiers
+      sensorId: primaryLoraSensor?.id || '',
+      unitId: unitId || '',
+      siteId: unit?.area.site.id,
+
+      // TemperatureWidget
+      currentTemp: unit?.last_temp_reading ?? null,
+      previousTemp: prevReading?.temperature ?? null,
+      lastReadingAt: unit?.last_reading_at ?? null,
+      criticalHigh: unit?.temp_limit_high ?? null,
+      criticalLow: unit?.temp_limit_low ?? null,
+
+      // HumidityWidget
+      currentHumidity: latestReading?.humidity ?? null,
+      previousHumidity: prevReading?.humidity ?? null,
+
+      // DoorSensorWidget
+      currentState: effectiveDoorState.state === 'unknown' ? null : effectiveDoorState.state,
+      stateChangedAt: effectiveDoorState.since,
+
+      // BatteryWidget
+      voltage: primaryLoraSensor?.battery_voltage ?? null,
+
+      // AlertsWidget
+      alerts,
+
+      // ComplianceScoreWidget (data not yet computed on this page)
+      score: null,
+    };
+  }, [
+    unit,
+    unitId,
+    primaryLoraSensor?.id,
+    primaryLoraSensor?.battery_voltage,
+    readings,
+    effectiveDoorState,
+    unitAlerts,
+  ]);
+
   if (isLoading && !unit) {
     return (
       <DashboardLayout>
@@ -1075,52 +1138,9 @@ const UnitDetail = () => {
 
         {/* Dashboard Tab - Customizable Grid */}
         <TabsContent value="dashboard" className="space-y-4">
-          <EntityDashboard
-            entityType="unit"
-            entityId={unitId!}
-            organizationId={unit.area.site.organization_id}
-            siteId={unit.area.site.id}
-            unit={{
-              id: unit.id,
-              name: unit.name,
-              unit_type: unit.unit_type,
-              temp_limit_high: unit.temp_limit_high,
-              temp_limit_low: unit.temp_limit_low,
-              last_temp_reading: unit.last_temp_reading,
-              last_reading_at: unit.last_reading_at,
-              // STEP C: Use effectiveDoorState from latest door_event
-              door_state: effectiveDoorState.state,
-              door_last_changed_at: effectiveDoorState.since,
-            }}
-            sensor={primaryLoraSensor ? {
-              id: primaryLoraSensor.id,
-              name: primaryLoraSensor.name,
-              last_seen_at: primaryLoraSensor.last_seen_at,
-              battery_level: primaryLoraSensor.battery_level,
-              signal_strength: primaryLoraSensor.signal_strength,
-              status: primaryLoraSensor.status,
-              sensor_type: primaryLoraSensor.sensor_type,
-            } : undefined}
-            readings={readings}
-            readingsTotalCount={readingsTotalCount}
-            onTimeRangeChange={setTimeRange}
-            derivedStatus={derivedStatus}
-            alerts={unitAlerts}
-            loraSensors={loraSensors?.map(s => ({
-              id: s.id,
-              name: s.name,
-              battery_level: s.battery_level,
-              battery_voltage: s.battery_voltage ?? null,
-              battery_voltage_filtered: s.battery_voltage_filtered ?? null,
-              signal_strength: s.signal_strength,
-              last_seen_at: s.last_seen_at,
-              status: s.status,
-              sensor_type: s.sensor_type,
-              is_primary: s.is_primary,
-            })) || []}
-            lastKnownGood={lastKnownGood}
-            onLogTemp={() => setModalOpen(true)}
-            refreshTick={refreshTick}
+          <FixedWidgetLayout
+            sensorKind={sensorKind}
+            widgetProps={fixedWidgetProps}
           />
         </TabsContent>
 
