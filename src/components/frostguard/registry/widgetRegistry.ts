@@ -1,5 +1,7 @@
 import * as React from 'react';
 
+export type AppTarget = 'customer' | 'admin';
+
 export interface WidgetRegistryEntry {
   id: string;
   name: string;
@@ -11,9 +13,12 @@ export interface WidgetRegistryEntry {
   applicableSensorKinds: string[];
   requiresProps: string[];
   category: 'sensor' | 'compliance' | 'system' | 'overview';
+  /** Which app this widget is available in */
+  appTarget: AppTarget[];
 }
 
 export const widgetRegistry: WidgetRegistryEntry[] = [
+  // ---- Customer + Admin widgets ----
   {
     id: 'temperature',
     name: 'Temperature',
@@ -25,6 +30,7 @@ export const widgetRegistry: WidgetRegistryEntry[] = [
     applicableSensorKinds: ['temp', 'combo', 'co2'],
     requiresProps: ['sensorId', 'unitId'],
     category: 'sensor',
+    appTarget: ['customer', 'admin'],
   },
   {
     id: 'humidity',
@@ -37,6 +43,7 @@ export const widgetRegistry: WidgetRegistryEntry[] = [
     applicableSensorKinds: ['temp', 'combo', 'co2'],
     requiresProps: ['sensorId', 'unitId'],
     category: 'sensor',
+    appTarget: ['customer', 'admin'],
   },
   {
     id: 'door',
@@ -49,6 +56,7 @@ export const widgetRegistry: WidgetRegistryEntry[] = [
     applicableSensorKinds: ['door', 'combo'],
     requiresProps: ['sensorId', 'unitId'],
     category: 'sensor',
+    appTarget: ['customer', 'admin'],
   },
   {
     id: 'battery',
@@ -61,18 +69,7 @@ export const widgetRegistry: WidgetRegistryEntry[] = [
     applicableSensorKinds: ['*'],
     requiresProps: ['sensorId'],
     category: 'system',
-  },
-  {
-    id: 'signal-strength',
-    name: 'Signal Strength',
-    description: 'RSSI/SNR signal quality bars',
-    component: React.lazy(() => import('../widgets/SignalStrengthWidget').then((m) => ({ default: m.SignalStrengthWidget as React.ComponentType<Record<string, unknown>> }))),
-    defaultSize: { cols: 1, rows: 1 },
-    minSize: { cols: 1, rows: 1 },
-    maxSize: { cols: 2, rows: 1 },
-    applicableSensorKinds: ['*'],
-    requiresProps: ['sensorId'],
-    category: 'system',
+    appTarget: ['customer', 'admin'],
   },
   {
     id: 'alerts',
@@ -85,30 +82,7 @@ export const widgetRegistry: WidgetRegistryEntry[] = [
     applicableSensorKinds: ['*'],
     requiresProps: [],
     category: 'overview',
-  },
-  {
-    id: 'device-readiness',
-    name: 'Device Readiness',
-    description: 'Composite health score: battery + signal + uplink',
-    component: React.lazy(() => import('../widgets/DeviceReadinessWidget').then((m) => ({ default: m.DeviceReadinessWidget as React.ComponentType<Record<string, unknown>> }))),
-    defaultSize: { cols: 1, rows: 1 },
-    minSize: { cols: 1, rows: 1 },
-    maxSize: { cols: 2, rows: 2 },
-    applicableSensorKinds: ['*'],
-    requiresProps: ['sensorId'],
-    category: 'system',
-  },
-  {
-    id: 'uplink-history',
-    name: 'Uplink History',
-    description: 'Uplink frequency bar chart, expected vs actual',
-    component: React.lazy(() => import('../widgets/UplinkHistoryWidget').then((m) => ({ default: m.UplinkHistoryWidget as React.ComponentType<Record<string, unknown>> }))),
-    defaultSize: { cols: 2, rows: 1 },
-    minSize: { cols: 1, rows: 1 },
-    maxSize: { cols: 3, rows: 2 },
-    applicableSensorKinds: ['*'],
-    requiresProps: ['sensorId'],
-    category: 'system',
+    appTarget: ['customer', 'admin'],
   },
   {
     id: 'compliance-score',
@@ -121,6 +95,48 @@ export const widgetRegistry: WidgetRegistryEntry[] = [
     applicableSensorKinds: ['*'],
     requiresProps: [],
     category: 'compliance',
+    appTarget: ['customer', 'admin'],
+  },
+
+  // ---- Admin-only widgets ----
+  {
+    id: 'signal-strength',
+    name: 'Signal Strength',
+    description: 'RSSI/SNR signal quality bars',
+    component: React.lazy(() => import('../widgets/SignalStrengthWidget').then((m) => ({ default: m.SignalStrengthWidget as React.ComponentType<Record<string, unknown>> }))),
+    defaultSize: { cols: 1, rows: 1 },
+    minSize: { cols: 1, rows: 1 },
+    maxSize: { cols: 2, rows: 1 },
+    applicableSensorKinds: ['*'],
+    requiresProps: ['sensorId'],
+    category: 'system',
+    appTarget: ['admin'],
+  },
+  {
+    id: 'device-readiness',
+    name: 'Device Readiness',
+    description: 'Composite health score: battery + signal + uplink',
+    component: React.lazy(() => import('../widgets/DeviceReadinessWidget').then((m) => ({ default: m.DeviceReadinessWidget as React.ComponentType<Record<string, unknown>> }))),
+    defaultSize: { cols: 1, rows: 1 },
+    minSize: { cols: 1, rows: 1 },
+    maxSize: { cols: 2, rows: 2 },
+    applicableSensorKinds: ['*'],
+    requiresProps: ['sensorId'],
+    category: 'system',
+    appTarget: ['admin'],
+  },
+  {
+    id: 'uplink-history',
+    name: 'Uplink History',
+    description: 'Uplink frequency bar chart, expected vs actual',
+    component: React.lazy(() => import('../widgets/UplinkHistoryWidget').then((m) => ({ default: m.UplinkHistoryWidget as React.ComponentType<Record<string, unknown>> }))),
+    defaultSize: { cols: 2, rows: 1 },
+    minSize: { cols: 1, rows: 1 },
+    maxSize: { cols: 3, rows: 2 },
+    applicableSensorKinds: ['*'],
+    requiresProps: ['sensorId'],
+    category: 'system',
+    appTarget: ['admin'],
   },
   {
     id: 'sensor-settings',
@@ -133,6 +149,20 @@ export const widgetRegistry: WidgetRegistryEntry[] = [
     applicableSensorKinds: ['*'],
     requiresProps: ['sensorId'],
     category: 'system',
+    appTarget: ['admin'],
+  },
+  {
+    id: 'battery-detail',
+    name: 'Battery Detail',
+    description: 'Extended battery info with chemistry, voltage trend, estimated life',
+    component: React.lazy(() => import('../widgets/BatteryDetailWidget').then((m) => ({ default: m.BatteryDetailWidget as React.ComponentType<Record<string, unknown>> }))),
+    defaultSize: { cols: 1, rows: 2 },
+    minSize: { cols: 1, rows: 1 },
+    maxSize: { cols: 2, rows: 2 },
+    applicableSensorKinds: ['*'],
+    requiresProps: ['sensorId'],
+    category: 'system',
+    appTarget: ['admin'],
   },
 ];
 
@@ -143,5 +173,24 @@ export function getWidget(id: string): WidgetRegistryEntry | undefined {
 export function getWidgetsForSensorKind(kind: string): WidgetRegistryEntry[] {
   return widgetRegistry.filter(
     (w) => w.applicableSensorKinds.includes('*') || w.applicableSensorKinds.includes(kind),
+  );
+}
+
+/** Get widgets available in the customer app */
+export function getCustomerWidgets(): WidgetRegistryEntry[] {
+  return widgetRegistry.filter((w) => w.appTarget.includes('customer'));
+}
+
+/** Get widgets available in the admin app */
+export function getAdminWidgets(): WidgetRegistryEntry[] {
+  return widgetRegistry.filter((w) => w.appTarget.includes('admin'));
+}
+
+/** Get widgets for a sensor kind, filtered by app target */
+export function getWidgetsForApp(kind: string, target: AppTarget): WidgetRegistryEntry[] {
+  return widgetRegistry.filter(
+    (w) =>
+      w.appTarget.includes(target) &&
+      (w.applicableSensorKinds.includes('*') || w.applicableSensorKinds.includes(kind)),
   );
 }

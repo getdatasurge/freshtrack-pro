@@ -2,6 +2,7 @@ export type UnitStatusResult = {
   status: 'online' | 'offline' | 'warning' | 'critical' | 'unknown';
   reason: string;
   missedCheckins: number;
+  elapsedSeconds: number;
 };
 
 /**
@@ -15,7 +16,7 @@ export function computeUnitStatus(
   activeAlerts?: { severity: 'warning' | 'critical' }[],
 ): UnitStatusResult {
   if (!lastReadingAt) {
-    return { status: 'unknown', reason: 'No readings received', missedCheckins: 0 };
+    return { status: 'unknown', reason: 'No readings received', missedCheckins: 0, elapsedSeconds: 0 };
   }
 
   const elapsed = (Date.now() - new Date(lastReadingAt).getTime()) / 1000;
@@ -44,7 +45,7 @@ export function computeUnitStatus(
     reason = 'Warning alert active';
   }
 
-  return { status: computedStatus, reason, missedCheckins: Math.max(0, missed) };
+  return { status: computedStatus, reason, missedCheckins: Math.max(0, missed), elapsedSeconds: elapsed };
 }
 
 /** Map UnitStatus to design system StatusVariant */
