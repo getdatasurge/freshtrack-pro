@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { cn } from '@/lib/design-system/cn';
+import { status } from '@/lib/design-system/tokens';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 export interface TrendIndicatorProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -17,9 +18,9 @@ export const TrendIndicator = React.forwardRef<HTMLDivElement, TrendIndicatorPro
     const isGood = invertColors ? isDown : isUp;
     const isBad = invertColors ? isUp : isDown;
 
-    let colorClass = 'text-zinc-500';
-    if (isGood) colorClass = 'text-emerald-400';
-    if (isBad) colorClass = 'text-red-400';
+    let colorClass = status.neutral.text;
+    if (isGood) colorClass = status.success.text;
+    if (isBad) colorClass = status.danger.text;
 
     return (
       <div ref={ref} className={cn('inline-flex items-center gap-1 text-sm', colorClass, className)} {...props}>

@@ -24,16 +24,21 @@ export const WidgetContainer = React.forwardRef<HTMLDivElement, WidgetContainerP
         variant="elevated"
         padding={compact ? 'compact' : 'default'}
         className={cn('flex flex-col h-full', className)}
+        role="region"
+        aria-label={title}
+        aria-busy={loading || undefined}
         {...props}
       >
         <CardHeading title={title} description={description} icon={icon} actions={actions} />
         <div className="flex-1 mt-3">
           {loading ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex items-center justify-center py-8" role="status">
               <Spinner size="md" label="Loading..." />
             </div>
           ) : error ? (
-            <ErrorState title="Error" message={error} onRetry={onRetry} />
+            <div role="alert">
+              <ErrorState title="Error" message={error} onRetry={onRetry} />
+            </div>
           ) : (
             children
           )}

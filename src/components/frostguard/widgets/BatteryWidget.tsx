@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { cn } from '@/lib/design-system/cn';
-import { text as textTokens } from '@/lib/design-system/tokens';
+import { text as textTokens, status } from '@/lib/design-system/tokens';
 import { Battery, BatteryLow, BatteryMedium, BatteryFull, BatteryWarning } from 'lucide-react';
 import { WidgetContainer } from './WidgetContainer';
 import { ProgressBar } from '@/lib/components/feedback/ProgressBar';
@@ -61,12 +61,12 @@ export function BatteryWidget({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className={cn(
-                variant === 'success' ? 'text-emerald-400' :
-                variant === 'warning' ? 'text-amber-400' : 'text-red-400',
+                variant === 'success' ? status.success.text :
+                variant === 'warning' ? status.warning.text : status.danger.text,
               )}>
                 <BatteryIcon percentage={percentage} />
               </div>
-              <span className="text-2xl font-semibold tabular-nums text-zinc-50">{percentage}%</span>
+              <span className={cn('text-2xl font-semibold tabular-nums', textTokens.primary)}>{percentage}%</span>
             </div>
             {showVoltage && (
               <span className={cn('text-sm tabular-nums', textTokens.tertiary)}>{voltage.toFixed(2)}V</span>

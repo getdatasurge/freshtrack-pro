@@ -1,15 +1,15 @@
 import * as React from 'react';
 import { cn } from '@/lib/design-system/cn';
-import { text as textTokens } from '@/lib/design-system/tokens';
+import { text as textTokens, status } from '@/lib/design-system/tokens';
 import { Signal } from 'lucide-react';
 import { WidgetContainer } from './WidgetContainer';
 import { EmptyState } from '@/lib/components/feedback/EmptyState';
 
 function rssiToQuality(rssi: number): { label: string; bars: number; color: string } {
-  if (rssi > -80) return { label: 'Excellent', bars: 4, color: 'text-emerald-400' };
-  if (rssi > -100) return { label: 'Good', bars: 3, color: 'text-emerald-400' };
-  if (rssi > -115) return { label: 'Fair', bars: 2, color: 'text-amber-400' };
-  return { label: 'Poor', bars: 1, color: 'text-red-400' };
+  if (rssi > -80) return { label: 'Excellent', bars: 4, color: status.success.text };
+  if (rssi > -100) return { label: 'Good', bars: 3, color: status.success.text };
+  if (rssi > -115) return { label: 'Fair', bars: 2, color: status.warning.text };
+  return { label: 'Poor', bars: 1, color: status.danger.text };
 }
 
 function SignalBars({ bars, className }: { bars: number; className?: string }) {

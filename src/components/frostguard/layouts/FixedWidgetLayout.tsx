@@ -115,6 +115,7 @@ export interface FixedWidgetLayoutProps extends React.HTMLAttributes<HTMLDivElem
  * Customer app fixed widget layout.
  * Renders widgets in a predetermined CSS grid based on sensor_kind.
  * No drag/drop, no resize — pure display.
+ * Responsive: stacks to 1 col on mobile, 2 on sm, full grid on lg+.
  */
 export function FixedWidgetLayout({
   className,
@@ -132,16 +133,16 @@ export function FixedWidgetLayout({
     props: widgetProps,
   }));
 
+  const responsiveCols = config.columns >= 3
+    ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+    : 'grid-cols-1 sm:grid-cols-2';
+
   // Use grid-template-areas if defined
   if (config.areas && config.areaMap) {
     return (
       <div
-        className={cn('grid', className)}
-        style={{
-          gridTemplateColumns: `repeat(${config.columns}, 1fr)`,
-          gridTemplateAreas: config.areas,
-          gap: `${gap}px`,
-        }}
+        className={cn('grid', responsiveCols, className)}
+        style={{ gap: `${gap}px` }}
         {...props}
       >
         {placements.map((placement) => {
@@ -159,11 +160,8 @@ export function FixedWidgetLayout({
   // Fallback: simple auto-flow grid
   return (
     <div
-      className={cn('grid', className)}
-      style={{
-        gridTemplateColumns: `repeat(${config.columns}, 1fr)`,
-        gap: `${gap}px`,
-      }}
+      className={cn('grid', responsiveCols, className)}
+      style={{ gap: `${gap}px` }}
       {...props}
     >
       {placements.map((placement) => (

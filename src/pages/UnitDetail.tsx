@@ -120,7 +120,8 @@ interface UnitAlert {
   clearCondition: string;
 }
 
-import { STATUS_CONFIG, getStatusConfig } from "@/lib/statusConfig";
+// STATUS_CONFIG import removed — use computeUnitStatus() for status display
+
 import { getAlertClearCondition } from "@/lib/alertConfig";
 
 const UnitDetail = () => {

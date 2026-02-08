@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { getWidget, type WidgetRegistryEntry } from './widgetRegistry';
+import { WidgetErrorBoundary } from '../widgets/WidgetErrorBoundary';
 
 export interface WidgetPlacement {
   widgetId: string;
@@ -31,9 +32,11 @@ export function renderWidget(
   );
 
   return (
-    <React.Suspense key={placement.instanceId} fallback={fallback || defaultFallback}>
-      <Component {...placement.props} />
-    </React.Suspense>
+    <WidgetErrorBoundary key={placement.instanceId} widgetName={entry.name}>
+      <React.Suspense fallback={fallback || defaultFallback}>
+        <Component {...placement.props} />
+      </React.Suspense>
+    </WidgetErrorBoundary>
   );
 }
 

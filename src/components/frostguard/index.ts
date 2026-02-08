@@ -17,8 +17,9 @@ export { TimeAgo, type TimeAgoProps } from './primitives/TimeAgo';
 export { MetricDisplay, type MetricDisplayProps } from './primitives/MetricDisplay';
 export { AlarmBoundLine, type AlarmBoundLineProps } from './primitives/AlarmBoundLine';
 
-// Widgets — Customer + Admin
+// Widgets — Container + Error Boundary
 export { WidgetContainer, type WidgetContainerProps } from './widgets/WidgetContainer';
+export { WidgetErrorBoundary } from './widgets/WidgetErrorBoundary';
 export { TemperatureWidget, type TemperatureWidgetProps } from './widgets/TemperatureWidget';
 export { HumidityWidget, type HumidityWidgetProps } from './widgets/HumidityWidget';
 export { DoorSensorWidget, type DoorSensorWidgetProps } from './widgets/DoorSensorWidget';

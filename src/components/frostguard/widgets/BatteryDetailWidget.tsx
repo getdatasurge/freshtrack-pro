@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { cn } from '@/lib/design-system/cn';
-import { text as textTokens } from '@/lib/design-system/tokens';
+import { text as textTokens, status } from '@/lib/design-system/tokens';
 import { Battery, BatteryLow, BatteryMedium, BatteryFull, BatteryWarning, Clock } from 'lucide-react';
 import { WidgetContainer } from './WidgetContainer';
 import { ProgressBar } from '@/lib/components/feedback/ProgressBar';
@@ -79,12 +79,12 @@ export function BatteryDetailWidget({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className={cn(
-                variant === 'success' ? 'text-emerald-400' :
-                variant === 'warning' ? 'text-amber-400' : 'text-red-400',
+                variant === 'success' ? status.success.text :
+                variant === 'warning' ? status.warning.text : status.danger.text,
               )}>
                 <BatteryIcon percentage={percentage} />
               </div>
-              <span className="text-2xl font-semibold tabular-nums text-zinc-50">{percentage}%</span>
+              <span className={cn('text-2xl font-semibold tabular-nums', textTokens.primary)}>{percentage}%</span>
             </div>
             <span className={cn('text-sm tabular-nums', textTokens.tertiary)}>{voltage.toFixed(3)}V</span>
           </div>
@@ -98,7 +98,7 @@ export function BatteryDetailWidget({
               {voltageTrend != null && (
                 <span className={cn(
                   'absolute top-1.5 right-2 text-xs font-medium tabular-nums',
-                  voltageTrend < 0 ? 'text-amber-400' : 'text-emerald-400',
+                  voltageTrend < 0 ? status.warning.text : status.success.text,
                 )}>
                   {voltageTrend > 0 ? '+' : ''}{voltageTrend}V
                 </span>
