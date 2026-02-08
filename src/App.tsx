@@ -32,6 +32,7 @@ import DataMaintenance from "./pages/DataMaintenance";
 import AccountDeleted from "./pages/AccountDeleted";
 import HealthDashboard from "./pages/HealthDashboard";
 import UploadTelnyxImage from "./pages/UploadTelnyxImage";
+import AdminWidgetTools from "./pages/AdminWidgetTools";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsConditions from "./pages/TermsConditions";
 import NotFound from "./pages/NotFound";
@@ -101,6 +102,7 @@ const App = () => (
             <Route path="/admin/data-maintenance" element={<RequireImpersonationGuard><DataMaintenance /></RequireImpersonationGuard>} />
             <Route path="/admin/health" element={<RequireImpersonationGuard><HealthDashboard /></RequireImpersonationGuard>} />
             <Route path="/admin/upload-telnyx-image" element={<RequireImpersonationGuard><UploadTelnyxImage /></RequireImpersonationGuard>} />
+            <Route path="/admin/widget-tools" element={<RequireImpersonationGuard><AdminWidgetTools /></RequireImpersonationGuard>} />
             <Route path="/account-deleted" element={<AccountDeleted />} />
               {/* Platform Admin Routes (Super Admin only) */}
               <Route path="/platform" element={<PlatformGuard><PlatformOrganizations /></PlatformGuard>} />

@@ -7,17 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RBACDebugPanel } from "@/components/debug/RBACDebugPanel";
-import { 
-  Thermometer, 
-  AlertTriangle, 
-  CheckCircle2, 
+import {
+  Thermometer,
+  AlertTriangle,
+  CheckCircle2,
   Plus,
   MapPin,
   Loader2,
   ChevronRight,
   Wifi,
   WifiOff,
-  Clock,
   ClipboardList,
   AlertCircle,
   ShieldCheck,
@@ -27,7 +26,7 @@ import {
 import { Session } from "@supabase/supabase-js";
 import { formatDistanceToNow } from "date-fns";
 import { computeUnitStatus, UnitStatusInfo } from "@/hooks/useUnitStatus";
-import { useUnitAlerts, ComputedAlert } from "@/hooks/useUnitAlerts";
+import { useUnitAlerts } from "@/hooks/useUnitAlerts";
 import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 interface DashboardStats {
@@ -37,7 +36,6 @@ interface DashboardStats {
   totalSites: number;
 }
 
-import { STATUS_CONFIG } from "@/lib/statusConfig";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -209,13 +207,20 @@ const Dashboard = () => {
         computed: computeUnitStatus(u, undefined, uplinkIntervalsMap.get(u.id)),
       }));
 
-      // Sort units by action required priority
+      // Sort units by action required priority using computed status (not stale DB status)
+      const statusPriority = (c: ReturnType<typeof computeUnitStatus>): number => {
+        if (c.statusLabel === "ALARM") return 1;
+        if (c.statusLabel === "Excursion") return 2;
+        if (c.offlineSeverity === "critical") return 3;
+        if (c.manualRequired) return 4;
+        if (c.offlineSeverity === "warning") return 5;
+        if (c.statusLabel === "Restoring") return 6;
+        return 7; // OK
+      };
       unitsWithComputed.sort((a, b) => {
         if (a.computed.actionRequired && !b.computed.actionRequired) return -1;
         if (!a.computed.actionRequired && b.computed.actionRequired) return 1;
-        const aPriority = STATUS_CONFIG[a.status]?.priority || 99;
-        const bPriority = STATUS_CONFIG[b.status]?.priority || 99;
-        return aPriority - bPriority;
+        return statusPriority(a.computed) - statusPriority(b.computed);
       });
 
       setUnits(unitsWithComputed);
@@ -253,21 +258,23 @@ const Dashboard = () => {
   };
 
   const getComplianceBadge = (unit: UnitStatusInfo & { computed: ReturnType<typeof computeUnitStatus> }) => {
-    if (unit.status === "ok" && !unit.computed.actionRequired) {
+    // Use computed status — never read stale unit.status from DB
+    const { computed } = unit;
+    if (computed.sensorOnline && computed.tempInRange && !computed.actionRequired) {
       return (
         <Badge variant="outline" className="gap-1 text-safe border-safe/30 bg-safe/5">
           <ShieldCheck className="w-3 h-3" />
           Compliant
         </Badge>
       );
-    } else if (unit.computed.manualRequired) {
+    } else if (computed.manualRequired) {
       return (
         <Badge variant="outline" className="gap-1 text-warning border-warning/30 bg-warning/5">
           <ClipboardList className="w-3 h-3" />
           Log Due
         </Badge>
       );
-    } else if (["alarm_active", "excursion"].includes(unit.status)) {
+    } else if (computed.statusLabel === "ALARM" || computed.statusLabel === "Excursion") {
       return (
         <Badge variant="outline" className="gap-1 text-alarm border-alarm/30 bg-alarm/5">
           <ShieldAlert className="w-3 h-3" />
