@@ -225,7 +225,7 @@ export function UnitSensorsCard({
                       <div
                         className={cn(
                           "flex items-center justify-between p-3 rounded-lg border border-border bg-card cursor-pointer hover:bg-muted/50 transition-colors",
-                          sensor.is_primary && "border-accent/50"
+                          sensor.is_primary && sensor.sensor_type !== 'door' && sensor.sensor_type !== 'contact' && "border-accent/50"
                         )}
                       >
                         <div className="flex items-center gap-3 min-w-0">
@@ -240,7 +240,7 @@ export function UnitSensorsCard({
                               <span className="font-medium text-foreground text-sm truncate">
                                 {sensor.name}
                               </span>
-                              {sensor.is_primary && (
+                              {sensor.is_primary && sensor.sensor_type !== 'door' && sensor.sensor_type !== 'contact' && (
                                 <Star className="w-3 h-3 text-accent fill-accent flex-shrink-0" />
                               )}
                             </div>

@@ -29,33 +29,43 @@ export function DoorActivityWidget({ entityId, sensor, loraSensors, refreshTick 
   const [error, setError] = useState<string | null>(null);
 
   // Find the door sensor specifically - don't just use primary sensor
-  const doorSensor = sensor?.sensor_type === 'door' 
-    ? sensor 
-    : loraSensors?.find(s => s.sensor_type === 'door');
+  const doorSensor = sensor?.sensor_type === 'door' || sensor?.sensor_type === 'contact'
+    ? sensor
+    : loraSensors?.find(s => s.sensor_type === 'door' || s.sensor_type === 'contact');
   const primarySensor = doorSensor || sensor || loraSensors?.[0];
   const isDoorSensor = !!doorSensor;
 
   useEffect(() => {
     async function fetchDoorEvents() {
-      if (!entityId) {
+      if (!entityId || !doorSensor?.id) {
         setIsLoading(false);
         return;
       }
 
       try {
+        // Query sensor_readings for the door sensor directly (source of truth for uplink data).
+        // The door_events table can lag behind when the decoder is updated.
         const { data, error: fetchError } = await supabase
-          .from("door_events")
-          .select("id, state, occurred_at")
-          .eq("unit_id", entityId)
-          .order("occurred_at", { ascending: false })
+          .from("sensor_readings")
+          .select("id, door_open, recorded_at")
+          .eq("lora_sensor_id", doorSensor.id)
+          .not("door_open", "is", null)
+          .order("recorded_at", { ascending: false })
           .limit(20);
 
         if (fetchError) throw fetchError;
 
-        setEvents(data || []);
+        // Map sensor_readings to DoorEvent format
+        const mapped: DoorEvent[] = (data || []).map((r: { id: string; door_open: boolean; recorded_at: string }) => ({
+          id: r.id,
+          state: r.door_open ? "open" : "closed",
+          occurred_at: r.recorded_at,
+        }));
+
+        setEvents(mapped);
       } catch (err) {
         if (DEBUG_DOOR_WIDGET) {
-          console.error('[DoorWidget] error', { 
+          console.error('[DoorWidget] error', {
             message: err instanceof Error ? err.message : 'Unknown error'
           });
         }
@@ -66,7 +76,7 @@ export function DoorActivityWidget({ entityId, sensor, loraSensors, refreshTick 
     }
 
     fetchDoorEvents();
-  }, [entityId, doorSensor?.name, doorSensor?.sensor_type, refreshTick]);
+  }, [entityId, doorSensor?.id, refreshTick]);
 
   // Determine widget state
   const widgetState = useMemo((): WidgetStateInfo => {
