@@ -798,9 +798,9 @@ const UnitDetail = () => {
     
     const sensorId = primaryLoraSensor?.id || device?.id || null;
     
-    const offlineSeverity = computedStatus?.offlineSeverity ?? "critical";
+    const offlineSeverity = computedStatus?.offlineSeverity ?? "none";
     const isOnline = offlineSeverity === "none";
-    const missedCheckins = computedStatus?.missedCheckins ?? 999;
+    const missedCheckins = computedStatus?.missedCheckins ?? 0;
     
     let statusLabel: string;
     let statusColor: string;

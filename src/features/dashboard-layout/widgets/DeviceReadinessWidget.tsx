@@ -24,6 +24,7 @@ import { formatDistanceToNow } from "date-fns";
 import { voltageToPercent } from "@/lib/devices/batteryProfiles";
 import { formatMissedCheckinsMessage, formatUplinkInterval } from "@/lib/missedCheckins";
 import { useSensorUplinkInterval } from "@/hooks/useSensorUplinkInterval";
+import { useSensorChemistry } from "@/hooks/useSensorChemistry";
 import type { WidgetProps } from "../types";
 
 export function DeviceReadinessWidget({ 
@@ -57,6 +58,10 @@ export function DeviceReadinessWidget({
   const { data: sensorUplinkInterval } = useSensorUplinkInterval(unit?.id ?? null);
   const uplinkIntervalMinutes = sensorUplinkInterval ?? unit?.checkin_interval_minutes ?? 5;
 
+  // Resolve battery chemistry from sensor catalog (e.g. CR17450, LiFeS2_AA)
+  // Without this, voltageToPercent uses the wrong discharge curve
+  const { data: sensorChemistry } = useSensorChemistry(primarySensor?.sensor_catalog_id);
+
   // Determine if we have a LoRa sensor in pending/joining state
   const isLoraPending = loraSensor?.status === "pending";
   const isLoraJoining = loraSensor?.status === "joining";
@@ -76,7 +81,7 @@ export function DeviceReadinessWidget({
   // Falls back to stored battery_level (may be stale for readings before the fix).
   const storedBatteryLevel = hasLoraData ? loraSensor.battery_level : (primarySensor?.battery_level ?? device?.battery_level);
   const effectiveBatteryLevel = effectiveVoltage != null
-    ? voltageToPercent(effectiveVoltage, loraSensor?.chemistry ?? "LiFeS2_AA")
+    ? voltageToPercent(effectiveVoltage, sensorChemistry ?? "LiFeS2_AA")
     : storedBatteryLevel;
 
   // Compute installation status based on offline severity from alert rules
