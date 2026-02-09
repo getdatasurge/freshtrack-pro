@@ -31,9 +31,13 @@ const FIELD_TYPE_MAP: Record<string, string> = {
   // Door/Contact sensors (highest priority - very distinctive)
   door_status: "door",
   door_open: "door",
+  DOOR_OPEN_STATUS: "door",  // Dragino LDS02 TTN decoder
+  door_open_status: "door",  // lowercase variant
   door: "door",
   open_close: "door",
   contact: "door",
+  contactStatus: "door",
+  open_state_abs: "door",
   
   // Leak detection (high priority - safety critical)
   water_leak: "leak",
@@ -81,8 +85,9 @@ const FIELD_TYPE_MAP: Record<string, string> = {
  * More specific/distinctive fields come first.
  */
 const PRIORITY_FIELDS = [
-  // Door sensors - very distinctive
-  "door_status", "door_open", "door", "open_close", "contact",
+  // Door sensors - very distinctive (includes LDS02 vendor field names)
+  "door_status", "door_open", "DOOR_OPEN_STATUS", "door_open_status",
+  "door", "open_close", "contact", "contactStatus", "open_state_abs",
   // Leak detection - safety critical
   "water_leak", "leak", "flood", "water_detected",
   // Motion

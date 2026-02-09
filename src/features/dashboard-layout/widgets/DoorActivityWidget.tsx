@@ -16,7 +16,7 @@ import { DoorOpen, DoorClosed, Clock, AlertTriangle, Activity } from "lucide-rea
 import { supabase } from "@/integrations/supabase/client";
 import type { WidgetProps } from "../types";
 import { format, startOfDay, differenceInSeconds } from "date-fns";
-import { createLoadingState, createNotConfiguredState, createEmptyState, createHealthyState, createMismatchState } from "../hooks/useWidgetState";
+import { createLoadingState, createNotConfiguredState, createEmptyState, createHealthyState } from "../hooks/useWidgetState";
 import { WidgetEmptyState } from "../components/WidgetEmptyState";
 import type { WidgetStateInfo } from "../types/widgetState";
 import { DEFAULT_ALERT_RULES } from "@/hooks/useAlertRules";
@@ -87,13 +87,20 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
   const [error, setError] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
 
-  // Find the door sensor
+  // Find the door sensor — accept "door", "contact", or "combo" sensor types.
+  // Also fall back to the first available sensor: if this widget is on the
+  // dashboard, the user expects door data from whatever sensor is assigned.
+  // The backend self-healing will eventually correct sensor_type, but we
+  // shouldn't block the UI while it catches up.
+  const isDoorType = (t?: string | null) =>
+    t === "door" || t === "contact" || t === "combo";
   const doorSensor =
-    sensor?.sensor_type === "door" || sensor?.sensor_type === "contact"
+    isDoorType(sensor?.sensor_type)
       ? sensor
-      : loraSensors?.find((s) => s.sensor_type === "door" || s.sensor_type === "contact");
+      : loraSensors?.find((s) => isDoorType(s.sensor_type))
+        ?? sensor
+        ?? loraSensors?.[0];
   const primarySensor = doorSensor || sensor || loraSensors?.[0];
-  const isDoorSensor = !!doorSensor;
 
   // Current door state from the units table (updated by webhook)
   const currentState = unit?.door_state ?? null;
@@ -184,9 +191,6 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
     if (!primarySensor) {
       return createNotConfiguredState("No sensor assigned.", "Assign a door sensor to track events.", "Assign Sensor", "/settings/devices");
     }
-    if (!isDoorSensor) {
-      return createMismatchState("door", primarySensor.sensor_type || "unknown");
-    }
     if (error) {
       return { status: "error" as const, message: "Failed to load door events", rootCause: error, action: { label: "Retry", onClick: () => window.location.reload() } };
     }
@@ -195,7 +199,7 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
     }
     const lastDate = events[0]?.occurred_at ? new Date(events[0].occurred_at) : undefined;
     return createHealthyState(lastDate);
-  }, [isLoading, entityId, primarySensor, isDoorSensor, error, events]);
+  }, [isLoading, entityId, primarySensor, error, events]);
 
   // Non-healthy states
   if (widgetState.status !== "healthy") {

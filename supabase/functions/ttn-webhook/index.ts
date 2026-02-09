@@ -788,11 +788,13 @@ async function handleLoraSensor(
     }
 
     // Only process door state if sensor has door capability
-    // Stricter check: must be explicit door sensor type OR have door data but NOT be a temp-only sensor
-    const shouldProcessDoor = hasDoorCapability && 
+    // Use the self-healed sensor type if available (corrected earlier in this request),
+    // otherwise fall back to the original sensor_type from the database.
+    const effectiveSensorType = (sensorUpdate.sensor_type as string | undefined) ?? sensor.sensor_type;
+    const shouldProcessDoor = hasDoorCapability &&
       currentDoorOpen !== undefined &&
-      sensor.sensor_type !== 'temperature' && 
-      sensor.sensor_type !== 'temperature_humidity';
+      effectiveSensorType !== 'temperature' &&
+      effectiveSensorType !== 'temperature_humidity';
 
     if (shouldProcessDoor) {
       unitUpdate.door_state = currentDoorOpen ? 'open' : 'closed';
