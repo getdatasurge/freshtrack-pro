@@ -24,6 +24,7 @@ import { formatDistanceToNow } from "date-fns";
 import { voltageToPercent } from "@/lib/devices/batteryProfiles";
 import { formatMissedCheckinsMessage, formatUplinkInterval } from "@/lib/missedCheckins";
 import { useSensorUplinkInterval } from "@/hooks/useSensorUplinkInterval";
+import { useSensorChemistry } from "@/hooks/useSensorChemistry";
 import type { WidgetProps } from "../types";
 
 export function DeviceReadinessWidget({ 
@@ -57,6 +58,10 @@ export function DeviceReadinessWidget({
   const { data: sensorUplinkInterval } = useSensorUplinkInterval(unit?.id ?? null);
   const uplinkIntervalMinutes = sensorUplinkInterval ?? unit?.checkin_interval_minutes ?? 5;
 
+  // Resolve battery chemistry from sensor catalog (e.g. CR17450, LiFeS2_AA).
+  // null means unknown — we'll still derive % using a generic curve but label it "N/A".
+  const { data: sensorChemistry } = useSensorChemistry(primarySensor?.sensor_catalog_id);
+
   // Determine if we have a LoRa sensor in pending/joining state
   const isLoraPending = loraSensor?.status === "pending";
   const isLoraJoining = loraSensor?.status === "joining";
@@ -69,14 +74,12 @@ export function DeviceReadinessWidget({
   const effectiveLastSeen = derivedStatus?.lastSeenAt || (hasLoraData ? loraSensor.last_seen_at : device?.last_seen_at);
   const deviceSerial = primarySensor?.dev_eui || device?.serial_number;
 
-  // Check if voltage is available - determines "(Est.)" vs "(Reported)" label
+  // Derive battery percentage from voltage using sensor catalog chemistry.
+  // When chemistry is unknown (null), voltageToPercent uses a generic curve.
   const effectiveVoltage = loraSensor?.battery_voltage_filtered ?? loraSensor?.battery_voltage ?? null;
-
-  // Derive battery percentage from voltage + chemistry curves when voltage exists.
-  // Falls back to stored battery_level (may be stale for readings before the fix).
   const storedBatteryLevel = hasLoraData ? loraSensor.battery_level : (primarySensor?.battery_level ?? device?.battery_level);
   const effectiveBatteryLevel = effectiveVoltage != null
-    ? voltageToPercent(effectiveVoltage, loraSensor?.chemistry ?? "LiFeS2_AA")
+    ? voltageToPercent(effectiveVoltage, sensorChemistry)
     : storedBatteryLevel;
 
   // Compute installation status based on offline severity from alert rules
@@ -169,18 +172,19 @@ export function DeviceReadinessWidget({
 
   const StatusIcon = getStatusIcon();
 
-  const getBatteryStatus = (level: number | null | undefined, hasVoltage: boolean) => {
+  const getBatteryStatus = (level: number | null | undefined) => {
     if (level === null || level === undefined) {
       return { label: "N/A", color: "text-muted-foreground", bg: "bg-muted", healthLabel: null };
     }
-    // "(Est.)" when voltage exists (derived from voltage curve), "(Reported)" when just sensor-reported %
-    const suffix = hasVoltage ? "(Est.)" : "(Reported)";
-    const levelLabel = `${level}% ${suffix}`;
-    
+    const levelLabel = `${level}%`;
+
     if (level > 50) return { label: levelLabel, color: "text-safe", bg: "bg-safe/10", healthLabel: "OK" };
     if (level > 20) return { label: levelLabel, color: "text-warning", bg: "bg-warning/10", healthLabel: "Warning" };
     return { label: levelLabel, color: "text-alarm", bg: "bg-alarm/10", healthLabel: "Low" };
   };
+
+  // Chemistry display label — "N/A" when catalog doesn't list one
+  const chemistryLabel = sensorChemistry ?? "N/A";
 
   const getSignalStatus = (strength: number | null | undefined) => {
     if (strength === null || strength === undefined) return { label: "N/A", color: "text-muted-foreground" };
@@ -206,7 +210,7 @@ export function DeviceReadinessWidget({
     };
   };
 
-  const batteryStatus = getBatteryStatus(effectiveBatteryLevel, effectiveVoltage !== null);
+  const batteryStatus = getBatteryStatus(effectiveBatteryLevel);
   const signalStatus = getSignalStatus(effectiveSignalStrength);
   const doorStatus = getDoorStatus(doorState, doorLastChangedAt);
   const DoorIcon = doorStatus.icon;
@@ -256,6 +260,7 @@ export function DeviceReadinessWidget({
                 {batteryStatus.healthLabel && (
                   <span className={`text-xs ${batteryStatus.color}`}>{batteryStatus.healthLabel}</span>
                 )}
+                <span className="text-xs text-muted-foreground">Chemistry: {chemistryLabel}</span>
               </div>
             ) : (isLoraPending || isLoraJoining) ? (
               <span className="text-sm text-muted-foreground italic">Awaiting data</span>

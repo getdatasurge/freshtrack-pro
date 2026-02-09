@@ -428,10 +428,10 @@ function StateDisplay({
   );
 }
 
-function ProfileInfo({ 
-  profile, 
-  profileSource 
-}: { 
+function ProfileInfo({
+  profile,
+  profileSource
+}: {
   profile: { battery_type: string; nominal_capacity_mah: number };
   profileSource: string;
 }) {
@@ -439,13 +439,40 @@ function ProfileInfo({
     <div className="flex items-center justify-between text-sm">
       <span className="text-muted-foreground">Profile</span>
       <span className="font-medium">
-        {profile.battery_type} ({profile.nominal_capacity_mah} mAh)
+        {formatChemistryLabel(profile.battery_type)} ({profile.nominal_capacity_mah} mAh)
         {profileSource === "fallback" && (
           <span className="text-muted-foreground ml-1">(est.)</span>
         )}
       </span>
     </div>
   );
+}
+
+/** Map raw chemistry/battery_type strings to human-readable labels */
+function formatChemistryLabel(raw: string): string {
+  const key = raw.toLowerCase().trim();
+  switch (key) {
+    case "cr17450":
+    case "li-mno2":
+      return "Li-MnO\u2082 (CR17450)";
+    case "lifes2_aa":
+    case "lifes2":
+    case "lithium":
+    case "li":
+    case "li-fes2":
+      return "Li-FeS\u2082 (AA)";
+    case "cr2032":
+      return "CR2032 Coin Cell";
+    case "alkaline_aa":
+    case "alkaline":
+      return "Alkaline (AA)";
+    case "lipo":
+      return "Li-Po";
+    default:
+      // If it already looks human-readable (contains spaces/parens), return as-is
+      if (raw.includes(" ") || raw.includes("(")) return raw;
+      return raw;
+  }
 }
 
 // ============================================================================
