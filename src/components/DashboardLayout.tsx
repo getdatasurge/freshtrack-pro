@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
+import {
   LogOut,
   MapPin,
   Settings,
@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   Trash2,
   Shield,
+  Wrench,
 } from "lucide-react";
 import { SidebarSitesAccordion, SidebarUnitsAccordion } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
@@ -366,6 +367,33 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                 </Button>
               </Link>
             )}
+            {/* Admin Widget Tools - Desktop */}
+            {rolesLoaded && isSuperAdmin && (
+              <>
+                <div className={cn("mt-3 mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60", !canDeleteEntities && "mt-4 pt-4 border-t border-border/50")}>
+                  Admin Tools
+                </div>
+                {[
+                  { href: "/admin/widget-builder", label: "Widget Builder" },
+                  { href: "/admin/layout-manager", label: "Layout Manager" },
+                  { href: "/admin/widget-preview", label: "Widget Preview" },
+                ].map((item) => (
+                  <Link key={item.href} to={item.href}>
+                    <Button
+                      variant={location.pathname === item.href ? "secondary" : "ghost"}
+                      className={cn(
+                        "w-full justify-start gap-3",
+                        location.pathname === item.href && "bg-accent/10 text-accent"
+                      )}
+                      size="sm"
+                    >
+                      <Wrench className="w-4 h-4" />
+                      {item.label}
+                    </Button>
+                  </Link>
+                ))}
+              </>
+            )}
             {/* Platform Admin Link - Desktop */}
             {isLoadingSuperAdmin && (
               <div className="mt-2 px-1">
@@ -469,6 +497,33 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
                       Recently Deleted
                     </Button>
                   </Link>
+                )}
+                {/* Admin Widget Tools - Mobile */}
+                {rolesLoaded && isSuperAdmin && (
+                  <>
+                    <div className={cn("mt-3 mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60", !canDeleteEntities && "mt-4 pt-4 border-t border-border/50")}>
+                      Admin Tools
+                    </div>
+                    {[
+                      { href: "/admin/widget-builder", label: "Widget Builder" },
+                      { href: "/admin/layout-manager", label: "Layout Manager" },
+                      { href: "/admin/widget-preview", label: "Widget Preview" },
+                    ].map((item) => (
+                      <Link key={item.href} to={item.href} onClick={() => setMobileNavOpen(false)}>
+                        <Button
+                          variant={location.pathname === item.href ? "secondary" : "ghost"}
+                          className={cn(
+                            "w-full justify-start gap-3",
+                            location.pathname === item.href && "bg-accent/10 text-accent"
+                          )}
+                          size="sm"
+                        >
+                          <Wrench className="w-4 h-4" />
+                          {item.label}
+                        </Button>
+                      </Link>
+                    ))}
+                  </>
                 )}
                 {/* Platform Admin Link - Mobile */}
                 {isLoadingSuperAdmin && (
