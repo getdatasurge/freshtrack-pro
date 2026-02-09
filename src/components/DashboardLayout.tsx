@@ -31,6 +31,7 @@ import { SupportModeBanner, ImpersonationBanner } from "@/components/platform/Su
 import { SupportDiagnosticsPanel } from "@/components/platform/SupportDiagnosticsPanel";
 import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 import { SidebarNav } from '@/lib/components/navigation/SidebarNav';
+import { SidebarNavGroup } from '@/lib/components/navigation/SidebarNavGroup';
 import { SidebarNavItem } from '@/lib/components/navigation/SidebarNavItem';
 
 interface DashboardLayoutProps {
@@ -225,7 +226,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
   const renderNavContent = (onNavigate?: () => void) => (
     <>
-      <div className="space-y-0.5">
+      <SidebarNavGroup label="Navigation" collapsible={false}>
         {navItemsBeforeAccordions.map((item) => {
           const isActive = location.pathname === item.href ||
             (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
@@ -259,10 +260,10 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
             </Link>
           );
         })}
-      </div>
+      </SidebarNavGroup>
 
       {showAdminSection && (
-        <div className="space-y-0.5 pt-3 border-t border-sidebar-border">
+        <SidebarNavGroup label="Admin">
           {canDeleteEntities && !permissionsLoading && (
             <Link to="/admin/recently-deleted" onClick={onNavigate}>
               <SidebarNavItem
@@ -287,7 +288,7 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
               />
             </Link>
           )}
-        </div>
+        </SidebarNavGroup>
       )}
     </>
   );
