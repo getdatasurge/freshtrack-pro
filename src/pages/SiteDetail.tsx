@@ -496,6 +496,7 @@ const SiteDetail = () => {
             areas={areas}
             totalUnits={totalUnits}
             onSiteLocationChange={loadSiteData}
+            hideTimeline
           />
         </TabsContent>
 

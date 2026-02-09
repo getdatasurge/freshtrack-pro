@@ -141,6 +141,8 @@ export interface EntityDashboardProps {
     signal_strength: number | null;
     status: string;
   };
+  /** Hide the TimelineControls bar (useful for pages where time range is irrelevant) */
+  hideTimeline?: boolean;
 }
 
 function computeDateRange(state: TimelineState): { from: Date; to: Date } {
@@ -182,6 +184,7 @@ export function EntityDashboard({
   onTimeRangeChange,
   readingsTotalCount,
   device,
+  hideTimeline = false,
 }: EntityDashboardProps) {
   const DEV = import.meta.env.DEV;
   
@@ -463,14 +466,16 @@ export function EntityDashboard({
           />
         </div>
       </div>
-      <TimelineControls
-        state={state.activeLayout.timelineState}
-        onChange={handleTimelineChange}
-        isDefaultLayout={state.activeLayout.isDefault}
-        dateRange={dateRange}
-        isComparing={!!state.activeLayout.timelineState.compare}
-        saveStatus={state.isSaving ? 'saving' : state.isDirty ? 'dirty' : 'saved'}
-      />
+      {!hideTimeline && (
+        <TimelineControls
+          state={state.activeLayout.timelineState}
+          onChange={handleTimelineChange}
+          isDefaultLayout={state.activeLayout.isDefault}
+          dateRange={dateRange}
+          isComparing={!!state.activeLayout.timelineState.compare}
+          saveStatus={state.isSaving ? 'saving' : state.isDirty ? 'dirty' : 'saved'}
+        />
+      )}
       {/* Validation Banner (only in customize mode) */}
       {state.isCustomizing && validation.issues.length > 0 && (
         <LayoutValidationBanner 
