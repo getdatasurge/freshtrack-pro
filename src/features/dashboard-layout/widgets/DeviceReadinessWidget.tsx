@@ -34,7 +34,12 @@ export function DeviceReadinessWidget({
   device,
 }: WidgetProps) {
   // Find the primary sensor from loraSensors array or use the passed sensor
-  const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
+  // Only consider temp/combo sensors as the primary — never door sensors
+  const primarySensor = sensor || loraSensors?.find(s =>
+    s.is_primary && s.sensor_type !== 'door' && s.sensor_type !== 'contact'
+  ) || loraSensors?.find(s =>
+    s.sensor_type === 'temperature' || s.sensor_type === 'temperature_humidity' || s.sensor_type === 'combo'
+  ) || loraSensors?.[0];
   const loraSensor = primarySensor as any;
   
   // Extract door state from unit if available

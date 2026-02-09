@@ -151,24 +151,27 @@ const UnitDetail = () => {
   // Fetch sensor uplink interval from sensor_configurations (TRUE source of truth)
   const { data: sensorUplinkInterval } = useSensorUplinkInterval(unitId || null);
   
-  // Select primary sensor: prefer is_primary flag, then most recent temperature sensor
+  // Select primary sensor: prefer is_primary temp/combo sensor, then most recent temperature sensor
   const primaryLoraSensor = useMemo(() => {
     if (!loraSensors?.length) return null;
-    
-    const primary = loraSensors.find(s => s.is_primary);
-    if (primary) return primary;
-    
-    const tempSensors = loraSensors.filter(s => 
-      s.sensor_type === 'temperature' || 
-      s.sensor_type === 'temperature_humidity' || 
+
+    const tempSensors = loraSensors.filter(s =>
+      s.sensor_type === 'temperature' ||
+      s.sensor_type === 'temperature_humidity' ||
       s.sensor_type === 'combo'
     );
+
+    // Prefer a temp/combo sensor that is explicitly marked as primary
+    const primaryTemp = tempSensors.find(s => s.is_primary);
+    if (primaryTemp) return primaryTemp;
+
+    // Fall back to the most recently seen temp/combo sensor
     if (tempSensors.length) {
-      return tempSensors.sort((a, b) => 
+      return tempSensors.sort((a, b) =>
         new Date(b.last_seen_at || 0).getTime() - new Date(a.last_seen_at || 0).getTime()
       )[0];
     }
-    
+
     return loraSensors[0];
   }, [loraSensors]);
   

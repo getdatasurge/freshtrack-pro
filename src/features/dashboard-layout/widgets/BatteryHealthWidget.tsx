@@ -14,14 +14,14 @@
  * - CRITICAL_BATTERY: SOC ≤ 10% or health state CRITICAL/REPLACE_ASAP
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Battery, 
-  BatteryLow, 
-  BatteryMedium, 
-  BatteryFull, 
+import {
+  Battery,
+  BatteryLow,
+  BatteryMedium,
+  BatteryFull,
   AlertTriangle,
   CheckCircle,
   Clock,
@@ -30,7 +30,10 @@ import {
   Loader2,
   TrendingDown,
   Minus,
+  Thermometer,
+  DoorOpen,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import type { WidgetProps } from "../types";
 import { useBatteryEstimate } from "@/hooks/useBatteryEstimate";
@@ -45,17 +48,34 @@ import {
   MIN_HOURS_FOR_ESTIMATE,
 } from "@/lib/devices/batteryProfiles";
 
-export function BatteryHealthWidget({ 
+export function BatteryHealthWidget({
   sensor,
   loraSensors,
   device,
 }: WidgetProps) {
-  // Memoize sensorId to prevent unnecessary re-fetches on parent re-renders
+  // Identify primary (temp/combo) and door sensors
+  const primarySensor = useMemo(() => {
+    return sensor || loraSensors?.find(s =>
+      s.is_primary && s.sensor_type !== 'door' && s.sensor_type !== 'contact'
+    ) || loraSensors?.find(s =>
+      s.sensor_type === 'temperature' || s.sensor_type === 'temperature_humidity' || s.sensor_type === 'combo'
+    ) || loraSensors?.[0] || null;
+  }, [sensor?.id, loraSensors]);
+
+  const doorSensor = useMemo(() => {
+    return loraSensors?.find(s => s.sensor_type === 'door' || s.sensor_type === 'contact') || null;
+  }, [loraSensors]);
+
+  const hasBothSensors = !!primarySensor && !!doorSensor;
+
+  const [selectedSensorKind, setSelectedSensorKind] = useState<'temp' | 'door'>('temp');
+
+  // Memoize sensorId based on toggle selection
   const sensorId = useMemo(() => {
-    const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
-    return primarySensor?.id || device?.id || null;
-  }, [sensor?.id, loraSensors, device?.id]);
-  
+    const selected = selectedSensorKind === 'door' && doorSensor ? doorSensor : primarySensor;
+    return selected?.id || device?.id || null;
+  }, [selectedSensorKind, primarySensor?.id, doorSensor?.id, device?.id]);
+
   // Get battery estimate - sensorId only, hook fetches all data from DB
   // This ensures fetches only happen on page load, not on realtime re-renders
   const estimate = useBatteryEstimate(sensorId);
@@ -108,11 +128,37 @@ export function BatteryHealthWidget({
     }
   }, [estimate.confidence]);
 
+  // Sensor toggle (only rendered when both temp and door sensors exist)
+  const sensorToggle = hasBothSensors ? (
+    <div className="flex gap-1">
+      <button
+        onClick={() => setSelectedSensorKind('temp')}
+        className={cn(
+          "p-1.5 rounded transition-colors",
+          selectedSensorKind === 'temp' ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+        )}
+        title="Temperature sensor"
+      >
+        <Thermometer className="h-4 w-4" />
+      </button>
+      <button
+        onClick={() => setSelectedSensorKind('door')}
+        className={cn(
+          "p-1.5 rounded transition-colors",
+          selectedSensorKind === 'door' ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+        )}
+        title="Door sensor"
+      >
+        <DoorOpen className="h-4 w-4" />
+      </button>
+    </div>
+  ) : null;
+
   // Render loading state
   if (estimate.loading) {
     return (
       <div className="h-full flex flex-col">
-        <WidgetHeader />
+        <WidgetHeader toggle={sensorToggle} />
         <div className="flex-1 flex items-center justify-center">
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
@@ -124,7 +170,7 @@ export function BatteryHealthWidget({
   if (["NOT_CONFIGURED", "MISSING_PROFILE", "NO_BATTERY_DATA", "COLLECTING_DATA", "SENSOR_OFFLINE"].includes(estimate.state)) {
     return (
       <div className="h-full flex flex-col">
-        <WidgetHeader />
+        <WidgetHeader toggle={sensorToggle} />
         <div className="flex-1 min-h-0 flex items-center justify-center p-4">
           <StateDisplay state={estimate.state} estimate={estimate} />
         </div>
@@ -136,7 +182,8 @@ export function BatteryHealthWidget({
   if (estimate.state === "CRITICAL_BATTERY") {
     return (
       <div className="h-full flex flex-col">
-        <WidgetHeader 
+        <WidgetHeader
+          toggle={sensorToggle}
           badge={
             <Badge variant="destructive" className="gap-1">
               <AlertTriangle className="w-3 h-3" />
@@ -183,10 +230,11 @@ export function BatteryHealthWidget({
   // Render estimate states (LOW/HIGH confidence)
   return (
     <div className="h-full flex flex-col">
-      <WidgetHeader 
+      <WidgetHeader
+        toggle={sensorToggle}
         badge={confidenceBadge && (
-          <Badge 
-            variant={confidenceBadge.variant} 
+          <Badge
+            variant={confidenceBadge.variant}
             className={confidenceBadge.className}
           >
             <confidenceBadge.icon className="w-3 h-3 mr-1" />
@@ -313,14 +361,17 @@ export function BatteryHealthWidget({
 // Sub-components
 // ============================================================================
 
-function WidgetHeader({ badge }: { badge?: React.ReactNode }) {
+function WidgetHeader({ badge, toggle }: { badge?: React.ReactNode; toggle?: React.ReactNode }) {
   return (
     <div className="flex-shrink-0 p-4 pb-2 flex items-center justify-between">
       <h3 className="flex items-center gap-2 text-base font-semibold">
         <Battery className="w-4 h-4" />
         Battery Health
       </h3>
-      {badge}
+      <div className="flex items-center gap-2">
+        {toggle}
+        {badge}
+      </div>
     </div>
   );
 }
