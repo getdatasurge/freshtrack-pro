@@ -6,58 +6,99 @@
  */
 
 /**
- * Normalize door data from various payload formats to canonical door_open boolean
- * 
- * Handles:
- * - door_status: "open"/"closed" (LDS02, Dragino)
- * - door: true/false or "open"/"closed"
- * - door_open: boolean (already normalized)
- * - open_close: 1/0 (Milesight)
- * - DOOR_OPEN_STATUS: "OPEN"/"CLOSED" (Dragino uppercase variant)
- * 
+ * Canonical door status alias list.
+ * Mirrors DOOR_STATUS_ALIASES from the sensor library (src/lib/devices/lds02Normalizer.ts),
+ * which is the sole source of truth. Kept in sync manually because the edge function
+ * runtime (Deno) cannot import from the Vite frontend bundle.
+ *
+ * Ordered by priority — first match wins.
+ */
+const DOOR_STATUS_ALIASES: string[] = [
+  "door_open",
+  "DOOR_OPEN_STATUS",
+  "door_status",
+  "open_state_abs",
+  "doorStatus",
+  "door",
+  "open_close",
+  "contactStatus",
+];
+
+/**
+ * Convert an arbitrary door-status value to a boolean.
+ */
+function doorValueToBool(value: unknown): boolean | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') {
+    const lower = value.toLowerCase().trim();
+    if (lower === 'open' || lower === 'true' || lower === '1') return true;
+    if (lower === 'closed' || lower === 'false' || lower === '0') return false;
+  }
+  return undefined;
+}
+
+/**
+ * Normalize door data from various payload formats to canonical door_open boolean.
+ *
+ * Handles all known LDS02 and compatible door-sensor field variants.
+ * Alias list is kept in sync with the sensor library's LDS02 normalizer.
+ *
  * @param decoded - The decoded payload from TTN or other sources
  * @returns boolean | undefined - true = open, false = closed, undefined = no door data
  */
 export function normalizeDoorData(decoded: Record<string, unknown>): boolean | undefined {
-  // Check door_open first (already in canonical format)
-  if ('door_open' in decoded) {
-    const value = decoded.door_open;
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value === 1;
-    if (typeof value === 'string') return value.toLowerCase() === 'true' || value.toLowerCase() === 'open' || value === '1';
+  for (const key of DOOR_STATUS_ALIASES) {
+    if (key in decoded && decoded[key] !== undefined) {
+      const result = doorValueToBool(decoded[key]);
+      if (result !== undefined) return result;
+    }
   }
-  
-  // Check door_status (string "open"/"closed" - LDS02 format)
-  if ('door_status' in decoded && decoded.door_status !== undefined) {
-    const status = String(decoded.door_status).toLowerCase();
-    return status === 'open';
+  return undefined;
+}
+
+/**
+ * Normalize LDS02 open-count from vendor aliases to a canonical number.
+ * Source of truth: OPEN_COUNT_ALIASES in src/lib/devices/lds02Normalizer.ts
+ */
+const OPEN_COUNT_ALIASES: string[] = [
+  "open_count",
+  "DOOR_OPEN_TIMES",
+  "open_times",
+  "door_open_times",
+];
+
+export function normalizeDoorOpenCount(decoded: Record<string, unknown>): number | undefined {
+  for (const key of OPEN_COUNT_ALIASES) {
+    if (key in decoded && typeof decoded[key] === 'number') {
+      return decoded[key] as number;
+    }
   }
-  
-  // Check door (boolean or string)
-  if ('door' in decoded && decoded.door !== undefined) {
-    const value = decoded.door;
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value === 1;
-    if (typeof value === 'string') return value.toLowerCase() === 'open' || value.toLowerCase() === 'true' || value === '1';
+  return undefined;
+}
+
+/**
+ * Normalize LDS02 last-open-duration from vendor aliases to seconds.
+ * Vendor decoders report in **minutes**; canonical unit is **seconds**.
+ * Source of truth: OPEN_DURATION_ALIASES in src/lib/devices/lds02Normalizer.ts
+ */
+const OPEN_DURATION_ALIASES: string[] = [
+  "open_duration_s",
+  "LAST_DOOR_OPEN_DURATION",
+  "open_duration",
+  "last_open_duration",
+  "last_door_open_duration",
+];
+
+export function normalizeDoorOpenDuration(decoded: Record<string, unknown>): number | undefined {
+  for (const key of OPEN_DURATION_ALIASES) {
+    if (key in decoded && typeof decoded[key] === 'number') {
+      const raw = decoded[key] as number;
+      // Keys ending in _s are already in seconds; everything else is minutes
+      return key.endsWith('_s') ? raw : raw * 60;
+    }
   }
-  
-  // Check open_close (1 = open, 0 = closed - Milesight format)
-  if ('open_close' in decoded && decoded.open_close !== undefined) {
-    return decoded.open_close === 1 || decoded.open_close === true || decoded.open_close === 'open';
-  }
-  
-  // Check DOOR_OPEN_STATUS (Dragino uppercase format)
-  if ('DOOR_OPEN_STATUS' in decoded && decoded.DOOR_OPEN_STATUS !== undefined) {
-    return String(decoded.DOOR_OPEN_STATUS).toUpperCase() === 'OPEN';
-  }
-  
-  // Check contactStatus (some sensors use this)
-  if ('contactStatus' in decoded && decoded.contactStatus !== undefined) {
-    const status = String(decoded.contactStatus).toLowerCase();
-    return status === 'open' || status === '1' || status === 'true';
-  }
-  
-  // No door data found
   return undefined;
 }
 
@@ -80,7 +121,8 @@ const TELEMETRY_ALIASES: Record<string, string[]> = {
   // converted to integer percentage for battery_level column (INTEGER type).
   battery: ['BatV', 'battery_v'],
   // Battery voltage: Store raw voltage for voltage-based estimation
-  battery_voltage: ['BatV', 'bat_v', 'battery_v', 'batteryVoltage', 'vbat'],
+  // Alias list kept in sync with BATTERY_V_ALIASES in src/lib/devices/lds02Normalizer.ts
+  battery_voltage: ['BatV', 'BAT_V', 'bat_v', 'battery_v', 'battery_volt_abs', 'batteryVoltage', 'vbat'],
 };
 
 // ============================================================================
@@ -316,11 +358,11 @@ export function hasDoorFields(decoded: Record<string, unknown>): boolean {
 }
 
 /**
- * Get debug info about what door field was found (for logging)
+ * Get debug info about what door field was found (for logging).
+ * Uses the same alias list as normalizeDoorData for consistency.
  */
 export function getDoorFieldSource(decoded: Record<string, unknown>): string | null {
-  const doorFields = ['door_open', 'door_status', 'door', 'open_close', 'DOOR_OPEN_STATUS', 'contactStatus'];
-  for (const field of doorFields) {
+  for (const field of DOOR_STATUS_ALIASES) {
     if (field in decoded && decoded[field] !== undefined) {
       return `${field}=${JSON.stringify(decoded[field])}`;
     }

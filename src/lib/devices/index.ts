@@ -59,6 +59,9 @@ export {
   SNR_FIELD,
   MOTION_FIELD,
   DOOR_OPEN_FIELD,
+  OPEN_COUNT_FIELD,
+  OPEN_DURATION_FIELD,
+  ALARM_FIELD,
   TAMPER_FIELD,
   LEAK_DETECTED_FIELD,
   WATER_LEVEL_FIELD,
@@ -81,3 +84,16 @@ export {
   getDeviceStatusColor,
   hasTelemetry,
 } from "./normalizeDevice";
+
+// LDS02 Normalizer (sole source of truth for door sensor field mapping)
+export type { CanonicalDoor } from "./lds02Normalizer";
+export {
+  normalizeLDS02Payload,
+  findMatchedAlias,
+  DOOR_STATUS_ALIASES,
+  OPEN_COUNT_ALIASES,
+  OPEN_DURATION_ALIASES,
+  BATTERY_V_ALIASES,
+  ALARM_ALIASES,
+  LDS02_ALL_ALIASES,
+} from "./lds02Normalizer";

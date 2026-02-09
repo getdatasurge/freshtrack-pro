@@ -9,7 +9,7 @@
  */
 
 import { assertEquals } from "https://deno.land/std@0.168.0/testing/asserts.ts";
-import { normalizeTelemetry, normalizeDoorData, convertVoltageToPercent } from "./payloadNormalization.ts";
+import { normalizeTelemetry, normalizeDoorData, convertVoltageToPercent, normalizeDoorOpenCount, normalizeDoorOpenDuration } from "./payloadNormalization.ts";
 
 // ============================================================================
 // normalizeTelemetry
@@ -330,4 +330,169 @@ Deno.test("convertVoltageToPercent - case-insensitive chemistry aliases", () => 
   assertEquals(convertVoltageToPercent(3.05, "LITHIUM"), 69, "LITHIUM (all caps)");
   assertEquals(convertVoltageToPercent(3.05, "Li"), 69, "Li (short alias)");
   assertEquals(convertVoltageToPercent(3.05, "li-fes2"), 69, "li-fes2");
+});
+
+// ============================================================================
+// LDS02 vendor field normalization
+// ============================================================================
+
+Deno.test("normalizeDoorData - DOOR_OPEN_STATUS OPEN -> true", () => {
+  assertEquals(normalizeDoorData({ DOOR_OPEN_STATUS: "OPEN" }), true);
+});
+
+Deno.test("normalizeDoorData - DOOR_OPEN_STATUS CLOSED -> false", () => {
+  assertEquals(normalizeDoorData({ DOOR_OPEN_STATUS: "CLOSED" }), false);
+});
+
+Deno.test("normalizeDoorData - open_state_abs alias", () => {
+  assertEquals(normalizeDoorData({ open_state_abs: "open" }), true);
+  assertEquals(normalizeDoorData({ open_state_abs: "closed" }), false);
+});
+
+Deno.test("normalizeDoorData - doorStatus alias", () => {
+  assertEquals(normalizeDoorData({ doorStatus: true }), true);
+  assertEquals(normalizeDoorData({ doorStatus: false }), false);
+  assertEquals(normalizeDoorData({ doorStatus: "open" }), true);
+});
+
+Deno.test("normalizeDoorData - numeric door_open (1/0)", () => {
+  assertEquals(normalizeDoorData({ door_open: 1 }), true);
+  assertEquals(normalizeDoorData({ door_open: 0 }), false);
+});
+
+Deno.test("normalizeDoorData - real LDS02 OPEN payload (0x8C...)", () => {
+  // Real uplink: frm_payload 8C 78 01 00 00 0F 00 00 00 00
+  // bytes[0] & 0x80 = 1 → door is OPEN
+  // Decoder outputs: DOOR_OPEN_STATUS = "OPEN"
+  const decoded = {
+    DOOR_OPEN_STATUS: "OPEN",
+    DOOR_OPEN_TIMES: 15,
+    LAST_DOOR_OPEN_DURATION: 1,
+    BAT_V: 3.192,
+  };
+  assertEquals(normalizeDoorData(decoded), true, "OPEN payload must normalize to true");
+});
+
+Deno.test("normalizeDoorData - real LDS02 CLOSED payload (0x0C...)", () => {
+  // Real uplink: frm_payload 0C 78 01 00 00 0F 00 00 00 00
+  // bytes[0] & 0x80 = 0 → door is CLOSED
+  // Decoder outputs: DOOR_OPEN_STATUS = "CLOSED"
+  const decoded = {
+    DOOR_OPEN_STATUS: "CLOSED",
+    DOOR_OPEN_TIMES: 15,
+    LAST_DOOR_OPEN_DURATION: 0,
+    BAT_V: 3.192,
+  };
+  assertEquals(normalizeDoorData(decoded), false, "CLOSED payload must normalize to false");
+});
+
+Deno.test("normalizeDoorData - no door fields returns undefined", () => {
+  assertEquals(normalizeDoorData({ temperature: 22.5 }), undefined);
+  assertEquals(normalizeDoorData({}), undefined);
+});
+
+// ============================================================================
+// normalizeDoorOpenCount
+// ============================================================================
+
+Deno.test("normalizeDoorOpenCount - DOOR_OPEN_TIMES vendor field", () => {
+  assertEquals(normalizeDoorOpenCount({ DOOR_OPEN_TIMES: 15 }), 15);
+});
+
+Deno.test("normalizeDoorOpenCount - open_count canonical field", () => {
+  assertEquals(normalizeDoorOpenCount({ open_count: 42 }), 42);
+});
+
+Deno.test("normalizeDoorOpenCount - open_times alias", () => {
+  assertEquals(normalizeDoorOpenCount({ open_times: 7 }), 7);
+});
+
+Deno.test("normalizeDoorOpenCount - no count fields returns undefined", () => {
+  assertEquals(normalizeDoorOpenCount({ temperature: 22.5 }), undefined);
+});
+
+// ============================================================================
+// normalizeDoorOpenDuration
+// ============================================================================
+
+Deno.test("normalizeDoorOpenDuration - LAST_DOOR_OPEN_DURATION minutes -> seconds", () => {
+  // 5 minutes -> 300 seconds
+  assertEquals(normalizeDoorOpenDuration({ LAST_DOOR_OPEN_DURATION: 5 }), 300);
+});
+
+Deno.test("normalizeDoorOpenDuration - LAST_DOOR_OPEN_DURATION 0 minutes -> 0 seconds", () => {
+  assertEquals(normalizeDoorOpenDuration({ LAST_DOOR_OPEN_DURATION: 0 }), 0);
+});
+
+Deno.test("normalizeDoorOpenDuration - open_duration_s already in seconds (no conversion)", () => {
+  assertEquals(normalizeDoorOpenDuration({ open_duration_s: 180 }), 180);
+});
+
+Deno.test("normalizeDoorOpenDuration - open_duration minutes -> seconds", () => {
+  assertEquals(normalizeDoorOpenDuration({ open_duration: 10 }), 600);
+});
+
+Deno.test("normalizeDoorOpenDuration - no duration fields returns undefined", () => {
+  assertEquals(normalizeDoorOpenDuration({ temperature: 22.5 }), undefined);
+});
+
+// ============================================================================
+// LDS02 battery voltage aliases in normalizeTelemetry
+// ============================================================================
+
+Deno.test("normalizeTelemetry - BAT_V (uppercase) maps to battery_voltage", () => {
+  const result = normalizeTelemetry({ BAT_V: 3.192 });
+  assertEquals(result.battery_voltage, 3.192, "BAT_V should map to battery_voltage");
+});
+
+Deno.test("normalizeTelemetry - battery_volt_abs alias maps to battery_voltage", () => {
+  const result = normalizeTelemetry({ battery_volt_abs: 3.1 });
+  assertEquals(result.battery_voltage, 3.1, "battery_volt_abs should map to battery_voltage");
+});
+
+// ============================================================================
+// Full LDS02 vendor payload integration
+// ============================================================================
+
+Deno.test("integration - full LDS02 vendor payload normalizes correctly", () => {
+  // Simulate a complete LDS02 vendor-format decoded payload
+  const vendorPayload = {
+    DOOR_OPEN_STATUS: "OPEN",
+    DOOR_OPEN_TIMES: 15,
+    LAST_DOOR_OPEN_DURATION: 2, // 2 minutes
+    BAT_V: 3.192,
+  };
+
+  // Door normalization
+  const doorOpen = normalizeDoorData(vendorPayload);
+  assertEquals(doorOpen, true, "door should be open");
+
+  // Count normalization
+  const openCount = normalizeDoorOpenCount(vendorPayload);
+  assertEquals(openCount, 15, "open count should be 15");
+
+  // Duration normalization (minutes -> seconds)
+  const durationS = normalizeDoorOpenDuration(vendorPayload);
+  assertEquals(durationS, 120, "2 minutes should be 120 seconds");
+
+  // Battery via normalizeTelemetry
+  const telemetry = normalizeTelemetry(vendorPayload);
+  assertEquals(telemetry.battery_voltage, 3.192, "battery voltage should be preserved");
+});
+
+Deno.test("integration - full LDS02 canonical payload passes through correctly", () => {
+  // If the decoder already outputs canonical field names, they pass through as-is
+  const canonicalPayload = {
+    door_open: true,
+    open_count: 15,
+    open_duration_s: 120,
+    battery_v: 3.192,
+  };
+
+  assertEquals(normalizeDoorData(canonicalPayload), true);
+  assertEquals(normalizeDoorOpenCount(canonicalPayload), 15);
+  assertEquals(normalizeDoorOpenDuration(canonicalPayload), 120, "open_duration_s should not be re-converted");
+
+  const telemetry = normalizeTelemetry(canonicalPayload);
+  assertEquals(telemetry.battery_voltage, 3.192, "battery_v should map to battery_voltage");
 });

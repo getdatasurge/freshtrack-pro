@@ -148,6 +148,41 @@ export const DOOR_OPEN_FIELD: TelemetryFieldDefinition = {
   priority: 1,
 };
 
+export const OPEN_COUNT_FIELD: TelemetryFieldDefinition = {
+  key: "openCount",
+  label: "Opens",
+  unit: "",
+  formatter: formatCount,
+  emptyValue: "—",
+  type: "number",
+  priority: 2,
+};
+
+export const OPEN_DURATION_FIELD: TelemetryFieldDefinition = {
+  key: "openDuration",
+  label: "Last Open Duration",
+  unit: "s",
+  formatter: (v: unknown): string => {
+    if (typeof v !== "number") return "—";
+    const mins = Math.floor(v / 60);
+    const secs = v % 60;
+    return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+  },
+  emptyValue: "—",
+  type: "number",
+  priority: 3,
+};
+
+export const ALARM_FIELD: TelemetryFieldDefinition = {
+  key: "alarm",
+  label: "Alarm",
+  unit: "",
+  formatter: formatBoolean,
+  emptyValue: "—",
+  type: "boolean",
+  priority: 4,
+};
+
 export const TAMPER_FIELD: TelemetryFieldDefinition = {
   key: "tamper",
   label: "Tamper",
