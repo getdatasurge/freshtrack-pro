@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -6,7 +6,8 @@ import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBr
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteArea } from "@/hooks/useSoftDelete";
-import { computeUnitStatus, UnitStatusInfo } from "@/hooks/useUnitStatus";
+import { computeUnitStatus } from "@/components/frostguard/tokens/statusLogic";
+import { StatusBadge } from "@/components/frostguard/primitives/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -470,9 +471,26 @@ const AreaDetail = () => {
           {units.length > 0 ? (
             <div className="grid gap-3">
               {units.map((unit) => {
-                // ✅ Use single source of truth for status
-                const computed = computeUnitStatus(unit as UnitStatusInfo);
-                const isOnline = computed.sensorOnline;
+                // Compute status using Layer 2 single source of truth
+                const lastTimestamp = (() => {
+                  if (!unit.last_checkin_at && !unit.last_reading_at) return null;
+                  if (!unit.last_checkin_at) return unit.last_reading_at;
+                  if (!unit.last_reading_at) return unit.last_checkin_at;
+                  return new Date(unit.last_checkin_at) > new Date(unit.last_reading_at)
+                    ? unit.last_checkin_at : unit.last_reading_at;
+                })();
+                const uplinkIntervalS = (unit.checkin_interval_minutes || 10) * 60;
+                const computed = computeUnitStatus(lastTimestamp, uplinkIntervalS);
+                const isOnline = computed.status === 'online';
+
+                const statusColor = computed.status === 'online' ? 'text-safe'
+                  : computed.status === 'warning' ? 'text-warning'
+                  : computed.status === 'critical' ? 'text-alarm'
+                  : 'text-muted-foreground';
+                const statusBgColor = computed.status === 'online' ? 'bg-safe/10'
+                  : computed.status === 'warning' ? 'bg-warning/10'
+                  : computed.status === 'critical' ? 'bg-alarm/10'
+                  : 'bg-muted/50';
 
                 return (
                   <Link key={unit.id} to={`/units/${unit.id}`}>
@@ -480,15 +498,13 @@ const AreaDetail = () => {
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-4">
-                            <div className={`w-12 h-12 rounded-xl ${computed.statusBgColor} flex items-center justify-center`}>
-                              <Thermometer className={`w-6 h-6 ${computed.statusColor}`} />
+                            <div className={`w-12 h-12 rounded-xl ${statusBgColor} flex items-center justify-center`}>
+                              <Thermometer className={`w-6 h-6 ${statusColor}`} />
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
                                 <h3 className="font-semibold text-foreground">{unit.name}</h3>
-                                <span className={`text-xs px-2 py-0.5 rounded-full ${computed.statusBgColor} ${computed.statusColor}`}>
-                                  {computed.statusLabel}
-                                </span>
+                                <StatusBadge sensorStatus={computed.status} />
                               </div>
                               <p className="text-sm text-muted-foreground capitalize">
                                 {unit.unit_type.replace(/_/g, " ")}
@@ -501,7 +517,7 @@ const AreaDetail = () => {
                               <div className={`temp-display text-xl font-semibold ${
                                 unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high
                                   ? "text-alarm"
-                                  : computed.statusColor
+                                  : statusColor
                               }`}>
                                 {formatTemp(unit.last_temp_reading)}
                               </div>
@@ -531,7 +547,7 @@ const AreaDetail = () => {
                           <div className={`temp-display text-xl font-semibold ${
                             unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high
                               ? "text-alarm"
-                              : computed.statusColor
+                              : statusColor
                           }`}>
                             {formatTemp(unit.last_temp_reading)}
                           </div>
