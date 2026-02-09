@@ -30,6 +30,9 @@ import { useSuperAdmin } from "@/contexts/SuperAdminContext";
 import { SupportModeBanner, ImpersonationBanner } from "@/components/platform/SupportModeBanner";
 import { SupportDiagnosticsPanel } from "@/components/platform/SupportDiagnosticsPanel";
 import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
+import { SidebarNav } from '@/lib/components/navigation/SidebarNav';
+import { SidebarNavGroup } from '@/lib/components/navigation/SidebarNavGroup';
+import { SidebarNavItem } from '@/lib/components/navigation/SidebarNavItem';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -219,6 +222,77 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
     }
   };
 
+  const showAdminSection = (canDeleteEntities && !permissionsLoading) || isLoadingSuperAdmin || (rolesLoaded && isSuperAdmin);
+
+  const renderNavContent = (onNavigate?: () => void) => (
+    <>
+      <SidebarNavGroup label="Navigation" collapsible={false}>
+        {navItemsBeforeAccordions.map((item) => {
+          const isActive = location.pathname === item.href ||
+            (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
+          return (
+            <Link key={item.href} to={item.href} onClick={onNavigate}>
+              <SidebarNavItem
+                icon={<item.icon />}
+                label={item.label}
+                active={isActive}
+              />
+            </Link>
+          );
+        })}
+
+        {/* Sites Accordion */}
+        <SidebarSitesAccordion organizationId={sidebarOrgId} />
+
+        {/* Units Accordion */}
+        <SidebarUnitsAccordion organizationId={sidebarOrgId} />
+
+        {navItemsAfterAccordions.map((item) => {
+          const isActive = location.pathname === item.href ||
+            (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
+          return (
+            <Link key={item.href} to={item.href} onClick={onNavigate}>
+              <SidebarNavItem
+                icon={<item.icon />}
+                label={item.label}
+                active={isActive}
+              />
+            </Link>
+          );
+        })}
+      </SidebarNavGroup>
+
+      {showAdminSection && (
+        <SidebarNavGroup label="Admin">
+          {canDeleteEntities && !permissionsLoading && (
+            <Link to="/admin/recently-deleted" onClick={onNavigate}>
+              <SidebarNavItem
+                icon={<Trash2 />}
+                label="Recently Deleted"
+                active={location.pathname === "/admin/recently-deleted"}
+              />
+            </Link>
+          )}
+          {isLoadingSuperAdmin && (
+            <div className="px-1">
+              <Skeleton className="h-10 w-full rounded-md" />
+            </div>
+          )}
+          {rolesLoaded && isSuperAdmin && (
+            <Link to="/platform" onClick={onNavigate}>
+              <SidebarNavItem
+                icon={<Shield />}
+                label="Platform Admin"
+                active={location.pathname.startsWith("/platform")}
+                className={location.pathname.startsWith("/platform") ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300" : ""}
+              />
+            </Link>
+          )}
+        </SidebarNavGroup>
+      )}
+    </>
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Support Mode Banner for Super Admins */}
@@ -304,91 +378,9 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
 
       <div className="flex">
         {/* Desktop Sidebar */}
-        <aside className="hidden lg:flex w-64 flex-col fixed left-0 top-16 bottom-0 border-r border-border/50 bg-card/50">
-          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-            {/* Nav items before accordions */}
-            {navItemsBeforeAccordions.map((item) => {
-              const isActive = location.pathname === item.href || 
-                (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
-              return (
-                <Link key={item.href} to={item.href}>
-                  <Button
-                    variant={isActive ? "secondary" : "ghost"}
-                    className={cn(
-                      "w-full justify-start gap-3",
-                      isActive && "bg-accent/10 text-accent"
-                    )}
-                  >
-                    <item.icon className="w-5 h-5" />
-                    {item.label}
-                  </Button>
-                </Link>
-              );
-            })}
-
-            {/* Sites Accordion */}
-            <SidebarSitesAccordion organizationId={sidebarOrgId} />
-
-            {/* Units Accordion */}
-            <SidebarUnitsAccordion organizationId={sidebarOrgId} />
-
-            {/* Nav items after accordions */}
-            {navItemsAfterAccordions.map((item) => {
-              const isActive = location.pathname === item.href || 
-                (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
-              return (
-                <Link key={item.href} to={item.href}>
-                  <Button
-                    variant={isActive ? "secondary" : "ghost"}
-                    className={cn(
-                      "w-full justify-start gap-3",
-                      isActive && "bg-accent/10 text-accent"
-                    )}
-                  >
-                    <item.icon className="w-5 h-5" />
-                    {item.label}
-                  </Button>
-                </Link>
-              );
-            })}
-
-            {canDeleteEntities && !permissionsLoading && (
-              <Link to="/admin/recently-deleted">
-                <Button
-                  variant={location.pathname === "/admin/recently-deleted" ? "secondary" : "ghost"}
-                  className={cn(
-                    "w-full justify-start gap-3 mt-4 pt-4 border-t border-border/50",
-                    location.pathname === "/admin/recently-deleted" && "bg-accent/10 text-accent"
-                  )}
-                >
-                  <Trash2 className="w-5 h-5" />
-                  Recently Deleted
-                </Button>
-              </Link>
-            )}
-            {/* Platform Admin Link - Desktop */}
-            {isLoadingSuperAdmin && (
-              <div className="mt-2 px-1">
-                <Skeleton className="h-10 w-full rounded-md" />
-              </div>
-            )}
-            {rolesLoaded && isSuperAdmin && (
-              <Link to="/platform">
-                <Button
-                  variant={location.pathname.startsWith("/platform") ? "secondary" : "ghost"}
-                  className={cn(
-                    "w-full justify-start gap-3 mt-2",
-                    !canDeleteEntities && "mt-4 pt-4 border-t border-border/50",
-                    location.pathname.startsWith("/platform") && "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
-                  )}
-                >
-                  <Shield className="w-5 h-5" />
-                  Platform Admin
-                </Button>
-              </Link>
-            )}
-          </nav>
-        </aside>
+        <SidebarNav className="hidden lg:flex fixed left-0 top-16 bottom-0">
+          {renderNavContent()}
+        </SidebarNav>
 
         {/* Mobile Nav Overlay */}
         {mobileNavOpen && (
@@ -397,105 +389,9 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
               className="absolute inset-0 bg-background/80 backdrop-blur-sm"
               onClick={() => setMobileNavOpen(false)}
             />
-            <aside className="absolute left-0 top-16 bottom-0 w-64 bg-card border-r border-border/50 p-4 overflow-y-auto">
-              <nav className="space-y-1">
-                {/* Nav items before accordions */}
-                {navItemsBeforeAccordions.map((item) => {
-                  const isActive = location.pathname === item.href || 
-                    (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
-                  return (
-                    <Link 
-                      key={item.href} 
-                      to={item.href}
-                      onClick={() => setMobileNavOpen(false)}
-                    >
-                      <Button
-                        variant={isActive ? "secondary" : "ghost"}
-                        className={cn(
-                          "w-full justify-start gap-3",
-                          isActive && "bg-accent/10 text-accent"
-                        )}
-                      >
-                        <item.icon className="w-5 h-5" />
-                        {item.label}
-                      </Button>
-                    </Link>
-                  );
-                })}
-
-                {/* Sites Accordion (Mobile) */}
-                <SidebarSitesAccordion organizationId={sidebarOrgId} />
-
-                {/* Units Accordion (Mobile) */}
-                <SidebarUnitsAccordion organizationId={sidebarOrgId} />
-
-                {/* Nav items after accordions */}
-                {navItemsAfterAccordions.map((item) => {
-                  const isActive = location.pathname === item.href || 
-                    (item.href !== "/dashboard" && location.pathname.startsWith(item.href));
-                  return (
-                    <Link 
-                      key={item.href} 
-                      to={item.href}
-                      onClick={() => setMobileNavOpen(false)}
-                    >
-                      <Button
-                        variant={isActive ? "secondary" : "ghost"}
-                        className={cn(
-                          "w-full justify-start gap-3",
-                          isActive && "bg-accent/10 text-accent"
-                        )}
-                      >
-                        <item.icon className="w-5 h-5" />
-                        {item.label}
-                      </Button>
-                    </Link>
-                  );
-                })}
-
-                {canDeleteEntities && !permissionsLoading && (
-                  <Link
-                    to="/admin/recently-deleted"
-                    onClick={() => setMobileNavOpen(false)}
-                  >
-                    <Button
-                      variant={location.pathname === "/admin/recently-deleted" ? "secondary" : "ghost"}
-                      className={cn(
-                        "w-full justify-start gap-3 mt-4 pt-4 border-t border-border/50",
-                        location.pathname === "/admin/recently-deleted" && "bg-accent/10 text-accent"
-                      )}
-                    >
-                      <Trash2 className="w-5 h-5" />
-                      Recently Deleted
-                    </Button>
-                  </Link>
-                )}
-                {/* Platform Admin Link - Mobile */}
-                {isLoadingSuperAdmin && (
-                  <div className="mt-2 px-1">
-                    <Skeleton className="h-10 w-full rounded-md" />
-                  </div>
-                )}
-                {rolesLoaded && isSuperAdmin && (
-                  <Link
-                    to="/platform"
-                    onClick={() => setMobileNavOpen(false)}
-                  >
-                    <Button
-                      variant={location.pathname.startsWith("/platform") ? "secondary" : "ghost"}
-                      className={cn(
-                        "w-full justify-start gap-3 mt-2",
-                        !canDeleteEntities && "mt-4 pt-4 border-t border-border/50",
-                        location.pathname.startsWith("/platform") && "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
-                      )}
-                    >
-                      <Shield className="w-5 h-5" />
-                      Platform Admin
-                    </Button>
-                  </Link>
-                )}
-              </nav>
-            </aside>
+            <SidebarNav className="absolute left-0 top-16 bottom-0">
+              {renderNavContent(() => setMobileNavOpen(false))}
+            </SidebarNav>
           </div>
         )}
 
