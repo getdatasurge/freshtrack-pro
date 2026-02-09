@@ -27,12 +27,6 @@ export function PlatformGuard({ children }: PlatformGuardProps) {
     if (rolesLoaded && !isSuperAdmin && !hasRedirected) {
       setHasRedirected(true);
       
-      console.log('[PlatformGuard] Access denied - redirecting to dashboard', {
-        roleLoadStatus,
-        isSuperAdmin,
-        rolesLoaded,
-      });
-      
       toast({
         title: "Access Denied",
         description: "Platform Admin access requires Super Admin privileges.",

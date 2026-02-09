@@ -101,8 +101,6 @@ interface UnitAlert {
   clearCondition: string;
 }
 
-// STATUS_CONFIG import removed — use computeUnitStatus() for status display
-
 import { getAlertClearCondition } from "@/lib/alertConfig";
 
 const UnitDetail = () => {
@@ -210,7 +208,6 @@ const UnitDetail = () => {
           state: data.state,
           occurredAt: data.occurred_at
         });
-        DEV && console.log('[DOOR_EVENT] latest:', data);
       }
     };
     
@@ -284,25 +281,6 @@ const UnitDetail = () => {
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
-      
-      // STEP 1: Auth proof logging
-      const DEV = import.meta.env.DEV;
-      DEV && console.log('[AUTH]', { 
-        hasSession: !!session, 
-        uid: session?.user?.id 
-      });
-      
-      // RLS verification query
-      if (session) {
-        const { data: profileCheck, error: profileError } = await supabase
-          .from('profiles')
-          .select('id')
-          .limit(1);
-        DEV && console.log('[AUTH] RLS check', { 
-          success: !!profileCheck?.length, 
-          error: profileError?.message 
-        });
-      }
     });
   }, []);
 
@@ -361,8 +339,6 @@ const UnitDetail = () => {
       return null;
     }
 
-    console.log(`[fetchUnitHeader] door_state=${data.door_state} door_last_changed_at=${data.door_last_changed_at} last_reading_at=${data.last_reading_at} last_temp_reading=${data.last_temp_reading}`);
-
     return {
       ...data,
       last_manual_log_at: data.last_manual_log_at,
@@ -389,13 +365,10 @@ const UnitDetail = () => {
   const refreshUnitData = async () => {
     if (!unitId) return;
     
-    DEV && console.log(`[REFRESH] start unitId=${unitId}`);
-    
     try {
       // Fetch fresh unit header (door_state, last_reading_at, etc.) - REPLACE, don't merge
       const freshUnit = await fetchUnitHeader(unitId);
       if (freshUnit) {
-        console.log(`[REFRESH] header door_state=${freshUnit.door_state} door_last_changed_at=${freshUnit.door_last_changed_at} last_reading_at=${freshUnit.last_reading_at}`);
         setUnit(freshUnit);
         
         // Update lastKnownGood if we have a newer reading
@@ -449,7 +422,6 @@ const UnitDetail = () => {
         }
       }
 
-      DEV && console.log(`[REFRESH] done door_state=${freshUnit?.door_state} door_last_changed_at=${freshUnit?.door_last_changed_at} last_reading_at=${freshUnit?.last_reading_at} last_temp_reading=${freshUnit?.last_temp_reading}`);
     } catch (error) {
       console.error("[REFRESH] failed:", error);
     }
@@ -459,7 +431,6 @@ const UnitDetail = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       const visible = !document.hidden;
-      console.log(`[TAB] visibility=${visible ? 'visible' : 'hidden'}`);
       setIsTabVisible(visible);
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -473,8 +444,7 @@ const UnitDetail = () => {
     if (!unitId) return;
     
     setRealtimeConnected(false);
-    console.log(`[RT] subscribing unit-readings-${unitId} filter=unit_id=eq.${unitId}`);
-    
+
     const channel = supabase
       .channel(`unit-readings-${unitId}`)
       .on(
@@ -486,17 +456,14 @@ const UnitDetail = () => {
           filter: `unit_id=eq.${unitId}`,
         },
         (payload) => {
-          console.log(`[RT] sensor_readings INSERT payload id=${payload.new?.id} unit_id=${payload.new?.unit_id} recorded_at=${payload.new?.recorded_at}`);
           refreshUnitData();
           invalidateUnitCaches(queryClient, unitId);
           
           // Increment refreshTick to trigger widget re-fetches (e.g., DoorActivityWidget)
           setRefreshTick(prev => prev + 1);
-          DEV && console.log('[RT] incremented refreshTick for door widget re-fetch');
         }
       )
       .subscribe((status) => {
-        console.log(`[RT] subscribed status=${status}`);
         if (status === 'SUBSCRIBED') {
           setRealtimeConnected(true);
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
@@ -506,12 +473,7 @@ const UnitDetail = () => {
 
     // Timeout warning if not connected in 2s
     const timeoutId = setTimeout(() => {
-      setRealtimeConnected(prev => {
-        if (!prev) {
-          console.log(`[RT] Connection timeout after 2s - polling fallback will activate`);
-        }
-        return prev;
-      });
+      setRealtimeConnected(prev => prev);
     }, 2000);
 
     return () => {
@@ -527,16 +489,12 @@ const UnitDetail = () => {
       return;
     }
     
-    DEV && console.warn(`[RT] realtime not subscribed; starting polling fallback 15s`);
-    
     const interval = setInterval(() => {
-      DEV && console.log(`[POLL] tick - refreshing unitId=${unitId}`);
       refreshUnitData();
       invalidateUnitCaches(queryClient, unitId);
     }, 15000);
 
     return () => {
-      DEV && console.log(`[POLL] Stopping polling`);
       clearInterval(interval);
     };
   }, [unitId, realtimeConnected, isTabVisible]);
@@ -582,7 +540,6 @@ const UnitDetail = () => {
 
   const loadUnitData = async () => {
     setIsLoading(true);
-    const DEV_LOAD = import.meta.env.DEV;
     try {
       // Use shared fetchUnitHeader for consistent unit data
       const unitData = await fetchUnitHeader(unitId!);
@@ -591,16 +548,6 @@ const UnitDetail = () => {
         toast({ title: "Unit not found", variant: "destructive" });
         return;
       }
-
-      // STEP 2: Unit load proof logging
-      DEV_LOAD && console.log('[UNIT LOAD]', {
-        unitId: unitData.id,
-        orgId: unitData.area?.site?.organization_id,
-        siteId: unitData.area?.site?.id,
-        areaId: unitData.area?.id,
-        door_state: unitData.door_state,
-        door_last_changed_at: unitData.door_last_changed_at,
-      });
 
       setUnit(unitData);
 
@@ -623,7 +570,7 @@ const UnitDetail = () => {
       const fromDate = getTimeRangeDate().toISOString();
 
       // Fetch descending to get the MOST RECENT 500, then reverse to chronological order
-      const { data: readingsData, error: readingsError } = await supabase
+      const { data: readingsData } = await supabase
         .from("sensor_readings")
         .select("id, temperature, humidity, recorded_at")
         .eq("unit_id", unitId)
@@ -631,16 +578,7 @@ const UnitDetail = () => {
         .order("recorded_at", { ascending: false })
         .limit(500);
 
-      // STEP 3: Telemetry query proof logging
       const chronologicalReadings = (readingsData || []).reverse();
-      DEV_LOAD && console.log('[READINGS]', {
-        unitId,
-        fromDate,
-        rows: chronologicalReadings.length,
-        first: chronologicalReadings[0],
-        last: chronologicalReadings[chronologicalReadings.length - 1],
-        error: readingsError?.message,
-      });
 
       setReadings(chronologicalReadings);
 
@@ -985,7 +923,6 @@ const UnitDetail = () => {
             size="sm"
             className="h-5 px-2 text-xs bg-yellow-100 hover:bg-yellow-200 text-yellow-800 dark:bg-yellow-900/30 dark:hover:bg-yellow-900/50 dark:text-yellow-300"
             onClick={() => {
-              console.log('[SMOKE] manual refresh triggered');
               refreshUnitData();
               invalidateUnitCaches(queryClient, unitId!);
             }}

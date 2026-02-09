@@ -6,11 +6,8 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { HierarchyBreadcrumb, BreadcrumbSibling } from "@/components/HierarchyBreadcrumb";
 import { SiteComplianceSettings } from "@/components/site/SiteComplianceSettings";
 import { SiteGatewaysCard } from "@/components/site/SiteGatewaysCard";
-import { AlertRulesEditor } from "@/components/settings/AlertRulesEditor";
-import { AlertRulesHistoryModal } from "@/components/settings/AlertRulesHistoryModal";
 import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { LayoutHeaderDropdown } from "@/components/LayoutHeaderDropdown";
-import { useSiteAlertRules, useOrgAlertRules } from "@/hooks/useAlertRules";
 import { usePermissions } from "@/hooks/useUserRole";
 import { softDeleteSite } from "@/hooks/useSoftDelete";
 import { EntityDashboard } from "@/features/dashboard-layout";
@@ -38,7 +35,6 @@ import {
   Download,
   AlertTriangle,
   FileText,
-  History,
   LayoutGrid,
   Trash2,
   LayoutDashboard,
@@ -101,11 +97,6 @@ const SiteDetail = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [alertHistoryOpen, setAlertHistoryOpen] = useState(false);
-
-  // Alert rules
-  const { data: siteRules, refetch: refetchSiteRules } = useSiteAlertRules(siteId || null);
-  const { data: orgRules } = useOrgAlertRules(site?.organization_id || null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));

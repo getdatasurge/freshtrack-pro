@@ -34,7 +34,6 @@ const AdminWidgetTools = () => {
             <LayoutManager
               onSave={async (equipmentType, appTarget, placements) => {
                 // TODO: Wire to Supabase default_widget_layouts table
-                console.log("Save layout:", { equipmentType, appTarget, placements });
               }}
             />
           </TabsContent>

@@ -112,18 +112,11 @@ function mapLayoutsToSlots(layouts: RawLayout[]): LayoutSlot[] {
  * Uses org-scoped query keys for proper cache invalidation on impersonation switch.
  */
 export function useNavTree(organizationId: string | null): NavTree {
-  const DEV = import.meta.env.DEV;
-  
-  // Debug logging for impersonation context
-  DEV && console.log('[useNavTree] Called with organizationId:', organizationId);
-
   // Fetch all sites for this organization
   const { data: allSites = [], isLoading: sitesLoading, error: sitesError } = useQuery({
     queryKey: qk.org(organizationId).sites(),
     queryFn: async () => {
       if (!organizationId) return [];
-
-      DEV && console.log('[useNavTree] Fetching sites for org:', organizationId);
 
       const { data, error } = await supabase
         .from("sites")
@@ -138,8 +131,6 @@ export function useNavTree(organizationId: string | null): NavTree {
         throw error;
       }
 
-      DEV && console.log('[useNavTree] Sites fetched:', data?.length, 'sites');
-
       return data as { id: string; name: string }[];
     },
     enabled: !!organizationId,
@@ -151,8 +142,6 @@ export function useNavTree(organizationId: string | null): NavTree {
     queryKey: [...qk.org(organizationId).navTree(), 'units'],
     queryFn: async () => {
       if (!organizationId) return [];
-
-      DEV && console.log('[SidebarUnits] fetching', { effectiveOrgId: organizationId });
 
       const { data, error } = await supabase
         .from("units")
@@ -185,8 +174,6 @@ export function useNavTree(organizationId: string | null): NavTree {
         console.error("[SidebarUnits] error", { code: error.code, message: error.message });
         throw error;
       }
-
-      DEV && console.log('[SidebarUnits] success', { unitsCount: data?.length ?? 0 });
 
       return data as unknown as RawUnit[];
     },
@@ -310,22 +297,6 @@ export function useNavTree(organizationId: string | null): NavTree {
     // Convert to array and sort by site name
     return Array.from(siteMap.values()).sort((a, b) => a.siteName.localeCompare(b.siteName));
   }, [units, sensors, layouts, allSites]);
-
-  // Summary debug log
-  if (DEV) {
-    const totalUnits = sites.reduce((sum, s) => sum + s.units.length, 0);
-    console.log('[useNavTree] Summary:', {
-      organizationId,
-      sitesCount: sites.length,
-      totalUnits,
-      isLoading: unitsLoading || sensorsLoading || layoutsLoading || sitesLoading,
-    });
-
-    // Explicit warning when units are empty but sites exist
-    if (allSites.length > 0 && units.length === 0 && !unitsLoading) {
-      console.warn('[useNavTree] ⚠️ Sites exist but no units returned - check RLS or org scoping');
-    }
-  }
 
   // Combine errors for better diagnostics
   const combinedError = sitesError || unitsError;

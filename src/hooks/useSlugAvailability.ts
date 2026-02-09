@@ -1,12 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// Simple logging for slug availability checks
-const logSlugCheck = (message: string, data?: Record<string, unknown>) => {
-  if (import.meta.env.DEV) {
-    console.log(`[slug-check] ${message}`, data || "");
-  }
-};
-
 interface SlugStatus {
   isChecking: boolean;
   available: boolean | null;
@@ -85,12 +78,6 @@ export function useSlugAvailability(
       error: null,
     }));
 
-    logSlugCheck(`Checking slug availability: "${normalized}"`, { 
-      original: slugToCheck, 
-      normalized,
-      excludeOrgId 
-    });
-
     try {
       const params = new URLSearchParams({ slug: slugToCheck });
       if (excludeOrgId) {
@@ -112,17 +99,10 @@ export function useSlugAvailability(
 
       const result = await response.json();
 
-      logSlugCheck(`Slug check result: "${normalized}"`, {
-        available: result.available,
-        suggestionsCount: result.suggestions?.length || 0,
-        conflicts: result.conflicts,
-      });
-
       // Generate client-side fallback suggestions if backend didn't provide any
       let suggestions = result.suggestions || [];
       if (!result.available && suggestions.length === 0) {
         suggestions = generateClientSideSuggestions(normalized);
-        logSlugCheck("Using client-side fallback suggestions", { suggestions });
       }
 
       setStatus({

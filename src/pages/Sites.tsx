@@ -52,18 +52,6 @@ const Sites = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Debug logging for impersonation context
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.log('[Sites] Context state:', {
-        isInitialized,
-        effectiveOrgId,
-        isSupportModeActive,
-        isImpersonating,
-      });
-    }
-  }, [isInitialized, effectiveOrgId, isSupportModeActive, isImpersonating]);
-
   useEffect(() => {
     // Guard: In support mode, wait until we have a valid effectiveOrgId
     // This prevents showing "No sites" before impersonation context loads

@@ -39,25 +39,11 @@ export function perfEnd(name: string, additionalMetadata?: Record<string, unknow
 
   const mark = activeMarks.get(name);
   if (!mark) {
-    console.warn(`[PERF] No start mark found for: ${name}`);
     return 0;
   }
 
   const elapsed = Math.round(performance.now() - mark.startTime);
   activeMarks.delete(name);
-
-  const allMetadata = { ...mark.metadata, ...additionalMetadata };
-  const metaStr = Object.keys(allMetadata).length > 0
-    ? ` ${JSON.stringify(allMetadata)}`
-    : '';
-
-  // Color-code by duration
-  const color = elapsed > 500 ? 'color: red'
-    : elapsed > 200 ? 'color: orange'
-    : elapsed > 100 ? 'color: yellow'
-    : 'color: green';
-
-  console.log(`%c[PERF] ${name}: ${elapsed}ms${metaStr}`, color);
 
   return elapsed;
 }
@@ -92,14 +78,6 @@ export async function timedQuery<T>(
   const result = await queryFn();
   const durationMs = Math.round(performance.now() - startTime);
 
-  if (DEV) {
-    const status = result.error ? '❌' : '✓';
-    const color = durationMs > 500 ? 'color: red'
-      : durationMs > 200 ? 'color: orange'
-      : 'color: green';
-    console.log(`%c[DB] ${status} ${queryName}: ${durationMs}ms`, color);
-  }
-
   return { ...result, durationMs };
 }
 
@@ -108,15 +86,6 @@ export async function timedQuery<T>(
  */
 export function logRealtimeLatency(eventName: string, recordedAt: string | Date): void {
   if (!DEV) return;
-
-  const recordedTime = new Date(recordedAt).getTime();
-  const latency = Date.now() - recordedTime;
-
-  const color = latency > 2000 ? 'color: red'
-    : latency > 1000 ? 'color: orange'
-    : 'color: green';
-
-  console.log(`%c[RT-LATENCY] ${eventName}: ${latency}ms from recorded_at`, color);
 }
 
 /**
@@ -124,10 +93,4 @@ export function logRealtimeLatency(eventName: string, recordedAt: string | Date)
  */
 export function perfSummary(): void {
   if (!DEV) return;
-
-  console.log(`%c[PERF] Active measurements: ${activeMarks.size}`, 'color: blue');
-  activeMarks.forEach((mark, name) => {
-    const elapsed = Math.round(performance.now() - mark.startTime);
-    console.log(`  - ${name}: running for ${elapsed}ms`);
-  });
 }

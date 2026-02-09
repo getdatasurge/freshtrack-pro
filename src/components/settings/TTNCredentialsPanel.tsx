@@ -109,7 +109,6 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
 
     // If switching to a DIFFERENT org, clear old credentials first
     if (lastOrgIdRef.current && lastOrgIdRef.current !== organizationId) {
-      console.log(`[TTNCredentialsPanel] Org changed: ${lastOrgIdRef.current?.slice(0, 8)} → ${organizationId.slice(0, 8)}`);
       setCredentials(null);
     }
     lastOrgIdRef.current = organizationId;
@@ -135,15 +134,6 @@ export function TTNCredentialsPanel({ organizationId, readOnly = false }: TTNCre
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-
-      // Log what we received for debugging
-      console.log(`[TTNCredentialsPanel] Fetched credentials for org ${organizationId.slice(0, 8)}:`, {
-        provisioning_status: data.provisioning_status,
-        has_app_secret: !!(data.app_api_secret || data.app_api_secret_last4),
-        has_webhook_secret: !!(data.webhook_secret || data.webhook_secret_last4),
-        app_api_secret_status: data.app_api_secret_status,
-        ttn_region: data.ttn_region,
-      });
 
       setCredentials(data);
     } catch (err) {

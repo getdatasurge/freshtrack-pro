@@ -264,12 +264,6 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
             api_key_last4: data.api_key_last4,
             is_enabled: data.is_enabled,
           });
-          console.log('[TTN Config] Loaded from DB, setting canonical', { 
-            org_id: organizationId, 
-            app_id: data.ttn_application_id,
-            has_api_key: data.has_api_key,
-            hash 
-          });
           setCanonical(hash);
         } else if (data.exists) {
           // TTN connection exists but incomplete credentials - reset to draft
@@ -488,7 +482,6 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
           application_id: data.application_id || settings?.ttn_application_id,
           is_enabled: true,
         });
-        console.log('[TTN Config] Provisioning complete, setting canonical', { hash });
         setCanonical(hash);
         
         await loadSettings();
@@ -644,7 +637,6 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
         api_key_last4: settings?.api_key_last4,
         is_enabled: enabled,
       });
-      console.log('[TTN Config] Toggle enabled, setting canonical', { hash, enabled });
       setCanonical(hash);
     } catch (err: any) {
       console.error("Toggle error:", err);
@@ -713,7 +705,6 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
           api_key_last4: result.config?.api_key_last4,
           is_enabled: settings?.is_enabled,
         });
-        console.log('[TTN Config] API key saved, setting canonical', { hash, app_id: effectiveAppId });
         setCanonical(hash);
         
         await loadSettings();
@@ -901,7 +892,6 @@ export function TTNConnectionSettings({ organizationId, readOnly = false }: TTNC
           api_key_last4: settings?.api_key_last4,
           is_enabled: settings?.is_enabled,
         });
-        console.log('[TTN Config] Webhook saved, setting canonical', { hash });
         setCanonical(hash);
         
         await loadSettings();

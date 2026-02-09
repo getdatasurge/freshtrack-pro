@@ -186,13 +186,6 @@ export function EntityDashboard({
   device,
   hideTimeline = false,
 }: EntityDashboardProps) {
-  const DEV = import.meta.env.DEV;
-  
-  // DEV LOG: Confirm when EntityDashboard re-renders with unit changes
-  DEV && console.log(
-    `[EntityDashboard] render unit door_state=${unit?.door_state} last_reading_at=${unit?.last_reading_at} last_temp_reading=${unit?.last_temp_reading}`
-  );
-
   const { state, actions } = useLayoutManager(entityType, entityId, organizationId, userId);
   const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   const [recentlyAddedWidgetId, setRecentlyAddedWidgetId] = useState<string | null>(null);
@@ -299,18 +292,6 @@ export function EntityDashboard({
       refreshTick,
       device,
     };
-
-    // STEP 4: EntityDashboard widgetProps debug logging
-    DEV && console.log('[EntityDashboard.widgetProps]', {
-      entityType,
-      entityId,
-      organizationId,
-      siteId,
-      door_state: unit?.door_state,
-      door_last_changed_at: unit?.door_last_changed_at,
-      readingsCount: filteredReadings?.length,
-      loraSensorsCount: loraSensors?.length,
-    });
 
     const result: Record<string, Record<string, unknown>> = {};
     state.activeLayout.config.widgets.forEach((w) => {

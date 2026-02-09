@@ -337,9 +337,7 @@ const Onboarding = () => {
         // Trigger TTN provisioning in background (non-blocking)
         // Don't await - let it run while user continues onboarding
         provisionTTN(response.organization_id).then((success) => {
-          if (success) {
-            console.log('[Onboarding] TTN provisioning completed successfully');
-          } else {
+          if (!success) {
             console.warn('[Onboarding] TTN provisioning failed, user can retry from Settings');
           }
         });
