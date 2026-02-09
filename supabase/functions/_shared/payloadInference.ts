@@ -36,11 +36,42 @@ interface DiscriminatorEntry {
  */
 const DISCRIMINATOR_MATRIX: Record<string, DiscriminatorEntry> = {
   // Door sensors - very distinctive (highest priority)
+  // Alias list kept in sync with DOOR_STATUS_ALIASES in src/lib/devices/lds02Normalizer.ts
   "door_status": {
     payloadType: "door_v1",
     sensorType: "door",
     models: ["LDS02", "EM300-MCS"],
     priority: 100,
+  },
+  "DOOR_OPEN_STATUS": {
+    payloadType: "door_v1",
+    sensorType: "door",
+    models: ["LDS02"],
+    priority: 100,
+  },
+  "open_state_abs": {
+    payloadType: "door_v1",
+    sensorType: "door",
+    models: ["LDS02"],
+    priority: 100,
+  },
+  "doorStatus": {
+    payloadType: "door_v1",
+    sensorType: "door",
+    models: ["LDS02"],
+    priority: 100,
+  },
+  "DOOR_OPEN_TIMES": {
+    payloadType: "door_v1",
+    sensorType: "door",
+    models: ["LDS02"],
+    priority: 95,
+  },
+  "LAST_DOOR_OPEN_DURATION": {
+    payloadType: "door_v1",
+    sensorType: "door",
+    models: ["LDS02"],
+    priority: 90,
   },
   "door": {
     payloadType: "door_v1",

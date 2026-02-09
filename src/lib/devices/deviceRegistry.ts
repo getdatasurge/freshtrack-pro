@@ -25,6 +25,9 @@ import {
   SNR_FIELD,
   MOTION_FIELD,
   DOOR_OPEN_FIELD,
+  OPEN_COUNT_FIELD,
+  OPEN_DURATION_FIELD,
+  ALARM_FIELD,
   TAMPER_FIELD,
   LEAK_DETECTED_FIELD,
   WATER_LEVEL_FIELD,
@@ -153,7 +156,7 @@ const LDS02: DeviceDefinition = {
   category: "door",
   modelIcon: DoorClosed,
   categoryIcon: DoorClosed,
-  telemetryFields: [DOOR_OPEN_FIELD, BATTERY_FIELD],
+  telemetryFields: [DOOR_OPEN_FIELD, OPEN_COUNT_FIELD, OPEN_DURATION_FIELD, ALARM_FIELD, BATTERY_FIELD],
   capabilities: { door: true, battery: true },
   description: "LoRaWAN Door Sensor",
 };
