@@ -34,7 +34,7 @@ function doorValueToBool(value: unknown): boolean | undefined {
   if (typeof value === 'string') {
     const lower = value.toLowerCase().trim();
     if (lower === 'open' || lower === 'true' || lower === '1') return true;
-    if (lower === 'closed' || lower === 'false' || lower === '0') return false;
+    if (lower === 'close' || lower === 'closed' || lower === 'false' || lower === '0') return false;
   }
   return undefined;
 }

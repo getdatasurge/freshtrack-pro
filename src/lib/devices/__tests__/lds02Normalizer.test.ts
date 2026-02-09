@@ -30,9 +30,10 @@ const OPEN_VENDOR_PAYLOAD = {
   BAT_V: 3.192,
 };
 
-/** Decoder output for CLOSED uplink (0x0C prefix — bit 7 clear) */
+/** Decoder output for CLOSED uplink (0x0C prefix — bit 7 clear).
+ *  Real Dragino TTN decoder outputs "CLOSE" (not "CLOSED"). */
 const CLOSED_VENDOR_PAYLOAD = {
-  DOOR_OPEN_STATUS: "CLOSED",
+  DOOR_OPEN_STATUS: "CLOSE",
   DOOR_OPEN_TIMES: 15,
   LAST_DOOR_OPEN_DURATION: 0,
   BAT_V: 3.192,
@@ -120,6 +121,8 @@ describe("door_open normalization", () => {
   it("handles DOOR_OPEN_STATUS string", () => {
     expect(normalizeLDS02Payload({ DOOR_OPEN_STATUS: "OPEN" }).door_open).toBe(true);
     expect(normalizeLDS02Payload({ DOOR_OPEN_STATUS: "CLOSED" }).door_open).toBe(false);
+    // Dragino TTN decoder outputs "CLOSE" (not "CLOSED")
+    expect(normalizeLDS02Payload({ DOOR_OPEN_STATUS: "CLOSE" }).door_open).toBe(false);
   });
 
   it("handles door_status string", () => {
