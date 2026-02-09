@@ -25,23 +25,24 @@ export function UnitSummaryCard({ unit, onClick, className }: UnitSummaryCardPro
   const unitStatus = computeUnitStatus(unit.lastReadingAt, unit.uplinkIntervalS, unit.alerts);
 
   return (
-    <StackedListItem
-      className={className}
-      title={unit.name}
-      description={unitStatus.reason}
-      leading={<SensorIcon kind={unit.sensorKind || 'temperature'} showBackground size="md" />}
-      meta={<StatusBadge sensorStatus={unitStatus.status} />}
-      trailing={
-        unit.currentTemp != null ? (
-          <span className="text-sm font-medium tabular-nums text-zinc-50">
-            {unit.currentTemp.toFixed(1)}{unit.tempUnit || '\u00B0F'}
-          </span>
-        ) : unit.lastReadingAt ? (
-          <TimeAgo date={unit.lastReadingAt} />
-        ) : undefined
-      }
-      navigable={!!onClick}
-      onClick={onClick}
-    />
+    <div className={cn('rounded-lg border border-border bg-card shadow-sm overflow-hidden', className)}>
+      <StackedListItem
+        title={unit.name}
+        description={unitStatus.reason}
+        leading={<SensorIcon kind={unit.sensorKind || 'temperature'} showBackground size="md" />}
+        meta={<StatusBadge sensorStatus={unitStatus.status} />}
+        trailing={
+          unit.currentTemp != null ? (
+            <span className="text-sm font-medium tabular-nums text-foreground">
+              {unit.currentTemp.toFixed(1)}{unit.tempUnit || '\u00B0F'}
+            </span>
+          ) : unit.lastReadingAt ? (
+            <TimeAgo date={unit.lastReadingAt} />
+          ) : undefined
+        }
+        navigable={!!onClick}
+        onClick={onClick}
+      />
+    </div>
   );
 }
