@@ -21,8 +21,10 @@ import {
   Timer,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { voltageToPercent } from "@/lib/devices/batteryProfiles";
 import { formatMissedCheckinsMessage, formatUplinkInterval } from "@/lib/missedCheckins";
 import { useSensorUplinkInterval } from "@/hooks/useSensorUplinkInterval";
+import { useSensorChemistry } from "@/hooks/useSensorChemistry";
 import type { WidgetProps } from "../types";
 
 export function DeviceReadinessWidget({ 
@@ -56,6 +58,10 @@ export function DeviceReadinessWidget({
   const { data: sensorUplinkInterval } = useSensorUplinkInterval(unit?.id ?? null);
   const uplinkIntervalMinutes = sensorUplinkInterval ?? unit?.checkin_interval_minutes ?? 5;
 
+  // Resolve battery chemistry from sensor catalog (e.g. CR17450, LiFeS2_AA).
+  // null means unknown — we'll still derive % using a generic curve but label it "N/A".
+  const { data: sensorChemistry } = useSensorChemistry(primarySensor?.sensor_catalog_id);
+
   // Determine if we have a LoRa sensor in pending/joining state
   const isLoraPending = loraSensor?.status === "pending";
   const isLoraJoining = loraSensor?.status === "joining";
@@ -68,9 +74,13 @@ export function DeviceReadinessWidget({
   const effectiveLastSeen = derivedStatus?.lastSeenAt || (hasLoraData ? loraSensor.last_seen_at : device?.last_seen_at);
   const deviceSerial = primarySensor?.dev_eui || device?.serial_number;
 
-  // Use stored battery_level directly (reported by sensor firmware).
-  // Chemistry-aware voltage-to-SOC conversion is handled by the Battery Health widget.
-  const effectiveBatteryLevel = hasLoraData ? loraSensor.battery_level : (primarySensor?.battery_level ?? device?.battery_level);
+  // Derive battery percentage from voltage using sensor catalog chemistry.
+  // When chemistry is unknown (null), voltageToPercent uses a generic curve.
+  const effectiveVoltage = loraSensor?.battery_voltage_filtered ?? loraSensor?.battery_voltage ?? null;
+  const storedBatteryLevel = hasLoraData ? loraSensor.battery_level : (primarySensor?.battery_level ?? device?.battery_level);
+  const effectiveBatteryLevel = effectiveVoltage != null
+    ? voltageToPercent(effectiveVoltage, sensorChemistry)
+    : storedBatteryLevel;
 
   // Compute installation status based on offline severity from alert rules
   const getSensorStatusFromSeverity = () => {
@@ -173,6 +183,9 @@ export function DeviceReadinessWidget({
     return { label: levelLabel, color: "text-alarm", bg: "bg-alarm/10", healthLabel: "Low" };
   };
 
+  // Chemistry display label — "N/A" when catalog doesn't list one
+  const chemistryLabel = sensorChemistry ?? "N/A";
+
   const getSignalStatus = (strength: number | null | undefined) => {
     if (strength === null || strength === undefined) return { label: "N/A", color: "text-muted-foreground" };
     if (strength > -60) return { label: "Excellent", color: "text-safe" };
@@ -247,6 +260,7 @@ export function DeviceReadinessWidget({
                 {batteryStatus.healthLabel && (
                   <span className={`text-xs ${batteryStatus.color}`}>{batteryStatus.healthLabel}</span>
                 )}
+                <span className="text-xs text-muted-foreground">Chemistry: {chemistryLabel}</span>
               </div>
             ) : (isLoraPending || isLoraJoining) ? (
               <span className="text-sm text-muted-foreground italic">Awaiting data</span>
