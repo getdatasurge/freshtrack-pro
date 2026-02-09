@@ -15,7 +15,7 @@ export const SidebarNav = React.forwardRef<HTMLElement, SidebarNavProps>(
         ref={ref}
         className={cn(
           'flex flex-col h-full',
-          'bg-sidebar border-r border-sidebar-border',
+          'bg-sidebar text-sidebar-foreground border-r border-sidebar-border',
           transition.default,
           collapsed ? 'w-16' : 'w-64',
           className,
