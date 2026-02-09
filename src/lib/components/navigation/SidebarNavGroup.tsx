@@ -22,15 +22,16 @@ export const SidebarNavGroup = React.forwardRef<HTMLDivElement, SidebarNavGroupP
             className={cn(
               'flex items-center justify-between w-full px-3 py-2',
               typography.overline,
+              'text-sidebar-foreground/50',
               transition.fast,
             )}
             aria-expanded={open}
           >
             <span>{label}</span>
-            <ChevronDown className={cn('h-3.5 w-3.5 text-zinc-500', transition.fast, !open && '-rotate-90')} />
+            <ChevronDown className={cn('h-3.5 w-3.5 text-sidebar-foreground/50', transition.fast, !open && '-rotate-90')} />
           </button>
         ) : (
-          <div className={cn('px-3 py-2', typography.overline)}>{label}</div>
+          <div className={cn('px-3 py-2', typography.overline, 'text-sidebar-foreground/50')}>{label}</div>
         )}
         {open && <div className="space-y-0.5">{children}</div>}
       </div>

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { cn } from '@/lib/design-system/cn';
-import { transition, text as textTokens } from '@/lib/design-system/tokens';
+import { transition } from '@/lib/design-system/tokens';
 
 export interface SidebarNavItemProps extends React.HTMLAttributes<HTMLButtonElement> {
   icon?: React.ReactNode;
@@ -25,8 +25,8 @@ export const SidebarNavItem = React.forwardRef<HTMLButtonElement, SidebarNavItem
           'flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left',
           transition.fast,
           active
-            ? 'bg-zinc-800 text-zinc-50 border-l-2 border-blue-500'
-            : `${textTokens.secondary} hover:bg-zinc-800/50 hover:text-zinc-100`,
+            ? 'bg-sidebar-primary text-sidebar-primary-foreground border-l-2 border-sidebar-primary'
+            : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
           nested && 'pl-10 text-sm',
           collapsed && 'justify-center px-2',
           className,
@@ -35,7 +35,7 @@ export const SidebarNavItem = React.forwardRef<HTMLButtonElement, SidebarNavItem
         {...props}
       >
         {icon && (
-          <span className={cn('[&_svg]:h-5 [&_svg]:w-5', active ? 'text-zinc-50' : 'text-zinc-400')}>
+          <span className={cn('[&_svg]:h-5 [&_svg]:w-5', active ? 'text-sidebar-primary-foreground' : 'text-sidebar-foreground/70')}>
             {icon}
           </span>
         )}
