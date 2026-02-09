@@ -641,7 +641,7 @@ const Settings = () => {
         console.error("Sensor cleanup error:", cleanupError);
         toast.warning("Some sensors may not have been cleaned up", { id: "remove-user" });
       } else if (cleanupResult?.deleted_count > 0) {
-        console.log(`Cleaned up ${cleanupResult.deleted_count} sensors (${cleanupResult.ttn_deprovision_count} from TTN)`);
+        // cleanup succeeded
       }
 
       // Remove user role

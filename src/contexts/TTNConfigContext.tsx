@@ -39,16 +39,11 @@ const TTNConfigContext = createContext<TTNConfigContextValue | null>(null);
 export function TTNConfigProvider({ children }: TTNConfigProviderProps) {
   const [context, setContext] = useState<TTNConfigContextType>(INITIAL_TTN_CONFIG_CONTEXT);
 
-  const logTransition = useCallback((from: TTNConfigState, to: TTNConfigState, reason: string) => {
-    console.log(`[TTNConfig] State transition: ${from} → ${to} (${reason})`);
-  }, []);
-
   const setValidated = useCallback((result: TTNValidationResult) => {
     setContext(prev => {
       if (!isValidStateTransition(prev.state, 'validated')) {
         console.warn(`[TTNConfig] Invalid transition: ${prev.state} → validated`);
       }
-      logTransition(prev.state, 'validated', 'Validation passed');
       return {
         ...prev,
         state: 'validated',
@@ -62,11 +57,10 @@ export function TTNConfigProvider({ children }: TTNConfigProviderProps) {
         }),
       };
     });
-  }, [logTransition]);
+  }, []);
 
   const setCanonical = useCallback((hash: string) => {
     setContext(prev => {
-      logTransition(prev.state, 'canonical', 'Saved to backend');
       return {
         ...prev,
         state: 'canonical',
@@ -76,23 +70,21 @@ export function TTNConfigProvider({ children }: TTNConfigProviderProps) {
         error_message: null,
       };
     });
-  }, [logTransition]);
+  }, []);
 
   const setInvalid = useCallback((errorMessage: string) => {
     setContext(prev => {
-      logTransition(prev.state, 'invalid', errorMessage);
       return {
         ...prev,
         state: 'invalid',
         error_message: errorMessage,
       };
     });
-  }, [logTransition]);
+  }, []);
 
   const setDrifted = useCallback(() => {
     setContext(prev => {
       if (prev.state === 'canonical') {
-        logTransition(prev.state, 'drifted', 'Local changes detected');
         return {
           ...prev,
           state: 'drifted',
@@ -100,17 +92,16 @@ export function TTNConfigProvider({ children }: TTNConfigProviderProps) {
       }
       return prev;
     });
-  }, [logTransition]);
+  }, []);
 
   const resetToDraft = useCallback(() => {
     setContext(prev => {
-      logTransition(prev.state, 'local_draft', 'Reset to draft');
       return {
         ...INITIAL_TTN_CONFIG_CONTEXT,
         canonical_hash: prev.canonical_hash,
       };
     });
-  }, [logTransition]);
+  }, []);
 
   const checkForDrift = useCallback((localValues: { 
     cluster?: string; 

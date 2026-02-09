@@ -56,18 +56,6 @@ const Units = () => {
     if (stored) setLastViewedUnitId(stored);
   }, []);
 
-  // Debug logging for impersonation context
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.log('[Units] Context state:', {
-        isInitialized,
-        effectiveOrgId,
-        isSupportModeActive,
-        isImpersonating,
-      });
-    }
-  }, [isInitialized, effectiveOrgId, isSupportModeActive, isImpersonating]);
-
   useEffect(() => {
     // Guard: In support mode, wait until we have a valid effectiveOrgId
     if (isSupportModeActive && !effectiveOrgId && isInitialized) {
@@ -90,10 +78,6 @@ const Units = () => {
     setIsLoading(true);
     setLoadError(null);
     try {
-      if (import.meta.env.DEV) {
-        console.log('[Units] Loading units for org:', effectiveOrgId, 'isImpersonating:', isImpersonating);
-      }
-
       // Step 1: Get area IDs for this organization
       // PostgREST can't filter through multiple nested relationships (units->areas->sites->org)
       // so we need to first get area IDs, then filter units by those
@@ -115,14 +99,7 @@ const Units = () => {
 
       const areaIds = (areasData || []).map(a => a.id);
 
-      if (import.meta.env.DEV) {
-        console.log('[Units] Areas found:', areaIds.length, 'areaIds:', areaIds);
-      }
-
       if (areaIds.length === 0) {
-        if (import.meta.env.DEV) {
-          console.log('[Units] No areas found for org, showing empty state');
-        }
         setUnits([]);
         return;
       }
@@ -150,9 +127,6 @@ const Units = () => {
         );
         setUnits([]);
       } else {
-        if (import.meta.env.DEV) {
-          console.log('[Units] Units loaded:', unitsData?.length, 'units');
-        }
         setUnits(unitsData || []);
       }
     } catch (err) {

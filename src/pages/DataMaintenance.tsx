@@ -128,7 +128,6 @@ const DataMaintenance = () => {
       if (error) throw error;
       
       setOrphanOrgs(data || []);
-      console.log(`[DataMaintenance] Found ${data?.length || 0} orphan organizations`);
     } catch (error: any) {
       console.error("Error scanning orphans:", error);
       toast({ title: "Scan Failed", description: error.message, variant: "destructive" });

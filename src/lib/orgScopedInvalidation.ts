@@ -97,8 +97,6 @@ export async function invalidateAllOrgScopedCaches(
 export async function clearAllOrgScopedCaches(
   queryClient: QueryClient
 ): Promise<void> {
-  console.log("[OrgCache] Clearing all org-scoped caches");
-
   // Remove all org-scoped query keys using prefix matching
   queryClient.removeQueries({
     predicate: (query) => {
@@ -106,13 +104,11 @@ export async function clearAllOrgScopedCaches(
       return key === 'org' || key === 'unit' || key === 'site' || key === 'sensor';
     },
   });
-  
+
   // Also remove legacy keys
   ORG_SCOPED_QUERY_KEYS.forEach((key) => {
     queryClient.removeQueries({ queryKey: key });
   });
-
-  console.log("[OrgCache] Cache clear complete");
 }
 
 /**

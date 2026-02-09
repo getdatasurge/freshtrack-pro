@@ -266,15 +266,6 @@ export function computeUnitStatus(
     statusBgColor = "bg-safe/10";
   }
   
-  // Dev assertion: verify label matches computed status
-  if (process.env.NODE_ENV === 'development') {
-    if (offlineSeverity === "none" && statusLabel === "Offline") {
-      console.error('[STATUS BUG] offlineSeverity is "none" but statusLabel is "Offline"', {
-        offlineSeverity, statusLabel, unitStatus: unit.status, missedCheckins, sensorOnline
-      });
-    }
-  }
-  
   return {
     sensorOnline,
     manualRequired,

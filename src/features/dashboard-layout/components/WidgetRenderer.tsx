@@ -68,19 +68,7 @@ function UnknownWidget({ widgetId }: { widgetId: string }) {
 }
 
 export function WidgetRenderer({ widgetId, props }: WidgetRendererProps) {
-  const DEV = import.meta.env.DEV;
   const widgetDef = WIDGET_REGISTRY[widgetId];
-
-  // STEP 5: Per-widget debug logging
-  DEV && console.log('[WidgetRender]', {
-    widget: widgetId,
-    entityId: props.entityId,
-    organizationId: props.organizationId,
-    siteId: props.siteId,
-    hasUnit: !!props.unit,
-    hasSensor: !!props.sensor,
-    hasReadings: (props.readings?.length ?? 0) > 0,
-  });
 
   if (!widgetDef) {
     return <UnknownWidget widgetId={widgetId} />;

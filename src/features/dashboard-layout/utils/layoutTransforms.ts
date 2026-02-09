@@ -78,14 +78,6 @@ export function validateLayoutConfig(config: unknown, entityType?: EntityType): 
   const mandatory = getMandatoryWidgets(entityType);
   const hiddenWidgets = Array.isArray(cfg.hiddenWidgets) ? cfg.hiddenWidgets as string[] : [];
   
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[Layout] validateLayoutConfig:', {
-      entityType: entityType || 'unspecified',
-      widgetCount: (cfg.widgets as unknown[]).length,
-      mandatoryRequired: mandatory.map(m => m.id),
-    });
-  }
-  
   for (const mw of mandatory) {
     const inLayout = (cfg.widgets as WidgetPosition[]).some(w => w.i === mw.id);
     const isHidden = hiddenWidgets.includes(mw.id);

@@ -8,8 +8,6 @@
 import { QueryClient } from "@tanstack/react-query";
 import { qk } from "./queryKeys";
 
-const DEV = import.meta.env.DEV;
-
 /**
  * Invalidate ALL caches for an organization.
  * Use when switching impersonation or after major org changes.
@@ -20,18 +18,12 @@ export async function invalidateOrg(
   reason?: string
 ): Promise<void> {
   if (!orgId) return;
-  
-  const startTime = performance.now();
-  DEV && console.log(`[Cache] Invalidating org=${orgId} (${reason || 'manual'})`);
-  
+
   // Invalidate all queries starting with ['org', orgId]
   await queryClient.invalidateQueries({
     queryKey: ['org', orgId],
     exact: false,
   });
-  
-  const elapsed = Math.round(performance.now() - startTime);
-  DEV && console.log(`[Cache] Org invalidation complete (${elapsed}ms)`);
 }
 
 /**
@@ -42,9 +34,6 @@ export async function invalidateAllOrgData(
   queryClient: QueryClient,
   reason?: string
 ): Promise<void> {
-  const startTime = performance.now();
-  console.log(`[Cache] Invalidating all org-scoped data (${reason || 'manual'})`);
-  
   // Use predicate to match all org/unit/site scoped queries
   await queryClient.invalidateQueries({
     predicate: (query) => {
@@ -52,9 +41,6 @@ export async function invalidateAllOrgData(
       return key === 'org' || key === 'unit' || key === 'site' || key === 'sensor';
     },
   });
-  
-  const elapsed = Math.round(performance.now() - startTime);
-  console.log(`[Cache] All org data invalidation complete (${elapsed}ms)`);
 }
 
 /**
@@ -71,8 +57,6 @@ export async function invalidateUnit(
   }
 ): Promise<void> {
   if (!unitId) return;
-  
-  DEV && console.log(`[Cache] Invalidating unit=${unitId}`);
   
   const promises: Promise<void>[] = [
     // All unit-specific queries
@@ -111,7 +95,6 @@ export async function invalidateUnit(
   }
   
   await Promise.all(promises);
-  DEV && console.log(`[Cache] Unit invalidation complete`);
 }
 
 /**
@@ -123,8 +106,6 @@ export async function invalidateLayouts(
   entityId: string,
   orgId?: string | null
 ): Promise<void> {
-  DEV && console.log(`[Cache] Invalidating layouts for ${entityType}/${entityId}`);
-  
   const promises: Promise<void>[] = [
     // New key pattern
     queryClient.invalidateQueries({ 
@@ -157,8 +138,6 @@ export async function invalidateSensorAssignment(
   unitId?: string | null,
   previousUnitId?: string | null
 ): Promise<void> {
-  DEV && console.log(`[Cache] Invalidating sensor assignment ${sensorId}`);
-  
   const promises: Promise<void>[] = [
     // Org-level sensor list
     queryClient.invalidateQueries({ queryKey: qk.org(orgId).loraSensors() }),
@@ -201,8 +180,6 @@ export async function invalidateAlertRules(
   queryClient: QueryClient,
   scope: { orgId?: string; siteId?: string; unitId?: string }
 ): Promise<void> {
-  DEV && console.log(`[Cache] Invalidating alert rules`, scope);
-  
   const promises: Promise<void>[] = [];
   
   if (scope.orgId) {
@@ -235,8 +212,6 @@ export async function invalidateEscalationContacts(
   queryClient: QueryClient,
   orgId: string
 ): Promise<void> {
-  DEV && console.log(`[Cache] Invalidating escalation contacts for org=${orgId}`);
-  
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: qk.org(orgId).escalationContacts() }),
     // Legacy key (no org scoping)
@@ -251,8 +226,6 @@ export async function invalidateNotificationPolicies(
   queryClient: QueryClient,
   scope: { orgId?: string; siteId?: string; unitId?: string }
 ): Promise<void> {
-  DEV && console.log(`[Cache] Invalidating notification policies`, scope);
-  
   const promises: Promise<void>[] = [];
   
   if (scope.orgId) {
@@ -286,8 +259,6 @@ export async function invalidateGateways(
   orgId: string,
   siteId?: string
 ): Promise<void> {
-  DEV && console.log(`[Cache] Invalidating gateways for org=${orgId}`);
-  
   const promises: Promise<void>[] = [
     queryClient.invalidateQueries({ queryKey: qk.org(orgId).gateways() }),
     queryClient.invalidateQueries({ queryKey: ['gateways'] }),

@@ -466,13 +466,10 @@ export function SensorSettingsDrawer({
   const applyAllChanges = useCallback(() => {
     if (!canSend() || !hasChanges) return;
 
-    console.log('[SensorSettings] Applying all changes', { initialValues, hasChanges });
-
     // Apply interval if changed
     if (intervalMinutes !== initialValues.intervalMinutes && !intervalError && intervalMinutes) {
       const minutes = parseFloat(intervalMinutes);
       if (!isNaN(minutes) && minutes >= 1) {
-        console.log('[SensorSettings] Applying interval:', minutes);
         const seconds = Math.round(minutes * 60);
         setActiveCmd({ type: "interval" });
         sendDownlink.mutate({
@@ -486,7 +483,6 @@ export function SensorSettingsDrawer({
 
     // Apply ext mode if changed
     if (extMode !== initialValues.extMode && extMode) {
-      console.log('[SensorSettings] Applying ext mode:', extMode);
       setActiveCmd({ type: "ext_mode" });
       sendDownlink.mutate({
         sensorId: sensor.id,
@@ -498,7 +494,6 @@ export function SensorSettingsDrawer({
 
     // Apply time sync if changed
     if (timeSyncEnabled !== initialValues.timeSyncEnabled) {
-      console.log('[SensorSettings] Applying time sync:', timeSyncEnabled);
       setActiveCmd({ type: "time_sync" });
       sendDownlink.mutate({
         sensorId: sensor.id,
@@ -510,7 +505,6 @@ export function SensorSettingsDrawer({
 
     // Apply time sync days if changed
     if (timeSyncEnabled && timeSyncDays !== initialValues.timeSyncDays && !syncDaysError) {
-      console.log('[SensorSettings] Applying time sync days:', timeSyncDays);
       const days = parseInt(timeSyncDays) || 10;
       setActiveCmd({ type: "time_sync_days" });
       sendDownlink.mutate({
@@ -529,7 +523,6 @@ export function SensorSettingsDrawer({
       alarmCheckMin !== initialValues.alarmCheckMin
     )) {
       if (!alarmLowError && !alarmHighError && !alarmCheckError) {
-        console.log('[SensorSettings] Applying alarm settings');
         const lowF = parseFloat(alarmLowF);
         const highF = parseFloat(alarmHighF);
         const checkMin = parseInt(alarmCheckMin) || 1;
@@ -552,7 +545,6 @@ export function SensorSettingsDrawer({
       }
     }
 
-    console.log('[SensorSettings] No changes to apply');
   }, [
     canSend,
     hasChanges,

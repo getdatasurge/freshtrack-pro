@@ -42,15 +42,6 @@ export function DoorActivityWidget({ entityId, sensor, loraSensors, refreshTick 
         return;
       }
 
-      if (DEBUG_DOOR_WIDGET) {
-        console.log('[DoorWidget] fetching', { 
-          entityId, 
-          doorSensor: doorSensor?.name,
-          sensorType: doorSensor?.sensor_type,
-          refreshTick 
-        });
-      }
-
       try {
         const { data, error: fetchError } = await supabase
           .from("door_events")
@@ -60,14 +51,7 @@ export function DoorActivityWidget({ entityId, sensor, loraSensors, refreshTick 
           .limit(20);
 
         if (fetchError) throw fetchError;
-        
-        if (DEBUG_DOOR_WIDGET) {
-          console.log('[DoorWidget] success', { 
-            eventsCount: data?.length ?? 0,
-            first3: data?.slice(0, 3).map(e => ({ id: e.id, state: e.state }))
-          });
-        }
-        
+
         setEvents(data || []);
       } catch (err) {
         if (DEBUG_DOOR_WIDGET) {

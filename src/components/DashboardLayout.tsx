@@ -3,11 +3,9 @@ import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { 
   LogOut,
-  MapPin,
   Settings,
   LayoutGrid,
   Building2,
@@ -20,7 +18,6 @@ import {
 import { SidebarSitesAccordion, SidebarUnitsAccordion } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
-import { cn } from "@/lib/utils";
 import ThemeToggle from "@/components/ThemeToggle";
 import BrandedLogo from "@/components/BrandedLogo";
 import NotificationDropdown from "@/components/NotificationDropdown";
@@ -41,7 +38,7 @@ interface DashboardLayoutProps {
   backHref?: string;
 }
 
-import { ClipboardList, AlertCircle, FileBarChart, Boxes } from "lucide-react";
+import { ClipboardList, AlertCircle, FileBarChart } from "lucide-react";
 
 // Nav items - Sites and Units handled separately via accordions
 const navItemsBeforeAccordions = [
@@ -80,15 +77,6 @@ const DashboardLayout = ({ children, title, showBack, backHref }: DashboardLayou
   // Use the current effectiveOrgId if available, otherwise fall back to last known valid value
   const sidebarOrgId = effectiveOrgId || lastValidOrgIdRef.current;
   const displayOrgName = effectiveOrgName || realOrgName;
-
-  // Debug logging for impersonation state changes (only log when value actually changes)
-  const prevOrgIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (prevOrgIdRef.current !== effectiveOrgId) {
-      console.warn('[DashboardLayout] Sidebar org:', sidebarOrgId, 'effectiveOrgId:', effectiveOrgId, 'isImpersonating:', isImpersonating);
-      prevOrgIdRef.current = effectiveOrgId;
-    }
-  }, [sidebarOrgId, effectiveOrgId, isImpersonating]);
 
   // Redirect platform-only super admins to /platform (only when NOT in support mode / impersonating)
   useEffect(() => {

@@ -84,8 +84,6 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
   const isLoadingSuperAdmin = roleLoadStatus === 'loading';
   const rolesLoaded = roleLoadStatus === 'loaded' || roleLoadStatus === 'error';
   
-  // Track previous status for logging transitions
-  const prevStatusRef = useRef<RoleLoadStatus>('idle');
   // Support mode state
   const [isSupportModeActive, setIsSupportModeActive] = useState(false);
   const [supportModeStartedAt, setSupportModeStartedAt] = useState<Date | null>(null);
@@ -112,68 +110,44 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
   // Impersonation change callbacks (for cache invalidation)
   const impersonationCallbacksRef = useRef<Set<(isImpersonating: boolean) => void>>(new Set());
 
-  // Helper for gated RBAC logging
-  const shouldLogRbac = useCallback(() => 
-    import.meta.env.DEV || 
-    (typeof window !== 'undefined' && window.location.search.includes('debug_rbac=1')), []);
-
-  const rbacLog = useCallback((message: string, ...args: unknown[]) => {
-    if (shouldLogRbac()) {
-      console.log(`[RBAC] ${message}`, ...args);
-    }
-  }, [shouldLogRbac]);
-
-  // Helper to update status with logging
+  // Helper to update status
   const updateRoleStatus = useCallback((newStatus: RoleLoadStatus, error?: string | null) => {
-    const prevStatus = prevStatusRef.current;
-    if (prevStatus !== newStatus) {
-      rbacLog('status transition:', prevStatus, '→', newStatus);
-      prevStatusRef.current = newStatus;
-    }
     setRoleLoadStatus(newStatus);
     if (error !== undefined) {
       setRoleLoadError(error);
     }
-  }, [rbacLog]);
+  }, []);
 
   // Check super admin status
   const checkSuperAdminStatus = useCallback(async () => {
     try {
       updateRoleStatus('loading', null);
-      rbacLog('role fetch start');
-      
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        rbacLog('no authenticated user');
         setIsSuperAdmin(false);
         updateRoleStatus('loaded', null);
         return;
       }
 
-      rbacLog('session user:', user.email, user.id);
-
       // Call the is_current_user_super_admin function
       const { data, error } = await supabase.rpc('is_current_user_super_admin');
 
       if (error) {
-        rbacLog('role fetch error:', error.message);
         console.error('Error checking super admin status:', error);
         setIsSuperAdmin(false);
         updateRoleStatus('error', error.message);
       } else {
-        rbacLog('isSuperAdmin result:', data);
         setIsSuperAdmin(data === true);
         updateRoleStatus('loaded', null);
       }
-      rbacLog('role fetch complete:', { status: 'loaded', isSuperAdmin: data === true });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      rbacLog('role fetch exception:', errorMessage);
       console.error('Error checking super admin status:', err);
       setIsSuperAdmin(false);
       updateRoleStatus('error', errorMessage);
     }
-  }, [rbacLog, updateRoleStatus]);
+  }, [updateRoleStatus]);
 
   // Restore Support Mode from localStorage on mount
   useEffect(() => {
@@ -185,7 +159,6 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
         
         // Only restore if still valid
         if (active && expireDate > new Date()) {
-          rbacLog('Restoring Support Mode from localStorage');
           setIsSupportModeActive(true);
           setSupportModeStartedAt(new Date(startedAt));
           setSupportModeExpiresAt(expireDate);
@@ -199,7 +172,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
       console.error('Error restoring Support Mode:', err);
       localStorage.removeItem(SUPPORT_MODE_STORAGE_KEY);
     }
-  }, [rbacLog]);
+  }, []);
 
   // Restore Impersonation from localStorage on mount
   useEffect(() => {
@@ -211,7 +184,6 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
         
         // Only restore if not expired
         if (expiresAt > new Date()) {
-          rbacLog('Restoring Impersonation from localStorage');
           setImpersonation({
             isImpersonating: true,
             impersonatedUserId: parsed.targetUserId,
@@ -230,7 +202,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
       console.error('Error restoring Impersonation:', err);
       localStorage.removeItem('ftp_impersonation_session');
     }
-  }, [isSupportModeActive, rbacLog]);
+  }, [isSupportModeActive]);
 
   // Persist Support Mode state to localStorage
   useEffect(() => {
@@ -520,11 +492,9 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
 
     // Expire all server-side impersonation sessions for this admin
     try {
-      const { data, error } = await supabase.rpc('expire_all_admin_impersonation_sessions');
+      const { error } = await supabase.rpc('expire_all_admin_impersonation_sessions');
       if (error) {
         console.error('Error expiring server sessions:', error);
-      } else if (data && data > 0) {
-        rbacLog(`Expired ${data} server-side impersonation session(s)`);
       }
     } catch (err) {
       console.warn('Error expiring server sessions:', err);
@@ -536,7 +506,7 @@ export function SuperAdminProvider({ children }: SuperAdminProviderProps) {
     setViewingOrgState({ orgId: null, orgName: null });
 
     await logSuperAdminAction('SUPPORT_MODE_EXITED');
-  }, [impersonation.isImpersonating, logSuperAdminAction, rbacLog, stopImpersonation]);
+  }, [impersonation.isImpersonating, logSuperAdminAction, stopImpersonation]);
 
   // Keep exitSupportModeRef in sync with exitSupportMode callback
   useEffect(() => {

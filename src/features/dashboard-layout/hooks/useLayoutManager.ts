@@ -137,16 +137,6 @@ export function useLayoutManager(
       layoutToLoad = storage.savedLayouts.find((l) => l.isUserDefault);
     }
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[useLayoutManager] LAYOUT_LOAD:', {
-        entityType,
-        entityId,
-        source: lastActiveId && layoutToLoad ? 'sessionStorage' : layoutToLoad ? 'userDefault' : 'systemDefault',
-        layoutId: layoutToLoad?.id || DEFAULT_LAYOUT_ID,
-        widgetCount: layoutToLoad?.layoutJson?.widgets?.length ?? null,
-      });
-    }
-    
     if (layoutToLoad) {
       const active = dbRowToActiveLayout(layoutToLoad, entityType);
       setActiveLayout(active);
@@ -327,17 +317,7 @@ export function useLayoutManager(
         
         // Clear local draft on successful save
         clearLocalDraft();
-        
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[useLayoutManager] SAVE_SUCCESS (new):', {
-            entityType,
-            entityId,
-            layoutId: saved.id,
-            widgetCount: activeLayout.config.widgets.length,
-            updatedAt: saved.updatedAt,
-          });
-        }
-        
+
         toast.success("Layout saved");
         return saved;
       } else if (activeLayout.id) {
@@ -356,17 +336,7 @@ export function useLayoutManager(
         
         // Clear local draft on successful save
         clearLocalDraft();
-        
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[useLayoutManager] SAVE_SUCCESS (update):', {
-            entityType,
-            entityId,
-            layoutId: activeLayout.id,
-            widgetCount: activeLayout.config.widgets.length,
-            updatedAt: saved?.updatedAt,
-          });
-        }
-        
+
         toast.success("Layout saved");
         return saved;
       }
