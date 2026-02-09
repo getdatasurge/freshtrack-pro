@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RBACDebugPanel } from "@/components/debug/RBACDebugPanel";
+import { UnitSummaryCard } from "@/components/frostguard/cards/UnitSummaryCard";
 import {
   Thermometer,
   AlertTriangle,
@@ -15,16 +16,11 @@ import {
   MapPin,
   Loader2,
   ChevronRight,
-  Wifi,
   WifiOff,
-  ClipboardList,
   AlertCircle,
-  ShieldCheck,
-  ShieldAlert,
   ClipboardEdit,
 } from "lucide-react";
 import { Session } from "@supabase/supabase-js";
-import { formatDistanceToNow } from "date-fns";
 import { computeUnitStatus, UnitStatusInfo } from "@/hooks/useUnitStatus";
 import { useUnitAlerts } from "@/hooks/useUnitAlerts";
 import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
@@ -241,64 +237,6 @@ const Dashboard = () => {
 
   // Use unified alert computation with actual uplink intervals
   const alertsSummary = useUnitAlerts(units, undefined, uplinkIntervalsMap);
-
-  const formatTemp = (temp: number | null) => {
-    if (temp === null) return "--";
-    return `${temp.toFixed(1)}°F`;
-  };
-
-  const getTimeAgo = (dateStr: string | null) => {
-    if (!dateStr) return "Never";
-    const diffMins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    return `${Math.floor(diffHours / 24)}d ago`;
-  };
-
-  const getComplianceBadge = (unit: UnitStatusInfo & { computed: ReturnType<typeof computeUnitStatus> }) => {
-    // Use computed status — never read stale unit.status from DB
-    const { computed } = unit;
-    if (computed.sensorOnline && computed.tempInRange && !computed.actionRequired) {
-      return (
-        <Badge variant="outline" className="gap-1 text-safe border-safe/30 bg-safe/5">
-          <ShieldCheck className="w-3 h-3" />
-          Compliant
-        </Badge>
-      );
-    } else if (computed.manualRequired) {
-      return (
-        <Badge variant="outline" className="gap-1 text-warning border-warning/30 bg-warning/5">
-          <ClipboardList className="w-3 h-3" />
-          Log Due
-        </Badge>
-      );
-    } else if (computed.statusLabel === "ALARM" || computed.statusLabel === "Excursion") {
-      return (
-        <Badge variant="outline" className="gap-1 text-alarm border-alarm/30 bg-alarm/5">
-          <ShieldAlert className="w-3 h-3" />
-          Non-Compliant
-        </Badge>
-      );
-    }
-    return null;
-  };
-
-  const getLastLogDisplay = (unit: UnitStatusInfo) => {
-    if (!unit.last_manual_log_at) {
-      return <span className="text-muted-foreground">No logs</span>;
-    }
-
-    // Use the already computed status instead of recomputing
-    const computed = units.find(u => u.id === unit.id)?.computed || computeUnitStatus(unit);
-
-    return (
-      <span className={computed.manualRequired ? "text-warning" : "text-muted-foreground"}>
-        {formatDistanceToNow(new Date(unit.last_manual_log_at), { addSuffix: true })}
-      </span>
-    );
-  };
 
   const handleLogTemp = (unit: UnitStatusInfo, e: React.MouseEvent) => {
     e.preventDefault();
@@ -525,51 +463,25 @@ const Dashboard = () => {
           </div>
           <div className="grid gap-3">
             {units.map((unit) => {
-              // ✅ SINGLE SOURCE OF TRUTH: Use computed status for all displays
-              const isOnline = unit.computed.sensorOnline;
+              const unitAlerts = alertsSummary.alerts
+                .filter(a => a.unit_id === unit.id && a.severity !== "info")
+                .map(a => ({ severity: a.severity as "warning" | "critical" }));
+              const uplinkMinutes = uplinkIntervalsMap.get(unit.id) || unit.checkin_interval_minutes || 5;
+
               return (
-                <Link key={unit.id} to={`/units/${unit.id}`}>
-                  <Card className="unit-card card-hover cursor-pointer">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-xl ${unit.computed.statusBgColor} flex items-center justify-center`}>
-                            <Thermometer className={`w-6 h-6 ${unit.computed.statusColor}`} />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="font-semibold text-foreground">{unit.name}</h3>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${unit.computed.statusBgColor} ${unit.computed.statusColor}`}>{unit.computed.statusLabel}</span>
-                              {getComplianceBadge(unit)}
-                            </div>
-                            <p className="text-sm text-muted-foreground">{unit.area.site.name} · {unit.area.name}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-6">
-                          <div className="text-right hidden sm:block">
-                            <div className={`temp-display text-xl font-semibold ${unit.last_temp_reading && unit.last_temp_reading > unit.temp_limit_high ? "text-alarm" : unit.computed.statusColor}`}>
-                              {formatTemp(unit.last_temp_reading)}
-                            </div>
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              {isOnline ? <Wifi className="w-3 h-3 text-safe" /> : <WifiOff className="w-3 h-3" />}
-                              {getTimeAgo(unit.last_reading_at)}
-                            </div>
-                          </div>
-                          <div className="text-right hidden md:block">
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                              <ClipboardList className="w-3 h-3" />
-                              Last Log
-                            </div>
-                            <div className="text-xs">
-                              {getLastLogDisplay(unit)}
-                            </div>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-muted-foreground" />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                <UnitSummaryCard
+                  key={unit.id}
+                  unit={{
+                    id: unit.id,
+                    name: unit.name,
+                    sensorKind: "temperature",
+                    lastReadingAt: unit.last_reading_at,
+                    uplinkIntervalS: uplinkMinutes * 60,
+                    alerts: unitAlerts.length > 0 ? unitAlerts : undefined,
+                    currentTemp: unit.last_temp_reading,
+                  }}
+                  onClick={() => navigate(`/units/${unit.id}`)}
+                />
               );
             })}
           </div>
