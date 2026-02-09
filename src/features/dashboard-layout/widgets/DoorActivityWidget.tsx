@@ -57,14 +57,15 @@ function computeEventsWithDuration(
   raw: Array<{ id: string; state: "open" | "closed"; occurred_at: string }>,
   warningMinutes: number,
 ): DoorEvent[] {
+  // raw is sorted DESC (newest first). Each event's duration = time from THIS
+  // event until the NEXT STATE CHANGE, which is the newer event at index i-1.
   return raw.map((event, i) => {
-    // Duration = time until the NEXT event (which is earlier, since sorted DESC)
-    const nextEvent = raw[i + 1];
+    const newerEvent = raw[i - 1];
     let durationSeconds: number | null = null;
-    if (nextEvent) {
+    if (newerEvent) {
       durationSeconds = differenceInSeconds(
+        new Date(newerEvent.occurred_at),
         new Date(event.occurred_at),
-        new Date(nextEvent.occurred_at),
       );
     }
 
@@ -157,6 +158,23 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
     () => computeEventsWithDuration(rawEvents, warningMinutes),
     [rawEvents, warningMinutes],
   );
+
+  // Live timer for the most recent event when door is currently open
+  const mostRecentEvent = events[0] ?? null;
+  const isCurrentlyOpenLive = mostRecentEvent?.state === "open" && mostRecentEvent.durationSeconds === null;
+  const [liveElapsed, setLiveElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!isCurrentlyOpenLive || !mostRecentEvent) {
+      setLiveElapsed(0);
+      return;
+    }
+    const startTime = new Date(mostRecentEvent.occurred_at).getTime();
+    const tick = () => setLiveElapsed(Math.floor((Date.now() - startTime) / 1000));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [isCurrentlyOpenLive, mostRecentEvent?.occurred_at]);
 
   // Summary stats: opens today & longest open
   const { opensToday, longestOpen } = useMemo(() => {
@@ -268,17 +286,20 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
 
             {visibleEvents.map((event) => {
               const eventIsOpen = event.state === "open";
+              const isLiveEvent = event === mostRecentEvent && isCurrentlyOpenLive;
+              const liveIsExtended = isLiveEvent && liveElapsed >= warningMinutes * 60;
+              const showExtended = event.isExtended || liveIsExtended;
               return (
                 <div key={event.id} className="relative flex items-start gap-3 py-2.5">
                   {/* Timeline dot */}
                   <div
                     className={`absolute left-[-15px] top-3.5 h-2.5 w-2.5 rounded-full border-2 border-background ${
-                      event.isExtended
+                      showExtended
                         ? "bg-red-500"
                         : eventIsOpen
                           ? "bg-amber-400"
                           : "bg-green-500"
-                    }`}
+                    }${isLiveEvent ? " animate-pulse" : ""}`}
                   />
 
                   {/* Door icon */}
@@ -300,7 +321,7 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold">{eventIsOpen ? "Opened" : "Closed"}</span>
-                      {event.isExtended && (
+                      {showExtended && (
                         <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300">
                           <AlertTriangle className="h-2.5 w-2.5" />
                           Extended
@@ -312,8 +333,19 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
                     </p>
                   </div>
 
-                  {/* Duration badge */}
-                  {event.durationSeconds !== null && (
+                  {/* Duration badge — live timer for most recent open event */}
+                  {isLiveEvent ? (
+                    <div
+                      className={`flex-shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        liveIsExtended
+                          ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+                          : "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                      }`}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                      Open {formatDurationHMS(liveElapsed)}
+                    </div>
+                  ) : event.durationSeconds !== null ? (
                     <div
                       className={`flex-shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
                         eventIsOpen
@@ -326,11 +358,10 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
                       <Clock className="h-3 w-3" />
                       {eventIsOpen ? "Open" : "Closed"} {formatDurationHMS(event.durationSeconds)}
                     </div>
-                  )}
-                  {event.durationSeconds === null && (
+                  ) : (
                     <div className="flex-shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      {eventIsOpen ? "Open" : "Closed"} for &mdash;
+                      {eventIsOpen ? "Open" : "Closed"}
                     </div>
                   )}
                 </div>
