@@ -208,8 +208,6 @@ export interface WidgetSensor {
   status: string;
   sensor_type: string;
   is_primary?: boolean;
-  /** Sensor catalog reference — used to look up battery chemistry */
-  sensor_catalog_id?: string | null;
 }
 
 /**
