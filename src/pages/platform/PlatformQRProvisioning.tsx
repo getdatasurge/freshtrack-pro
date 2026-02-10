@@ -7,7 +7,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useSensorCatalog } from "@/hooks/useSensorCatalog";
 import {
   QrCode,
   Download,
@@ -17,6 +25,7 @@ import {
   ClipboardPaste,
   Info,
   X,
+  Cpu,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import {
@@ -25,6 +34,8 @@ import {
   isValidHex,
   cleanHex,
   formatEUI,
+  buildModelKey,
+  parseModelKey,
   type SensorCredentials,
 } from "@/lib/qr/sensorQR";
 
@@ -82,11 +93,35 @@ function HexField({
   );
 }
 
+// ─── Sensor kind display labels ────────────────────────────────
+
+const SENSOR_KIND_LABELS: Record<string, string> = {
+  temp: "Temperature",
+  temp_humidity: "Temperature & Humidity",
+  door: "Door / Contact",
+  combo: "Multi-Sensor",
+  co2: "CO\u2082 / Air Quality",
+  leak: "Water Leak",
+  gps: "GPS Tracker",
+  pulse: "Pulse Counter",
+  soil: "Soil",
+  air_quality: "Air Quality",
+  vibration: "Vibration",
+  meter: "Meter",
+  tilt: "Tilt",
+};
+
+function sensorKindLabel(kind: string): string {
+  return SENSOR_KIND_LABELS[kind] || kind;
+}
+
 // ─── Generate Tab ──────────────────────────────────────────────
 
 function GenerateTab() {
   const { toast } = useToast();
+  const { data: catalog, isLoading: catalogLoading } = useSensorCatalog();
   const qrRef = useRef<HTMLDivElement>(null);
+  const [selectedCatalogId, setSelectedCatalogId] = useState("");
   const [serialNumber, setSerialNumber] = useState("");
   const [devEui, setDevEui] = useState("");
   const [appEui, setAppEui] = useState("");
@@ -94,30 +129,103 @@ function GenerateTab() {
   const [generated, setGenerated] = useState<{ qrValue: string; creds: SensorCredentials } | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Filter to only supported & visible sensors
+  const availableSensors = (catalog ?? []).filter((s) => s.is_supported && s.is_visible !== false);
+
+  const selectedSensor = availableSensors.find((s) => s.id === selectedCatalogId) ?? null;
+
   const allValid =
+    selectedCatalogId !== "" &&
     isValidHex(devEui, 16) &&
     isValidHex(appEui, 16) &&
     isValidHex(appKey, 32);
 
   const handleGenerate = () => {
+    const modelKey = selectedSensor
+      ? buildModelKey(selectedSensor.manufacturer, selectedSensor.model)
+      : "";
     const creds: SensorCredentials = {
       serial_number: serialNumber.trim(),
       dev_eui: cleanHex(devEui),
       app_eui: cleanHex(appEui),
       app_key: cleanHex(appKey),
+      model_key: modelKey,
     };
     const qrValue = encodeCredentials(creds);
     setGenerated({ qrValue, creds });
   };
 
   const handleDownloadPNG = () => {
-    if (!qrRef.current) return;
-    const canvas = qrRef.current.querySelector("canvas");
-    if (!canvas) return;
-    const url = canvas.toDataURL("image/png");
+    if (!qrRef.current || !generated) return;
+    const srcCanvas = qrRef.current.querySelector("canvas");
+    if (!srcCanvas) return;
+
+    const { creds } = generated;
+    const scale = 4; // high-res output
+    const qrSize = 80 * scale;
+    const padding = 16 * scale;
+    const gap = 12 * scale;
+    const serialFont = `bold ${14 * scale}px monospace`;
+    const euiFont = `${11 * scale}px monospace`;
+    const modelFont = `${10 * scale}px sans-serif`;
+
+    // Measure text widths
+    const measure = document.createElement("canvas").getContext("2d")!;
+    const serialText = creds.serial_number || "";
+    const euiText = formatEUI(creds.dev_eui);
+    const parsed = creds.model_key ? parseModelKey(creds.model_key) : null;
+    const modelText = parsed ? parsed.model : "";
+
+    measure.font = serialFont;
+    const serialWidth = serialText ? measure.measureText(serialText).width : 0;
+    measure.font = euiFont;
+    const euiWidth = measure.measureText(euiText).width;
+    measure.font = modelFont;
+    const modelWidth = modelText ? measure.measureText(modelText).width : 0;
+    const textWidth = Math.max(serialWidth, euiWidth, modelWidth);
+
+    const totalWidth = padding + qrSize + (textWidth > 0 ? gap + textWidth : 0) + padding;
+    const totalHeight = padding + qrSize + padding;
+
+    const out = document.createElement("canvas");
+    out.width = totalWidth;
+    out.height = totalHeight;
+    const ctx = out.getContext("2d")!;
+
+    // White background
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+    // Draw QR code scaled up
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(srcCanvas, padding, padding, qrSize, qrSize);
+
+    // Draw text — stack: model, serial, DEV EUI
+    const textX = padding + qrSize + gap;
+    const centerY = padding + qrSize / 2;
+
+    // Calculate vertical layout
+    const lines: { text: string; font: string; color: string }[] = [];
+    if (modelText) lines.push({ text: modelText, font: modelFont, color: "#9333ea" });
+    if (serialText) lines.push({ text: serialText, font: serialFont, color: "#000000" });
+    lines.push({ text: euiText, font: euiFont, color: "#666666" });
+
+    const lineHeight = 16 * scale;
+    const blockHeight = lines.length * lineHeight;
+    let y = centerY - blockHeight / 2 + lineHeight / 2;
+
+    for (const line of lines) {
+      ctx.fillStyle = line.color;
+      ctx.font = line.font;
+      ctx.textBaseline = "middle";
+      ctx.fillText(line.text, textX, y);
+      y += lineHeight;
+    }
+
+    const url = out.toDataURL("image/png");
     const a = document.createElement("a");
     a.href = url;
-    a.download = `frostguard-qr-${generated?.creds.dev_eui || "sensor"}.png`;
+    a.download = `frostguard-label-${creds.dev_eui || "sensor"}.png`;
     a.click();
   };
 
@@ -130,11 +238,40 @@ function GenerateTab() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Display label for a catalog entry (hides manufacturer)
+  const sensorDisplayLabel = (s: { model: string; sensor_kind: string }) =>
+    `${s.model} — ${sensorKindLabel(s.sensor_kind)}`;
+
   return (
     <div className="space-y-6">
       {/* Input fields */}
       <Card>
         <CardContent className="p-5 space-y-4">
+          {/* Sensor model selector */}
+          <div className="space-y-1.5">
+            <Label className="text-sm font-medium">Sensor Model</Label>
+            <Select value={selectedCatalogId} onValueChange={setSelectedCatalogId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder={catalogLoading ? "Loading sensors..." : "Select a sensor model"} />
+              </SelectTrigger>
+              <SelectContent>
+                {availableSensors.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    <div className="flex items-center gap-2">
+                      <Cpu className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span>{sensorDisplayLabel(s)}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedSensor && (
+              <p className="text-xs text-muted-foreground">
+                {sensorKindLabel(selectedSensor.sensor_kind)} sensor &middot; embedded in QR code
+              </p>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Serial Number</Label>
             <Input
@@ -205,6 +342,11 @@ function GenerateTab() {
                   />
                 </div>
                 <div className="min-w-0">
+                  {generated.creds.model_key && (
+                    <div className="text-purple-600 text-xs font-medium">
+                      {parseModelKey(generated.creds.model_key)?.model}
+                    </div>
+                  )}
                   {generated.creds.serial_number && (
                     <div className="text-black font-bold text-sm font-mono">
                       {generated.creds.serial_number}
@@ -242,7 +384,7 @@ function GenerateTab() {
           <div className="flex items-start gap-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3">
             <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
             <p className="text-xs text-blue-700 dark:text-blue-300">
-              QR contains only keys ({generated.qrValue.length} chars). Serial number is printed on the physical label.
+              QR contains sensor model + keys ({generated.qrValue.length} chars). Serial number is printed on the physical label.
             </p>
           </div>
 
@@ -252,6 +394,14 @@ function GenerateTab() {
               <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">
                 Credential Summary
               </Label>
+              {generated.creds.model_key && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-cyan-600 dark:text-cyan-400 border-cyan-300 dark:border-cyan-700 text-xs">
+                    Model
+                  </Badge>
+                  <span className="text-sm">{parseModelKey(generated.creds.model_key)?.model}</span>
+                </div>
+              )}
               {generated.creds.serial_number && (
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-purple-600 dark:text-purple-400 border-purple-300 dark:border-purple-700 text-xs">
@@ -285,7 +435,7 @@ function GenerateTab() {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handleDownloadPNG}>
               <Download className="w-4 h-4 mr-2" />
-              Download PNG
+              Download Label
             </Button>
             <Button variant="outline" size="sm" onClick={handleCopyJSON}>
               {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
@@ -324,7 +474,9 @@ function ScanTab() {
       if (decoded) {
         setResult(decoded);
         stopCamera();
-        toast({ title: "QR Decoded", description: `DEV EUI: ${formatEUI(decoded.dev_eui)}` });
+        const parsed = decoded.model_key ? parseModelKey(decoded.model_key) : null;
+        const modelInfo = parsed ? ` (${parsed.model})` : "";
+        toast({ title: "QR Decoded", description: `DEV EUI: ${formatEUI(decoded.dev_eui)}${modelInfo}` });
       } else {
         toast({ title: "Invalid QR", description: "Not a recognized FrostGuard sensor QR code.", variant: "destructive" });
       }
@@ -396,6 +548,8 @@ function ScanTab() {
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
   };
+
+  const parsedModel = result?.model_key ? parseModelKey(result.model_key) : null;
 
   return (
     <div className="space-y-6">
@@ -478,6 +632,16 @@ function ScanTab() {
             <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
               Decoded Credentials
             </Label>
+
+            {/* Sensor model callout */}
+            {parsedModel && (
+              <div className="flex items-center gap-2 rounded-lg bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800 p-2.5">
+                <Cpu className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                <span className="text-sm font-medium text-cyan-700 dark:text-cyan-300">
+                  {parsedModel.model}
+                </span>
+              </div>
+            )}
 
             {[
               { label: "Serial", value: result.serial_number, color: "text-purple-600 dark:text-purple-400" },

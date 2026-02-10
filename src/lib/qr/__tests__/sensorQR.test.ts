@@ -8,6 +8,8 @@ import {
   isValidHex,
   cleanHex,
   formatEUI,
+  buildModelKey,
+  parseModelKey,
 } from '../sensorQR';
 
 describe('sensorQR', () => {
@@ -16,6 +18,12 @@ describe('sensorQR', () => {
     dev_eui: 'A840415A61897757',
     app_eui: 'A840410000000107',
     app_key: '2B7E151628AED2A6ABF7158809CF4F3C',
+    model_key: '',
+  };
+
+  const testCredsV2 = {
+    ...testCreds,
+    model_key: 'Dragino/LHT65',
   };
 
   describe('Base45 round-trip', () => {
@@ -36,7 +44,7 @@ describe('sensorQR', () => {
     });
   });
 
-  describe('encodeCredentials / decodeCredentials', () => {
+  describe('V1 encodeCredentials / decodeCredentials (no model)', () => {
     it('round-trips credentials correctly', () => {
       const encoded = encodeCredentials(testCreds);
       const decoded = decodeCredentials(encoded);
@@ -44,6 +52,7 @@ describe('sensorQR', () => {
       expect(decoded!.dev_eui).toBe(testCreds.dev_eui);
       expect(decoded!.app_eui).toBe(testCreds.app_eui);
       expect(decoded!.app_key).toBe(testCreds.app_key);
+      expect(decoded!.model_key).toBe('');
     });
 
     it('produces compact output starting with F', () => {
@@ -59,6 +68,74 @@ describe('sensorQR', () => {
     });
   });
 
+  describe('V2 encodeCredentials / decodeCredentials (with model)', () => {
+    it('round-trips credentials with model_key correctly', () => {
+      const encoded = encodeCredentials(testCredsV2);
+      const decoded = decodeCredentials(encoded);
+      expect(decoded).not.toBeNull();
+      expect(decoded!.dev_eui).toBe(testCredsV2.dev_eui);
+      expect(decoded!.app_eui).toBe(testCredsV2.app_eui);
+      expect(decoded!.app_key).toBe(testCredsV2.app_key);
+      expect(decoded!.model_key).toBe('Dragino/LHT65');
+    });
+
+    it('produces output starting with G prefix', () => {
+      const encoded = encodeCredentials(testCredsV2);
+      expect(encoded).toMatch(/^G/);
+    });
+
+    it('model_key is embedded in the QR payload', () => {
+      const encoded = encodeCredentials(testCredsV2);
+      const decoded = decodeCredentials(encoded);
+      expect(decoded!.model_key).toBe('Dragino/LHT65');
+    });
+
+    it('serial is NOT in the V2 QR payload', () => {
+      const encoded = encodeCredentials(testCredsV2);
+      expect(encoded).not.toContain('LHT65N');
+    });
+
+    it('handles various model key lengths', () => {
+      const short = { ...testCreds, model_key: 'X/Y' };
+      const long = { ...testCreds, model_key: 'SomeManufacturer/SomeLongModelName' };
+
+      const enc1 = encodeCredentials(short);
+      const dec1 = decodeCredentials(enc1);
+      expect(dec1!.model_key).toBe('X/Y');
+
+      const enc2 = encodeCredentials(long);
+      const dec2 = decodeCredentials(enc2);
+      expect(dec2!.model_key).toBe('SomeManufacturer/SomeLongModelName');
+    });
+  });
+
+  describe('model key helpers', () => {
+    it('builds model key from manufacturer and model', () => {
+      expect(buildModelKey('Dragino', 'LHT65')).toBe('Dragino/LHT65');
+      expect(buildModelKey('Elsys', 'ERS CO2')).toBe('Elsys/ERS CO2');
+    });
+
+    it('parses model key into manufacturer and model', () => {
+      const parsed = parseModelKey('Dragino/LHT65');
+      expect(parsed).not.toBeNull();
+      expect(parsed!.manufacturer).toBe('Dragino');
+      expect(parsed!.model).toBe('LHT65');
+    });
+
+    it('handles model names with slashes', () => {
+      const parsed = parseModelKey('Acme/Model/V2');
+      expect(parsed).not.toBeNull();
+      expect(parsed!.manufacturer).toBe('Acme');
+      expect(parsed!.model).toBe('Model/V2');
+    });
+
+    it('returns null for invalid keys', () => {
+      expect(parseModelKey('')).toBeNull();
+      expect(parseModelKey('noSlash')).toBeNull();
+      expect(parseModelKey('/noManufacturer')).toBeNull();
+    });
+  });
+
   describe('legacy format support', () => {
     it('decodes FG1 hex format', () => {
       const fg1 = 'FG1:LHT65N-001:A840415A61897757:A840410000000107:2B7E151628AED2A6ABF7158809CF4F3C';
@@ -66,6 +143,7 @@ describe('sensorQR', () => {
       expect(decoded).not.toBeNull();
       expect(decoded!.serial_number).toBe('LHT65N-001');
       expect(decoded!.dev_eui).toBe('A840415A61897757');
+      expect(decoded!.model_key).toBe('');
     });
 
     it('decodes legacy JSON format', () => {
@@ -79,6 +157,7 @@ describe('sensorQR', () => {
       const decoded = decodeCredentials(json);
       expect(decoded).not.toBeNull();
       expect(decoded!.serial_number).toBe('TEST-001');
+      expect(decoded!.model_key).toBe('');
     });
 
     it('returns null for invalid data', () => {
