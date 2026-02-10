@@ -95,29 +95,28 @@ export function QRScanner({ onScan, onError }: QRScannerProps) {
         </Button>
       )}
 
-      {scanning && (
-        <div className="relative rounded-lg overflow-hidden bg-black">
-          <video
-            ref={videoRef}
-            className="w-full"
-            playsInline
-            muted
-          />
-          <div className="absolute inset-4 border-2 border-green-400 rounded-lg pointer-events-none opacity-60" />
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-xs text-green-300 font-medium">Scanning...</span>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={stopCamera}
-            className="absolute top-2 right-2 bg-black/50 text-white hover:bg-black/70"
-          >
-            <X className="w-4 h-4" />
-          </Button>
+      {/* Video element always rendered so videoRef is available when stream starts */}
+      <div className={`relative rounded-lg overflow-hidden bg-black ${scanning ? "" : "hidden"}`}>
+        <video
+          ref={videoRef}
+          className="w-full"
+          playsInline
+          muted
+        />
+        <div className="absolute inset-4 border-2 border-green-400 rounded-lg pointer-events-none opacity-60" />
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full">
+          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+          <span className="text-xs text-green-300 font-medium">Scanning...</span>
         </div>
-      )}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={stopCamera}
+          className="absolute top-2 right-2 bg-black/50 text-white hover:bg-black/70"
+        >
+          <X className="w-4 h-4" />
+        </Button>
+      </div>
 
       {cameraError && (
         <div className="flex items-start gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
