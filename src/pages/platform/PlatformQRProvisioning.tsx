@@ -336,9 +336,10 @@ function GenerateTab() {
                 <div ref={qrRef} className="shrink-0">
                   <QRCodeCanvas
                     value={generated.qrValue.toUpperCase()}
-                    size={80}
+                    size={320}
                     level="L"
                     marginSize={1}
+                    style={{ width: 80, height: 80 }}
                   />
                 </div>
                 <div className="min-w-0">
