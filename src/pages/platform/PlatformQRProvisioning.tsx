@@ -111,13 +111,64 @@ function GenerateTab() {
   };
 
   const handleDownloadPNG = () => {
-    if (!qrRef.current) return;
-    const canvas = qrRef.current.querySelector("canvas");
-    if (!canvas) return;
-    const url = canvas.toDataURL("image/png");
+    if (!qrRef.current || !generated) return;
+    const srcCanvas = qrRef.current.querySelector("canvas");
+    if (!srcCanvas) return;
+
+    const { creds } = generated;
+    const scale = 4; // high-res output
+    const qrSize = 80 * scale;
+    const padding = 16 * scale;
+    const gap = 12 * scale;
+    const serialFont = `bold ${14 * scale}px monospace`;
+    const euiFont = `${11 * scale}px monospace`;
+
+    // Measure text widths
+    const measure = document.createElement("canvas").getContext("2d")!;
+    measure.font = serialFont;
+    const serialText = creds.serial_number || "";
+    const serialWidth = serialText ? measure.measureText(serialText).width : 0;
+    measure.font = euiFont;
+    const euiText = formatEUI(creds.dev_eui);
+    const euiWidth = measure.measureText(euiText).width;
+    const textWidth = Math.max(serialWidth, euiWidth);
+
+    const totalWidth = padding + qrSize + (textWidth > 0 ? gap + textWidth : 0) + padding;
+    const totalHeight = padding + qrSize + padding;
+
+    const out = document.createElement("canvas");
+    out.width = totalWidth;
+    out.height = totalHeight;
+    const ctx = out.getContext("2d")!;
+
+    // White background
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+    // Draw QR code scaled up
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(srcCanvas, padding, padding, qrSize, qrSize);
+
+    // Draw text
+    const textX = padding + qrSize + gap;
+    const textBaseline = padding + qrSize / 2;
+
+    if (serialText) {
+      ctx.fillStyle = "#000000";
+      ctx.font = serialFont;
+      ctx.textBaseline = "bottom";
+      ctx.fillText(serialText, textX, textBaseline - 2 * scale);
+    }
+
+    ctx.fillStyle = "#666666";
+    ctx.font = euiFont;
+    ctx.textBaseline = "top";
+    ctx.fillText(euiText, textX, serialText ? textBaseline + 2 * scale : textBaseline - 6 * scale);
+
+    const url = out.toDataURL("image/png");
     const a = document.createElement("a");
     a.href = url;
-    a.download = `frostguard-qr-${generated?.creds.dev_eui || "sensor"}.png`;
+    a.download = `frostguard-label-${creds.dev_eui || "sensor"}.png`;
     a.click();
   };
 
@@ -285,7 +336,7 @@ function GenerateTab() {
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={handleDownloadPNG}>
               <Download className="w-4 h-4 mr-2" />
-              Download PNG
+              Download Label
             </Button>
             <Button variant="outline" size="sm" onClick={handleCopyJSON}>
               {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
