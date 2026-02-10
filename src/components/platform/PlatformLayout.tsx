@@ -16,6 +16,7 @@ import {
   Headphones,
   BookOpen,
   Activity,
+  QrCode,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,7 @@ const platformNavItems = [
   { href: "/platform/organizations", label: "Organizations", icon: Building2 },
   { href: "/platform/users", label: "Users", icon: Users },
   { href: "/platform/sensor-library", label: "Sensor Library", icon: BookOpen },
+  { href: "/platform/qr-provisioning", label: "QR Provisioning", icon: QrCode },
   { href: "/platform/decoder-confidence", label: "Decoder Confidence", icon: Activity },
   { href: "/platform/audit", label: "Audit Log", icon: FileText },
   { href: "/platform/developer-tools", label: "Developer Tools", icon: Wrench },
