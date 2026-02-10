@@ -147,11 +147,11 @@ async function tryDeleteFromTtn(
     "Content-Type": "application/json",
   };
 
-  // SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix)
-  // ALL operations use the same cluster (NAM1) - no EU1/NAM1 mixing
+  // Cross-cluster architecture (2026-02-10):
+  // IS (EU1) for device registry, NAM1 for data plane
   const dataPlaneUrl = ttnConfig.clusterBaseUrl;
 
-  console.log(`[ttn-deprovision-worker] Single-cluster: ${IDENTITY_SERVER_URL}`);
+  console.log(`[ttn-deprovision-worker] Cross-cluster: IS=${IDENTITY_SERVER_URL} Regional=${dataPlaneUrl}`);
 
   // Device deletion requires hitting all four endpoints (all on same cluster):
   // 1. IS - device registry

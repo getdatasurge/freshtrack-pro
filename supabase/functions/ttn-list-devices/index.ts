@@ -111,7 +111,7 @@ serve(async (req) => {
       );
     }
 
-    // SINGLE-CLUSTER: All operations use NAM1 (IDENTITY_SERVER_URL now points to NAM1)
+    // Cross-cluster: Device registry queries go to Identity Server (EU1)
     const baseUrl = IDENTITY_SERVER_URL;
 
     // Validate host

@@ -1,8 +1,8 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { deobfuscateKey, normalizeDevEui, getClusterBaseUrl, getLast4 } from "../_shared/ttnConfig.ts";
-import { IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCallWithCred } from "../_shared/ttnBase.ts";
+import { TTN_IDENTITY_URL, assertValidTtnHost, logTtnApiCallWithCred } from "../_shared/ttnBase.ts";
 
-const BUILD_VERSION = "check-ttn-device-exists-v4.0-dual-endpoint-audit-20260124";
+const BUILD_VERSION = "check-ttn-device-exists-v5.0-cross-cluster-eu1-20260210";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -182,9 +182,9 @@ Deno.serve(async (req) => {
 
       console.log(`[check-ttn-device-exists] [${requestId}] Org ${orgId}: Listing devices from TTN app ${config.application_id}`);
 
-      // DUAL-ENDPOINT: Device registry queries go to Identity Server (EU1)
+      // Cross-cluster: Device registry queries go to Identity Server (EU1)
       // The device list is stored in the IS, not regional clusters
-      const clusterUrl = IDENTITY_SERVER_URL;
+      const clusterUrl = TTN_IDENTITY_URL;
       
       // Validate host
       assertValidTtnHost(`${clusterUrl}/api/v3/applications/${config.application_id}`, "IS");

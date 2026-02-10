@@ -8,12 +8,15 @@
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { 
-  CLUSTER_BASE_URL, 
-  CLUSTER_HOST, 
+import {
+  CLUSTER_BASE_URL,
+  CLUSTER_HOST,
   IDENTITY_SERVER_URL,
   IDENTITY_SERVER_HOST,
-  TTN_BASE_URL, 
+  TTN_BASE_URL,
+  TTN_IDENTITY_URL,
+  TTN_REGIONAL_URL,
+  TTN_NAM1_HOST,
   assertClusterHost,
   assertValidTtnHost,
   assertNam1Only,
@@ -71,11 +74,10 @@ export interface TtnConfig {
   apiKey: string;
   applicationId: string;       // Per-org TTN application ID
 
-  // SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix)
-  // ALL operations use the same cluster - no mixing!
-  // Both identityServerUrl and clusterBaseUrl point to the same URL now
-  identityServerUrl: string;   // Same as clusterBaseUrl (NAM1)
-  clusterBaseUrl: string;      // NAM1 for all operations
+  // Cross-cluster "Two Truths" architecture (2026-02-10 fix)
+  // EU1 = Identity Server (device registry), NAM1 = radio plane (JS/NS/AS)
+  identityServerUrl: string;   // EU1 — device creation/lookup
+  clusterBaseUrl: string;      // NAM1 — Join/Network/App server operations
 
   webhookSecret?: string;
   webhookUrl?: string;
@@ -118,18 +120,20 @@ export interface TtnConnectionRow {
 }
 
 // ============================================================================
-// NAM1-ONLY HARD LOCK
-// All TTN API operations MUST target the NAM1 cluster exclusively.
-// This prevents split-brain provisioning and ensures consistent device registration.
+// Cross-cluster architecture constants
+// EU1 = Identity Server (device registry), NAM1 = radio plane (JS/NS/AS)
 // ============================================================================
 
-// Re-export from canonical source for backward compatibility
-export { 
+// Re-export from canonical source
+export {
   CLUSTER_BASE_URL,
   CLUSTER_HOST,
   IDENTITY_SERVER_URL,
   IDENTITY_SERVER_HOST,
-  TTN_BASE_URL, 
+  TTN_BASE_URL,
+  TTN_IDENTITY_URL,
+  TTN_REGIONAL_URL,
+  TTN_NAM1_HOST,
   assertNam1Only,
   assertClusterHost,
   assertValidTtnHost,
@@ -144,7 +148,6 @@ export {
 // @deprecated - Use CLUSTER_BASE_URL directly. Kept for backward compatibility only.
 export const REGIONAL_URLS: Record<string, string> = {
   nam1: CLUSTER_BASE_URL,
-  // Other clusters removed - NAM1-ONLY mode enforced
 };
 
 /**
@@ -162,9 +165,9 @@ export function maskEui(eui: string | null | undefined): string {
 // ============================================================================
 
 /**
- * Get the base URL for a TTN cluster region.
- * NAM1-ONLY: Always returns NAM1 regardless of requested region.
- * This enforces single-cluster mode to prevent split-brain provisioning.
+ * Get the regional base URL for a TTN cluster.
+ * Returns NAM1 for the radio plane (JS/NS/AS operations).
+ * For Identity Server operations, use TTN_IDENTITY_URL instead.
  */
 export function getClusterBaseUrl(region: string | null | undefined): string {
   const requested = (region || "nam1").toLowerCase().trim();
@@ -554,19 +557,19 @@ export async function getTtnConfigForOrg(
     console.warn(`[getTtnConfigForOrg] NAM1-ONLY: Stored region "${requestedRegion}" overridden to "nam1"`);
   }
   
-  // SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix)
-  // ALL operations use the same cluster - no mixing between EU1 and NAM1
-  const identityServerUrl = IDENTITY_SERVER_URL;  // Now points to NAM1
-  const clusterBaseUrl = CLUSTER_BASE_URL;        // NAM1
+  // Cross-cluster "Two Truths" architecture (2026-02-10 fix)
+  // EU1 = Identity Server (device registry), NAM1 = radio plane (JS/NS/AS)
+  const identityServerUrl = TTN_IDENTITY_URL;     // EU1 for device registry
+  const clusterBaseUrl = CLUSTER_BASE_URL;        // NAM1 for radio plane
 
-  console.log(`[getTtnConfigForOrg] Single-cluster: ${clusterBaseUrl}`);
+  console.log(`[getTtnConfigForOrg] Cross-cluster: IS=${identityServerUrl} Regional=${clusterBaseUrl}`);
 
   return {
     region,
     apiKey,
     applicationId: applicationId || "",
-    identityServerUrl,                 // Same as clusterBaseUrl (NAM1)
-    clusterBaseUrl,                    // NAM1 for all operations
+    identityServerUrl,                 // EU1 — device registry
+    clusterBaseUrl,                    // NAM1 — radio plane
     webhookSecret,
     webhookUrl: settings.ttn_webhook_url || undefined,
     isEnabled: settings.is_enabled || false,
