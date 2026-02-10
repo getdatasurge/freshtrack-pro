@@ -13,8 +13,9 @@
  *
  * CRITICAL: success=true ONLY when ALL critical steps succeed.
  *
- * Uses single-cluster architecture (2026-01-24 fix):
- * - ALL operations use NAM1 - no cross-cluster mixing
+ * Uses cross-cluster architecture (2026-02-10):
+ * - Identity Server (EU1) for device registry operations
+ * - Regional (NAM1) for data plane operations
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";

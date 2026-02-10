@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg, assertClusterLocked, getLast4 } from "../_shared/ttnConfig.ts";
-import { CLUSTER_BASE_URL, IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCallWithCred, identifyPlane } from "../_shared/ttnBase.ts";
+import { TTN_IDENTITY_URL, TTN_REGIONAL_URL, TTN_NAM1_HOST, assertValidTtnHost, logTtnApiCallWithCred, identifyPlane, getEndpointForPath } from "../_shared/ttnBase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,7 +15,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v12-adopt-fix-20260129";
+  const BUILD_VERSION = "ttn-provision-device-v13-two-truths-cross-cluster-20260210";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -36,7 +36,7 @@ serve(async (req) => {
           hasSupabaseUrl: !!Deno.env.get("SUPABASE_URL"),
           hasServiceKey: !!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
         },
-        note: "CLUSTER-LOCKED: All TTN planes (IS/JS/NS/AS) use same base URL",
+        note: "TWO-TRUTHS: EU1 for Identity Server, NAM1 for JS/NS/AS",
       }),
       {
         status: 200,
@@ -128,13 +128,13 @@ serve(async (req) => {
       );
     }
 
-    // ========== SINGLE-CLUSTER ARCHITECTURE (2026-01-24 fix) ==========
-    // ALL operations use the same cluster (NAM1) - no EU1/NAM1 mixing!
-    // This prevents cross-cluster device registration issues
-    const clusterBaseUrl = ttnConfig.clusterBaseUrl;
+    // ========== CROSS-CLUSTER "TWO TRUTHS" ARCHITECTURE (2026-02-10 fix) ==========
+    // EU1 = Identity Server (device registry), NAM1 = radio plane (JS/NS/AS)
+    // The Identity Server record on EU1 MUST include *_server_address pointing to NAM1
+    const identityBaseUrl = TTN_IDENTITY_URL;   // EU1 for device creation/lookup
+    const regionalBaseUrl = TTN_REGIONAL_URL;   // NAM1 for JS/NS/AS
 
-    // Verify single-cluster: IDENTITY_SERVER_URL should equal clusterBaseUrl
-    console.log(`[ttn-provision-device] ✓ Single-cluster: ${IDENTITY_SERVER_URL}`);
+    console.log(`[ttn-provision-device] Cross-cluster: IS=${identityBaseUrl} Regional=${regionalBaseUrl}`);
 
     const ttnAppId = ttnConfig.applicationId;
 
@@ -159,29 +159,28 @@ serve(async (req) => {
     
     console.log(`[ttn-provision-device] TTN App: ${ttnAppId}, Device: ${deviceId}`);
     console.log(`[ttn-provision-device] Region: ${ttnConfig.region}, Frequency plan: ${frequencyPlan}`);
-    console.log(`[ttn-provision-device] Single-cluster: ${IDENTITY_SERVER_URL}`);
+    console.log(`[ttn-provision-device] Cross-cluster: IS=${TTN_IDENTITY_URL} Regional=${TTN_REGIONAL_URL}`);
     
     // Get API key last4 for audit logging
     const credLast4 = getLast4(ttnConfig.apiKey);
     const requestId = crypto.randomUUID().slice(0, 8);
 
-    // ========== SINGLE-CLUSTER TTN API HELPER ==========
-    // ALL operations use the same cluster (NAM1) - IDENTITY_SERVER_URL now equals clusterBaseUrl
+    // ========== CROSS-CLUSTER TTN API HELPER ==========
+    // Routes IS endpoints to EU1 and data plane endpoints to NAM1
     const ttnFetch = async (endpoint: string, options: RequestInit = {}, step?: string) => {
-      // Identify endpoint type for logging (both use same cluster now)
       const isDataPlane = endpoint.includes("/api/v3/js/") ||
                           endpoint.includes("/api/v3/ns/") ||
                           endpoint.includes("/api/v3/as/");
 
-      // Single cluster: both IS and DATA use same base URL (NAM1)
-      const baseUrl = isDataPlane ? clusterBaseUrl : IDENTITY_SERVER_URL;
+      // Cross-cluster: IS → EU1, DATA → NAM1
+      const baseUrl = isDataPlane ? regionalBaseUrl : identityBaseUrl;
       const endpointType = isDataPlane ? "DATA" : "IS";
       const url = `${baseUrl}${endpoint}`;
       const method = options.method || "GET";
-      
+
       // Validate host before call
       assertValidTtnHost(url, endpointType);
-      
+
       // Enhanced logging with credential fingerprint for audit trail
       logTtnApiCallWithCred(
         "ttn-provision-device",
@@ -195,7 +194,7 @@ serve(async (req) => {
         deviceId,
         baseUrl
       );
-      
+
       const response = await fetch(url, {
         ...options,
         headers: {
@@ -207,159 +206,167 @@ serve(async (req) => {
       return response;
     };
 
-    // ========== ENSURE DEVICE FLOW (IDEMPOTENT) ==========
+    // ========== CROSS-CLUSTER DEVICE PROVISIONING ("Two Truths") ==========
+    // Step 1: Identity Server (EU1) — Create device with NAM1 home pointers
+    // Step 2: Join Server (NAM1)    — Store root keys
+    // Step 3: Network Server (NAM1) — MAC/radio settings
+    // Step 4: App Server (NAM1)     — Link application server
     if (action === "create") {
-      // Step 0: Probe TTN connectivity
+      const devEuiUpper = sensor.dev_eui.toUpperCase();
+      const joinEui = sensor.app_eui?.toUpperCase() || "0000000000000000";
+      const steps: Array<{ step: string; success: boolean; status: number; message: string; error_body?: string }> = [];
+
+      // Step 0: Probe TTN connectivity (app lives on regional cluster)
       console.log(`[ttn-provision-device] Step 0: Probing TTN connectivity for app ${ttnAppId}`);
-      
+
       const probeResponse = await ttnFetch(`/api/v3/applications/${ttnAppId}`, { method: "GET" }, "probe");
-      
+
       if (!probeResponse.ok) {
         const probeErrorText = await probeResponse.text();
         console.error(`[ttn-provision-device] TTN probe failed: ${probeResponse.status} - ${probeErrorText}`);
-        
+
         await supabase
           .from("lora_sensors")
           .update({ status: "fault" })
           .eq("id", sensor_id);
-        
+
         return new Response(
-          JSON.stringify({ 
+          JSON.stringify({
             success: false,
-            error: `TTN connectivity failed (${probeResponse.status})`, 
+            error: `TTN connectivity failed (${probeResponse.status})`,
             details: `Could not reach TTN application "${ttnAppId}". The application may need to be re-provisioned.`,
           }),
           { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      
+
       console.log(`[ttn-provision-device] TTN probe successful`);
 
-      // Step 1: Check if device already exists (idempotent flow)
-      console.log(`[ttn-provision-device] Step 1: Checking if device ${deviceId} exists`);
-      
-      const getResponse = await ttnFetch(
-        `/api/v3/applications/${ttnAppId}/devices/${deviceId}`,
-        { method: "GET" },
-        "check_exists"
-      );
-      
-      let deviceExists = getResponse.ok;
-      
-      if (getResponse.status === 404) {
-        // Step 2: Device doesn't exist - create it (matching CLI exactly)
-        console.log(`[ttn-provision-device] Step 2: Creating device in Identity Server`);
-        
-        // Build root_keys with BOTH app_key AND nwk_key for LoRaWAN 1.0.3
-        // CRITICAL: LoRaWAN 1.0.3 requires nwk_key to be set, otherwise joins fail with "no_nwk_key"
-        const rootKeys = sensor.app_key ? {
-          app_key: { key: sensor.app_key.toUpperCase() },
-          nwk_key: { key: sensor.app_key.toUpperCase() },  // Same as app_key for 1.0.x
-        } : undefined;
-        
-        const createPayload = {
-          end_device: {
-            ids: {
-              device_id: deviceId,
-              dev_eui: sensor.dev_eui.toUpperCase(),
-              join_eui: sensor.app_eui?.toUpperCase() || "0000000000000000",
-              application_ids: { application_id: ttnAppId },
-            },
-            name: sensor.name,
-            description: sensor.description || `FreshTracker ${sensor.sensor_type} sensor`,
-            supports_join: true,
-            lorawan_version: "MAC_V1_0_3",
-            lorawan_phy_version: "PHY_V1_0",  // Match CLI: --lorawan-phy-version 1
-            frequency_plan_id: frequencyPlan,
-            ...(rootKeys && { root_keys: rootKeys }),
+      // ── Step 1: Identity Server (EU1) — Create/update device with NAM1 home pointers ──
+      console.log(`[ttn-provision-device] [1/4] Identity Server (EU1): Registering device ${deviceId}`);
+
+      const isEndpoint = `/api/v3/applications/${ttnAppId}/devices`;
+      const getResponse = await ttnFetch(`${isEndpoint}/${deviceId}`, { method: "GET" }, "step1_check_exists");
+
+      // Build identity payload with CRITICAL server address pointers
+      const identityPayload = {
+        end_device: {
+          ids: {
+            device_id: deviceId,
+            dev_eui: devEuiUpper,
+            join_eui: joinEui,
+            application_ids: { application_id: ttnAppId },
           },
+          // CRITICAL: These three fields tell EU1 that NAM1 is the home for this device
+          network_server_address: TTN_NAM1_HOST,
+          join_server_address: TTN_NAM1_HOST,
+          application_server_address: TTN_NAM1_HOST,
+          name: sensor.name,
+          lorawan_version: "MAC_V1_0_3",
+          lorawan_phy_version: "PHY_V1_0",
+          frequency_plan_id: frequencyPlan,
+          supports_join: true,
+        },
+        field_mask: {
+          paths: [
+            "network_server_address", "join_server_address", "application_server_address",
+            "ids.dev_eui", "ids.join_eui",
+            "name", "supports_join",
+            "lorawan_version", "lorawan_phy_version", "frequency_plan_id",
+          ],
+        },
+      };
+
+      let step1Response: Response;
+
+      if (getResponse.status === 404) {
+        // Device doesn't exist — create it
+        console.log(`[ttn-provision-device] [1/4] Creating new device identity on EU1`);
+        step1Response = await ttnFetch(isEndpoint, { method: "POST", body: JSON.stringify(identityPayload) }, "step1_create");
+      } else if (getResponse.ok) {
+        // Device exists — update server address pointers
+        console.log(`[ttn-provision-device] [1/4] Updating existing device identity on EU1`);
+        const updatePayload = {
+          ...identityPayload,
           field_mask: {
             paths: [
-              "ids.device_id", "ids.dev_eui", "ids.join_eui",
-              "name", "description", "supports_join",
-              "lorawan_version", "lorawan_phy_version", "frequency_plan_id",
-              ...(sensor.app_key ? ["root_keys.app_key.key", "root_keys.nwk_key.key"] : []),
+              "network_server_address", "join_server_address", "application_server_address",
             ],
           },
         };
-
-        const createResponse = await ttnFetch(
-          `/api/v3/applications/${ttnAppId}/devices`,
-          { method: "POST", body: JSON.stringify(createPayload) },
-          "create_device"
+        step1Response = await ttnFetch(`${isEndpoint}/${deviceId}`, { method: "PUT", body: JSON.stringify(updatePayload) }, "step1_update");
+      } else {
+        // Unexpected error checking device existence
+        const errorText = await getResponse.text();
+        console.error(`[ttn-provision-device] [1/4] Failed to check device on EU1: ${getResponse.status} - ${errorText}`);
+        steps.push({ step: "1_identity_server", success: false, status: getResponse.status, message: `Failed to check device on EU1`, error_body: errorText });
+        await supabase.from("lora_sensors").update({ status: "fault" }).eq("id", sensor_id);
+        return new Response(
+          JSON.stringify({ success: false, steps, error: `Identity Server check failed (${getResponse.status})` }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
-
-        if (!createResponse.ok) {
-          const errorText = await createResponse.text();
-          
-          if (createResponse.status === 409) {
-            // 409 Conflict - device exists (possibly in different app or already here)
-            console.log(`[ttn-provision-device] 409 Conflict: ${errorText}`);
-            
-            // Check for cross-app conflict
-            if (errorText.includes("end_device_euis_taken") || errorText.includes("already registered")) {
-              const appMatch = errorText.match(/application[`\s]+([a-z0-9-]+)/i);
-              const existingApp = appMatch?.[1] || "another application";
-              
-              if (existingApp !== ttnAppId) {
-                console.error(`[ttn-provision-device] Cross-app conflict: DevEUI in ${existingApp}`);
-                
-                await supabase
-                  .from("lora_sensors")
-                  .update({ 
-                    status: "fault",
-                    provisioning_state: "conflict",
-                    last_provision_check_error: `DevEUI already registered in TTN application: ${existingApp}`
-                  })
-                  .eq("id", sensor_id);
-                
-                return new Response(
-                  JSON.stringify({
-                    success: false,
-                    error: `DevEUI already registered in TTN application: ${existingApp}`,
-                    hint: `Delete device from "${existingApp}" in TTN Console first.`,
-                    existing_application: existingApp,
-                  }),
-                  { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-                );
-              }
-            }
-            
-            // Device exists in same app - treat as success, continue to ensure keys
-            console.log(`[ttn-provision-device] Device exists in target app, continuing...`);
-            deviceExists = true;
-          } else {
-            // Non-409 error
-            console.error(`[ttn-provision-device] Create failed: ${errorText}`);
-            await supabase.from("lora_sensors").update({ status: "fault" }).eq("id", sensor_id);
-            return new Response(
-              JSON.stringify({ success: false, error: "Failed to create device", details: errorText }),
-              { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-            );
-          }
-        } else {
-          deviceExists = true;
-          console.log(`[ttn-provision-device] Device created successfully`);
-        }
-      } else if (getResponse.ok) {
-        console.log(`[ttn-provision-device] Device already exists, ensuring keys/servers...`);
       }
 
-      // Step 3: Ensure Join Server has root keys (app_key + nwk_key)
-      if (deviceExists && sensor.app_key) {
-        console.log(`[ttn-provision-device] Step 3: Ensuring root keys in Join Server`);
-        
+      if (!step1Response.ok && step1Response.status !== 200 && step1Response.status !== 201) {
+        const errorText = await step1Response.text();
+
+        // Handle 409 Conflict (DevEUI already registered)
+        if (step1Response.status === 409) {
+          console.log(`[ttn-provision-device] [1/4] 409 Conflict: ${errorText}`);
+
+          if (errorText.includes("end_device_euis_taken") || errorText.includes("already registered")) {
+            const appMatch = errorText.match(/application[`\s]+([a-z0-9-]+)/i);
+            const existingApp = appMatch?.[1] || "another application";
+
+            if (existingApp !== ttnAppId) {
+              await supabase.from("lora_sensors").update({
+                status: "fault",
+                provisioning_state: "conflict",
+                last_provision_check_error: `DevEUI already registered in TTN application: ${existingApp}`,
+              }).eq("id", sensor_id);
+
+              return new Response(
+                JSON.stringify({
+                  success: false,
+                  error: `DevEUI already registered in TTN application: ${existingApp}`,
+                  hint: `Delete device from "${existingApp}" in TTN Console first.`,
+                  existing_application: existingApp,
+                }),
+                { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+          }
+
+          // Device exists in same app — treat as success
+          console.log(`[ttn-provision-device] [1/4] Device exists in target app, continuing...`);
+        } else {
+          console.error(`[ttn-provision-device] [1/4] Identity Server failed: ${step1Response.status} - ${errorText}`);
+          steps.push({ step: "1_identity_server", success: false, status: step1Response.status, message: `Identity Server (EU1) registration failed`, error_body: errorText });
+          await supabase.from("lora_sensors").update({ status: "fault" }).eq("id", sensor_id);
+          return new Response(
+            JSON.stringify({ success: false, steps, error: "Failed to register device on Identity Server (EU1)" }),
+            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+
+      steps.push({ step: "1_identity_server", success: true, status: step1Response.status, message: "Identity registered on EU1 with NAM1 home pointers" });
+      console.log(`[ttn-provision-device] [1/4] Identity Server registered with NAM1 pointers`);
+
+      // ── Step 2: Join Server (NAM1) — Store root keys ──
+      if (sensor.app_key) {
+        console.log(`[ttn-provision-device] [2/4] Join Server (NAM1): Storing root keys`);
+
         const jsPayload = {
           end_device: {
             ids: {
               device_id: deviceId,
-              dev_eui: sensor.dev_eui.toUpperCase(),
-              join_eui: sensor.app_eui?.toUpperCase() || "0000000000000000",
-              application_ids: { application_id: ttnAppId },
+              dev_eui: devEuiUpper,
+              join_eui: joinEui,
             },
             root_keys: {
               app_key: { key: sensor.app_key.toUpperCase() },
-              nwk_key: { key: sensor.app_key.toUpperCase() },  // CRITICAL for 1.0.3
+              nwk_key: { key: sensor.app_key.toUpperCase() },  // Same as app_key for LoRaWAN 1.0.3
             },
           },
           field_mask: {
@@ -370,56 +377,56 @@ serve(async (req) => {
         const jsResponse = await ttnFetch(
           `/api/v3/js/applications/${ttnAppId}/devices/${deviceId}`,
           { method: "PUT", body: JSON.stringify(jsPayload) },
-          "ensure_js_keys"
+          "step2_join_server"
         );
 
         if (!jsResponse.ok) {
           const errorText = await jsResponse.text();
-          console.error(`[ttn-provision-device] JS PUT failed: ${errorText}`);
-          
+          console.error(`[ttn-provision-device] [2/4] Join Server failed: ${errorText}`);
+
           if (errorText.includes("end_device_euis_taken") || errorText.includes("already registered")) {
             const appMatch = errorText.match(/application[`\s]+([a-z0-9-]+)/i);
             const existingApp = appMatch?.[1] || "another application";
-            
-            await supabase.from("lora_sensors").update({ 
-              status: "fault", 
+
+            await supabase.from("lora_sensors").update({
+              status: "fault",
               provisioning_state: "conflict",
-              last_provision_check_error: `Keys already claimed by: ${existingApp}`
+              last_provision_check_error: `Keys already claimed by: ${existingApp}`,
             }).eq("id", sensor_id);
-            
+
             return new Response(
-              JSON.stringify({ 
-                success: false, 
-                error: "Keys already claimed by another application",
-                existing_application: existingApp,
-              }),
+              JSON.stringify({ success: false, steps, error: "Keys already claimed by another application", existing_application: existingApp }),
               { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
           }
-          
+
+          steps.push({ step: "2_join_server", success: false, status: jsResponse.status, message: `Join Server (NAM1) key storage failed`, error_body: errorText });
           await supabase.from("lora_sensors").update({ status: "fault" }).eq("id", sensor_id);
           return new Response(
-            JSON.stringify({ success: false, error: "Failed to set root keys", details: errorText }),
-            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            JSON.stringify({ success: false, steps, error: "Failed to store root keys on Join Server (NAM1)" }),
+            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
-        
-        console.log(`[ttn-provision-device] Root keys set (app_key + nwk_key)`);
+
+        steps.push({ step: "2_join_server", success: true, status: jsResponse.status, message: "Root keys stored on NAM1 Join Server" });
+        console.log(`[ttn-provision-device] [2/4] Root keys stored (app_key + nwk_key)`);
+      } else {
+        steps.push({ step: "2_join_server", success: true, status: 0, message: "Skipped - no app_key configured" });
+        console.log(`[ttn-provision-device] [2/4] Skipped Join Server (no app_key)`);
       }
 
-      // Step 4: Ensure Network Server registration
-      console.log(`[ttn-provision-device] Step 4: Ensuring Network Server registration`);
-      
+      // ── Step 3: Network Server (NAM1) — MAC/radio settings ──
+      console.log(`[ttn-provision-device] [3/4] Network Server (NAM1): Storing radio settings`);
+
       const nsPayload = {
         end_device: {
           ids: {
             device_id: deviceId,
-            dev_eui: sensor.dev_eui.toUpperCase(),
-            join_eui: sensor.app_eui?.toUpperCase() || "0000000000000000",
-            application_ids: { application_id: ttnAppId },
+            dev_eui: devEuiUpper,
+            join_eui: joinEui,
           },
           lorawan_version: "MAC_V1_0_3",
-          lorawan_phy_version: "PHY_V1_0",  // Match CLI: --lorawan-phy-version 1
+          lorawan_phy_version: "PHY_V1_0",
           frequency_plan_id: frequencyPlan,
           supports_join: true,
         },
@@ -431,91 +438,68 @@ serve(async (req) => {
       const nsResponse = await ttnFetch(
         `/api/v3/ns/applications/${ttnAppId}/devices/${deviceId}`,
         { method: "PUT", body: JSON.stringify(nsPayload) },
-        "ensure_ns"
+        "step3_network_server"
       );
 
       if (!nsResponse.ok) {
         const errorText = await nsResponse.text();
-        console.warn(`[ttn-provision-device] NS PUT warning: ${errorText}`);
-      } else {
-        console.log(`[ttn-provision-device] NS registration ensured`);
+        console.error(`[ttn-provision-device] [3/4] Network Server failed: ${errorText}`);
+        steps.push({ step: "3_network_server", success: false, status: nsResponse.status, message: `Network Server (NAM1) radio config failed`, error_body: errorText });
+        await supabase.from("lora_sensors").update({ status: "fault" }).eq("id", sensor_id);
+        return new Response(
+          JSON.stringify({ success: false, steps, error: "Failed to configure Network Server (NAM1)" }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
-      // Step 5: Ensure Application Server registration
-      console.log(`[ttn-provision-device] Step 5: Ensuring Application Server registration`);
-      
+      steps.push({ step: "3_network_server", success: true, status: nsResponse.status, message: "Radio settings stored on NAM1 Network Server" });
+      console.log(`[ttn-provision-device] [3/4] Network Server registration ensured`);
+
+      // ── Step 4: Application Server (NAM1) — Link ──
+      console.log(`[ttn-provision-device] [4/4] Application Server (NAM1): Linking`);
+
       const asPayload = {
         end_device: {
           ids: {
             device_id: deviceId,
-            dev_eui: sensor.dev_eui.toUpperCase(),
-            join_eui: sensor.app_eui?.toUpperCase() || "0000000000000000",
-            application_ids: { application_id: ttnAppId },
           },
         },
-        field_mask: { paths: [] },
+        field_mask: { paths: [] as string[] },
       };
 
       const asResponse = await ttnFetch(
         `/api/v3/as/applications/${ttnAppId}/devices/${deviceId}`,
         { method: "PUT", body: JSON.stringify(asPayload) },
-        "ensure_as"
+        "step4_application_server"
       );
 
       if (!asResponse.ok) {
         const errorText = await asResponse.text();
-        console.warn(`[ttn-provision-device] AS PUT warning: ${errorText}`);
-      } else {
-        console.log(`[ttn-provision-device] AS registration ensured`);
+        console.error(`[ttn-provision-device] [4/4] Application Server failed: ${errorText}`);
+        steps.push({ step: "4_application_server", success: false, status: asResponse.status, message: `Application Server (NAM1) link failed`, error_body: errorText });
+        await supabase.from("lora_sensors").update({ status: "fault" }).eq("id", sensor_id);
+        return new Response(
+          JSON.stringify({ success: false, steps, error: "Failed to link Application Server (NAM1)" }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
       }
 
-      // Step 6: Verify device exists and is accessible
-      console.log(`[ttn-provision-device] Step 6: Verifying device in cluster`);
-      
-      const verifyResponse = await ttnFetch(
-        `/api/v3/applications/${ttnAppId}/devices/${deviceId}`,
-        { method: "GET" },
-        "verify"
-      );
+      steps.push({ step: "4_application_server", success: true, status: asResponse.status, message: "Application Server linked on NAM1" });
+      console.log(`[ttn-provision-device] [4/4] Application Server linked`);
 
-      const clusterVerified = verifyResponse.ok;
-      let clusterWarning: string | null = null;
-      
-      if (!verifyResponse.ok) {
-        const errorText = await verifyResponse.text();
-        console.error(`[ttn-provision-device] Verification failed: ${verifyResponse.status} - ${errorText}`);
-        clusterWarning = `Device verification returned ${verifyResponse.status}`;
-        
-        if (errorText.includes("other_cluster") || errorText.includes("Other cluster")) {
-          await supabase.from("lora_sensors").update({ status: "fault" }).eq("id", sensor_id);
-          return new Response(
-            JSON.stringify({
-              success: false,
-              error: "TTN resource created in wrong cluster",
-              details: `Device was provisioned to the wrong TTN cluster.`,
-              hint: "Delete and re-provision the device.",
-              cluster_error: true,
-            }),
-            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-      } else {
-        console.log(`[ttn-provision-device] Device verified in ${ttnConfig.region?.toUpperCase()} cluster`);
-      }
+      // ── All 4 steps passed — update sensor record ──
+      console.log(`[ttn-provision-device] All 4 steps succeeded. Updating lora_sensors.`);
 
-      // Update sensor with TTN info
       await supabase
         .from("lora_sensors")
         .update({
           status: "joining",
           ttn_device_id: deviceId,
           ttn_application_id: ttnAppId,
-          ttn_cluster: ttnConfig.region,
+          ttn_cluster: "nam1",
           provisioning_state: "provisioned",
         })
         .eq("id", sensor_id);
-
-      console.log(`[ttn-provision-device] Device ${deviceId} ensured successfully`);
 
       return new Response(
         JSON.stringify({
@@ -523,10 +507,10 @@ serve(async (req) => {
           device_id: deviceId,
           application_id: ttnAppId,
           status: "joining",
-          cluster: ttnConfig.region,
-          cluster_verified: clusterVerified,
-          cluster_warning: clusterWarning,
-          cluster_base_url: clusterBaseUrl,
+          cluster: "nam1",
+          identity_server: identityBaseUrl,
+          regional_server: regionalBaseUrl,
+          steps,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -624,7 +608,8 @@ serve(async (req) => {
             hint,
             provisioningStatus: connStatus?.provisioning_status,
             provisioningError: connStatus?.provisioning_error,
-            clusterBaseUrl,
+            identityServerUrl: identityBaseUrl,
+            regionalServerUrl: regionalBaseUrl,
             region: ttnConfig.region,
             appId: ttnAppId,
             deviceId,
@@ -687,7 +672,8 @@ serve(async (req) => {
 
       return new Response(JSON.stringify({
         success: true,
-        clusterBaseUrl,
+        identityServerUrl: identityBaseUrl,
+        regionalServerUrl: regionalBaseUrl,
         region: ttnConfig.region,
         appId: ttnAppId,
         deviceId,
