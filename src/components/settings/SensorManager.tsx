@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLoraSensors, useDeleteLoraSensor, useProvisionLoraSensor, useUpdateLoraSensor } from "@/hooks/useLoraSensors";
 import { LoraSensor, LoraSensorStatus, LoraSensorType, TtnProvisioningState } from "@/types/ttn";
 import {
@@ -289,11 +289,85 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [checkingSensorId, setCheckingSensorId] = useState<string | null>(null);
 
+  // Auto-verify refs
+  const hasAutoVerified = useRef(false);
+  const prevDataUpdatedAt = useRef<number>(0);
+
+  // Determine if TTN is configured NOW (regardless of sensor's stored state)
+  const isTtnConfiguredNow = Boolean(
+    ttnConfig?.isEnabled && 
+    ttnConfig?.hasApiKey && 
+    ttnConfig?.applicationId
+  );
+
+  // Helper to check if a sensor can be checked NOW
+  const canCheckSensorNow = (sensor: LoraSensor) => 
+    isTtnConfiguredNow && !!sensor.dev_eui;
+
+  const handleCheckAllTtn = async () => {
+    if (!sensors?.length) return;
+    
+    const sensorIds = sensors
+      .filter(s => canCheckSensorNow(s))
+      .map(s => s.id);
+    
+    if (sensorIds.length === 0) {
+      if (!isTtnConfiguredNow) {
+        toast.info("Network settings are not fully configured");
+      } else {
+        toast.info("No sensors with credentials available to verify");
+      }
+      return;
+    }
+    
+    try {
+      await checkTtnStatus.mutateAsync(sensorIds);
+    } catch (error) {
+      // Error toast is handled by the hook
+    }
+  };
+
   useEffect(() => {
     if (autoOpenAdd) {
       setAddDialogOpen(true);
     }
   }, [autoOpenAdd]);
+
+  // Auto-verify on initial load
+  useEffect(() => {
+    if (
+      hasAutoVerified.current ||
+      isLoading ||
+      !sensors?.length ||
+      !isTtnConfiguredNow ||
+      checkTtnStatus.isPending
+    ) return;
+
+    hasAutoVerified.current = true;
+    debugLog.info('ttn', 'AUTO_VERIFY_INITIAL_LOAD', { sensor_count: sensors.length });
+    handleCheckAllTtn();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sensors, isLoading, isTtnConfiguredNow, checkTtnStatus.isPending]);
+
+  // Auto-verify after mutations (dataUpdatedAt changes)
+  useEffect(() => {
+    if (!dataUpdatedAt || !hasAutoVerified.current) {
+      if (dataUpdatedAt) prevDataUpdatedAt.current = dataUpdatedAt;
+      return;
+    }
+    if (dataUpdatedAt === prevDataUpdatedAt.current) return;
+    prevDataUpdatedAt.current = dataUpdatedAt;
+
+    if (checkTtnStatus.isPending || !isTtnConfiguredNow || !sensors?.length) return;
+
+    const timer = setTimeout(() => {
+      debugLog.info('ttn', 'AUTO_VERIFY_AFTER_MUTATION', { dataUpdatedAt });
+      handleCheckAllTtn();
+    }, 1500);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataUpdatedAt]);
+
   const [editSensor, setEditSensor] = useState<LoraSensor | null>(null);
   const [deleteSensor_, setDeleteSensor] = useState<LoraSensor | null>(null);
   
@@ -317,41 +391,6 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
       // Error toast is handled by the hook
     } finally {
       setCheckingSensorId(null);
-    }
-  };
-
-  // Determine if TTN is configured NOW (regardless of sensor's stored state)
-  const isTtnConfiguredNow = Boolean(
-    ttnConfig?.isEnabled && 
-    ttnConfig?.hasApiKey && 
-    ttnConfig?.applicationId
-  );
-
-  // Helper to check if a sensor can be checked NOW
-  const canCheckSensorNow = (sensor: LoraSensor) => 
-    isTtnConfiguredNow && !!sensor.dev_eui;
-
-  const handleCheckAllTtn = async () => {
-    if (!sensors?.length) return;
-    
-    // Use current TTN config eligibility, not stored provisioning_state
-    const sensorIds = sensors
-      .filter(s => canCheckSensorNow(s))
-      .map(s => s.id);
-    
-    if (sensorIds.length === 0) {
-      if (!isTtnConfiguredNow) {
-        toast.info("Network settings are not fully configured");
-      } else {
-        toast.info("No sensors with credentials available to verify");
-      }
-      return;
-    }
-    
-    try {
-      await checkTtnStatus.mutateAsync(sensorIds);
-    } catch (error) {
-      // Error toast is handled by the hook
     }
   };
 
