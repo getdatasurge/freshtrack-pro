@@ -291,13 +291,14 @@ Deno.serve(async (req) => {
             sensor, config, orgId, requestId, now
           );
           if (fallbackResult) {
+            // Per-device check returned a definitive answer (exists or error)
             await updateSensor(supabase, sensor.id, fallbackResult);
             results.push(fallbackResult);
             continue;
           }
-          // Fallback also failed — report the original list error
-          result.provisioning_state = "error";
-          result.error = listError;
+          // Per-device GET returned 404 on all clusters — device genuinely missing
+          result.provisioning_state = "missing_in_ttn";
+          console.log(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: missing_in_ttn (list failed, per-device 404 on all clusters)`);
           await updateSensor(supabase, sensor.id, result);
           results.push(result);
           continue;
