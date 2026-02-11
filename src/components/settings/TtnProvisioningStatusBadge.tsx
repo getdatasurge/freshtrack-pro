@@ -176,8 +176,8 @@ export function TtnActions({
         </Tooltip>
       )}
 
-      {/* Provision button - only if missing_in_ttn */}
-      {state === "missing_in_ttn" && (
+      {/* Provision button - available when missing or when check errored */}
+      {(state === "missing_in_ttn" || state === "error") && (
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
