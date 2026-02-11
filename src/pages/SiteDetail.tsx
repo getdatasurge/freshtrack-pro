@@ -24,9 +24,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { 
-  Plus, 
-  ChevronRight, 
+import {
+  Plus,
+  ChevronRight,
   Building2,
   Loader2,
   Thermometer,
@@ -39,7 +39,9 @@ import {
   Trash2,
   LayoutDashboard,
   Settings,
+  Radio,
 } from "lucide-react";
+import { useGatewaysBySite } from "@/hooks/useGateways";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -97,6 +99,19 @@ const SiteDetail = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Gateway data for the summary row (uses computed status from last_seen_at)
+  const { data: siteGateways = [] } = useGatewaysBySite(siteId ?? null);
+
+  // Compute overall gateway health for status dot
+  const gatewayHealthDot = (() => {
+    if (siteGateways.length === 0) return null;
+    const hasOffline = siteGateways.some((g) => g.status === "offline");
+    const hasDegraded = siteGateways.some((g) => g.status === "degraded");
+    if (hasOffline) return "bg-red-500";
+    if (hasDegraded) return "bg-yellow-500";
+    return "bg-green-500";
+  })();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -494,7 +509,7 @@ const SiteDetail = () => {
         {/* Areas Tab */}
         <TabsContent value="areas" className="space-y-4">
           {/* Quick Stats Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
@@ -521,7 +536,25 @@ const SiteDetail = () => {
                 </div>
               </CardContent>
             </Card>
-            <Card className="col-span-2 sm:col-span-1">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">
+                    <Radio className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-2xl font-bold">{siteGateways.length}</p>
+                      {gatewayHealthDot && (
+                        <span className={`h-2 w-2 rounded-full ${gatewayHealthDot}`} />
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Gateways</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center">

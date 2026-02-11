@@ -262,13 +262,21 @@ export async function invalidateGateways(
   const promises: Promise<void>[] = [
     queryClient.invalidateQueries({ queryKey: qk.org(orgId).gateways() }),
     queryClient.invalidateQueries({ queryKey: ['gateways'] }),
+    // Invalidate all site-scoped gateway queries so the widget refreshes
+    queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey;
+        return key[0] === 'site' && key[2] === 'gateways';
+      },
+    }),
   ];
-  
+
   if (siteId) {
     promises.push(
       queryClient.invalidateQueries({ queryKey: qk.site(siteId).hubs() }),
+      queryClient.invalidateQueries({ queryKey: qk.site(siteId).gateways() }),
     );
   }
-  
+
   await Promise.all(promises);
 }
