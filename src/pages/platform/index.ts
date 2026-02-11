@@ -4,3 +4,4 @@ export { default as PlatformUsers } from './PlatformUsers';
 export { default as PlatformUserDetail } from './PlatformUserDetail';
 export { default as PlatformAuditLog } from './PlatformAuditLog';
 export { default as PlatformDeveloperTools } from './PlatformDeveloperTools';
+export { default as PlatformGateways } from './PlatformGateways';
