@@ -2,13 +2,17 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCreateLoraSensor } from "@/hooks/useLoraSensors";
 import { useSensorCatalogPublic } from "@/hooks/useSensorCatalog";
+import { supabase } from "@/integrations/supabase/client";
 import { LoraSensorType } from "@/types/ttn";
 import type { SensorCatalogPublicEntry } from "@/types/sensorCatalog";
 import { SENSOR_TYPE_OPTIONS, SENSOR_TYPE_VALUES } from "@/lib/sensorTypeOptions";
 import { decodeCredentials, parseModelKey } from "@/lib/qr/sensorQR";
+import { qk } from "@/lib/queryKeys";
 import { QRScanner } from "@/components/QRScanner";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -45,7 +49,7 @@ import {
   PenLine,
   ArrowLeft,
   Check,
-  Lock,
+  Radio,
 } from "lucide-react";
 
 // Maps catalog sensor_kind → lora_sensors sensor_type
@@ -83,6 +87,21 @@ const SENSOR_TYPE_FRIENDLY: Record<string, string> = {
 function friendlySensorType(type: string): string {
   return SENSOR_TYPE_FRIENDLY[type] || type;
 }
+
+// Default name suggestions by sensor type for QR scan flow
+const QR_NAME_SUGGESTIONS: Record<string, string> = {
+  temperature: "Walk-in Cooler Temp",
+  temperature_humidity: "Walk-in Cooler Temp",
+  door: "Walk-in Door Sensor",
+  combo: "Walk-in Combo Sensor",
+  air_quality: "Kitchen Air Quality",
+  leak: "Floor Leak Detector",
+  gps: "Delivery Tracker",
+  metering: "Utility Meter",
+  multi_sensor: "Multi-Sensor",
+  motion: "Motion Detector",
+  contact: "Contact Switch",
+};
 
 const EUI_REGEX = /^[0-9A-Fa-f]{16}$/;
 const APPKEY_REGEX = /^[0-9A-Fa-f]{32}$/;
@@ -143,12 +162,14 @@ export function AddSensorDialog({
   defaultUnitId,
 }: AddSensorDialogProps) {
   const createSensor = useCreateLoraSensor();
+  const queryClient = useQueryClient();
   const { data: catalogEntries = [] } = useSensorCatalogPublic();
   const [showAppKey, setShowAppKey] = useState(false);
   const [selectedCatalogEntry, setSelectedCatalogEntry] = useState<SensorCatalogPublicEntry | null>(null);
   const [step, setStep] = useState<ModalStep>("method-select");
   const [qrError, setQrError] = useState<string | null>(null);
   const [qrModelMatched, setQrModelMatched] = useState(false);
+  const [qrSaveStatus, setQrSaveStatus] = useState<"idle" | "saving" | "provisioning" | "done">("idle");
 
   const form = useForm<AddSensorFormData>({
     resolver: zodResolver(addSensorSchema),
@@ -188,7 +209,8 @@ export function AddSensorDialog({
     ? units.filter((u) => u.site_id === selectedSiteId)
     : [];
 
-  const onSubmit = (data: AddSensorFormData) => {
+  // Manual entry submit — creates sensor, shows toast, closes dialog
+  const onManualSubmit = (data: AddSensorFormData) => {
     createSensor.mutate(
       {
         organization_id: organizationId,
@@ -206,6 +228,7 @@ export function AddSensorDialog({
       },
       {
         onSuccess: () => {
+          toast.success("LoRa sensor created successfully");
           form.reset();
           setShowAppKey(false);
           setSelectedCatalogEntry(null);
@@ -214,8 +237,88 @@ export function AddSensorDialog({
           setQrModelMatched(false);
           onOpenChange(false);
         },
+        onError: (error: Error) => {
+          toast.error(`Failed to create LoRa sensor: ${error.message}`);
+        },
       }
     );
+  };
+
+  // QR flow submit — creates sensor, then auto-provisions to TTN
+  const onQrSubmit = async (data: AddSensorFormData) => {
+    const toastId = "qr-save-provision";
+    setQrSaveStatus("saving");
+    toast.loading("Saving sensor...", { id: toastId });
+
+    try {
+      const sensor = await createSensor.mutateAsync({
+        organization_id: organizationId,
+        name: data.name,
+        dev_eui: data.dev_eui.toUpperCase(),
+        app_eui: data.app_eui.toUpperCase(),
+        app_key: data.app_key.toUpperCase(),
+        sensor_type: data.sensor_type as LoraSensorType,
+        site_id: data.site_id || null,
+        unit_id: data.unit_id || null,
+        description: null,
+        sensor_catalog_id: data.sensor_catalog_id || null,
+        manufacturer: selectedCatalogEntry?.manufacturer || null,
+        model: selectedCatalogEntry?.model || null,
+      });
+
+      // Auto-provision to TTN
+      setQrSaveStatus("provisioning");
+      toast.loading("Registering with network...", { id: toastId });
+
+      try {
+        const { data: provisionData, error: provisionError } = await supabase.functions.invoke(
+          "ttn-provision-device",
+          {
+            body: {
+              action: "create",
+              sensor_id: sensor.id,
+              organization_id: organizationId,
+            },
+          }
+        );
+
+        if (provisionError) {
+          throw new Error(provisionError.message || "Provisioning failed");
+        }
+        if (provisionData && !provisionData.success && provisionData.error) {
+          throw new Error(provisionData.error);
+        }
+
+        // Invalidate queries so sensor list reflects new provisioning state
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: qk.org(organizationId).loraSensors() }),
+          queryClient.invalidateQueries({ queryKey: qk.sensor(sensor.id).details() }),
+        ]);
+
+        toast.success("Sensor added and registered!", { id: toastId });
+      } catch {
+        // Sensor saved but TTN provisioning failed — not critical
+        toast.warning(
+          "Sensor saved but network registration failed. You can retry from the sensors table.",
+          { id: toastId, duration: 6000 }
+        );
+      }
+
+      // Reset and close dialog
+      setQrSaveStatus("idle");
+      form.reset();
+      setShowAppKey(false);
+      setSelectedCatalogEntry(null);
+      setStep("method-select");
+      setQrError(null);
+      setQrModelMatched(false);
+      onOpenChange(false);
+    } catch (saveError) {
+      // Sensor creation failed
+      setQrSaveStatus("idle");
+      const message = saveError instanceof Error ? saveError.message : "Unknown error";
+      toast.error(`Failed to save sensor: ${message}`, { id: toastId });
+    }
   };
 
   const resetAll = () => {
@@ -235,6 +338,7 @@ export function AddSensorDialog({
     setStep("method-select");
     setQrError(null);
     setQrModelMatched(false);
+    setQrSaveStatus("idle");
   };
 
   const handleOpenChange = (newOpen: boolean) => {
@@ -277,6 +381,11 @@ export function AddSensorDialog({
           const mappedType = CATALOG_KIND_TO_SENSOR_TYPE[match.sensor_kind];
           if (mappedType && SENSOR_TYPE_VALUES.includes(mappedType)) {
             form.setValue("sensor_type", mappedType);
+            // Auto-suggest a friendly name based on sensor type
+            const suggestion = QR_NAME_SUGGESTIONS[mappedType];
+            if (suggestion) {
+              form.setValue("name", suggestion);
+            }
           }
           setQrModelMatched(true);
         }
@@ -306,14 +415,14 @@ export function AddSensorDialog({
   const stepTitle: Record<ModalStep, string> = {
     "method-select": "Add LoRa Sensor",
     "qr-scan": "Scan Sensor QR Code",
-    "qr-complete": "Complete Sensor Setup",
+    "qr-complete": "Name & Assign Sensor",
     manual: "Add LoRa Sensor \u2014 Manual Entry",
   };
 
   const stepDescription: Record<ModalStep, string> = {
     "method-select": "Choose how you'd like to register your sensor.",
     "qr-scan": "Point your camera at the sensor's QR code, or paste the code data below.",
-    "qr-complete": "Credentials loaded from QR code. Fill in the remaining details.",
+    "qr-complete": "Sensor scanned successfully. Give it a name and pick where it goes.",
     manual: "Register a new LoRaWAN sensor with its OTAA credentials.",
   };
 
@@ -385,22 +494,33 @@ export function AddSensorDialog({
           </div>
         )}
 
-        {/* ── Step: QR Complete (fill remaining fields) ── */}
+        {/* ── Step: QR Complete (simplified — name, model, site, unit only) ── */}
         {step === "qr-complete" && (
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              {/* QR-identified sensor model */}
-              {qrModelMatched && selectedCatalogEntry && (
-                <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 p-3">
-                  <Check className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />
-                  <span className="text-sm text-green-700 dark:text-green-300">
-                    Identified as <strong>{friendlySensorType(CATALOG_KIND_TO_SENSOR_TYPE[selectedCatalogEntry.sensor_kind] || "")}</strong>
-                    {" "}({selectedCatalogEntry.model})
+            <form onSubmit={form.handleSubmit(onQrSubmit)} className="space-y-4">
+              {/* Sensor Model — read-only display from QR/catalog */}
+              {selectedCatalogEntry ? (
+                <div className="flex items-start gap-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 p-3">
+                  <Check className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                      {selectedCatalogEntry.display_name}
+                    </p>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+                      {friendlySensorType(CATALOG_KIND_TO_SENSOR_TYPE[selectedCatalogEntry.sensor_kind] || "")}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg bg-muted/50 border p-3">
+                  <Radio className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm text-muted-foreground">
+                    LoRa sensor detected — model not in catalog
                   </span>
                 </div>
               )}
 
-              {/* Sensor Name */}
+              {/* Sensor Name — auto-suggested, user can edit */}
               <FormField
                 control={form.control}
                 name="name"
@@ -408,21 +528,17 @@ export function AddSensorDialog({
                   <FormItem>
                     <FormLabel>Sensor Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Walk-in Freezer Sensor" {...field} />
+                      <Input placeholder="e.g. Walk-in Cooler Temp" autoFocus {...field} />
                     </FormControl>
+                    <FormDescription>
+                      Give this sensor a name your team will recognize
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              {/* Read-only credentials from QR */}
-              <div className="space-y-2">
-                <ReadOnlyCredField label="DevEUI" value={form.getValues("dev_eui")} />
-                <ReadOnlyCredField label="AppEUI" value={form.getValues("app_eui")} />
-                <ReadOnlyCredField label="AppKey" value={form.getValues("app_key")} masked />
-              </div>
-
-              {/* Sensor Model — only if QR didn't match */}
+              {/* Sensor Model selector — only if QR didn't match a catalog entry */}
               {!qrModelMatched && catalogEntries.length > 0 && (
                 <FormField
                   control={form.control}
@@ -445,30 +561,19 @@ export function AddSensorDialog({
                           <SelectItem value="none">Skip — select type manually</SelectItem>
                           {catalogEntries.map((entry) => (
                             <SelectItem key={entry.id} value={entry.id}>
-                              {friendlySensorType(CATALOG_KIND_TO_SENSOR_TYPE[entry.sensor_kind] || "")} ({entry.model})
+                              {entry.display_name}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormDescription>
-                        QR code didn't identify the model. Select it here or choose a type below.
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               )}
 
-              {/* Sensor Type — read-only display if matched, dropdown if not */}
-              {qrModelMatched ? (
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Sensor Type</label>
-                  <div className="flex items-center gap-2 p-2.5 rounded-md bg-muted/50 border text-sm">
-                    <Lock className="w-3.5 h-3.5 text-muted-foreground" />
-                    {friendlySensorType(form.getValues("sensor_type"))}
-                  </div>
-                </div>
-              ) : (
+              {/* Sensor Type — only show if no catalog match so user can pick */}
+              {!qrModelMatched && !selectedCatalogEntry && (
                 <FormField
                   control={form.control}
                   name="sensor_type"
@@ -504,7 +609,7 @@ export function AddSensorDialog({
                 name="site_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Site *</FormLabel>
+                    <FormLabel>Site</FormLabel>
                     <Select onValueChange={handleSiteChange} value={field.value || ""}>
                       <FormControl>
                         <SelectTrigger>
@@ -524,13 +629,13 @@ export function AddSensorDialog({
                 )}
               />
 
-              {/* Unit */}
+              {/* Unit — filtered by selected site */}
               <FormField
                 control={form.control}
                 name="unit_id"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Unit (Optional)</FormLabel>
+                    <FormLabel>Unit</FormLabel>
                     <Select
                       onValueChange={(v) => field.onChange(v === "none" ? undefined : v)}
                       value={field.value || "none"}
@@ -561,39 +666,24 @@ export function AddSensorDialog({
                 )}
               />
 
-              {/* Description */}
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Additional notes about this sensor..."
-                        className="resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
               <DialogFooter className="flex-row justify-between sm:justify-between">
-                <Button type="button" variant="ghost" size="sm" onClick={handleBack}>
+                <Button type="button" variant="ghost" size="sm" onClick={handleBack} disabled={qrSaveStatus !== "idle"}>
                   <ArrowLeft className="w-4 h-4 mr-1" />
                   Back
                 </Button>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+                  <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={qrSaveStatus !== "idle"}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={createSensor.isPending}>
-                    {createSensor.isPending && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Button type="submit" disabled={qrSaveStatus !== "idle"}>
+                    {qrSaveStatus !== "idle" ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {qrSaveStatus === "saving" ? "Saving..." : "Registering..."}
+                      </>
+                    ) : (
+                      "Save & Register"
                     )}
-                    Add Sensor
                   </Button>
                 </div>
               </DialogFooter>
@@ -604,7 +694,7 @@ export function AddSensorDialog({
         {/* ── Step: Manual Entry ──────────────────── */}
         {step === "manual" && (
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onManualSubmit)} className="space-y-4">
               <FormField
                 control={form.control}
                 name="name"
@@ -902,29 +992,5 @@ export function AddSensorDialog({
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-// ─── Read-only credential display for QR flow ──────────────────
-
-function ReadOnlyCredField({
-  label,
-  value,
-  masked = false,
-}: {
-  label: string;
-  value: string;
-  masked?: boolean;
-}) {
-  const display = masked ? value.replace(/./g, "\u2022") : value;
-  return (
-    <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
-      <div className="flex items-center gap-2 p-2.5 rounded-md bg-muted/50 border text-sm font-mono">
-        <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-        <span className="truncate">{display}</span>
-        <span className="ml-auto text-[10px] text-muted-foreground shrink-0">from QR</span>
-      </div>
-    </div>
   );
 }
