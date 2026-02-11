@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -30,7 +30,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, ScanLine, Keyboard } from "lucide-react";
+import { QRScanner } from "@/components/QRScanner";
+import { parseGatewayQR, formatGatewayEUI } from "@/lib/qr/gatewayQR";
+import { useToast } from "@/hooks/use-toast";
 
 // Gateway EUI must be exactly 16 hex characters
 const EUI_REGEX = /^[0-9A-Fa-f]{16}$/;
@@ -67,7 +70,9 @@ export function AddGatewayDialog({
   defaultSiteId,
 }: AddGatewayDialogProps) {
   const createGateway = useCreateGateway();
-  
+  const { toast } = useToast();
+  const [showScanner, setShowScanner] = useState(true);
+
   const form = useForm<AddGatewayFormData>({
     resolver: zodResolver(addGatewaySchema),
     defaultValues: {
@@ -77,6 +82,27 @@ export function AddGatewayDialog({
       description: "",
     },
   });
+
+  const handleQRScan = useCallback(
+    (raw: string) => {
+      const eui = parseGatewayQR(raw);
+      if (eui) {
+        form.setValue("gateway_eui", eui, { shouldValidate: true });
+        setShowScanner(false);
+        toast({
+          title: "Gateway EUI Extracted",
+          description: `EUI: ${formatGatewayEUI(eui)}`,
+        });
+      } else {
+        toast({
+          title: "Could not extract Gateway EUI from QR code",
+          description: "Expected SenseCAP format. Try pasting the raw text or enter manually.",
+          variant: "destructive",
+        });
+      }
+    },
+    [form, toast]
+  );
 
   const onSubmit = async (data: AddGatewayFormData) => {
     try {
@@ -103,13 +129,14 @@ export function AddGatewayDialog({
         site_id: defaultSiteId || undefined,
         description: "",
       });
+      setShowScanner(true);
     }
     onOpenChange(newOpen);
   };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[480px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Gateway</DialogTitle>
           <DialogDescription>
@@ -119,6 +146,33 @@ export function AddGatewayDialog({
         
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {/* QR Scanner Section */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Scan Gateway QR</span>
+                {showScanner ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowScanner(false)}
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                  >
+                    <Keyboard className="w-3 h-3" />
+                    Enter Manually
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowScanner(true)}
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                  >
+                    <ScanLine className="w-3 h-3" />
+                    Scan QR Instead
+                  </button>
+                )}
+              </div>
+              {showScanner && <QRScanner onScan={handleQRScan} />}
+            </div>
+
             <FormField
               control={form.control}
               name="name"
@@ -132,7 +186,7 @@ export function AddGatewayDialog({
                 </FormItem>
               )}
             />
-            
+
             <FormField
               control={form.control}
               name="gateway_eui"
@@ -140,8 +194,8 @@ export function AddGatewayDialog({
                 <FormItem>
                   <FormLabel>Gateway EUI</FormLabel>
                   <FormControl>
-                    <Input 
-                      placeholder="A1B2C3D4E5F67890" 
+                    <Input
+                      placeholder="A1B2C3D4E5F67890"
                       className="font-mono"
                       maxLength={16}
                       {...field}

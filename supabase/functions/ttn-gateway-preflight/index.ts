@@ -168,9 +168,9 @@ serve(async (req) => {
         error: {
           code: "API_KEY_INVALID",
           message: "No TTN API key configured",
-          hint: "Add a TTN API key in Settings → Developer → TTN Connection",
+          hint: "Add a TTN Organization API key in Settings → Developer → TTN Connection",
           fix_steps: [
-            "1. Go to TTN Console → Applications → Your App → API Keys",
+            "1. Go to TTN Console → Admin → Organizations → your org → API keys",
             "2. Create a new API key with gateway permissions",
             "3. Copy the key and paste it in FrostGuard Settings",
           ],
@@ -264,9 +264,9 @@ serve(async (req) => {
         error: {
           code: "API_KEY_INVALID",
           message: "TTN API key is invalid or expired",
-          hint: "Generate a new API key in TTN Console",
+          hint: "Generate a new Organization API key in TTN Console",
           fix_steps: [
-            "1. Go to TTN Console → your username (top right) → Personal API keys",
+            "1. Go to TTN Console → Admin → Organizations → your org → API keys",
             "2. Create a new API key with gateway rights",
             "3. Copy the key and update it in FrostGuard Settings",
           ],
@@ -344,7 +344,8 @@ serve(async (req) => {
 
     // Determine if provisioning is allowed
     if (keyType === "application") {
-      // Application API keys cannot provision gateways
+      // Application API keys are scoped to an app and cannot provision gateways.
+      // Organization or Personal API keys are required.
       const result: PreflightResult = {
         ok: true,
         request_id: requestId,
@@ -357,9 +358,9 @@ serve(async (req) => {
         error: {
           code: "WRONG_KEY_TYPE",
           message: "Application API keys cannot provision gateways",
-          hint: "You need a Personal API key (created under your TTN user) to register gateways",
+          hint: "You need an Organization API key (or Personal API key) to register gateways",
           fix_steps: [
-            "1. Go to TTN Console → your username (top right) → Personal API keys",
+            "1. Go to TTN Console → Admin → Organizations → your org → API keys",
             "2. Click 'Add API key'",
             "3. Name it 'FrostGuard Gateway Provisioning'",
             "4. Grant rights: 'Grant all current and future rights' OR select gateway rights",
@@ -391,7 +392,7 @@ serve(async (req) => {
           fix_steps: [
             keyType === "personal"
               ? "1. Go to TTN Console → your username (top right) → Personal API keys"
-              : "1. Go to TTN Console → Admin → Organizations → API keys",
+              : "1. Go to TTN Console → Admin → Organizations → your org → API keys",
             "2. Delete the existing API key (or note its name)",
             "3. Create a new API key with 'Grant all current and future rights' OR specifically select:",
             "   - View gateway information",
