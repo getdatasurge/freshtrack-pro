@@ -14,7 +14,7 @@ export type TtnProvisioningState =
 // Where the device was provisioned from
 export type ProvisionedSource = "emulator" | "app" | "unknown" | "manual";
 
-export type GatewayStatus = 'pending' | 'online' | 'offline' | 'maintenance';
+export type GatewayStatus = 'pending' | 'online' | 'degraded' | 'offline' | 'maintenance';
 
 export interface Gateway {
   id: string;
@@ -25,6 +25,8 @@ export interface Gateway {
   description: string | null;
   status: GatewayStatus;
   last_seen_at: string | null;
+  signal_quality: Record<string, unknown> | null;
+  ttn_gateway_id: string | null;
   ttn_application_id: string | null;
   created_by: string | null;
   created_at: string;

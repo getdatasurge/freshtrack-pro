@@ -1,11 +1,38 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Gateway, GatewayInsert } from "@/types/ttn";
+import { Gateway, GatewayInsert, GatewayStatus } from "@/types/ttn";
 import { toast } from "sonner";
 import { debugLog } from "@/lib/debugLogger";
 import { qk } from "@/lib/queryKeys";
 import { invalidateGateways } from "@/lib/invalidation";
+
+/**
+ * Compute gateway health status from last_seen_at timestamp.
+ * - online: seen < 5 minutes ago
+ * - degraded: seen 5-30 minutes ago
+ * - offline: seen > 30 minutes ago or never seen
+ */
+export function computeGatewayStatus(lastSeenAt: string | null): GatewayStatus {
+  if (!lastSeenAt) return "offline";
+  const now = Date.now();
+  const lastSeen = new Date(lastSeenAt).getTime();
+  const diffMs = now - lastSeen;
+  const diffMinutes = diffMs / (1000 * 60);
+  if (diffMinutes < 5) return "online";
+  if (diffMinutes <= 30) return "degraded";
+  return "offline";
+}
+
+/**
+ * Apply computed status to a gateway based on last_seen_at.
+ */
+function withComputedStatus(gateway: Gateway): Gateway {
+  return {
+    ...gateway,
+    status: computeGatewayStatus(gateway.last_seen_at),
+  };
+}
 
 /**
  * Hook to fetch all gateways for an organization
@@ -26,6 +53,31 @@ export function useGateways(orgId: string | null) {
       return data as Gateway[];
     },
     enabled: !!orgId,
+  });
+}
+
+/**
+ * Hook to fetch gateways for a specific site with computed health status.
+ * Status is derived from last_seen_at: online (<5min), degraded (5-30min), offline (>30min).
+ */
+export function useGatewaysBySite(siteId: string | null) {
+  return useQuery({
+    queryKey: qk.site(siteId).gateways(),
+    queryFn: async (): Promise<Gateway[]> => {
+      if (!siteId) return [];
+
+      const { data, error } = await supabase
+        .from("gateways")
+        .select("*")
+        .eq("site_id", siteId)
+        .order("name");
+
+      if (error) throw error;
+      return (data as Gateway[]).map(withComputedStatus);
+    },
+    enabled: !!siteId,
+    // Refresh every 60s so status stays current
+    refetchInterval: 60_000,
   });
 }
 

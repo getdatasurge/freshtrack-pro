@@ -125,6 +125,7 @@ export const qk = {
     units: () => ['site', siteId, 'units'] as const,
     areas: () => ['site', siteId, 'areas'] as const,
     alertRules: () => ['site', siteId, 'alert-rules'] as const,
+    gateways: () => ['site', siteId, 'gateways'] as const,
     layouts: () => ['site', siteId, 'layouts'] as const,
     weather: (lat?: number, lon?: number, timezone?: string) => ['site', siteId, 'weather', lat, lon, timezone] as const,
     hubs: () => ['site', siteId, 'hubs'] as const,

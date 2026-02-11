@@ -126,6 +126,16 @@ export const GATEWAY_STATUS_CONFIG: Record<string, EntityStatusConfig> = {
       userAction: null
     }
   },
+  degraded: {
+    label: "Degraded",
+    variant: "outline",
+    className: "bg-yellow-500/15 text-yellow-600 border-yellow-500/30",
+    tooltip: {
+      meaning: "Gateway was last seen 5–30 minutes ago",
+      systemState: "Intermittent connectivity — may be losing network access",
+      userAction: "Monitor gateway; check internet connection if it persists"
+    }
+  },
   offline: {
     label: "Offline",
     variant: "outline",
