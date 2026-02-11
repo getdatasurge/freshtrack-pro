@@ -74,26 +74,26 @@ export function useCheckTtnProvisioningState() {
       if (data.checked_count === 1) {
         const result = data.results[0];
         if (result.provisioning_state === "exists_in_ttn") {
-          toast.success("Device found in TTN", { description: "Sensor is provisioned" });
+          toast.success("Sensor is registered", { description: "Ready to send data" });
         } else if (result.provisioning_state === "missing_in_ttn") {
-          toast.info("Device not in TTN", { description: "Sensor can be provisioned" });
+          toast.info("Sensor not yet registered", { description: "Click Provision to register it" });
         } else if (result.provisioning_state === "error") {
-          toast.error("Check failed", { description: result.error });
+          toast.warning("Unable to verify sensor", { description: result.error });
         } else {
-          toast.warning("Not configured", { description: result.error });
+          toast.warning("Setup needed", { description: result.error });
         }
       } else {
         const parts: string[] = [];
-        if (existsCount > 0) parts.push(`${existsCount} provisioned`);
-        if (missingCount > 0) parts.push(`${missingCount} not in TTN`);
-        if (errorCount > 0) parts.push(`${errorCount} errors`);
-        toast.success(`Checked ${data.checked_count} sensors`, {
+        if (existsCount > 0) parts.push(`${existsCount} registered`);
+        if (missingCount > 0) parts.push(`${missingCount} not registered`);
+        if (errorCount > 0) parts.push(`${errorCount} unable to verify`);
+        toast.success(`Verified ${data.checked_count} sensors`, {
           description: parts.join(", "),
         });
       }
     },
     onError: (error: Error) => {
-      toast.error("Failed to check TTN status", { description: error.message });
+      toast.error("Unable to verify sensors", { description: error.message });
     },
   });
 }

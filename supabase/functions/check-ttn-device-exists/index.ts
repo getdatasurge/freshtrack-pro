@@ -1,8 +1,8 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { deobfuscateKey, normalizeDevEui, getClusterBaseUrl, getLast4 } from "../_shared/ttnConfig.ts";
-import { TTN_IDENTITY_URL, assertValidTtnHost, logTtnApiCallWithCred } from "../_shared/ttnBase.ts";
+import { deobfuscateKey, normalizeDevEui, generateTtnDeviceId, getClusterBaseUrl, getLast4 } from "../_shared/ttnConfig.ts";
+import { TTN_IDENTITY_URL, TTN_REGIONAL_URL, assertValidTtnHost, logTtnApiCallWithCred } from "../_shared/ttnBase.ts";
 
-const BUILD_VERSION = "check-ttn-device-exists-v5.0-cross-cluster-eu1-20260210";
+const BUILD_VERSION = "check-ttn-device-exists-v6.0-fallback-per-device-20260211";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
       let listError: string | null = null;
 
       try {
-        const listUrl = `${clusterUrl}/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui`;
+        const listUrl = `${clusterUrl}/api/v3/applications/${config.application_id}/devices?field_mask=ids.device_id,ids.dev_eui&limit=1000`;
         
         // Enhanced logging with credential fingerprint
         const credLast4 = getLast4(config.api_key);
@@ -285,8 +285,17 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // If we failed to list devices, mark as error
+        // If we failed to list devices, try per-device GET fallback instead of giving up
         if (listError) {
+          const fallbackResult = await checkSingleDevice(
+            sensor, config, orgId, requestId, now
+          );
+          if (fallbackResult) {
+            await updateSensor(supabase, sensor.id, fallbackResult);
+            results.push(fallbackResult);
+            continue;
+          }
+          // Fallback also failed — report the original list error
           result.provisioning_state = "error";
           result.error = listError;
           await updateSensor(supabase, sensor.id, result);
@@ -310,6 +319,18 @@ Deno.serve(async (req) => {
           result.ttn_device_id = ttnDeviceId;
           console.log(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: exists_in_ttn (${ttnDeviceId})`);
         } else {
+          // Not found in device list — try per-device GET as fallback
+          // (handles pagination edge cases or delayed IS replication)
+          const fallbackResult = await checkSingleDevice(
+            sensor, config, orgId, requestId, now
+          );
+          if (fallbackResult && fallbackResult.provisioning_state === "exists_in_ttn") {
+            console.log(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: found via per-device GET fallback`);
+            await updateSensor(supabase, sensor.id, fallbackResult);
+            results.push(fallbackResult);
+            continue;
+          }
+
           result.provisioning_state = "missing_in_ttn";
           console.log(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: missing_in_ttn`);
         }
@@ -353,6 +374,86 @@ Deno.serve(async (req) => {
     );
   }
 });
+
+/**
+ * Fallback: check a single device via direct GET on Identity Server (EU1),
+ * then try regional cluster (NAM1) if not found on EU1.
+ * Returns a CheckResult if the device was found, or null if both clusters 404.
+ */
+async function checkSingleDevice(
+  sensor: { id: string; dev_eui: string; name: string },
+  config: TTNConfig,
+  orgId: string,
+  requestId: string,
+  checkedAt: string,
+): Promise<CheckResult | null> {
+  const expectedDeviceId = generateTtnDeviceId(sensor.dev_eui);
+  if (!expectedDeviceId) return null;
+
+  const clusters = [
+    { label: "EU1 (Identity Server)", url: TTN_IDENTITY_URL },
+    { label: "NAM1 (Regional)", url: TTN_REGIONAL_URL },
+  ];
+
+  for (const cluster of clusters) {
+    try {
+      const deviceUrl = `${cluster.url}/api/v3/applications/${config.application_id}/devices/${expectedDeviceId}?field_mask=ids.device_id,ids.dev_eui`;
+      console.log(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: per-device GET on ${cluster.label}`);
+
+      const resp = await fetch(deviceUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${config.api_key}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (resp.ok) {
+        return {
+          sensor_id: sensor.id,
+          organization_id: orgId,
+          provisioning_state: "exists_in_ttn",
+          ttn_device_id: expectedDeviceId,
+          ttn_app_id: config.application_id,
+          ttn_cluster: config.cluster,
+          checked_at: checkedAt,
+        };
+      }
+
+      if (resp.status === 404) {
+        console.log(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: 404 on ${cluster.label}`);
+        continue; // Try next cluster
+      }
+
+      // Non-404 error — don't keep trying, report connection error
+      const errBody = await resp.text().then(t => t.substring(0, 200));
+      console.error(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: ${resp.status} on ${cluster.label}: ${errBody}`);
+      return {
+        sensor_id: sensor.id,
+        organization_id: orgId,
+        provisioning_state: "error",
+        ttn_app_id: config.application_id,
+        ttn_cluster: config.cluster,
+        error: `Connection error (${resp.status}): Unable to reach TTN. Check your network settings or try again later.`,
+        checked_at: checkedAt,
+      };
+    } catch (err) {
+      console.error(`[check-ttn-device-exists] [${requestId}] ${sensor.name}: network error on ${cluster.label}:`, err);
+      return {
+        sensor_id: sensor.id,
+        organization_id: orgId,
+        provisioning_state: "error",
+        ttn_app_id: config.application_id,
+        ttn_cluster: config.cluster,
+        error: `Connection error: ${err instanceof Error ? err.message : "Network failure"}. Check your internet connection.`,
+        checked_at: checkedAt,
+      };
+    }
+  }
+
+  // 404 on both clusters — device genuinely not found
+  return null;
+}
 
 async function updateSensor(
   supabase: SupabaseAnyClient,

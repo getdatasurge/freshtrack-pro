@@ -67,6 +67,8 @@ interface TtnActionsProps {
   /** Diagnose TTN status across all planes */
   onDiagnose?: () => void;
   isDiagnosing?: boolean;
+  /** Whether sensor has all credentials needed for provisioning (DevEUI, AppKey) */
+  hasCredentials?: boolean;
 }
 
 export function TtnActions({
@@ -81,6 +83,7 @@ export function TtnActions({
   checkUnavailableReason,
   onDiagnose,
   isDiagnosing,
+  hasCredentials = false,
 }: TtnActionsProps) {
   if (!canEdit) return null;
 
@@ -104,11 +107,11 @@ export function TtnActions({
                 ) : (
                   <Search className="h-3.5 w-3.5" />
                 )}
-                <span className="text-xs">Detect</span>
+                <span className="text-xs">Verify</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              Check if device exists in TTN (stored state may be outdated)
+              Verify if this sensor is registered on the network
             </TooltipContent>
           </Tooltip>
         </div>
@@ -122,7 +125,7 @@ export function TtnActions({
           <AlertCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
         </TooltipTrigger>
         <TooltipContent>
-          {checkUnavailableReason || "Configure TTN and add DevEUI to enable provisioning"}
+          {checkUnavailableReason || "Complete network setup and add sensor credentials to enable registration"}
         </TooltipContent>
       </Tooltip>
     );
@@ -147,7 +150,7 @@ export function TtnActions({
             )}
           </Button>
         </TooltipTrigger>
-        <TooltipContent>Check TTN Status</TooltipContent>
+        <TooltipContent>Verify sensor registration</TooltipContent>
       </Tooltip>
 
       {/* Diagnose button - available for all states except not_configured */}
@@ -168,7 +171,7 @@ export function TtnActions({
               )}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Diagnose TTN Planes</TooltipContent>
+          <TooltipContent>Run diagnostics</TooltipContent>
         </Tooltip>
       )}
 
@@ -191,7 +194,7 @@ export function TtnActions({
               <span className="text-xs">Provision</span>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Register device in TTN</TooltipContent>
+          <TooltipContent>Register this sensor on the network</TooltipContent>
         </Tooltip>
       )}
 
@@ -208,33 +211,57 @@ export function TtnActions({
               <CloudOff className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Remove from TTN</TooltipContent>
+          <TooltipContent>Unregister from network</TooltipContent>
         </Tooltip>
       )}
 
-      {/* Unknown or error state - show check button prominently */}
+      {/* Unknown or error state - show verify button and provision button */}
       {(state === "unknown" || state === "error") && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2 gap-1 text-muted-foreground border-muted-foreground/30"
-              onClick={onCheckTtn}
-              disabled={isCheckingTtn}
-            >
-              {isCheckingTtn ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Search className="h-3.5 w-3.5" />
-              )}
-              <span className="text-xs">Detect</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {state === "error" ? "Retry TTN check" : "Check if device exists in TTN"}
-          </TooltipContent>
-        </Tooltip>
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 gap-1 text-muted-foreground border-muted-foreground/30"
+                onClick={onCheckTtn}
+                disabled={isCheckingTtn}
+              >
+                {isCheckingTtn ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Search className="h-3.5 w-3.5" />
+                )}
+                <span className="text-xs">Verify</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {state === "error" ? "Try verifying again" : "Check if sensor is registered"}
+            </TooltipContent>
+          </Tooltip>
+          {/* Show Provision button for unknown state if sensor has credentials */}
+          {state === "unknown" && hasCredentials && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 gap-1 text-primary border-primary/30 hover:bg-primary/10"
+                  onClick={onProvision}
+                  disabled={isProvisioning}
+                >
+                  {isProvisioning ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CloudUpload className="h-3.5 w-3.5" />
+                  )}
+                  <span className="text-xs">Provision</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Register this sensor on the network</TooltipContent>
+            </Tooltip>
+          )}
+        </>
       )}
     </div>
   );

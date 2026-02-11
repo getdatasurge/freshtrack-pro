@@ -341,9 +341,9 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     
     if (sensorIds.length === 0) {
       if (!isTtnConfiguredNow) {
-        toast.info("TTN integration is not fully configured");
+        toast.info("Network settings are not fully configured");
       } else {
-        toast.info("No sensors with DevEUI available to check");
+        toast.info("No sensors with credentials available to verify");
       }
       return;
     }
@@ -512,7 +512,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
       case "temperature":
         return "Temperature";
       case "temperature_humidity":
-        return "Temp + Humidity";
+        return "Temperature & Humidity";
       case "door":
       case "contact":
         return "Door";
@@ -780,11 +780,11 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                       ) : (
                         <Search className="h-4 w-4 mr-2" />
                       )}
-                      Check All TTN
+                      Verify All Sensors
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Check if all sensors exist in TTN</p>
+                    <p>Verify all sensors are registered on the network</p>
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -856,8 +856,8 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                   </TableHead>
                   <TableHead className="hidden xl:table-cell">
                     <span className="inline-flex items-center">
-                      Last Uplink
-                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.lastUplink} />
+                      Last Heard
+                      <ColumnHeaderTooltip content={SENSOR_COLUMN_TOOLTIPS.lastHeard} />
                     </span>
                   </TableHead>
                   <TableHead>
@@ -999,14 +999,15 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                             canEdit={canEdit}
                             canCheckNow={canCheckSensorNow(sensor)}
                             checkUnavailableReason={
-                              !sensor.dev_eui 
-                                ? "Add DevEUI to enable TTN detection" 
-                                : !isTtnConfiguredNow 
-                                  ? "TTN integration not fully configured" 
+                              !sensor.dev_eui
+                                ? "Add sensor credentials to enable verification"
+                                : !isTtnConfiguredNow
+                                  ? "Network settings not fully configured"
                                   : undefined
                             }
                             onDiagnose={isTtnConfiguredNow ? () => handleDiagnose(sensor) : undefined}
                             isDiagnosing={diagnosingSensorId === sensor.id}
+                            hasCredentials={!!sensor.dev_eui && !!sensor.app_key}
                           />
                         </div>
                         {/* Edit actions row */}
