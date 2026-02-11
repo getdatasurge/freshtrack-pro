@@ -28,7 +28,7 @@ const formatEUI = (eui: string) => {
 const getSensorTypeLabel = (type: string): string => {
   switch (type) {
     case "temperature": return "Temperature";
-    case "temperature_humidity": return "Temp + Humidity";
+    case "temperature_humidity": return "Temperature & Humidity";
     case "door": return "Door";
     case "combo": return "Combo";
     default: return type;
