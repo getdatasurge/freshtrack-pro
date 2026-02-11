@@ -44,14 +44,44 @@ export const SENSOR_STATUS_CONFIG: Record<string, EntityStatusConfig> = {
       userAction: null
     }
   },
-  offline: {
-    label: "Not Reporting",
+  online: {
+    label: "Online",
+    variant: "default",
+    className: "bg-green-600",
+    tooltip: {
+      meaning: "Sensor checked in within the expected interval",
+      systemState: "Normal operation — receiving data on schedule",
+      userAction: null
+    }
+  },
+  late: {
+    label: "Late",
     variant: "outline",
     className: "border-yellow-500 text-yellow-600",
     tooltip: {
-      meaning: "Sensor was previously active but has stopped sending data",
-      systemState: "No recent data received",
-      userAction: "Check that the sensor is powered on and within range"
+      meaning: "Sensor missed one or two expected check-ins but is not dead",
+      systemState: "Last uplink between 1.5x and 3x the expected interval",
+      userAction: "Monitor — may recover on next heartbeat"
+    }
+  },
+  offline: {
+    label: "Not Reporting",
+    variant: "outline",
+    className: "border-orange-500 text-orange-600",
+    tooltip: {
+      meaning: "Sensor has exceeded 3x the expected uplink interval",
+      systemState: "Genuinely silent — no data for an extended period",
+      userAction: "Check power, battery, and gateway connectivity"
+    }
+  },
+  not_reporting: {
+    label: "Not Reporting",
+    variant: "outline",
+    className: "border-orange-500 text-orange-600",
+    tooltip: {
+      meaning: "Sensor has exceeded 3x the expected uplink interval",
+      systemState: "Genuinely silent — no data for an extended period",
+      userAction: "Check power, battery, and gateway connectivity"
     }
   },
   fault: {
@@ -61,6 +91,25 @@ export const SENSOR_STATUS_CONFIG: Record<string, EntityStatusConfig> = {
       meaning: "Device encountered a configuration or network issue",
       systemState: "Failed join, invalid keys, or TTN error",
       userAction: "Review TTN configuration and re-sync if needed"
+    }
+  },
+  error: {
+    label: "Error",
+    variant: "destructive",
+    tooltip: {
+      meaning: "Device encountered a configuration or network issue",
+      systemState: "Failed join, invalid keys, or TTN error",
+      userAction: "Review TTN configuration and re-sync if needed"
+    }
+  },
+  never: {
+    label: "Never",
+    variant: "secondary",
+    className: "bg-muted text-muted-foreground",
+    tooltip: {
+      meaning: "Sensor has never sent any data",
+      systemState: "No uplink has ever been received from this device",
+      userAction: "Ensure device is powered on, in range, and keys are correct"
     }
   }
 };

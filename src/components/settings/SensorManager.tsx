@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLoraSensors, useDeleteLoraSensor, useProvisionLoraSensor, useUpdateLoraSensor } from "@/hooks/useLoraSensors";
-import { LoraSensor, LoraSensorStatus, LoraSensorType, TtnProvisioningState } from "@/types/ttn";
+import { LoraSensor, LoraSensorType, TtnProvisioningState } from "@/types/ttn";
 import {
   Table,
   TableBody,
@@ -47,6 +47,16 @@ import { TtnProvisioningStatusBadge, TtnActions } from "./TtnProvisioningStatusB
 import { useCheckTtnProvisioningState } from "@/hooks/useCheckTtnProvisioningState";
 import { TtnDiagnoseModal, TtnDiagnoseResult } from "./TtnDiagnoseModal";
 import { supabase } from "@/integrations/supabase/client";
+import { useSensorCatalogPublic } from "@/hooks/useSensorCatalog";
+import { useSensorConfigurations } from "@/hooks/useSensorConfigurations";
+import {
+  computeSensorDisplayStatus,
+  formatIntervalHuman,
+  formatIntervalSource,
+  type ComputedSensorDisplayStatus,
+  type SensorStatusResult,
+} from "@/lib/sensorStatus";
+import type { SensorCatalogUplinkInfo } from "@/types/sensorCatalog";
 
 interface Site {
   id: string;
@@ -93,9 +103,14 @@ const ColumnHeaderTooltip = ({ content }: { content: string }) => (
   </Tooltip>
 );
 
-// Status badge with tooltip showing meaning, system state, and user action
-const StatusBadgeWithTooltip = ({ status }: { status: LoraSensorStatus }) => {
-  const statusConfig = SENSOR_STATUS_CONFIG[status] || SENSOR_STATUS_CONFIG.pending;
+// Status badge with tooltip showing meaning, system state, user action, and expected interval
+const StatusBadgeWithTooltip = ({
+  statusResult,
+}: {
+  statusResult: SensorStatusResult;
+}) => {
+  const statusConfig =
+    SENSOR_STATUS_CONFIG[statusResult.status] || SENSOR_STATUS_CONFIG.pending;
 
   return (
     <Tooltip>
@@ -109,11 +124,25 @@ const StatusBadgeWithTooltip = ({ status }: { status: LoraSensorStatus }) => {
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs p-3">
         <div className="space-y-1.5 text-sm">
-          <p><span className="font-medium">Status:</span> {statusConfig.tooltip.meaning}</p>
-          <p><span className="font-medium">System:</span> {statusConfig.tooltip.systemState}</p>
+          <p>
+            <span className="font-medium">Status:</span>{" "}
+            {statusConfig.tooltip.meaning}
+          </p>
+          <p>
+            <span className="font-medium">System:</span>{" "}
+            {statusConfig.tooltip.systemState}
+          </p>
           {statusConfig.tooltip.userAction && (
-            <p className="text-primary"><span className="font-medium">Action:</span> {statusConfig.tooltip.userAction}</p>
+            <p className="text-primary">
+              <span className="font-medium">Action:</span>{" "}
+              {statusConfig.tooltip.userAction}
+            </p>
           )}
+          <p className="border-t pt-1.5 text-muted-foreground">
+            <span className="font-medium">Expected interval:</span>{" "}
+            {formatIntervalHuman(statusResult.expectedIntervalS)} (
+            {formatIntervalSource(statusResult.intervalSource)})
+          </p>
         </div>
       </TooltipContent>
     </Tooltip>
@@ -283,6 +312,35 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   // TTN Config Context for state awareness
   const { context: ttnContext } = useTTNConfig();
   const guardResult = checkTTNOperationAllowed('provision_sensor', ttnContext);
+
+  // Fetch sensor catalog (for default uplink intervals) and per-sensor configs
+  const { data: catalogEntries } = useSensorCatalogPublic();
+  const sensorIds = sensors?.map((s) => s.id) ?? [];
+  const { data: sensorConfigMap } = useSensorConfigurations(sensorIds);
+
+  // Build catalog lookup: catalogId → uplink_info
+  const catalogUplinkMap = new Map<string, SensorCatalogUplinkInfo>();
+  if (catalogEntries) {
+    for (const entry of catalogEntries) {
+      if (entry.uplink_info) {
+        catalogUplinkMap.set(entry.id, entry.uplink_info);
+      }
+    }
+  }
+
+  // Compute display status for a sensor (deterministic, no stored status dependency for connectivity)
+  const getComputedStatus = (sensor: LoraSensor): SensorStatusResult => {
+    return computeSensorDisplayStatus({
+      dbStatus: sensor.status,
+      sensorType: sensor.sensor_type,
+      lastSeenAt: sensor.last_seen_at,
+      provisioningState: sensor.provisioning_state,
+      configIntervalS: sensorConfigMap?.get(sensor.id) ?? null,
+      catalogUplinkInfo: sensor.sensor_catalog_id
+        ? catalogUplinkMap.get(sensor.sensor_catalog_id) ?? null
+        : null,
+    });
+  };
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [viewRawSensor, setViewRawSensor] = useState<LoraSensor | null>(null);
@@ -577,23 +635,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     }
   };
 
-  // Compute effective status based on provisioning_state and last_seen_at staleness
-  const getEffectiveStatus = (sensor: LoraSensor): LoraSensorStatus => {
-    // If sensor is pending but exists in TTN, show 'joining' (awaiting first uplink)
-    if (sensor.status === 'pending' && sensor.provisioning_state === 'exists_in_ttn') {
-      return 'joining';
-    }
-    
-    // If status is 'active' but last_seen_at is stale (>5 min), show 'offline'
-    if (sensor.status === 'active' && sensor.last_seen_at) {
-      const staleThresholdMs = 5 * 60 * 1000; // 5 minutes
-      const lastSeen = new Date(sensor.last_seen_at).getTime();
-      if (Date.now() - lastSeen > staleThresholdMs) {
-        return 'offline';
-      }
-    }
-    return sensor.status;
-  };
+  // Status is now computed deterministically via getComputedStatus() above
 
   const formatEUI = (eui: string) => {
     // Format as XX:XX:XX:XX:XX:XX:XX:XX
@@ -618,8 +660,8 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
     }
   };
 
-  const formatLastUplink = (lastSeenAt: string | null, status: LoraSensorStatus) => {
-    if (status === "pending" || status === "joining") {
+  const formatLastUplink = (lastSeenAt: string | null, computedStatus: ComputedSensorDisplayStatus) => {
+    if (computedStatus === "pending" || computedStatus === "joining") {
       return <span className="text-muted-foreground">—</span>;
     }
     if (!lastSeenAt) {
@@ -1012,12 +1054,12 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                     
                     {/* Status - hidden on mobile */}
                     <TableCell className="hidden sm:table-cell">
-                      <StatusBadgeWithTooltip status={getEffectiveStatus(sensor)} />
+                      <StatusBadgeWithTooltip statusResult={getComputedStatus(sensor)} />
                     </TableCell>
                     
                     {/* Last Uplink - hidden on smaller screens */}
                     <TableCell className="hidden xl:table-cell text-sm text-muted-foreground">
-                      {formatLastUplink(sensor.last_seen_at, sensor.status)}
+                      {formatLastUplink(sensor.last_seen_at, getComputedStatus(sensor).status)}
                     </TableCell>
                     
                     {/* Actions - TTN status + edit/delete combined in one row */}
