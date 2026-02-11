@@ -12,6 +12,20 @@ export type TtnProvisioningState =
 
 export type ProvisionedSource = "emulator" | "app" | "unknown" | "manual";
 
+/** Sanitize error messages for user-facing toasts (strip raw JSON, truncate) */
+function sanitizeErrorForToast(error: string | undefined): string | undefined {
+  if (!error) return undefined;
+  // If it looks like raw JSON, give a generic message
+  if (error.trimStart().startsWith('{') || error.trimStart().startsWith('[')) {
+    return "A connection error occurred. Please try again.";
+  }
+  // Truncate overly long messages
+  if (error.length > 120) {
+    return error.substring(0, 117) + "...";
+  }
+  return error;
+}
+
 export interface CheckTtnResult {
   sensor_id: string;
   organization_id: string;
@@ -78,9 +92,9 @@ export function useCheckTtnProvisioningState() {
         } else if (result.provisioning_state === "missing_in_ttn") {
           toast.info("Sensor not yet registered", { description: "Click Provision to register it" });
         } else if (result.provisioning_state === "error") {
-          toast.warning("Unable to verify sensor", { description: result.error });
+          toast.warning("Unable to verify sensor", { description: sanitizeErrorForToast(result.error) });
         } else {
-          toast.warning("Setup needed", { description: result.error });
+          toast.warning("Setup needed", { description: sanitizeErrorForToast(result.error) });
         }
       } else {
         const parts: string[] = [];
@@ -93,7 +107,7 @@ export function useCheckTtnProvisioningState() {
       }
     },
     onError: (error: Error) => {
-      toast.error("Unable to verify sensors", { description: error.message });
+      toast.error("Unable to verify sensors", { description: sanitizeErrorForToast(error.message) });
     },
   });
 }

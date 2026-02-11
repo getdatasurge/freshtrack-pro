@@ -38,7 +38,11 @@ export function TtnProvisioningStatusBadge({
           )}
           {lastError && state === 'error' && (
             <p className="text-destructive text-xs mt-2 border-t pt-2">
-              <span className="font-medium">Error:</span> {lastError.substring(0, 100)}
+              <span className="font-medium">Error:</span> {
+                lastError.trimStart().startsWith('{') || lastError.trimStart().startsWith('[')
+                  ? "A connection error occurred"
+                  : lastError.substring(0, 100)
+              }
             </p>
           )}
           {lastCheckAt && (
@@ -67,8 +71,6 @@ interface TtnActionsProps {
   /** Diagnose TTN status across all planes */
   onDiagnose?: () => void;
   isDiagnosing?: boolean;
-  /** Whether sensor has all credentials needed for provisioning (DevEUI, AppKey) */
-  hasCredentials?: boolean;
 }
 
 export function TtnActions({
@@ -83,7 +85,6 @@ export function TtnActions({
   checkUnavailableReason,
   onDiagnose,
   isDiagnosing,
-  hasCredentials = false,
 }: TtnActionsProps) {
   if (!canEdit) return null;
 
@@ -215,54 +216,6 @@ export function TtnActions({
         </Tooltip>
       )}
 
-      {/* Unknown or error state - show verify button and provision button */}
-      {(state === "unknown" || state === "error") && (
-        <>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 gap-1 text-muted-foreground border-muted-foreground/30"
-                onClick={onCheckTtn}
-                disabled={isCheckingTtn}
-              >
-                {isCheckingTtn ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Search className="h-3.5 w-3.5" />
-                )}
-                <span className="text-xs">Verify</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {state === "error" ? "Try verifying again" : "Check if sensor is registered"}
-            </TooltipContent>
-          </Tooltip>
-          {/* Show Provision button for unknown state if sensor has credentials */}
-          {state === "unknown" && hasCredentials && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2 gap-1 text-primary border-primary/30 hover:bg-primary/10"
-                  onClick={onProvision}
-                  disabled={isProvisioning}
-                >
-                  {isProvisioning ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <CloudUpload className="h-3.5 w-3.5" />
-                  )}
-                  <span className="text-xs">Provision</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Register this sensor on the network</TooltipContent>
-            </Tooltip>
-          )}
-        </>
-      )}
     </div>
   );
 }
