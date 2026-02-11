@@ -2,7 +2,7 @@ import * as React from 'react';
 import { cn } from '@/lib/design-system/cn';
 import { surface, border, text as textTokens, radius, transition } from '@/lib/design-system/tokens';
 
-export interface InputWithInlineAddonProps extends React.InputHTMLAttributes<HTMLInputElement> {
+export interface InputWithInlineAddonProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
   prefix?: React.ReactNode;
   suffix?: React.ReactNode;
   hasError?: boolean;

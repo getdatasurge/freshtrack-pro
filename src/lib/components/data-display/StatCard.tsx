@@ -16,7 +16,7 @@ export const StatCard = React.forwardRef<HTMLDivElement, StatCardProps>(
     const trendIsPositive = trend && trend.value > 0;
     const trendIsNegative = trend && trend.value < 0;
 
-    let trendColor = textTokens.tertiary;
+    let trendColor: string = textTokens.tertiary;
     if (trend) {
       const isGood = trend.invertColors ? trendIsNegative : trendIsPositive;
       const isBad = trend.invertColors ? trendIsPositive : trendIsNegative;
