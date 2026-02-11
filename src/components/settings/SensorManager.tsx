@@ -447,7 +447,8 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
       });
       
       if (error) {
-        toast.error(`Failed to adopt device: ${error.message}`);
+        const msg = error.message?.startsWith('{') ? 'Could not complete the request' : error.message;
+        toast.error(`Failed to adopt device: ${msg}`);
         debugLog.error('ttn', 'ADOPT_DEVICE_ERROR', { error: error.message });
         return;
       }
@@ -467,9 +468,10 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
         debugLog.warn('ttn', 'ADOPT_DEVICE_NOT_FOUND', { error: data?.error, hint: data?.hint });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
+      const rawMsg = err instanceof Error ? err.message : 'Unknown error';
+      const message = rawMsg.startsWith('{') ? 'Could not complete the request' : rawMsg;
       toast.error(`Adopt failed: ${message}`);
-      debugLog.error('ttn', 'ADOPT_DEVICE_EXCEPTION', { error: message });
+      debugLog.error('ttn', 'ADOPT_DEVICE_EXCEPTION', { error: rawMsg });
     } finally {
       setIsAdopting(false);
     }
@@ -979,40 +981,35 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                       {formatLastUplink(sensor.last_seen_at, sensor.status)}
                     </TableCell>
                     
-                    {/* Actions - TTN status + edit/delete combined */}
-                    <TableCell className="py-3 max-w-[160px]">
-                      <div className="flex flex-col gap-2">
-                        {/* TTN Status - stacked vertically */}
-                        <div className="flex flex-col items-start gap-1">
-                          <TtnProvisioningStatusBadge
-                            state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
-                            lastCheckAt={sensor.last_provision_check_at}
-                            lastError={sensor.last_provision_check_error}
-                          />
-                          <TtnActions
-                            state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
-                            isCheckingTtn={checkingSensorId === sensor.id || (checkTtnStatus.isPending && checkingSensorId === null)}
-                            isProvisioning={provisionSensor.isProvisioning(sensor.id)}
-                            onCheckTtn={() => handleCheckTtn(sensor.id)}
-                            onProvision={() => handleProvision(sensor)}
-                            onUnprovision={() => handleUnprovision(sensor)}
-                            canEdit={canEdit}
-                            canCheckNow={canCheckSensorNow(sensor)}
-                            checkUnavailableReason={
-                              !sensor.dev_eui
-                                ? "Add sensor credentials to enable verification"
-                                : !isTtnConfiguredNow
-                                  ? "Network settings not fully configured"
-                                  : undefined
-                            }
-                            onDiagnose={isTtnConfiguredNow ? () => handleDiagnose(sensor) : undefined}
-                            isDiagnosing={diagnosingSensorId === sensor.id}
-                            hasCredentials={!!sensor.dev_eui && !!sensor.app_key}
-                          />
-                        </div>
-                        {/* Edit actions row */}
+                    {/* Actions - TTN status + edit/delete combined in one row */}
+                    <TableCell className="py-2">
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <TtnProvisioningStatusBadge
+                          state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
+                          lastCheckAt={sensor.last_provision_check_at}
+                          lastError={sensor.last_provision_check_error}
+                        />
+                        <TtnActions
+                          state={(sensor.provisioning_state || 'unknown') as TtnProvisioningState}
+                          isCheckingTtn={checkingSensorId === sensor.id || (checkTtnStatus.isPending && checkingSensorId === null)}
+                          isProvisioning={provisionSensor.isProvisioning(sensor.id)}
+                          onCheckTtn={() => handleCheckTtn(sensor.id)}
+                          onProvision={() => handleProvision(sensor)}
+                          onUnprovision={() => handleUnprovision(sensor)}
+                          canEdit={canEdit}
+                          canCheckNow={canCheckSensorNow(sensor)}
+                          checkUnavailableReason={
+                            !sensor.dev_eui
+                              ? "Add sensor credentials to enable verification"
+                              : !isTtnConfiguredNow
+                                ? "Network settings not fully configured"
+                                : undefined
+                          }
+                          onDiagnose={isTtnConfiguredNow ? () => handleDiagnose(sensor) : undefined}
+                          isDiagnosing={diagnosingSensorId === sensor.id}
+                        />
                         {canEdit && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-0.5 border-l border-border/50 ml-0.5 pl-1">
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
@@ -1021,7 +1018,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                                   className="h-7 w-7"
                                   onClick={() => setViewRawSensor(sensor)}
                                 >
-                                  <Code className="h-4 w-4 text-muted-foreground" />
+                                  <Code className="h-3.5 w-3.5 text-muted-foreground" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>View Raw JSON</TooltipContent>
@@ -1032,7 +1029,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                               className="h-7 w-7"
                               onClick={() => setEditSensor(sensor)}
                             >
-                              <Pencil className="h-4 w-4" />
+                              <Pencil className="h-3.5 w-3.5" />
                             </Button>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -1042,7 +1039,7 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
                                   className="h-7 w-7"
                                   onClick={() => setDeleteSensor(sensor)}
                                 >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>Archive sensor</TooltipContent>

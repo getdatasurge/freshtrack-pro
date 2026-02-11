@@ -286,28 +286,47 @@ export function useLinkSensorToUnit() {
 
 // Helper to get user-friendly error message for TTN provisioning errors
 const getProvisionErrorMessage = (error: string): string => {
+  // If error looks like raw JSON, extract a readable message instead of showing it raw
+  if (error.trimStart().startsWith('{') || error.trimStart().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(error);
+      if (typeof parsed.error === 'string') return getProvisionErrorMessage(parsed.error);
+      if (typeof parsed.message === 'string') return parsed.message;
+      if (Array.isArray(parsed.details)) {
+        const first = parsed.details[0];
+        if (first?.message_format) return first.message_format;
+      }
+      if (Array.isArray(parsed)) {
+        const first = parsed[0];
+        if (first?.message_format) return first.message_format;
+      }
+    } catch {
+      // Not valid JSON
+    }
+    return "Could not complete the request. Please check your TTN settings and try again.";
+  }
+
   if (error.includes('PERMISSION_MISSING') || error.includes('403')) {
     return "TTN API key missing required permissions. Regenerate key with devices:write permission.";
   }
   if (error.includes('CONFIG_MISSING') || error.includes('TTN not configured')) {
     return "TTN not configured. Go to Developer settings to set up TTN connection.";
   }
-  if (error.includes('connectivity failed') || error.includes('network')) {
+  if (error.includes('connectivity failed') || error.includes('Could not reach')) {
     return "Could not reach TTN. Check your network or TTN application settings.";
   }
   if (error.includes('SENSOR_KEYS_MISSING')) {
     return "Sensor missing OTAA credentials (AppKey). Edit sensor to add credentials.";
   }
-  
+
   // Parse specific TTN "already registered" errors with device/application details
   if (error.includes('end_device_euis_taken') || error.includes('already registered')) {
-    // Try to extract device_id and application from the error message
     const deviceIdMatch = error.match(/device[_\s]?id[:\s]+['"]?([a-z0-9-]+)['"]?/i);
     const applicationMatch = error.match(/application[_\s]?(?:id)?[:\s]+['"]?([a-z0-9-]+)['"]?/i);
     const devEuiMatch = error.match(/DevEUI[:\s]+['"]?([A-Fa-f0-9]+)['"]?/i);
-    
+
     let details = "Device already registered in TTN";
-    
+
     if (deviceIdMatch || applicationMatch) {
       details = "Device already exists in TTN";
       if (deviceIdMatch) {
@@ -316,18 +335,23 @@ const getProvisionErrorMessage = (error: string): string => {
       if (applicationMatch) {
         details += ` in application '${applicationMatch[1]}'`;
       }
-      details += ". Use 'Check Status' to sync, or delete the device in TTN Console first.";
+      details += ". Use 'Verify' to sync, or delete the device in TTN Console first.";
     } else if (devEuiMatch) {
-      details = `DevEUI ${devEuiMatch[1]} is already registered in TTN. Use 'Check Status' to sync.`;
+      details = `DevEUI ${devEuiMatch[1]} is already registered in TTN. Use 'Verify' to sync.`;
     }
-    
+
     return details;
   }
-  
+
   if (error.includes('409')) {
-    return "Device already registered in TTN. Use 'Check Status' to sync.";
+    return "Device already registered in TTN. Use 'Verify' to sync.";
   }
-  
+
+  // Truncate very long error messages
+  if (error.length > 150) {
+    return error.substring(0, 147) + "...";
+  }
+
   return error;
 };
 
@@ -371,28 +395,25 @@ export function useProvisionLoraSensor() {
         if (error) {
           const errorContext = (error as any)?.context;
           let detailedMessage = error.message;
-          
+
           if (errorContext) {
             try {
               const clonedContext = errorContext.clone ? errorContext.clone() : errorContext;
               if (typeof clonedContext.json === 'function') {
                 const responseBody = await clonedContext.json();
-                if (responseBody?.details) {
-                  detailedMessage = responseBody.details;
-                } else if (responseBody?.error) {
+                // Prefer the error field (human-readable) over details (may be raw API data)
+                if (typeof responseBody?.error === 'string') {
                   detailedMessage = responseBody.error;
+                  if (typeof responseBody?.hint === 'string') {
+                    detailedMessage += `. ${responseBody.hint}`;
+                  }
+                } else if (typeof responseBody?.details === 'string') {
+                  detailedMessage = responseBody.details;
                 }
+                // If details is an array/object (raw TTN API), ignore it — use error field or default
               }
             } catch {
-              try {
-                const clonedContext = errorContext.clone ? errorContext.clone() : errorContext;
-                if (typeof clonedContext.text === 'function') {
-                  const textBody = await clonedContext.text();
-                  if (textBody) detailedMessage = textBody;
-                }
-              } catch {
-                // Keep original message
-              }
+              // JSON parsing failed — don't fall back to raw text (it's likely JSON gibberish)
             }
           }
           
