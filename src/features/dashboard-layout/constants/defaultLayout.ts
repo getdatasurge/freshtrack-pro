@@ -107,15 +107,18 @@ export const DEFAULT_SITE_LAYOUT_CONFIG: LayoutConfig = {
   widgets: [
     // Site Overview - full width header (MANDATORY for sites)
     { i: "site_overview", x: 0, y: 0, w: 12, h: 3, minW: 6, minH: 2, maxW: 12, maxH: 4 },
-    
+
     // Units Status Grid - main focus (MANDATORY for sites)
     { i: "units_status_grid", x: 0, y: 3, w: 8, h: 6, minW: 4, minH: 4, maxW: 12, maxH: 12 },
-    
+
     // Site Alerts Summary - right side
     { i: "site_alerts_summary", x: 8, y: 3, w: 4, h: 3, minW: 3, minH: 2, maxW: 8, maxH: 6 },
-    
+
     // Compliance Summary - right side bottom
     { i: "compliance_summary", x: 8, y: 6, w: 4, h: 3, minW: 3, minH: 2, maxW: 8, maxH: 6 },
+
+    // Gateway Health - bottom row
+    { i: "gateway_health", x: 0, y: 9, w: 6, h: 4, minW: 4, minH: 3, maxW: 12, maxH: 6 },
   ],
   hiddenWidgets: [],
 };
