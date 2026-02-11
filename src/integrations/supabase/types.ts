@@ -3037,6 +3037,69 @@ export type Database = {
         }
         Relationships: []
       }
+      ttn_cleanup_log: {
+        Row: {
+          action: string
+          cluster: string | null
+          created_at: string
+          dev_eui: string
+          error_message: string | null
+          id: string
+          job_id: string | null
+          organization_id: string
+          sensor_id: string | null
+          status: string
+          ttn_endpoint: string | null
+          ttn_response: Json | null
+          ttn_status_code: number | null
+        }
+        Insert: {
+          action: string
+          cluster?: string | null
+          created_at?: string
+          dev_eui: string
+          error_message?: string | null
+          id?: string
+          job_id?: string | null
+          organization_id: string
+          sensor_id?: string | null
+          status: string
+          ttn_endpoint?: string | null
+          ttn_response?: Json | null
+          ttn_status_code?: number | null
+        }
+        Update: {
+          action?: string
+          cluster?: string | null
+          created_at?: string
+          dev_eui?: string
+          error_message?: string | null
+          id?: string
+          job_id?: string | null
+          organization_id?: string
+          sensor_id?: string | null
+          status?: string
+          ttn_endpoint?: string | null
+          ttn_response?: Json | null
+          ttn_status_code?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ttn_cleanup_log_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "ttn_deprovision_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ttn_cleanup_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ttn_connections: {
         Row: {
           app_rights_check_status: string | null

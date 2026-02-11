@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -46,6 +46,9 @@ import {
   Radio,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
+import { TTNCleanupLogTab } from "@/components/ttn/TTNCleanupLogTab";
+import { SensorCleanupBadge } from "@/components/ttn/SensorCleanupBadge";
+import { useSensorCleanupStatuses } from "@/hooks/useTTNCleanupLog";
 
 interface DeletedItem {
   id: string;
@@ -78,17 +81,25 @@ const RecentlyDeleted = () => {
   const { canRestoreEntities, canPermanentlyDelete, isLoading: permissionsLoading } = usePermissions();
   const [items, setItems] = useState<DeletedItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"all" | DeleteEntityType>("all");
+  const [activeTab, setActiveTab] = useState<string>("all");
   const [userId, setUserId] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
   
   // Delete dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DeletedItem | null>(null);
   const [isRestoring, setIsRestoring] = useState<string | null>(null);
 
+  // Get archived sensor IDs for batch cleanup status query
+  const archivedSensorIds = useMemo(
+    () => items.filter(i => i.entityType === "sensor").map(i => i.id),
+    [items]
+  );
+  const { data: cleanupStatuses } = useSensorCleanupStatuses(orgId, archivedSensorIds);
+
   useEffect(() => {
     loadDeletedItems();
-    loadUserId();
+    loadUserInfo();
   }, []);
 
   useEffect(() => {
@@ -97,10 +108,16 @@ const RecentlyDeleted = () => {
     }
   }, [permissionsLoading, canRestoreEntities, navigate]);
 
-  const loadUserId = async () => {
+  const loadUserInfo = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setUserId(user.id);
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (profile) setOrgId(profile.organization_id);
     }
   };
 
@@ -124,7 +141,7 @@ const RecentlyDeleted = () => {
             entityType: "site",
             deletedAt: site.deleted_at!,
             deletedBy: site.deleted_by,
-            deletedByName: null, // Will be loaded separately if needed
+            deletedByName: null,
             parentPath: "",
           });
         }
@@ -221,9 +238,7 @@ const RecentlyDeleted = () => {
         }
       }
 
-      // Sort all items by deleted_at descending
       allItems.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
-
       setItems(allItems);
     } catch (error) {
       console.error("Failed to load deleted items:", error);
@@ -286,7 +301,7 @@ const RecentlyDeleted = () => {
     setSelectedItem(null);
   };
 
-  const filteredItems = activeTab === "all" 
+  const filteredItems = activeTab === "all" || activeTab === "ttn-cleanup"
     ? items 
     : items.filter(item => item.entityType === activeTab);
 
@@ -319,7 +334,7 @@ const RecentlyDeleted = () => {
           </Button>
         </CardHeader>
         <CardContent>
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-4">
               <TabsTrigger value="all">All ({items.length})</TabsTrigger>
               <TabsTrigger value="site">Sites ({items.filter(i => i.entityType === "site").length})</TabsTrigger>
@@ -327,89 +342,103 @@ const RecentlyDeleted = () => {
               <TabsTrigger value="unit">Units ({items.filter(i => i.entityType === "unit").length})</TabsTrigger>
               <TabsTrigger value="device">Devices ({items.filter(i => i.entityType === "device").length})</TabsTrigger>
               <TabsTrigger value="sensor">Sensors ({items.filter(i => i.entityType === "sensor").length})</TabsTrigger>
+              <TabsTrigger value="ttn-cleanup">TTN Cleanup</TabsTrigger>
             </TabsList>
 
-            <TabsContent value={activeTab} className="mt-0">
-              {filteredItems.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Trash2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>No deleted items found</p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Deleted</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredItems.map((item) => (
-                      <TableRow key={`${item.entityType}-${item.id}`}>
-                        <TableCell>
-                          <Badge variant="outline" className="gap-1">
-                            {entityTypeIcons[item.entityType]}
-                            {entityTypeLabels[item.entityType]}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-medium">{item.name}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {item.parentPath || "—"}
-                        </TableCell>
-                        <TableCell>
-                          <span 
-                            className="text-sm" 
-                            title={format(new Date(item.deletedAt), "PPpp")}
-                          >
-                            {formatDistanceToNow(new Date(item.deletedAt), { addSuffix: true })}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => handleRestore(item)}
-                                disabled={isRestoring === item.id}
-                              >
-                                {isRestoring === item.id ? (
-                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                ) : (
-                                  <RotateCcw className="h-4 w-4 mr-2" />
-                                )}
-                                Restore
-                              </DropdownMenuItem>
-                                {canPermanentlyDelete && item.entityType !== "device" && item.entityType !== "sensor" && (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      className="text-destructive focus:text-destructive"
-                                      onClick={() => {
-                                        setSelectedItem(item);
-                                        setDeleteDialogOpen(true);
-                                      }}
-                                    >
-                                      <Trash2 className="h-4 w-4 mr-2" />
-                                      Delete Permanently
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
+            {activeTab === "ttn-cleanup" ? (
+              <TabsContent value="ttn-cleanup" className="mt-0">
+                <TTNCleanupLogTab orgId={orgId} />
+              </TabsContent>
+            ) : (
+              <TabsContent value={activeTab} className="mt-0">
+                {filteredItems.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Trash2 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No deleted items found</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Deleted</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </TabsContent>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredItems.map((item) => (
+                        <TableRow key={`${item.entityType}-${item.id}`}>
+                          <TableCell>
+                            <Badge variant="outline" className="gap-1">
+                              {entityTypeIcons[item.entityType]}
+                              {entityTypeLabels[item.entityType]}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              {item.name}
+                              {item.entityType === "sensor" && cleanupStatuses?.[item.id] && (
+                                <SensorCleanupBadge status={cleanupStatuses[item.id].status} />
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {item.parentPath || "—"}
+                          </TableCell>
+                          <TableCell>
+                            <span 
+                              className="text-sm" 
+                              title={format(new Date(item.deletedAt), "PPpp")}
+                            >
+                              {formatDistanceToNow(new Date(item.deletedAt), { addSuffix: true })}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="sm">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => handleRestore(item)}
+                                  disabled={isRestoring === item.id}
+                                >
+                                  {isRestoring === item.id ? (
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="h-4 w-4 mr-2" />
+                                  )}
+                                  Restore
+                                </DropdownMenuItem>
+                                  {canPermanentlyDelete && item.entityType !== "device" && item.entityType !== "sensor" && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        onClick={() => {
+                                          setSelectedItem(item);
+                                          setDeleteDialogOpen(true);
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4 mr-2" />
+                                        Delete Permanently
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </TabsContent>
+            )}
           </Tabs>
         </CardContent>
       </Card>

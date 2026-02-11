@@ -34,6 +34,16 @@ interface ErrorClassification {
   should_block: boolean;
 }
 
+interface StepResult {
+  name: string;
+  action: string;
+  status: "success" | "failed" | "skipped";
+  statusCode: number;
+  responseBody: unknown;
+  endpoint: string;
+  cluster: string;
+}
+
 function classifyError(status: number, errorText: string): ErrorClassification {
   try {
     const parsed = JSON.parse(errorText);
@@ -66,7 +76,6 @@ function classifyError(status: number, errorText: string): ErrorClassification {
       };
     }
     
-    // Check for cluster mismatch
     if (message.includes("cluster") || message.includes("server address") || 
         message.includes("not found on this tenant")) {
       return {
@@ -133,86 +142,149 @@ async function logEvent(
 }
 
 /**
+ * Write a per-step row to ttn_cleanup_log
+ */
+// deno-lint-ignore no-explicit-any
+async function writeCleanupLog(supabase: any, job: DeprovisionJob, step: StepResult) {
+  try {
+    await supabase.from("ttn_cleanup_log").insert({
+      job_id: job.id,
+      sensor_id: job.sensor_id,
+      dev_eui: job.dev_eui,
+      organization_id: job.organization_id,
+      action: step.action,
+      status: step.status,
+      ttn_response: step.responseBody,
+      ttn_status_code: step.statusCode,
+      ttn_endpoint: step.endpoint,
+      cluster: step.cluster,
+      error_message: step.status === "failed" 
+        ? (typeof step.responseBody === "object" 
+            ? JSON.stringify(step.responseBody) 
+            : String(step.responseBody))
+        : null,
+    });
+  } catch (e) {
+    console.error(`[ttn-deprovision-worker] Failed to write cleanup log for ${step.action}:`, e);
+  }
+}
+
+/**
  * Try to delete a device from TTN using dual-endpoint architecture
  * IS (EU1): Device registry deletion
  * Data Planes (NAM1): NS/AS/JS cleanup
+ * 
+ * Now writes a ttn_cleanup_log row per step.
  */
+// deno-lint-ignore no-explicit-any
 async function tryDeleteFromTtn(
+  supabase: any,
+  job: DeprovisionJob,
   ttnConfig: { clusterBaseUrl: string; apiKey: string },
   targetAppId: string,
   deviceId: string
-): Promise<{ success: boolean; alreadyDeleted: boolean; error?: string; statusCode?: number }> {
+): Promise<{ success: boolean; alreadyDeleted: boolean; error?: string; statusCode?: number; steps: StepResult[] }> {
   const headers = {
     "Authorization": `Bearer ${ttnConfig.apiKey}`,
     "Content-Type": "application/json",
   };
 
-  // Cross-cluster architecture (2026-02-10):
-  // IS (EU1) for device registry, NAM1 for data plane
   const dataPlaneUrl = ttnConfig.clusterBaseUrl;
+  const isCluster = new URL(IDENTITY_SERVER_URL).hostname.split(".")[0]; // e.g. "eu1"
+  const regionalCluster = new URL(dataPlaneUrl).hostname.split(".")[0]; // e.g. "nam1"
 
   console.log(`[ttn-deprovision-worker] Cross-cluster: IS=${IDENTITY_SERVER_URL} Regional=${dataPlaneUrl}`);
 
-  // Device deletion requires hitting all four endpoints (all on same cluster):
-  // 1. IS - device registry
-  // 2-4. NS/AS/JS - LoRaWAN state
   const endpoints = [
-    { name: "IS", url: `${IDENTITY_SERVER_URL}/api/v3/applications/${targetAppId}/devices/${deviceId}`, type: "IS" as const },
-    { name: "NS", url: `${dataPlaneUrl}/api/v3/ns/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const },
-    { name: "AS", url: `${dataPlaneUrl}/api/v3/as/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const },
-    { name: "JS", url: `${dataPlaneUrl}/api/v3/js/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const },
+    { name: "IS", action: "deprovision_is", url: `${IDENTITY_SERVER_URL}/api/v3/applications/${targetAppId}/devices/${deviceId}`, type: "IS" as const, cluster: isCluster },
+    { name: "NS", action: "deprovision_ns", url: `${dataPlaneUrl}/api/v3/ns/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const, cluster: regionalCluster },
+    { name: "AS", action: "deprovision_as", url: `${dataPlaneUrl}/api/v3/as/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const, cluster: regionalCluster },
+    { name: "JS", action: "deprovision_js", url: `${dataPlaneUrl}/api/v3/js/applications/${targetAppId}/devices/${deviceId}`, type: "DATA" as const, cluster: regionalCluster },
   ];
 
   let lastError = "";
   let lastStatusCode = 0;
   let successCount = 0;
   let notFoundCount = 0;
+  const steps: StepResult[] = [];
 
   for (const endpoint of endpoints) {
     try {
-      // Validate host for each endpoint type
       assertValidTtnHost(endpoint.url, endpoint.type);
       console.log(`[ttn-deprovision-worker] DELETE ${endpoint.name}: ${endpoint.url}`);
       const response = await fetch(endpoint.url, { method: "DELETE", headers });
+      const responseText = await response.text();
+      
+      let responseBody: unknown;
+      try { responseBody = JSON.parse(responseText); } catch { responseBody = responseText; }
+      
+      let stepStatus: "success" | "failed" | "skipped";
       
       if (response.ok) {
         console.log(`[ttn-deprovision-worker] ${endpoint.name} delete succeeded`);
         successCount++;
+        stepStatus = "success";
       } else if (response.status === 404) {
         console.log(`[ttn-deprovision-worker] ${endpoint.name} returned 404 (not found/already deleted)`);
         notFoundCount++;
+        stepStatus = "skipped";
       } else {
-        const errorText = await response.text();
-        console.log(`[ttn-deprovision-worker] ${endpoint.name} failed: ${response.status} - ${errorText}`);
-        lastError = errorText;
+        console.log(`[ttn-deprovision-worker] ${endpoint.name} failed: ${response.status} - ${responseText}`);
+        lastError = responseText;
         lastStatusCode = response.status;
-        
-        // If 403 permission error, don't try other endpoints - same key won't work
-        if (response.status === 403) {
-          return { success: false, alreadyDeleted: false, error: errorText, statusCode: 403 };
-        }
+        stepStatus = "failed";
+      }
+
+      const step: StepResult = {
+        name: endpoint.name,
+        action: endpoint.action,
+        status: stepStatus,
+        statusCode: response.status,
+        responseBody,
+        endpoint: endpoint.url,
+        cluster: endpoint.cluster,
+      };
+      steps.push(step);
+      
+      // Write cleanup log row
+      await writeCleanupLog(supabase, job, step);
+
+      // If 403, don't try other endpoints
+      if (response.status === 403) {
+        return { success: false, alreadyDeleted: false, error: responseText, statusCode: 403, steps };
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Unknown error";
       console.log(`[ttn-deprovision-worker] ${endpoint.name} error: ${errMsg}`);
       lastError = errMsg;
+      
+      const step: StepResult = {
+        name: endpoint.name,
+        action: endpoint.action,
+        status: "failed",
+        statusCode: 0,
+        responseBody: { error: errMsg },
+        endpoint: endpoint.url,
+        cluster: endpoint.cluster,
+      };
+      steps.push(step);
+      await writeCleanupLog(supabase, job, step);
     }
   }
 
-  // Success if we deleted from at least one endpoint or all returned 404
   if (successCount > 0) {
-    return { success: true, alreadyDeleted: false };
+    return { success: true, alreadyDeleted: false, steps };
   }
   
   if (notFoundCount === endpoints.length) {
-    return { success: true, alreadyDeleted: true };
+    return { success: true, alreadyDeleted: true, steps };
   }
 
-  return { success: false, alreadyDeleted: false, error: lastError, statusCode: lastStatusCode };
+  return { success: false, alreadyDeleted: false, error: lastError, statusCode: lastStatusCode, steps };
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "deprovision-worker-v5-single-cluster-20260124";
+  const BUILD_VERSION = "deprovision-worker-v6-cleanup-log-20260211";
   console.log(`[ttn-deprovision-worker] Build: ${BUILD_VERSION}`);
   
   if (req.method === "OPTIONS") {
@@ -271,7 +343,6 @@ serve(async (req) => {
       const ttnConfig = await getTtnConfigForOrg(supabase, job.organization_id);
 
       if (!ttnConfig || !ttnConfig.apiKey) {
-        // No API key - block the job
         await supabase
           .from("ttn_deprovision_jobs")
           .update({
@@ -288,14 +359,10 @@ serve(async (req) => {
         continue;
       }
 
-      // Build device ID if not stored
       const deviceId = job.ttn_device_id || `sensor-${job.dev_eui.toLowerCase()}`;
-      
-      // Use per-org application ID: prefer job's stored value, fallback to org config
       const targetAppId = job.ttn_application_id || ttnConfig.applicationId;
       
       if (!targetAppId) {
-        // No application ID available - block the job
         await supabase
           .from("ttn_deprovision_jobs")
           .update({
@@ -313,10 +380,11 @@ serve(async (req) => {
       }
       
       try {
-        // CLUSTER-LOCKED: All endpoints use same base URL
         console.log(`[ttn-deprovision-worker] Deleting device ${deviceId} from app ${targetAppId} on cluster ${ttnConfig.clusterBaseUrl}`);
         
         const deleteResult = await tryDeleteFromTtn(
+          supabase,
+          job,
           {
             clusterBaseUrl: ttnConfig.clusterBaseUrl,
             apiKey: ttnConfig.apiKey,
@@ -326,7 +394,6 @@ serve(async (req) => {
         );
 
         if (deleteResult.success) {
-          // Success - device deleted or already gone
           await supabase
             .from("ttn_deprovision_jobs")
             .update({
@@ -348,7 +415,6 @@ serve(async (req) => {
           
           console.log(`[ttn-deprovision-worker] Job ${job.id} succeeded`);
         } else {
-          // Handle error
           const classification = classifyError(deleteResult.statusCode || 500, deleteResult.error || "Unknown error");
           
           const newAttempts = job.attempts + 1;
@@ -395,7 +461,6 @@ serve(async (req) => {
           console.log(`[ttn-deprovision-worker] Job ${job.id} ${newStatus}: ${classification.error_message}`);
         }
       } catch (error) {
-        // Network or unexpected error
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
         const newAttempts = job.attempts + 1;
         const maxAttempts = job.max_attempts || 5;
