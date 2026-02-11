@@ -68,6 +68,9 @@ export const qk = {
     // Alert rules history
     alertRulesHistory: (scope?: string, limit?: number) => ['org', orgId, 'alert-rules-history', scope, limit] as const,
 
+    // TTN Cleanup logs
+    ttnCleanupLogs: () => ['org', orgId, 'ttn-cleanup-logs'] as const,
+
     // Health & status
     healthCheck: () => ['org', orgId, 'health-check'] as const,
     pipelineStatus: () => ['org', orgId, 'pipeline-status'] as const,
