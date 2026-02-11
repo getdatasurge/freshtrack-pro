@@ -15,7 +15,7 @@ interface ProvisionRequest {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-device-v13-two-truths-cross-cluster-20260210";
+  const BUILD_VERSION = "ttn-provision-device-v14-better-errors-nam1-fallback-20260211";
   console.log(`[ttn-provision-device] Build: ${BUILD_VERSION}`);
   console.log(`[ttn-provision-device] Method: ${req.method}, URL: ${req.url}`);
 
@@ -223,21 +223,71 @@ serve(async (req) => {
 
       if (!probeResponse.ok) {
         const probeErrorText = await probeResponse.text();
-        console.error(`[ttn-provision-device] TTN probe failed: ${probeResponse.status} - ${probeErrorText}`);
+        const probeUrl = `${identityBaseUrl}/api/v3/applications/${ttnAppId}`;
+        console.error(`[ttn-provision-device] TTN probe failed on IS (${identityBaseUrl}): ${probeResponse.status} - ${probeErrorText}`);
 
-        await supabase
-          .from("lora_sensors")
-          .update({ status: "fault" })
-          .eq("id", sensor_id);
+        // Fallback: If IS returns 404, try the regional (NAM1) cluster directly
+        if (probeResponse.status === 404) {
+          console.log(`[ttn-provision-device] Step 0: IS returned 404, trying regional fallback (${regionalBaseUrl})`);
+          const regionalProbeUrl = `${regionalBaseUrl}/api/v3/applications/${ttnAppId}`;
+          const regionalProbe = await fetch(regionalProbeUrl, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${ttnConfig.apiKey}`,
+              "Content-Type": "application/json",
+            },
+          });
 
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: `TTN connectivity failed (${probeResponse.status})`,
-            details: `Could not reach TTN application "${ttnAppId}". The application may need to be re-provisioned.`,
-          }),
-          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+          if (regionalProbe.ok) {
+            console.log(`[ttn-provision-device] Step 0: Regional probe succeeded — app found on ${regionalBaseUrl}`);
+            // Continue with provisioning (probe passed via fallback)
+          } else {
+            const regionalErrorText = await regionalProbe.text();
+            console.error(`[ttn-provision-device] Regional fallback also failed: ${regionalProbe.status} - ${regionalErrorText}`);
+
+            await supabase
+              .from("lora_sensors")
+              .update({ status: "fault" })
+              .eq("id", sensor_id);
+
+            return new Response(
+              JSON.stringify({
+                success: false,
+                error: `TTN connectivity failed — application not found on either cluster`,
+                details: `Could not reach TTN application "${ttnAppId}" on Identity Server or Regional Server.`,
+                ttn_response: {
+                  identity_server: { status: probeResponse.status, body: probeErrorText.substring(0, 500) },
+                  regional_server: { status: regionalProbe.status, body: regionalErrorText.substring(0, 500) },
+                },
+                probe_urls: { identity: probeUrl, regional: regionalProbeUrl },
+                app_id: ttnAppId,
+                build_version: BUILD_VERSION,
+              }),
+              { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        } else {
+          // Non-404 error (403, 500, etc.) — return immediately with raw TTN response
+          await supabase
+            .from("lora_sensors")
+            .update({ status: "fault" })
+            .eq("id", sensor_id);
+
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: `TTN connectivity failed (${probeResponse.status})`,
+              details: `Could not reach TTN application "${ttnAppId}". The application may need to be re-provisioned.`,
+              ttn_response: { status: probeResponse.status, body: probeErrorText.substring(0, 500) },
+              probe_url: probeUrl,
+              app_id: ttnAppId,
+              identity_server: identityBaseUrl,
+              regional_server: regionalBaseUrl,
+              build_version: BUILD_VERSION,
+            }),
+            { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
 
       console.log(`[ttn-provision-device] TTN probe successful`);
@@ -884,10 +934,19 @@ serve(async (req) => {
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
-    console.error("[ttn-provision-device] Error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error("[ttn-provision-device] Unhandled error:", message, stack);
     return new Response(
-      JSON.stringify({ error: message }),
+      JSON.stringify({
+        ok: false,
+        success: false,
+        error: message,
+        stack: stack?.substring(0, 500),
+        function: "ttn-provision-device",
+        build_version: "ttn-provision-device-v14-better-errors-20260211",
+        request_url: req.url,
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

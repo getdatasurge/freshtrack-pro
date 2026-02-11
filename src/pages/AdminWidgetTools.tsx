@@ -32,8 +32,12 @@ const AdminWidgetTools = () => {
 
           <TabsContent value="layout-manager" className="mt-4">
             <LayoutManager
-              onSave={async (equipmentType, appTarget, placements) => {
+              layouts={[]}
+              onSave={(layout) => {
                 // TODO: Wire to Supabase default_widget_layouts table
+              }}
+              onDelete={(layoutId) => {
+                // TODO: Wire to Supabase
               }}
             />
           </TabsContent>

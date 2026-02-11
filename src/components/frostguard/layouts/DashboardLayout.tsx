@@ -78,18 +78,15 @@ export function DashboardLayout({
               ? { value: Math.round((stats.onlineCount / stats.totalUnits) * 100), label: '%' }
               : undefined
             }
-            trendDirection="up-good"
           />
           <StatCard
             label="Active Alerts"
             value={stats.alertCount}
-            trendDirection="down-good"
           />
           {stats.compliancePercent != null && (
             <StatCard
               label="Compliance"
               value={`${stats.compliancePercent}%`}
-              trendDirection="up-good"
             />
           )}
         </div>

@@ -18,7 +18,7 @@ export const TrendIndicator = React.forwardRef<HTMLDivElement, TrendIndicatorPro
     const isGood = invertColors ? isDown : isUp;
     const isBad = invertColors ? isUp : isDown;
 
-    let colorClass = status.neutral.text;
+    let colorClass: string = status.neutral.text;
     if (isGood) colorClass = status.success.text;
     if (isBad) colorClass = status.danger.text;
 

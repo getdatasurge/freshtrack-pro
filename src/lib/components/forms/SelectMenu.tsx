@@ -13,12 +13,14 @@ export interface SelectMenuProps extends Omit<React.SelectHTMLAttributes<HTMLSel
   options: SelectMenuOption[];
   placeholder?: string;
   hasError?: boolean;
+  label?: string;
 }
 
 export const SelectMenu = React.forwardRef<HTMLSelectElement, SelectMenuProps>(
-  ({ className, options, placeholder, hasError, ...props }, ref) => {
+  ({ className, options, placeholder, hasError, label, ...props }, ref) => {
     return (
       <div className="relative">
+        {label && <label className="block text-sm font-medium text-zinc-400 mb-1">{label}</label>}
         <select
           ref={ref}
           className={cn(
