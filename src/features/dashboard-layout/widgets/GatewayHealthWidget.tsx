@@ -3,13 +3,16 @@
  *
  * Displays gateway status for a site — count, individual status indicators,
  * last seen timestamps, and signal quality. Read-only; config remains in Settings.
+ *
+ * On mount, triggers a TTN status sync to fetch live connection stats.
  */
 
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Server, Radio, Settings, Loader2 } from "lucide-react";
-import { useGatewaysBySite } from "@/hooks/useGateways";
+import { useGatewaysBySite, useSyncGatewayStatus } from "@/hooks/useGateways";
 import { formatDistanceToNowStrict } from "date-fns";
 import type { WidgetProps } from "../types";
 import type { GatewayStatus } from "@/types/ttn";
@@ -33,6 +36,16 @@ function formatLastSeen(lastSeenAt: string | null): string {
 
 export function GatewayHealthWidget({ site }: WidgetProps) {
   const { data: gateways = [], isLoading } = useGatewaysBySite(site?.id ?? null);
+  const syncStatus = useSyncGatewayStatus();
+  const hasSynced = useRef(false);
+
+  // Trigger a TTN status sync when the widget mounts (or org changes)
+  const orgId = site?.organization_id;
+  useEffect(() => {
+    if (!orgId || hasSynced.current) return;
+    hasSynced.current = true;
+    syncStatus.mutate({ organizationId: orgId });
+  }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Card className="h-full flex flex-col">

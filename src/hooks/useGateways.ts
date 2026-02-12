@@ -104,7 +104,8 @@ export function useGateway(gatewayId: string | null) {
 }
 
 /**
- * Hook to create a new gateway
+ * Hook to create a new gateway and automatically provision it on TTN.
+ * After DB insert succeeds, fires ttn-provision-gateway in the background.
  */
 export function useCreateGateway() {
   const queryClient = useQueryClient();
@@ -113,7 +114,7 @@ export function useCreateGateway() {
     mutationFn: async (gateway: GatewayInsert): Promise<Gateway> => {
       // Get current user for created_by
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       const { data, error } = await supabase
         .from("gateways")
         .insert({
@@ -128,7 +129,35 @@ export function useCreateGateway() {
     },
     onSuccess: async (data) => {
       await invalidateGateways(queryClient, data.organization_id);
-      toast.success("Gateway created successfully");
+      toast.success("Gateway created — registering on TTN...");
+
+      // Auto-provision on TTN in the background (non-blocking)
+      supabase.functions
+        .invoke("ttn-provision-gateway", {
+          body: {
+            action: "create",
+            gateway_id: data.id,
+            organization_id: data.organization_id,
+          },
+        })
+        .then(async ({ data: provData, error: provError }) => {
+          if (provError) {
+            debugLog.error("ttn", "TTN_AUTO_PROVISION_ERROR", { gateway_id: data.id, error: provError.message });
+            toast.error(`TTN registration failed: ${provError.message}`);
+          } else if (provData && !provData.ok && !provData.success) {
+            debugLog.error("ttn", "TTN_AUTO_PROVISION_ERROR", { gateway_id: data.id, error: provData.error });
+            toast.error(`TTN registration failed: ${provData.error || "Unknown error"}${provData.hint ? `. ${provData.hint}` : ""}`);
+          } else {
+            debugLog.info("ttn", "TTN_AUTO_PROVISION_SUCCESS", { gateway_id: data.id, ttn_id: provData?.gateway_id });
+            toast.success(provData?.already_exists
+              ? "Gateway already registered in TTN — ready to use"
+              : "Gateway registered on TTN successfully");
+          }
+          await invalidateGateways(queryClient, data.organization_id);
+        })
+        .catch((err) => {
+          debugLog.error("ttn", "TTN_AUTO_PROVISION_EXCEPTION", { gateway_id: data.id, error: String(err) });
+        });
     },
     onError: (error: Error) => {
       toast.error(`Failed to create gateway: ${error.message}`);
@@ -375,4 +404,42 @@ export function useProvisionGateway() {
     provisioningId,
     isProvisioning: (id: string) => provisioningId === id,
   };
+}
+
+/**
+ * Hook to sync gateway status from TTN.
+ * Calls the ttn-gateway-status edge function which fetches live connection
+ * stats from TTN's Gateway Server and updates last_seen_at / signal_quality.
+ *
+ * Returns a mutation you can call on-demand (e.g. on widget mount).
+ */
+export function useSyncGatewayStatus() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      organizationId,
+      gatewayIds,
+    }: {
+      organizationId: string;
+      gatewayIds?: string[];
+    }) => {
+      const { data, error } = await supabase.functions.invoke("ttn-gateway-status", {
+        body: {
+          organization_id: organizationId,
+          gateway_ids: gatewayIds,
+        },
+      });
+
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    onSuccess: async (_data, variables) => {
+      // Invalidate gateway queries so UI picks up new last_seen_at / status
+      await invalidateGateways(queryClient, variables.organizationId);
+    },
+    onError: (error: Error) => {
+      debugLog.error("ttn", "TTN_GATEWAY_STATUS_SYNC_ERROR", { error: error.message });
+    },
+  });
 }

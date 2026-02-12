@@ -52,6 +52,8 @@ import {
   Info,
   Keyboard,
   ScanLine,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
 import type { Gateway } from "@/types/ttn";
 
@@ -89,6 +91,8 @@ function AddGatewayTab({ onGatewayAdded }: { onGatewayAdded: () => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [duplicateOrg, setDuplicateOrg] = useState<string | null>(null);
+  const [provisioningStatus, setProvisioningStatus] = useState<"idle" | "provisioning" | "success" | "error">("idle");
+  const [provisionError, setProvisionError] = useState<string | null>(null);
 
   // Load organizations
   useEffect(() => {
@@ -177,14 +181,18 @@ function AddGatewayTab({ onGatewayAdded }: { onGatewayAdded: () => void }) {
       if (placementNotes.trim()) descParts.push(placementNotes.trim());
       const description = descParts.length > 0 ? descParts.join("\n") : null;
 
-      const { error } = await supabase.from("gateways").insert({
-        gateway_eui: cleanEUI,
-        name: gatewayName.trim(),
-        organization_id: organizationId,
-        description,
-        status: "pending" as const,
-        created_by: user?.id ?? null,
-      });
+      const { data: insertedGateway, error } = await supabase
+        .from("gateways")
+        .insert({
+          gateway_eui: cleanEUI,
+          name: gatewayName.trim(),
+          organization_id: organizationId,
+          description,
+          status: "pending" as const,
+          created_by: user?.id ?? null,
+        })
+        .select("id")
+        .single();
 
       if (error) {
         if (error.code === "23505") {
@@ -202,6 +210,43 @@ function AddGatewayTab({ onGatewayAdded }: { onGatewayAdded: () => void }) {
       toast({ title: "Gateway Registered", description: `${gatewayName.trim()} has been added.` });
       setSubmitted(true);
       onGatewayAdded();
+
+      // Auto-provision on TTN in the background
+      if (insertedGateway?.id) {
+        setProvisioningStatus("provisioning");
+        setProvisionError(null);
+        supabase.functions
+          .invoke("ttn-provision-gateway", {
+            body: {
+              action: "create",
+              gateway_id: insertedGateway.id,
+              organization_id: organizationId,
+            },
+          })
+          .then(({ data: provData, error: provError }) => {
+            if (provError || (provData && !provData.ok && !provData.success)) {
+              const msg = provError?.message || provData?.error || "Unknown error";
+              setProvisioningStatus("error");
+              setProvisionError(provData?.hint ? `${msg}. ${provData.hint}` : msg);
+              toast({
+                title: "TTN Registration Failed",
+                description: msg,
+                variant: "destructive",
+              });
+            } else {
+              setProvisioningStatus("success");
+              toast({
+                title: provData?.already_exists
+                  ? "Gateway already on TTN"
+                  : "Gateway registered on TTN",
+              });
+            }
+          })
+          .catch((err: unknown) => {
+            setProvisioningStatus("error");
+            setProvisionError(err instanceof Error ? err.message : String(err));
+          });
+      }
     } catch (err) {
       toast({
         title: "Registration Failed",
@@ -223,6 +268,8 @@ function AddGatewayTab({ onGatewayAdded }: { onGatewayAdded: () => void }) {
     setEuiFromQR(false);
     setSubmitted(false);
     setDuplicateOrg(null);
+    setProvisioningStatus("idle");
+    setProvisionError(null);
   };
 
   // ── Success state ──
@@ -240,9 +287,29 @@ function AddGatewayTab({ onGatewayAdded }: { onGatewayAdded: () => void }) {
                 {gatewayName} ({formatGatewayEUI(cleanEUI)}) has been registered.
               </p>
             </div>
-            <Button variant="outline" disabled className="w-full opacity-60">
-              Register on TTN (Coming Soon)
-            </Button>
+            {provisioningStatus === "provisioning" && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                <Loader2 className="w-4 h-4 animate-spin text-blue-600 dark:text-blue-400" />
+                <span className="text-sm text-blue-700 dark:text-blue-300">Registering on TTN...</span>
+              </div>
+            )}
+            {provisioningStatus === "success" && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
+                <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                <span className="text-sm text-green-700 dark:text-green-300">Registered on TTN</span>
+              </div>
+            )}
+            {provisioningStatus === "error" && (
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-1">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span className="text-sm font-medium text-amber-700 dark:text-amber-300">TTN registration failed</span>
+                </div>
+                {provisionError && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 pl-6">{provisionError}</p>
+                )}
+              </div>
+            )}
             <Button onClick={handleAddAnother} className="w-full">
               <Plus className="w-4 h-4 mr-2" />
               Add Another Gateway
