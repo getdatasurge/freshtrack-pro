@@ -54,8 +54,12 @@ import {
   ScanLine,
   Loader2,
   AlertTriangle,
+  Search,
+  CloudUpload,
 } from "lucide-react";
 import type { Gateway } from "@/types/ttn";
+import { useCheckTtnGatewayState } from "@/hooks/useCheckTtnGatewayState";
+import { useProvisionGateway } from "@/hooks/useGateways";
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -509,6 +513,8 @@ function RegisteredGatewaysTab({ refreshKey }: { refreshKey: number }) {
   const { toast } = useToast();
   const [gateways, setGateways] = useState<GatewayWithOrg[]>([]);
   const [loading, setLoading] = useState(true);
+  const checkTtn = useCheckTtnGatewayState();
+  const provisionGw = useProvisionGateway();
 
   const loadGateways = useCallback(async () => {
     setLoading(true);
@@ -561,6 +567,52 @@ function RegisteredGatewaysTab({ refreshKey }: { refreshKey: number }) {
     loadGateways();
   };
 
+  // Verify all unlinked gateways
+  const handleVerifyAll = () => {
+    const unlinked = gateways.filter(gw => !gw.ttn_gateway_id);
+    if (unlinked.length === 0) {
+      toast({ title: "All gateways already linked to TTN" });
+      return;
+    }
+    checkTtn.mutate(
+      { gatewayIds: unlinked.map(gw => gw.id) },
+      { onSuccess: () => loadGateways() }
+    );
+  };
+
+  // Verify a single gateway
+  const handleVerifyOne = (gw: GatewayWithOrg) => {
+    checkTtn.mutate(
+      { gatewayIds: [gw.id] },
+      { onSuccess: () => loadGateways() }
+    );
+  };
+
+  // Provision a single gateway
+  const handleProvisionOne = (gw: GatewayWithOrg) => {
+    provisionGw.mutate(
+      { gatewayId: gw.id, organizationId: gw.organization_id },
+      { onSuccess: () => loadGateways() }
+    );
+  };
+
+  const ttnBadge = (gw: GatewayWithOrg) => {
+    if (gw.ttn_gateway_id) {
+      return <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Linked</Badge>;
+    }
+    const state = gw.provisioning_state;
+    if (state === "missing_in_ttn") {
+      return <Badge variant="outline" className="text-amber-600 border-amber-300">Not on TTN</Badge>;
+    }
+    if (state === "conflict") {
+      return <Badge variant="destructive">Conflict</Badge>;
+    }
+    if (state === "error") {
+      return <Badge variant="outline" className="text-red-600 border-red-300">Error</Badge>;
+    }
+    return <Badge variant="outline">Unverified</Badge>;
+  };
+
   const statusBadge = (status: string) => {
     switch (status) {
       case "online":
@@ -598,67 +650,115 @@ function RegisteredGatewaysTab({ refreshKey }: { refreshKey: number }) {
     );
   }
 
+  const unlinkedCount = gateways.filter(gw => !gw.ttn_gateway_id).length;
+
   return (
-    <Card>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Gateway EUI</TableHead>
-              <TableHead>Organization</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Added</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {gateways.map((gw) => (
-              <TableRow key={gw.id}>
-                <TableCell className="font-medium">{gw.name}</TableCell>
-                <TableCell className="font-mono text-xs">
-                  {formatGatewayEUI(gw.gateway_eui)}
-                </TableCell>
-                <TableCell>{gw.org_name}</TableCell>
-                <TableCell>{statusBadge(gw.status)}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {new Date(gw.created_at).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Delete Gateway</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Are you sure you want to delete "{gw.name}" ({formatGatewayEUI(gw.gateway_eui)})?
-                            This action cannot be undone.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => handleDelete(gw)}
-                            className="bg-red-600 hover:bg-red-700"
-                          >
-                            Delete
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </TableCell>
+    <div className="space-y-3">
+      {unlinkedCount > 0 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            {unlinkedCount} gateway{unlinkedCount !== 1 ? "s" : ""} not yet linked to TTN
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleVerifyAll}
+            disabled={checkTtn.isPending}
+          >
+            {checkTtn.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
+            Verify All
+          </Button>
+        </div>
+      )}
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Gateway EUI</TableHead>
+                <TableHead>Organization</TableHead>
+                <TableHead>TTN</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Added</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+            </TableHeader>
+            <TableBody>
+              {gateways.map((gw) => (
+                <TableRow key={gw.id}>
+                  <TableCell className="font-medium">{gw.name}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {formatGatewayEUI(gw.gateway_eui)}
+                  </TableCell>
+                  <TableCell>{gw.org_name}</TableCell>
+                  <TableCell>{ttnBadge(gw)}</TableCell>
+                  <TableCell>{statusBadge(gw.status)}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {new Date(gw.created_at).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      {/* Verify — only if not already linked */}
+                      {!gw.ttn_gateway_id && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleVerifyOne(gw)}
+                          disabled={checkTtn.isPending}
+                          title="Verify on TTN"
+                        >
+                          {checkTtn.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                        </Button>
+                      )}
+                      {/* Provision — only if missing */}
+                      {!gw.ttn_gateway_id && gw.provisioning_state === "missing_in_ttn" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-blue-600 hover:text-blue-700"
+                          onClick={() => handleProvisionOne(gw)}
+                          disabled={provisionGw.isProvisioning(gw.id)}
+                          title="Provision on TTN"
+                        >
+                          {provisionGw.isProvisioning(gw.id) ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudUpload className="w-4 h-4" />}
+                        </Button>
+                      )}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete Gateway</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Are you sure you want to delete "{gw.name}" ({formatGatewayEUI(gw.gateway_eui)})?
+                              This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleDelete(gw)}
+                              className="bg-red-600 hover:bg-red-700"
+                            >
+                              Delete
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

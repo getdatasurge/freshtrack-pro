@@ -3,12 +3,13 @@
  * Types for gateways and LoRa sensors
  */
 
-// TTN Provisioning State - tracks whether device exists in TTN
+// TTN Provisioning State - tracks whether device/gateway exists in TTN
 export type TtnProvisioningState =
   | "not_configured"
   | "unknown"
   | "exists_in_ttn"
   | "missing_in_ttn"
+  | "conflict"
   | "error";
 
 // Where the device was provisioned from
@@ -28,8 +29,10 @@ export interface Gateway {
   signal_quality?: Record<string, unknown> | null;
   ttn_gateway_id: string | null;
   ttn_application_id: string | null;
-  ttn_registered_at: string | null;
-  ttn_last_error: string | null;
+  // TTN provisioning detection fields (mirrors lora_sensors)
+  provisioning_state: TtnProvisioningState;
+  last_provision_check_at: string | null;
+  last_provision_check_error: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -86,6 +89,7 @@ export interface GatewayInsert {
   description?: string | null;
   status?: Exclude<GatewayStatus, 'degraded'>;
   ttn_application_id?: string | null;
+  provisioning_state?: TtnProvisioningState;
   created_by?: string | null;
 }
 

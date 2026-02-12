@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Server, Radio, Settings, Loader2 } from "lucide-react";
 import { useGatewaysBySite, useSyncGatewayStatus } from "@/hooks/useGateways";
+import { useCheckTtnGatewayState } from "@/hooks/useCheckTtnGatewayState";
 import { formatDistanceToNowStrict } from "date-fns";
 import type { WidgetProps } from "../types";
 import type { GatewayStatus } from "@/types/ttn";
@@ -37,15 +38,32 @@ function formatLastSeen(lastSeenAt: string | null): string {
 export function GatewayHealthWidget({ site }: WidgetProps) {
   const { data: gateways = [], isLoading } = useGatewaysBySite(site?.id ?? null);
   const syncStatus = useSyncGatewayStatus();
+  const checkTtn = useCheckTtnGatewayState();
   const hasSynced = useRef(false);
+  const hasVerified = useRef(false);
 
-  // Trigger a TTN status sync when the widget mounts (or org changes)
   const orgId = site?.organization_id;
+
+  // Auto-verify: check unlinked gateways on mount (only once)
+  useEffect(() => {
+    if (!orgId || hasVerified.current || isLoading || gateways.length === 0) return;
+    const unlinked = gateways.filter(gw => !gw.ttn_gateway_id);
+    if (unlinked.length === 0) {
+      hasVerified.current = true;
+      return;
+    }
+    hasVerified.current = true;
+    checkTtn.mutate({ gatewayIds: unlinked.map(gw => gw.id) });
+  }, [orgId, isLoading, gateways.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trigger a TTN status sync for provisioned gateways
   useEffect(() => {
     if (!orgId || hasSynced.current) return;
+    const linked = gateways.filter(gw => !!gw.ttn_gateway_id);
+    if (linked.length === 0) return;
     hasSynced.current = true;
     syncStatus.mutate({ organizationId: orgId });
-  }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orgId, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Card className="h-full flex flex-col">

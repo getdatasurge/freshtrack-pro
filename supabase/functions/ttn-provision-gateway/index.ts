@@ -209,9 +209,9 @@ serve(async (req) => {
       const checkResponse = await ttnFetch(`/api/v3/gateways/${ttnGatewayId}`);
       
       if (checkResponse.ok) {
-        // Gateway already exists in TTN
-        console.log(`[ttn-provision-gateway] [${requestId}] Gateway already exists in TTN`);
-        
+        // Gateway already exists in TTN — claim it
+        console.log(`[ttn-provision-gateway] [${requestId}] Gateway already exists in TTN — claiming`);
+
         // Update our database with TTN info
         await supabase
           .from("gateways")
@@ -219,6 +219,9 @@ serve(async (req) => {
             ttn_gateway_id: ttnGatewayId,
             ttn_registered_at: new Date().toISOString(),
             ttn_last_error: null,
+            provisioning_state: "exists_in_ttn",
+            last_provision_check_at: new Date().toISOString(),
+            last_provision_check_error: null,
             status: "online",
           })
           .eq("id", gateway_id);
@@ -409,6 +412,9 @@ serve(async (req) => {
               ttn_gateway_id: ttnGatewayId,
               ttn_registered_at: new Date().toISOString(),
               ttn_last_error: null,
+              provisioning_state: "exists_in_ttn",
+              last_provision_check_at: new Date().toISOString(),
+              last_provision_check_error: null,
               status: "online",
             })
             .eq("id", gateway_id);
@@ -438,12 +444,61 @@ serve(async (req) => {
         } catch { /* ignore */ }
 
         if (createResponse.status === 409) {
-          // Conflict - gateway EUI already registered elsewhere
+          // 409 Conflict — gateway EUI already registered.
+          // Try to claim it: GET the gateway and link it locally if accessible.
+          console.log(`[ttn-provision-gateway] [${requestId}] 409 — attempting to claim existing gateway ${ttnGatewayId}`);
+
+          const claimResponse = await ttnFetch(`/api/v3/gateways/${ttnGatewayId}`);
+
+          if (claimResponse.ok) {
+            // Gateway is accessible with our key — claim it
+            console.log(`[ttn-provision-gateway] [${requestId}] Gateway ${ttnGatewayId} exists and is accessible — claiming`);
+
+            await supabase
+              .from("gateways")
+              .update({
+                ttn_gateway_id: ttnGatewayId,
+                ttn_registered_at: new Date().toISOString(),
+                ttn_last_error: null,
+                provisioning_state: "exists_in_ttn",
+                last_provision_check_at: new Date().toISOString(),
+                last_provision_check_error: null,
+                status: "online",
+              })
+              .eq("id", gateway_id);
+
+            return new Response(
+              JSON.stringify({
+                ok: true,
+                success: true,
+                gateway_id: ttnGatewayId,
+                already_exists: true,
+                claimed: true,
+                message: "Gateway already registered in TTN — claimed successfully",
+                request_id: requestId,
+              }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          // Cannot read the gateway — it's owned by someone else
+          console.warn(`[ttn-provision-gateway] [${requestId}] Gateway ${ttnGatewayId} exists but not accessible (${claimResponse.status})`);
+
+          await supabase
+            .from("gateways")
+            .update({
+              provisioning_state: "conflict",
+              last_provision_check_at: new Date().toISOString(),
+              last_provision_check_error: "Gateway EUI registered to another TTN account",
+              ttn_last_error: "EUI registered to another account",
+            })
+            .eq("id", gateway_id);
+
           lastResult = {
             success: false,
-            error: "Gateway EUI already registered",
+            error: "Gateway EUI already registered to another account",
             error_code: "EUI_CONFLICT",
-            hint: "This gateway EUI is registered to another TTN account. Use TTN Console to claim or delete it.",
+            hint: "This gateway EUI is registered to a different TTN account. Use TTN Console to transfer or delete it first.",
             details: errorText.slice(0, 300),
           };
           break; // No point trying other strategies for 409
