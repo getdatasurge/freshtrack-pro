@@ -127,8 +127,8 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const baseUrl = ttnConfig.clusterBaseUrl;
-      const apiKey = ttnConfig.gatewayApiKey || ttnConfig.apiKey;
+      const baseUrl = ttnConfig.identityServerUrl;
+      const apiKey = ttnConfig.orgApiKey || ttnConfig.apiKey;
 
       for (const gw of orgGateways) {
         // Skip gateways already linked to TTN

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import PlatformLayout from "@/components/platform/PlatformLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -548,6 +548,19 @@ function RegisteredGatewaysTab({ refreshKey }: { refreshKey: number }) {
     loadGateways();
   }, [loadGateways, refreshKey]);
 
+  // Auto-verify unlinked gateways on load
+  const autoVerifyFired = useRef(false);
+  useEffect(() => {
+    if (loading || autoVerifyFired.current) return;
+    const unlinked = gateways.filter(gw => !gw.ttn_gateway_id);
+    if (unlinked.length === 0) return;
+    autoVerifyFired.current = true;
+    checkTtn.mutate(
+      { gatewayIds: unlinked.map(gw => gw.id) },
+      { onSuccess: () => loadGateways() }
+    );
+  }, [loading, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleDelete = async (gw: GatewayWithOrg) => {
     const { error } = await supabase
       .from("gateways")
@@ -567,32 +580,20 @@ function RegisteredGatewaysTab({ refreshKey }: { refreshKey: number }) {
     loadGateways();
   };
 
-  // Verify all unlinked gateways
-  const handleVerifyAll = () => {
-    const unlinked = gateways.filter(gw => !gw.ttn_gateway_id);
-    if (unlinked.length === 0) {
-      toast({ title: "All gateways already linked to TTN" });
-      return;
-    }
-    checkTtn.mutate(
-      { gatewayIds: unlinked.map(gw => gw.id) },
-      { onSuccess: () => loadGateways() }
-    );
-  };
-
-  // Verify a single gateway
-  const handleVerifyOne = (gw: GatewayWithOrg) => {
-    checkTtn.mutate(
-      { gatewayIds: [gw.id] },
-      { onSuccess: () => loadGateways() }
-    );
-  };
-
-  // Provision a single gateway
+  // Provision a single gateway — auto-verify on failure
   const handleProvisionOne = (gw: GatewayWithOrg) => {
     provisionGw.mutate(
       { gatewayId: gw.id, organizationId: gw.organization_id },
-      { onSuccess: () => loadGateways() }
+      {
+        onSuccess: () => loadGateways(),
+        onError: () => {
+          // Provisioning failed — check if it already exists on TTN
+          checkTtn.mutate(
+            { gatewayIds: [gw.id] },
+            { onSuccess: () => loadGateways() }
+          );
+        },
+      }
     );
   };
 
@@ -650,24 +651,12 @@ function RegisteredGatewaysTab({ refreshKey }: { refreshKey: number }) {
     );
   }
 
-  const unlinkedCount = gateways.filter(gw => !gw.ttn_gateway_id).length;
-
   return (
     <div className="space-y-3">
-      {unlinkedCount > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            {unlinkedCount} gateway{unlinkedCount !== 1 ? "s" : ""} not yet linked to TTN
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleVerifyAll}
-            disabled={checkTtn.isPending}
-          >
-            {checkTtn.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
-            Verify All
-          </Button>
+      {checkTtn.isPending && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Verifying gateway status…
         </div>
       )}
       <Card>
@@ -699,19 +688,6 @@ function RegisteredGatewaysTab({ refreshKey }: { refreshKey: number }) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {/* Verify — only if not already linked */}
-                      {!gw.ttn_gateway_id && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleVerifyOne(gw)}
-                          disabled={checkTtn.isPending}
-                          title="Verify on TTN"
-                        >
-                          {checkTtn.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                        </Button>
-                      )}
                       {/* Provision — only if missing */}
                       {!gw.ttn_gateway_id && gw.provisioning_state === "missing_in_ttn" && (
                         <Button
