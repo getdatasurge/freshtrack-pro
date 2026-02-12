@@ -182,7 +182,7 @@ serve(async (req) => {
     // Helper for TTN API calls (EU1 Identity Server for gateway CRUD)
     const ttnFetch = async (endpoint: string, options: RequestInit = {}, apiKey?: string) => {
       const url = `${baseUrl}${endpoint}`;
-      const key = apiKey || ttnConfig.apiKey;
+      const key = apiKey || ttnConfig.orgApiKey || ttnConfig.apiKey;
       console.log(JSON.stringify({
         event: "ttn_api_call",
         method: options.method || "GET",
@@ -325,15 +325,17 @@ serve(async (req) => {
         condition: () => boolean;
       }> = [];
 
-      // Strategy A: Use gateway-specific API key (PREFERRED - has gateway rights)
-      // This key is user-scoped and created specifically for gateway provisioning
-      if (ttnConfig.hasGatewayKey && ttnConfig.gatewayApiKey) {
+      // Strategy A: Use organization API key (PREFERRED - has gateway rights)
+      // This key is org-scoped and created during TTN org provisioning
+      if (ttnConfig.hasOrgApiKey && ttnConfig.orgApiKey) {
+        // For org-scoped keys, we need the auth_info to determine the org endpoint
+        // But we can also try the admin user fallback
         const adminUserId = Deno.env.get("TTN_USER_ID");
         if (adminUserId) {
           strategies.push({
-            name: `gateway-key-user-scoped (${adminUserId})`,
+            name: `org-key-user-scoped (${adminUserId})`,
             endpoint: `/api/v3/users/${adminUserId}/gateways`,
-            apiKey: ttnConfig.gatewayApiKey,
+            apiKey: ttnConfig.orgApiKey,
             condition: () => true,
           });
         }
