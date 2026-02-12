@@ -50,7 +50,7 @@ export function useGateways(orgId: string | null) {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return data as Gateway[];
+      return data as unknown as Gateway[];
     },
     enabled: !!orgId,
   });
@@ -73,7 +73,7 @@ export function useGatewaysBySite(siteId: string | null) {
         .order("name");
 
       if (error) throw error;
-      return (data as Gateway[]).map(withComputedStatus);
+      return (data as unknown as Gateway[]).map(withComputedStatus);
     },
     enabled: !!siteId,
     // Refresh every 60s so status stays current
@@ -97,7 +97,7 @@ export function useGateway(gatewayId: string | null) {
         .maybeSingle();
 
       if (error) throw error;
-      return data as Gateway | null;
+      return data as unknown as Gateway | null;
     },
     enabled: !!gatewayId,
   });
@@ -115,17 +115,18 @@ export function useCreateGateway() {
       // Get current user for created_by
       const { data: { user } } = await supabase.auth.getUser();
 
-      const { data, error } = await supabase
-        .from("gateways")
-        .insert({
+      const insertPayload: Record<string, unknown> = {
           ...gateway,
           created_by: user?.id || null,
-        })
+      };
+      const { data, error } = await supabase
+        .from("gateways")
+        .insert(insertPayload as any)
         .select()
         .single();
 
       if (error) throw error;
-      return data as Gateway;
+      return data as unknown as Gateway;
     },
     onSuccess: async (data) => {
       await invalidateGateways(queryClient, data.organization_id);
@@ -179,15 +180,17 @@ export function useUpdateGateway() {
       id: string; 
       updates: Partial<Gateway> 
     }): Promise<Gateway> => {
+      // Strip client-only fields before sending to DB
+      const { signal_quality, status, ...dbUpdates } = updates as Partial<Gateway>;
       const { data, error } = await supabase
         .from("gateways")
-        .update(updates)
+        .update(dbUpdates as Record<string, unknown>)
         .eq("id", id)
         .select()
         .single();
 
       if (error) throw error;
-      return data as Gateway;
+      return data as unknown as Gateway;
     },
     onSuccess: async (data) => {
       await Promise.all([
