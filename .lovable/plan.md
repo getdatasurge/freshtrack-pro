@@ -1,43 +1,39 @@
 
 
-# Fix: Preflight Check Must Also Use Organization API Key
+# Auto-Verify Gateways: Remove Manual Buttons, Add Automatic Checks
 
-## Problem
-We fixed `ttn-provision-gateway` to use the Organization API key, but `ttn-gateway-preflight` still uses the Application API key (`ttnConfig.apiKey`) for its `auth_info` check. This is why the banner still says "Application API keys cannot provision gateways."
+## What Changes
 
-Two lines need to change in `ttn-gateway-preflight/index.ts`:
+The manual "Verify" and "Verify All" buttons will be removed. Instead, the system will automatically check unlinked gateways:
+- On every page load of the Registered Gateways tab
+- After a provisioning attempt fails
 
-## Edits
+## Technical Details
 
-### Edit 1 -- Line 187: Check for org API key instead of gateway key
-Change:
-```typescript
-if (ttnConfig.hasGatewayKey && ttnConfig.gatewayApiKey) {
-```
-To:
-```typescript
-if (ttnConfig.hasOrgApiKey && ttnConfig.orgApiKey) {
-```
+### 1. Fix `check-ttn-gateway-exists` edge function (2 line changes)
 
-Also update the log message on line 188 and the `key_type` on line 196 from `"personal"` to `"organization"`, and `owner_scope` to `"organization"`.
+**File:** `supabase/functions/check-ttn-gateway-exists/index.ts`
 
-### Edit 2 -- Line 218: Use org API key for auth_info call
-Change:
-```typescript
-Authorization: `Bearer ${ttnConfig.apiKey}`,
-```
-To:
-```typescript
-Authorization: `Bearer ${ttnConfig.orgApiKey || ttnConfig.apiKey}`,
-```
+- **Line 130:** Change `ttnConfig.clusterBaseUrl` to `ttnConfig.identityServerUrl` (gateway registry is on EU1, not the regional cluster)
+- **Line 131:** Change `ttnConfig.gatewayApiKey || ttnConfig.apiKey` to `ttnConfig.orgApiKey || ttnConfig.apiKey` (use the Organization API key that has gateway read rights)
 
-This ensures that when an Organization API key exists, the preflight checks it (instead of the Application key), detects it as org-scoped with gateway rights, and returns `allowed: true`.
+### 2. Auto-verify on page load
 
-### Deploy
-Redeploy `ttn-gateway-preflight` after edits.
+**File:** `src/pages/platform/PlatformGateways.tsx`
 
-### Expected Result
-- Preflight returns `allowed: true`, `key_type: "organization"`
-- The red "Application API keys cannot provision gateways" banner disappears
-- The "+ Add Gateway" flow proceeds to registration
+Add a `useEffect` in `RegisteredGatewaysTab` that fires after gateways load. If any gateways lack `ttn_gateway_id`, it automatically calls `checkTtn.mutate()` with those IDs. A `useRef` guard prevents repeated calls.
+
+### 3. Auto-verify after provisioning fails
+
+In the same file, update `handleProvisionOne` to trigger a verify check in its `onError` callback, so if provisioning fails the system still checks whether the gateway already exists on TTN.
+
+### 4. Remove manual Verify UI
+
+**File:** `src/pages/platform/PlatformGateways.tsx`
+
+- Remove the "Verify All" button and banner (lines 657-671)
+- Remove the per-row Verify icon button (lines 702-714)
+- Remove the `handleVerifyAll` and `handleVerifyOne` functions (lines 571-589)
+
+The auto-verify will show a subtle loading state in the TTN badge column while checking is in progress.
 
