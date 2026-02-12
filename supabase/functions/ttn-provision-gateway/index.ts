@@ -42,7 +42,7 @@ interface RegistrationResult {
 }
 
 serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-gateway-v2-multi-strategy-20250102";
+  const BUILD_VERSION = "ttn-provision-gateway-v3-eu1-identity-20250211";
   const requestId = crypto.randomUUID().slice(0, 8);
   
   console.log(`[ttn-provision-gateway] Build: ${BUILD_VERSION}`);
@@ -172,14 +172,14 @@ serve(async (req) => {
     const ttnGatewayId = `eui-${gatewayEui}`;
     console.log(`[ttn-provision-gateway] [${requestId}] TTN Gateway ID: ${ttnGatewayId}`);
 
-    // NAM1-ONLY: Use clusterBaseUrl for all TTN operations
-    const baseUrl = ttnConfig.clusterBaseUrl;
-    
-    // Import and use HARD GUARD
-    const { assertClusterHost } = await import("../_shared/ttnBase.ts");
-    assertClusterHost(`${baseUrl}/api/v3/gateways/${ttnGatewayId}`);
+    // CROSS-CLUSTER: Gateway CRUD goes to EU1 Identity Server (global registry)
+    // EU1 = Identity Server (where gateways are REGISTERED)
+    // NAM1 = Gateway Server (where gateways CONNECT for radio traffic)
+    const { IDENTITY_SERVER_URL, assertValidTtnHost } = await import("../_shared/ttnBase.ts");
+    const baseUrl = IDENTITY_SERVER_URL;
+    assertValidTtnHost(`${baseUrl}/api/v3/gateways/${ttnGatewayId}`, "IS");
 
-    // Helper for TTN API calls (NAM1-ONLY)
+    // Helper for TTN API calls (EU1 Identity Server for gateway CRUD)
     const ttnFetch = async (endpoint: string, options: RequestInit = {}, apiKey?: string) => {
       const url = `${baseUrl}${endpoint}`;
       const key = apiKey || ttnConfig.apiKey;
@@ -264,8 +264,7 @@ serve(async (req) => {
       }
 
       // Step 2: Determine API key scope using auth_info
-      // SINGLE-CLUSTER: auth_info goes to NAM1 (same as all other operations)
-      const { IDENTITY_SERVER_URL, assertValidTtnHost } = await import("../_shared/ttnBase.ts");
+      // auth_info goes to EU1 Identity Server (IDENTITY_SERVER_URL already imported above)
 
       console.log(`[ttn-provision-gateway] [${requestId}] Checking API key scope via auth_info at ${IDENTITY_SERVER_URL}`);
       
