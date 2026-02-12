@@ -371,6 +371,21 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
     checkTtn.mutate({ gatewayIds: unlinked.map(gw => gw.id) });
   }, [isLoading, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
   
+  // Auto-verify: check unlinked gateways against TTN on page load
+  const checkTtnState = useCheckTtnGatewayState();
+  const autoVerifyDone = useRef(false);
+
+  useEffect(() => {
+    if (autoVerifyDone.current || !gateways || gateways.length === 0) return;
+    if (checkTtnState.isPending) return;
+
+    const unlinked = gateways.filter((gw) => !gw.ttn_gateway_id);
+    if (unlinked.length === 0) return;
+
+    autoVerifyDone.current = true;
+    checkTtnState.mutate({ organizationId });
+  }, [gateways, organizationId]);
+
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editGateway, setEditGateway] = useState<Gateway | null>(null);
   const [deleteGateway_, setDeleteGateway] = useState<Gateway | null>(null);
@@ -458,6 +473,19 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
   const handleConfirmSiteChange = async () => {
     if (!confirmSiteChange) return;
     await executeSiteUpdate(confirmSiteChange.gateway, confirmSiteChange.newSiteId);
+  };
+
+  // Provision with auto-verify fallback: if provisioning fails, check if gateway already exists on TTN
+  const handleProvision = (gatewayId: string) => {
+    provisionGateway.mutate(
+      { gatewayId, organizationId },
+      {
+        onError: () => {
+          // Provisioning failed — auto-verify if the gateway already exists on TTN
+          checkTtnState.mutate({ gatewayIds: [gatewayId] });
+        },
+      }
+    );
   };
 
   const formatEUI = (eui: string): string => {
@@ -584,15 +612,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                             gateway={gateway as Gateway & { ttn_gateway_id?: string | null; ttn_last_error?: string | null }}
                             ttnConfig={ttnConfig}
                             isProvisioning={provisionGateway.isProvisioning(gateway.id)}
-                            onProvision={() => provisionGateway.mutate({ 
-                              gatewayId: gateway.id, 
-                              organizationId 
-                            }, {
-                              onError: () => {
-                                // Provisioning failed — check if it already exists on TTN
-                                checkTtn.mutate({ gatewayIds: [gateway.id] });
-                              },
-                            })}
+                            onProvision={() => handleProvision(gateway.id)}
                           />
                           {/* Edit actions */}
                           {canEdit && (

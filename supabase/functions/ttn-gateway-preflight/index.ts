@@ -182,29 +182,53 @@ serve(async (req) => {
       });
     }
 
-    // Check if we have a dedicated gateway API key (created during provisioning)
+    // Check if we have an organization API key (created during TTN org provisioning)
     // This takes priority over the main API key for gateway operations
     if (ttnConfig.hasOrgApiKey && ttnConfig.orgApiKey) {
-      console.log(`[ttn-gateway-preflight] [${requestId}] Organization has dedicated org API key`);
+      console.log(`[ttn-gateway-preflight] [${requestId}] Organization has org-scoped API key — checking with auth_info`);
 
-      // Org key is organization-scoped and has gateway rights by design
-      const result: PreflightResult = {
-        ok: true,
-        request_id: requestId,
-        allowed: true,
-        key_type: "organization",
-        owner_scope: "organization",
-        scope_id: null,
-        has_gateway_rights: true,
-        missing_rights: [],
-      };
-
-      console.log(`[ttn-gateway-preflight] [${requestId}] Preflight passed - using dedicated gateway key`);
-
-      return new Response(JSON.stringify(result), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      // Verify the org key via auth_info to confirm gateway rights
+      const orgAuthInfoUrl = `${IDENTITY_SERVER_URL}/api/v3/auth_info`;
+      const orgAuthResponse = await fetch(orgAuthInfoUrl, {
+        headers: {
+          Authorization: `Bearer ${ttnConfig.orgApiKey}`,
+          "Content-Type": "application/json",
+        },
       });
+
+      if (orgAuthResponse.ok) {
+        const orgAuthData = await orgAuthResponse.json();
+        const rights = orgAuthData?.api_key?.rights || [];
+        const hasGwRead = rights.includes("RIGHT_GATEWAY_INFO");
+        const hasGwWrite = rights.some((r: string) =>
+          r === "RIGHT_GATEWAY_ALL" || r === "RIGHT_GATEWAY_SETTINGS_BASIC" || r === "RIGHT_GATEWAY_DELETE"
+        );
+
+        if (hasGwRead || hasGwWrite) {
+          const entityIds = orgAuthData?.api_key?.entity_ids;
+          const orgId = entityIds?.organization_ids?.organization_id;
+
+          const result: PreflightResult = {
+            ok: true,
+            request_id: requestId,
+            allowed: true,
+            key_type: "organization",
+            owner_scope: "organization",
+            scope_id: orgId || null,
+            has_gateway_rights: true,
+            missing_rights: [],
+          };
+
+          console.log(`[ttn-gateway-preflight] [${requestId}] Preflight passed - org key has gateway rights`);
+
+          return new Response(JSON.stringify(result), {
+            status: 200,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      console.log(`[ttn-gateway-preflight] [${requestId}] Org key didn't have gateway rights, falling through to app key check`);
     }
 
     // Check API key scope using auth_info endpoint
@@ -213,9 +237,12 @@ serve(async (req) => {
     assertValidTtnHost(authInfoUrl, "IS");
     console.log(`[ttn-gateway-preflight] [${requestId}] Checking API key scope via auth_info at ${IDENTITY_SERVER_URL} (EU1 Identity Server)`);
 
+    // Use org API key if available, otherwise fall back to app key
+    const preflightApiKey = ttnConfig.orgApiKey || ttnConfig.apiKey;
+
     const authInfoResponse = await fetch(authInfoUrl, {
       headers: {
-        Authorization: `Bearer ${ttnConfig.orgApiKey || ttnConfig.apiKey}`,
+        Authorization: `Bearer ${preflightApiKey}`,
         "Content-Type": "application/json",
       },
     });

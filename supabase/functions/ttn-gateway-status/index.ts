@@ -122,7 +122,7 @@ serve(async (req) => {
     }
 
     const baseUrl = ttnConfig.clusterBaseUrl;
-    const apiKey = ttnConfig.gatewayApiKey || ttnConfig.apiKey;
+    const apiKey = ttnConfig.orgApiKey || ttnConfig.apiKey;
 
     const results: Array<{ id: string; ttn_id: string; status: string; error?: string }> = [];
 

@@ -79,15 +79,13 @@ export function useCheckTtnGatewayState() {
         return;
       }
 
+      // Only show toasts for actionable outcomes (found or error)
+      // Don't toast "not yet on TTN" — the UI already shows provisioning state
       if (data.checked_count === 1) {
         const result = data.results[0];
         if (result.provisioning_state === "exists_in_ttn") {
           toast.success("Gateway found on TTN", {
             description: `Linked as ${result.ttn_gateway_id}`,
-          });
-        } else if (result.provisioning_state === "missing_in_ttn") {
-          toast.info("Gateway not yet on TTN", {
-            description: "Click Provision to register it",
           });
         } else if (result.provisioning_state === "error") {
           toast.warning("Unable to verify gateway", {
@@ -97,10 +95,9 @@ export function useCheckTtnGatewayState() {
                 : result.error,
           });
         }
-      } else {
+      } else if (exists_in_ttn > 0 || errorCount > 0) {
         const parts: string[] = [];
-        if (exists_in_ttn > 0) parts.push(`${exists_in_ttn} found`);
-        if (missing_in_ttn > 0) parts.push(`${missing_in_ttn} not registered`);
+        if (exists_in_ttn > 0) parts.push(`${exists_in_ttn} found and linked`);
         if (errorCount > 0) parts.push(`${errorCount} errors`);
         toast.success(`Verified ${data.checked_count} gateways`, {
           description: parts.join(", "),

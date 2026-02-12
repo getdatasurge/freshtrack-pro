@@ -328,8 +328,6 @@ serve(async (req) => {
       // Strategy A: Use organization API key (PREFERRED - has gateway rights)
       // This key is org-scoped and created during TTN org provisioning
       if (ttnConfig.hasOrgApiKey && ttnConfig.orgApiKey) {
-        // For org-scoped keys, we need the auth_info to determine the org endpoint
-        // But we can also try the admin user fallback
         const adminUserId = Deno.env.get("TTN_USER_ID");
         if (adminUserId) {
           strategies.push({
