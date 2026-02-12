@@ -158,9 +158,13 @@ export function useCreateGateway() {
             );
           } else {
             debugLog.info("ttn", "TTN_AUTO_PROVISION_SUCCESS", { gateway_id: data.id, ttn_id: provData?.gateway_id });
-            toast.success(provData?.already_exists
-              ? "Gateway already registered in TTN — ready to use"
-              : "Gateway registered on TTN successfully");
+            if (provData?.claimed) {
+              toast.success("Gateway already on TTN — claimed successfully");
+            } else if (provData?.already_exists) {
+              toast.success("Gateway already registered in TTN — ready to use");
+            } else {
+              toast.success("Gateway registered on TTN successfully");
+            }
           }
           await invalidateGateways(queryClient, data.organization_id);
         })
@@ -384,7 +388,9 @@ export function useProvisionGateway() {
     },
     onSuccess: async (data, variables) => {
       await invalidateGateways(queryClient, variables.organizationId);
-      if (data?.already_exists) {
+      if (data?.claimed) {
+        toast.success("Gateway already on TTN — claimed successfully");
+      } else if (data?.already_exists) {
         toast.success("Gateway already registered in TTN - ready to use");
       } else {
         toast.success("Gateway registered in TTN successfully");
