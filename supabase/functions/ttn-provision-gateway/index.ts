@@ -121,7 +121,7 @@ serve(async (req) => {
           hint: "Configure TTN connection in Settings → Developer first",
           request_id: requestId,
         }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -134,7 +134,7 @@ serve(async (req) => {
           hint: "Add TTN API key in Settings → Developer → TTN Connection",
           request_id: requestId,
         }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -148,13 +148,13 @@ serve(async (req) => {
     if (gatewayError || !gateway) {
       console.error(`[ttn-provision-gateway] [${requestId}] Gateway not found:`, gatewayError);
       return new Response(
-        JSON.stringify({ 
-          ok: false, 
+        JSON.stringify({
+          ok: false,
           error: "Gateway not found",
           error_code: "GATEWAY_NOT_FOUND",
           request_id: requestId,
         }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -249,7 +249,7 @@ serve(async (req) => {
               details: errorText.slice(0, 500),
               request_id: requestId,
             }),
-            { status: checkResponse.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
       }
@@ -487,7 +487,7 @@ serve(async (req) => {
           ...lastResult,
           request_id: requestId,
         }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
