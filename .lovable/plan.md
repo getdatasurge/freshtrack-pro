@@ -1,39 +1,51 @@
 
 
-# Auto-Verify Gateways: Remove Manual Buttons, Add Automatic Checks
+# Fix Gateway Auto-Verify: Missing DB Columns + API Key Fallback
 
-## What Changes
+## Problem 1: Missing Database Columns
 
-The manual "Verify" and "Verify All" buttons will be removed. Instead, the system will automatically check unlinked gateways:
-- On every page load of the Registered Gateways tab
-- After a provisioning attempt fails
+The `gateways` table is missing three columns that the verify function tries to write to:
+- `provisioning_state`
+- `last_provision_check_at`
+- `last_provision_check_error`
 
-## Technical Details
+The migration file exists (`20260212000000_add_gateway_provisioning_state.sql`) but was never applied. Every verify call logs:
+```
+Could not find the 'last_provision_check_at' column of 'gateways' in the schema cache
+```
 
-### 1. Fix `check-ttn-gateway-exists` edge function (2 line changes)
+**Fix**: Apply a database migration to add these three columns to the `gateways` table.
 
-**File:** `supabase/functions/check-ttn-gateway-exists/index.ts`
+## Problem 2: TTN Lookup Uses Wrong API Key
 
-- **Line 130:** Change `ttnConfig.clusterBaseUrl` to `ttnConfig.identityServerUrl` (gateway registry is on EU1, not the regional cluster)
-- **Line 131:** Change `ttnConfig.gatewayApiKey || ttnConfig.apiKey` to `ttnConfig.orgApiKey || ttnConfig.apiKey` (use the Organization API key that has gateway read rights)
+The verify function uses the Organization API key (CM6Q) to look up the gateway. But TTN returns 404 because the gateway is likely registered under your personal TTN account (`freshtracker`), not the TTN organization. The org key can only see org-owned gateways.
 
-### 2. Auto-verify on page load
+**Fix**: Update `check-ttn-gateway-exists` to try multiple API keys:
+1. Try the org API key first (CM6Q)
+2. If 404, retry with the application/personal API key (GAOA)
+3. Only report "missing" if both return 404
 
-**File:** `src/pages/platform/PlatformGateways.tsx`
+## Technical Changes
 
-Add a `useEffect` in `RegisteredGatewaysTab` that fires after gateways load. If any gateways lack `ttn_gateway_id`, it automatically calls `checkTtn.mutate()` with those IDs. A `useRef` guard prevents repeated calls.
+### 1. Database Migration
+```sql
+ALTER TABLE public.gateways
+ADD COLUMN IF NOT EXISTS provisioning_state text DEFAULT 'unknown',
+ADD COLUMN IF NOT EXISTS last_provision_check_at timestamptz,
+ADD COLUMN IF NOT EXISTS last_provision_check_error text;
+```
 
-### 3. Auto-verify after provisioning fails
+### 2. Edge Function: `check-ttn-gateway-exists/index.ts`
 
-In the same file, update `handleProvisionOne` to trigger a verify check in its `onError` callback, so if provisioning fails the system still checks whether the gateway already exists on TTN.
+In the per-gateway lookup loop (around lines 163-205), after getting a 404 with the primary API key, add a retry block that tries `ttnConfig.apiKey` as a fallback before concluding "missing_in_ttn".
 
-### 4. Remove manual Verify UI
+Update the build version string so we can verify the new code is deployed.
 
-**File:** `src/pages/platform/PlatformGateways.tsx`
+### 3. Redeploy
+Redeploy `check-ttn-gateway-exists` after edits.
 
-- Remove the "Verify All" button and banner (lines 657-671)
-- Remove the per-row Verify icon button (lines 702-714)
-- Remove the `handleVerifyAll` and `handleVerifyOne` functions (lines 571-589)
-
-The auto-verify will show a subtle loading state in the TTN badge column while checking is in progress.
-
+### Expected Result
+- DB columns exist, so state updates succeed
+- Verify tries org key, then falls back to app key
+- Gateway is found on TTN and auto-linked
+- Status updates from "unlinked" to "exists_in_ttn"
