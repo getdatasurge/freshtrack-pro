@@ -85,9 +85,6 @@ export interface TtnConfig {
   webhookUrl?: string;
   isEnabled: boolean;
   provisioningStatus: string;
-  // Organization API key (org-scoped, has gateway rights)
-  orgApiKey?: string;
-  hasOrgApiKey: boolean;
   // Gateway-specific API key (user-scoped, has gateway rights)
   gatewayApiKey?: string;
   hasGatewayKey: boolean;
@@ -586,8 +583,6 @@ export async function getTtnConfigForOrg(
     webhookUrl: settings.ttn_webhook_url || undefined,
     isEnabled: settings.is_enabled || false,
     provisioningStatus: settings.provisioning_status || "not_started",
-    orgApiKey,
-    hasOrgApiKey: !!orgApiKey && orgApiKey.length > 0,
     gatewayApiKey,
     hasGatewayKey: !!gatewayApiKey && gatewayApiKey.length > 0,
   };
