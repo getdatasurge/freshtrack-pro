@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useGateways, useDeleteGateway, useUpdateGateway, useProvisionGateway } from "@/hooks/useGateways";
+import { useCheckTtnGatewayState } from "@/hooks/useCheckTtnGatewayState";
 import { useGatewayProvisioningPreflight } from "@/hooks/useGatewayProvisioningPreflight";
 import { Gateway, GatewayStatus } from "@/types/ttn";
 import { Button } from "@/components/ui/button";
@@ -348,6 +349,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
   const deleteGateway = useDeleteGateway();
   const updateGateway = useUpdateGateway();
   const provisionGateway = useProvisionGateway();
+  const checkTtn = useCheckTtnGatewayState();
   
   // TTN Config Context for state awareness
   const { context: ttnContext } = useTTNConfig();
@@ -358,6 +360,16 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
     ttnConfig?.isEnabled && ttnConfig?.hasApiKey ? organizationId : null,
     { autoRun: true }
   );
+
+  // Auto-verify unlinked gateways on load
+  const autoVerifyFired = useRef(false);
+  useEffect(() => {
+    if (isLoading || !gateways || autoVerifyFired.current) return;
+    const unlinked = gateways.filter(gw => !gw.ttn_gateway_id);
+    if (unlinked.length === 0) return;
+    autoVerifyFired.current = true;
+    checkTtn.mutate({ gatewayIds: unlinked.map(gw => gw.id) });
+  }, [isLoading, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editGateway, setEditGateway] = useState<Gateway | null>(null);
@@ -575,6 +587,11 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                             onProvision={() => provisionGateway.mutate({ 
                               gatewayId: gateway.id, 
                               organizationId 
+                            }, {
+                              onError: () => {
+                                // Provisioning failed — check if it already exists on TTN
+                                checkTtn.mutate({ gatewayIds: [gateway.id] });
+                              },
                             })}
                           />
                           {/* Edit actions */}
