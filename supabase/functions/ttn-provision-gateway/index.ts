@@ -14,12 +14,21 @@ interface ProvisionRequest {
   organization_id: string;
 }
 
+// TTN auth_info response is DOUBLE-NESTED for API keys:
+// { api_key: { api_key: { rights: [...] }, entity_ids: { user_ids: { user_id }, organization_ids: { ... } } } }
 interface AuthInfo {
   is_admin?: boolean;
   universal_rights?: string[];
-  user_ids?: Array<{ user_id: string }>;
-  organization_ids?: Array<{ organization_id: string }>;
-  application_ids?: Array<{ application_id: string }>;
+  api_key?: {
+    api_key?: {
+      rights?: string[];
+    };
+    entity_ids?: {
+      user_ids?: { user_id: string };
+      organization_ids?: { organization_id: string };
+      application_ids?: { application_id: string };
+    };
+  };
 }
 
 interface RegistrationResult {
@@ -273,11 +282,14 @@ serve(async (req) => {
       
       if (authInfoResponse.ok) {
         authInfo = await authInfoResponse.json();
+        // CRITICAL: TTN auth_info is DOUBLE-NESTED: api_key.entity_ids.{user_ids,organization_ids,...}
+        const entityIds = authInfo?.api_key?.entity_ids;
         console.log(`[ttn-provision-gateway] [${requestId}] Auth info:`, JSON.stringify({
           is_admin: authInfo?.is_admin,
-          user_ids: authInfo?.user_ids?.map(u => u.user_id),
-          organization_ids: authInfo?.organization_ids?.map(o => o.organization_id),
-          application_ids: authInfo?.application_ids?.map(a => a.application_id),
+          user_id: entityIds?.user_ids?.user_id,
+          organization_id: entityIds?.organization_ids?.organization_id,
+          application_id: entityIds?.application_ids?.application_id,
+          rights_count: authInfo?.api_key?.api_key?.rights?.length ?? 0,
           universal_rights: authInfo?.universal_rights?.slice(0, 5),
         }));
       } else {
@@ -325,9 +337,12 @@ serve(async (req) => {
         }
       }
 
-      // Strategy B: User-scoped registration (if main API key is user-scoped)
-      if (authInfo?.user_ids && authInfo.user_ids.length > 0) {
-        const userId = authInfo.user_ids[0].user_id;
+      // Extract entity IDs from double-nested auth_info response
+      const entityIds = authInfo?.api_key?.entity_ids;
+
+      // Strategy B: User-scoped registration (if main API key is user-scoped / personal key)
+      if (entityIds?.user_ids?.user_id) {
+        const userId = entityIds.user_ids.user_id;
         strategies.push({
           name: `user-scoped (${userId})`,
           endpoint: `/api/v3/users/${userId}/gateways`,
@@ -337,8 +352,8 @@ serve(async (req) => {
       }
 
       // Strategy C: Organization-scoped registration (if API key is org-scoped)
-      if (authInfo?.organization_ids && authInfo.organization_ids.length > 0) {
-        const ttnOrgId = authInfo.organization_ids[0].organization_id;
+      if (entityIds?.organization_ids?.organization_id) {
+        const ttnOrgId = entityIds.organization_ids.organization_id;
         strategies.push({
           name: `org-scoped (${ttnOrgId})`,
           endpoint: `/api/v3/organizations/${ttnOrgId}/gateways`,

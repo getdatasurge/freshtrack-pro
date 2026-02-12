@@ -211,10 +211,12 @@ function AddGatewayTab({ onGatewayAdded }: { onGatewayAdded: () => void }) {
       setSubmitted(true);
       onGatewayAdded();
 
-      // Auto-provision on TTN in the background
+      // Auto-provision on TTN — the edge function has multi-strategy fallback
+      // (org key, admin key, gateway-specific key) and returns structured errors.
       if (insertedGateway?.id) {
         setProvisioningStatus("provisioning");
         setProvisionError(null);
+
         supabase.functions
           .invoke("ttn-provision-gateway", {
             body: {
@@ -224,10 +226,15 @@ function AddGatewayTab({ onGatewayAdded }: { onGatewayAdded: () => void }) {
             },
           })
           .then(({ data: provData, error: provError }) => {
-            if (provError || (provData && !provData.ok && !provData.success)) {
-              const msg = provError?.message || provData?.error || "Unknown error";
+            if (provError) {
+              // Edge function returned non-2xx (undeployed or 500)
               setProvisioningStatus("error");
-              setProvisionError(provData?.hint ? `${msg}. ${provData.hint}` : msg);
+              setProvisionError("TTN registration failed — check edge function deployment and TTN credentials in Settings");
+            } else if (provData && !provData.ok && !provData.success) {
+              // Edge function returned 200 with structured error
+              const msg = provData.error || "Unknown error";
+              setProvisioningStatus("error");
+              setProvisionError(provData.hint ? `${msg}. ${provData.hint}` : msg);
               toast({
                 title: "TTN Registration Failed",
                 description: msg,

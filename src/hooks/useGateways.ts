@@ -132,7 +132,9 @@ export function useCreateGateway() {
       await invalidateGateways(queryClient, data.organization_id);
       toast.success("Gateway created — registering on TTN...");
 
-      // Auto-provision on TTN in the background (non-blocking)
+      // Always attempt provisioning — the edge function has multi-strategy
+      // fallback (org key, admin key, gateway-specific key) and returns
+      // structured errors if none work.
       supabase.functions
         .invoke("ttn-provision-gateway", {
           body: {
@@ -143,11 +145,18 @@ export function useCreateGateway() {
         })
         .then(async ({ data: provData, error: provError }) => {
           if (provError) {
+            // Edge function returned non-2xx (e.g. undeployed or 500)
             debugLog.error("ttn", "TTN_AUTO_PROVISION_ERROR", { gateway_id: data.id, error: provError.message });
-            toast.error(`TTN registration failed: ${provError.message}`);
+            toast.error("TTN registration failed — check edge function deployment and TTN credentials in Settings");
           } else if (provData && !provData.ok && !provData.success) {
-            debugLog.error("ttn", "TTN_AUTO_PROVISION_ERROR", { gateway_id: data.id, error: provData.error });
-            toast.error(`TTN registration failed: ${provData.error || "Unknown error"}${provData.hint ? `. ${provData.hint}` : ""}`);
+            // Edge function returned 200 with structured error
+            debugLog.error("ttn", "TTN_AUTO_PROVISION_ERROR", { gateway_id: data.id, error: provData.error, hint: provData.hint });
+            const msg = provData.error || "Unknown error";
+            const hint = provData.hint;
+            toast.error(
+              hint ? `TTN registration failed: ${msg}. ${hint}` : `TTN registration failed: ${msg}`,
+              { duration: 8000 }
+            );
           } else {
             debugLog.info("ttn", "TTN_AUTO_PROVISION_SUCCESS", { gateway_id: data.id, ttn_id: provData?.gateway_id });
             toast.success(provData?.already_exists
