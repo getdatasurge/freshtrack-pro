@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
 import { assertClusterHost } from "../_shared/ttnBase.ts";
 
-const BUILD_VERSION = "check-ttn-gateway-exists-v1.0-20260212";
+const BUILD_VERSION = "check-ttn-gateway-exists-v2.0-eu1-orgkey-20260212";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -127,8 +127,11 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const baseUrl = ttnConfig.clusterBaseUrl;
-      const apiKey = ttnConfig.gatewayApiKey || ttnConfig.apiKey;
+      // Gateway registry lives on EU1 Identity Server, not regional cluster
+      const baseUrl = ttnConfig.identityServerUrl;
+      // Prefer org API key (has gateway rights), fall back to app key
+      const primaryKey = ttnConfig.orgApiKey || ttnConfig.apiKey;
+      const fallbackKey = ttnConfig.orgApiKey ? ttnConfig.apiKey : undefined;
 
       for (const gw of orgGateways) {
         // Skip gateways already linked to TTN
@@ -163,14 +166,25 @@ Deno.serve(async (req) => {
         }
 
         try {
-          console.log(`[check-ttn-gateway-exists] [${requestId}] Checking ${gw.name}: GET ${ttnGatewayId}`);
+          console.log(`[check-ttn-gateway-exists] [${requestId}] Checking ${gw.name}: GET ${ttnGatewayId} on ${baseUrl}`);
 
-          const response = await fetch(gatewayUrl, {
+          let response = await fetch(gatewayUrl, {
             headers: {
-              Authorization: `Bearer ${apiKey}`,
+              Authorization: `Bearer ${primaryKey}`,
               "Content-Type": "application/json",
             },
           });
+
+          // If primary key gets 404, try fallback key before giving up
+          if (response.status === 404 && fallbackKey) {
+            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: 404 with primary key, retrying with fallback key`);
+            response = await fetch(gatewayUrl, {
+              headers: {
+                Authorization: `Bearer ${fallbackKey}`,
+                "Content-Type": "application/json",
+              },
+            });
+          }
 
           if (response.ok) {
             // Gateway exists on TTN — claim it
@@ -197,7 +211,7 @@ Deno.serve(async (req) => {
 
             results.push(result);
           } else if (response.status === 404) {
-            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN`);
+            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN (tried ${fallbackKey ? '2 keys' : '1 key'})`);
 
             const result: CheckResult = {
               gateway_id: gw.id,
@@ -214,7 +228,7 @@ Deno.serve(async (req) => {
             const result: CheckResult = {
               gateway_id: gw.id,
               organization_id: orgId,
-              provisioning_state: response.status === 403 ? "error" : "error",
+              provisioning_state: "error",
               error: `TTN API error (${response.status}): ${errText}`,
               checked_at: now,
             };

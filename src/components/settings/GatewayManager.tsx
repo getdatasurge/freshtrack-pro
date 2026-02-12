@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useGateways, useDeleteGateway, useUpdateGateway, useProvisionGateway } from "@/hooks/useGateways";
+import { useCheckTtnGatewayState } from "@/hooks/useCheckTtnGatewayState";
 import { useGatewayProvisioningPreflight } from "@/hooks/useGatewayProvisioningPreflight";
 import { Gateway, GatewayStatus } from "@/types/ttn";
 import { Button } from "@/components/ui/button";
@@ -359,6 +360,21 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
     { autoRun: true }
   );
   
+  // Auto-verify: check unlinked gateways against TTN on page load
+  const checkTtnState = useCheckTtnGatewayState();
+  const autoVerifyDone = useRef(false);
+
+  useEffect(() => {
+    if (autoVerifyDone.current || !gateways || gateways.length === 0) return;
+    if (checkTtnState.isPending) return;
+
+    const unlinked = gateways.filter((gw) => !gw.ttn_gateway_id);
+    if (unlinked.length === 0) return;
+
+    autoVerifyDone.current = true;
+    checkTtnState.mutate({ organizationId });
+  }, [gateways, organizationId]);
+
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editGateway, setEditGateway] = useState<Gateway | null>(null);
   const [deleteGateway_, setDeleteGateway] = useState<Gateway | null>(null);
@@ -446,6 +462,19 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
   const handleConfirmSiteChange = async () => {
     if (!confirmSiteChange) return;
     await executeSiteUpdate(confirmSiteChange.gateway, confirmSiteChange.newSiteId);
+  };
+
+  // Provision with auto-verify fallback: if provisioning fails, check if gateway already exists on TTN
+  const handleProvision = (gatewayId: string) => {
+    provisionGateway.mutate(
+      { gatewayId, organizationId },
+      {
+        onError: () => {
+          // Provisioning failed — auto-verify if the gateway already exists on TTN
+          checkTtnState.mutate({ gatewayIds: [gatewayId] });
+        },
+      }
+    );
   };
 
   const formatEUI = (eui: string): string => {
@@ -572,10 +601,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                             gateway={gateway as Gateway & { ttn_gateway_id?: string | null; ttn_last_error?: string | null }}
                             ttnConfig={ttnConfig}
                             isProvisioning={provisionGateway.isProvisioning(gateway.id)}
-                            onProvision={() => provisionGateway.mutate({ 
-                              gatewayId: gateway.id, 
-                              organizationId 
-                            })}
+                            onProvision={() => handleProvision(gateway.id)}
                           />
                           {/* Edit actions */}
                           {canEdit && (
