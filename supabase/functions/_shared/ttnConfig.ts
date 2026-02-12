@@ -71,7 +71,9 @@ export function formatDevEuiForDisplay(devEui: string): string {
 
 export interface TtnConfig {
   region: string;
-  apiKey: string;
+  apiKey: string;              // Application API key
+  orgApiKey?: string;          // Organization API key (has gateway rights)
+  hasOrgApiKey: boolean;       // Whether org API key is available
   applicationId: string;       // Per-org TTN application ID
 
   // Cross-cluster "Two Truths" architecture (2026-02-10 fix)
@@ -575,6 +577,8 @@ export async function getTtnConfigForOrg(
   return {
     region,
     apiKey,
+    orgApiKey,
+    hasOrgApiKey: !!orgApiKey && orgApiKey.length > 0,
     applicationId: applicationId || "",
     identityServerUrl,                 // EU1 — device registry
     clusterBaseUrl,                    // NAM1 — radio plane

@@ -1,28 +1,51 @@
 
 
-# Fix: Route Gateway Registration to EU1 Identity Server
+# Fix Gateway Auto-Verify: Missing DB Columns + API Key Fallback
 
-## Problem
+## Problem 1: Missing Database Columns
 
-Gateway registration calls are going to `nam1.cloud.thethings.network` (Gateway Server / radio plane), but gateway CRUD is an Identity Server operation that must go to `eu1.cloud.thethings.network`. This causes 404 errors.
+The `gateways` table is missing three columns that the verify function tries to write to:
+- `provisioning_state`
+- `last_provision_check_at`
+- `last_provision_check_error`
 
-## Solution
+The migration file exists (`20260212000000_add_gateway_provisioning_state.sql`) but was never applied. Every verify call logs:
+```
+Could not find the 'last_provision_check_at' column of 'gateways' in the schema cache
+```
 
-Three surgical edits to `supabase/functions/ttn-provision-gateway/index.ts`, then redeploy.
+**Fix**: Apply a database migration to add these three columns to the `gateways` table.
 
-## Edits
+## Problem 2: TTN Lookup Uses Wrong API Key
 
-### Edit 1 -- Line 45: Update build version
-Change `BUILD_VERSION` from `"ttn-provision-gateway-v2-multi-strategy-20250102"` to `"ttn-provision-gateway-v3-eu1-identity-20250211"`.
+The verify function uses the Organization API key (CM6Q) to look up the gateway. But TTN returns 404 because the gateway is likely registered under your personal TTN account (`freshtracker`), not the TTN organization. The org key can only see org-owned gateways.
 
-### Edit 2 -- Lines 175-182: Switch baseUrl from NAM1 to EU1
-Replace the NAM1 cluster base URL assignment with `IDENTITY_SERVER_URL` imported from the shared `ttnBase.ts` module. This makes all `ttnFetch` calls (used by every registration strategy) go to the EU1 Identity Server. The `gateway_server_address` field in the payload already correctly points to NAM1 for radio traffic.
+**Fix**: Update `check-ttn-gateway-exists` to try multiple API keys:
+1. Try the org API key first (CM6Q)
+2. If 404, retry with the application/personal API key (GAOA)
+3. Only report "missing" if both return 404
 
-### Edit 3 -- Lines 266-268: Remove duplicate import
-The `IDENTITY_SERVER_URL` and `assertValidTtnHost` imports now happen in Edit 2 (line 175 area). Remove the duplicate import at line 268 and update the comment to note it was already imported above.
+## Technical Changes
 
-## Post-Deploy Verification
-- Health check should return version `ttn-provision-gateway-v3-eu1-identity-20250211`
-- Function logs should show requests going to `eu1.cloud.thethings.network`
-- Adding a gateway in the UI should succeed using Strategy C (org-scoped)
+### 1. Database Migration
+```sql
+ALTER TABLE public.gateways
+ADD COLUMN IF NOT EXISTS provisioning_state text DEFAULT 'unknown',
+ADD COLUMN IF NOT EXISTS last_provision_check_at timestamptz,
+ADD COLUMN IF NOT EXISTS last_provision_check_error text;
+```
 
+### 2. Edge Function: `check-ttn-gateway-exists/index.ts`
+
+In the per-gateway lookup loop (around lines 163-205), after getting a 404 with the primary API key, add a retry block that tries `ttnConfig.apiKey` as a fallback before concluding "missing_in_ttn".
+
+Update the build version string so we can verify the new code is deployed.
+
+### 3. Redeploy
+Redeploy `check-ttn-gateway-exists` after edits.
+
+### Expected Result
+- DB columns exist, so state updates succeed
+- Verify tries org key, then falls back to app key
+- Gateway is found on TTN and auto-linked
+- Status updates from "unlinked" to "exists_in_ttn"

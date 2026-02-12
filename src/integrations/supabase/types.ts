@@ -1023,9 +1023,12 @@ export type Database = {
           description: string | null
           gateway_eui: string
           id: string
+          last_provision_check_at: string | null
+          last_provision_check_error: string | null
           last_seen_at: string | null
           name: string
           organization_id: string
+          provisioning_state: string | null
           site_id: string | null
           status: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id: string | null
@@ -1040,9 +1043,12 @@ export type Database = {
           description?: string | null
           gateway_eui: string
           id?: string
+          last_provision_check_at?: string | null
+          last_provision_check_error?: string | null
           last_seen_at?: string | null
           name: string
           organization_id: string
+          provisioning_state?: string | null
           site_id?: string | null
           status?: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id?: string | null
@@ -1057,9 +1063,12 @@ export type Database = {
           description?: string | null
           gateway_eui?: string
           id?: string
+          last_provision_check_at?: string | null
+          last_provision_check_error?: string | null
           last_seen_at?: string | null
           name?: string
           organization_id?: string
+          provisioning_state?: string | null
           site_id?: string | null
           status?: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id?: string | null
