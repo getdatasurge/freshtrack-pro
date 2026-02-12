@@ -71,7 +71,9 @@ export function formatDevEuiForDisplay(devEui: string): string {
 
 export interface TtnConfig {
   region: string;
-  apiKey: string;
+  apiKey: string;              // Application API key
+  orgApiKey?: string;          // Organization API key (has gateway rights)
+  hasOrgApiKey: boolean;       // Whether org API key is available
   applicationId: string;       // Per-org TTN application ID
 
   // Cross-cluster "Two Truths" architecture (2026-02-10 fix)
@@ -544,6 +546,11 @@ export async function getTtnConfigForOrg(
     ? deobfuscateKey(settings.ttn_webhook_secret_encrypted, encryptionSalt)
     : undefined;
 
+  // Decrypt organization API key (org-scoped key with gateway rights)
+  const orgApiKey = settings.ttn_org_api_key_encrypted
+    ? deobfuscateKey(settings.ttn_org_api_key_encrypted, encryptionSalt)
+    : undefined;
+
   // Decrypt gateway API key (user-scoped key for gateway provisioning)
   const gatewayApiKey = settings.ttn_gateway_api_key_encrypted
     ? deobfuscateKey(settings.ttn_gateway_api_key_encrypted, encryptionSalt)
@@ -567,6 +574,8 @@ export async function getTtnConfigForOrg(
   return {
     region,
     apiKey,
+    orgApiKey,
+    hasOrgApiKey: !!orgApiKey && orgApiKey.length > 0,
     applicationId: applicationId || "",
     identityServerUrl,                 // EU1 — device registry
     clusterBaseUrl,                    // NAM1 — radio plane
