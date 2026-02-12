@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
 import { assertClusterHost } from "../_shared/ttnBase.ts";
 
-const BUILD_VERSION = "check-ttn-gateway-exists-v1.0-20260212";
+const BUILD_VERSION = "check-ttn-gateway-exists-v1.1-20260212-fallback";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -197,8 +197,42 @@ Deno.serve(async (req) => {
 
             results.push(result);
           } else if (response.status === 404) {
-            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN`);
+            // Try fallback API key (application/personal key) if different from primary
+            const fallbackKey = ttnConfig.apiKey;
+            if (fallbackKey && fallbackKey !== apiKey) {
+              console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND with org key, trying fallback app key`);
+              const fallbackResp = await fetch(gatewayUrl, {
+                headers: {
+                  Authorization: `Bearer ${fallbackKey}`,
+                  "Content-Type": "application/json",
+                },
+              });
 
+              if (fallbackResp.ok) {
+                console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: FOUND with fallback key as ${ttnGatewayId}`);
+                const result: CheckResult = {
+                  gateway_id: gw.id,
+                  organization_id: orgId,
+                  provisioning_state: "exists_in_ttn",
+                  ttn_gateway_id: ttnGatewayId,
+                  checked_at: now,
+                };
+                await supabase
+                  .from("gateways")
+                  .update({
+                    ttn_gateway_id: ttnGatewayId,
+                    provisioning_state: "exists_in_ttn",
+                    last_provision_check_at: now,
+                    last_provision_check_error: null,
+                  })
+                  .eq("id", gw.id);
+                results.push(result);
+                continue;
+              }
+              console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: fallback also returned ${fallbackResp.status}`);
+            }
+
+            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN`);
             const result: CheckResult = {
               gateway_id: gw.id,
               organization_id: orgId,
