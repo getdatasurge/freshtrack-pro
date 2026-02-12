@@ -1,28 +1,90 @@
 
-
-# Fix: Route Gateway Registration to EU1 Identity Server
+# Fix: Use Organization API Key for Gateway Provisioning
 
 ## Problem
+The `getTtnConfigForOrg()` shared function in `supabase/functions/_shared/ttnConfig.ts` only decrypts `ttn_api_key_encrypted` (the **Application** API key, last4=GAOA) into `ttnConfig.apiKey`. The **Organization** API key (last4=CM6Q) is stored in `ttn_org_api_key_encrypted` but is never loaded.
 
-Gateway registration calls are going to `nam1.cloud.thethings.network` (Gateway Server / radio plane), but gateway CRUD is an Identity Server operation that must go to `eu1.cloud.thethings.network`. This causes 404 errors.
+The `gatewayApiKey` field on line 548 tries to read `ttn_gateway_api_key_encrypted`, which does not exist in the database. So `ttnConfig.gatewayApiKey` is always `undefined` and `ttnConfig.hasGatewayKey` is always `false`.
 
-## Solution
+This means `ttn-provision-gateway` always uses the Application API key, which lacks gateway registration rights.
 
-Three surgical edits to `supabase/functions/ttn-provision-gateway/index.ts`, then redeploy.
+## Database Evidence
 
-## Edits
+```text
+ttn_api_key_last4:     GAOA  (Application key - no gateway rights)
+ttn_org_api_key_last4: CM6Q  (Organization key - HAS gateway rights)
+```
 
-### Edit 1 -- Line 45: Update build version
-Change `BUILD_VERSION` from `"ttn-provision-gateway-v2-multi-strategy-20250102"` to `"ttn-provision-gateway-v3-eu1-identity-20250211"`.
+## Solution: 2 edits in `ttnConfig.ts`, 0 edits in `ttn-provision-gateway`
 
-### Edit 2 -- Lines 175-182: Switch baseUrl from NAM1 to EU1
-Replace the NAM1 cluster base URL assignment with `IDENTITY_SERVER_URL` imported from the shared `ttnBase.ts` module. This makes all `ttnFetch` calls (used by every registration strategy) go to the EU1 Identity Server. The `gateway_server_address` field in the payload already correctly points to NAM1 for radio traffic.
+### Edit 1: Add `orgApiKey` field to `TtnConfig` interface (~line 72-89)
 
-### Edit 3 -- Lines 266-268: Remove duplicate import
-The `IDENTITY_SERVER_URL` and `assertValidTtnHost` imports now happen in Edit 2 (line 175 area). Remove the duplicate import at line 268 and update the comment to note it was already imported above.
+Add a new `orgApiKey` field so consumers can access the Organization API key:
 
-## Post-Deploy Verification
-- Health check should return version `ttn-provision-gateway-v3-eu1-identity-20250211`
-- Function logs should show requests going to `eu1.cloud.thethings.network`
-- Adding a gateway in the UI should succeed using Strategy C (org-scoped)
+```typescript
+export interface TtnConfig {
+  region: string;
+  apiKey: string;               // Application API key
+  orgApiKey?: string;           // Organization API key (has gateway rights)
+  hasOrgApiKey: boolean;        // Whether org API key is available
+  applicationId: string;
+  identityServerUrl: string;
+  clusterBaseUrl: string;
+  webhookSecret?: string;
+  webhookUrl?: string;
+  isEnabled: boolean;
+  provisioningStatus: string;
+  gatewayApiKey?: string;
+  hasGatewayKey: boolean;
+}
+```
 
+### Edit 2: Decrypt `ttn_org_api_key_encrypted` in `getTtnConfigForOrg()` (~line 547-578)
+
+Replace the non-existent `ttn_gateway_api_key_encrypted` reference with `ttn_org_api_key_encrypted`:
+
+```typescript
+// Decrypt organization API key (org-scoped key for gateway provisioning)
+const orgApiKey = settings.ttn_org_api_key_encrypted
+  ? deobfuscateKey(settings.ttn_org_api_key_encrypted, encryptionSalt)
+  : undefined;
+```
+
+And include it in the return object:
+
+```typescript
+return {
+  region,
+  apiKey,
+  orgApiKey,
+  hasOrgApiKey: !!orgApiKey && orgApiKey.length > 0,
+  applicationId: applicationId || "",
+  // ... rest unchanged
+};
+```
+
+### Edit 3: Update `ttn-provision-gateway` to prefer org API key
+
+In `ttn-provision-gateway/index.ts`, update the `ttnFetch` helper (around line 185) to prefer the org API key:
+
+```typescript
+const key = apiKey || ttnConfig.orgApiKey || ttnConfig.apiKey;
+```
+
+And update Strategy A (around line 330) to use `ttnConfig.orgApiKey` instead of `ttnConfig.gatewayApiKey`:
+
+```typescript
+if (ttnConfig.hasOrgApiKey && ttnConfig.orgApiKey) {
+```
+
+### Deploy
+
+After edits, deploy `ttn-provision-gateway` (the only function that changed behavior). The shared `ttnConfig.ts` will be picked up automatically.
+
+## Why This Works
+
+- The Organization API key (CM6Q) is already stored in the database
+- It was created by `ttn-provision-org` with gateway registration rights
+- The `auth_info` endpoint will detect it as an organization-scoped key
+- Strategy C (`/api/v3/organizations/{org_id}/gateways`) will be selected automatically
+- No UI changes needed -- the key is already provisioned and visible in Settings
