@@ -211,10 +211,31 @@ function AddGatewayTab({ onGatewayAdded }: { onGatewayAdded: () => void }) {
       setSubmitted(true);
       onGatewayAdded();
 
-      // Auto-provision on TTN in the background
+      // Run preflight check before attempting TTN provisioning
       if (insertedGateway?.id) {
         setProvisioningStatus("provisioning");
         setProvisionError(null);
+
+        try {
+          const { data: preflight, error: preflightErr } = await supabase.functions
+            .invoke("ttn-gateway-preflight", {
+              body: { organization_id: organizationId },
+            });
+
+          if (preflightErr || !preflight?.allowed) {
+            const reason = preflight?.error?.message || preflightErr?.message || "TTN not configured";
+            const hint = preflight?.error?.hint;
+            setProvisioningStatus("error");
+            setProvisionError(hint ? `${reason}. ${hint}` : reason);
+            return;
+          }
+        } catch {
+          setProvisioningStatus("error");
+          setProvisionError("Could not verify TTN permissions");
+          return;
+        }
+
+        // Preflight passed — provision on TTN
         supabase.functions
           .invoke("ttn-provision-gateway", {
             body: {

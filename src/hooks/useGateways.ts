@@ -129,9 +129,39 @@ export function useCreateGateway() {
     },
     onSuccess: async (data) => {
       await invalidateGateways(queryClient, data.organization_id);
-      toast.success("Gateway created — registering on TTN...");
+      toast.success("Gateway created successfully");
 
-      // Auto-provision on TTN in the background (non-blocking)
+      // Run preflight check before attempting TTN provisioning
+      try {
+        const { data: preflight, error: preflightErr } = await supabase.functions
+          .invoke("ttn-gateway-preflight", {
+            body: { organization_id: data.organization_id },
+          });
+
+        if (preflightErr || !preflight?.allowed) {
+          const reason = preflight?.error?.message || preflightErr?.message || "TTN not configured";
+          const hint = preflight?.error?.hint;
+          debugLog.info("ttn", "TTN_AUTO_PROVISION_SKIPPED", {
+            gateway_id: data.id,
+            reason,
+            key_type: preflight?.key_type,
+          });
+          toast.info(
+            hint
+              ? `TTN registration skipped: ${reason}. ${hint}`
+              : `TTN registration skipped: ${reason}`,
+            { duration: 6000 }
+          );
+          return;
+        }
+      } catch {
+        // Preflight failed entirely — skip provisioning silently
+        debugLog.error("ttn", "TTN_PREFLIGHT_EXCEPTION", { gateway_id: data.id });
+        return;
+      }
+
+      // Preflight passed — provision on TTN
+      toast.info("Registering gateway on TTN...");
       supabase.functions
         .invoke("ttn-provision-gateway", {
           body: {
