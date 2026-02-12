@@ -26,7 +26,7 @@ export interface Gateway {
   description: string | null;
   status: GatewayStatus;
   last_seen_at: string | null;
-  signal_quality: Record<string, unknown> | null;
+  signal_quality?: Record<string, unknown> | null;
   ttn_gateway_id: string | null;
   ttn_application_id: string | null;
   // TTN provisioning detection fields (mirrors lora_sensors)
@@ -87,7 +87,7 @@ export interface GatewayInsert {
   name: string;
   site_id?: string | null;
   description?: string | null;
-  status?: GatewayStatus;
+  status?: Exclude<GatewayStatus, 'degraded'>;
   ttn_application_id?: string | null;
   provisioning_state?: TtnProvisioningState;
   created_by?: string | null;

@@ -1,61 +1,28 @@
 
 
-# Auto-Verify All Sensors on Load and After Changes
+# Fix: Route Gateway Registration to EU1 Identity Server
 
 ## Problem
 
-The "Verify All Sensors" button on the Sensors settings page is manual-only. There is no automatic verification when the page first loads or after any mutation (add, provision, edit, delete, assign). Users must remember to click it themselves to see current TTN registration status.
+Gateway registration calls are going to `nam1.cloud.thethings.network` (Gateway Server / radio plane), but gateway CRUD is an Identity Server operation that must go to `eu1.cloud.thethings.network`. This causes 404 errors.
 
 ## Solution
 
-Add a `useEffect` in `SensorManager` that automatically triggers `handleCheckAllTtn` in two scenarios:
+Three surgical edits to `supabase/functions/ttn-provision-gateway/index.ts`, then redeploy.
 
-1. **On initial load** -- once sensors have loaded and TTN is configured
-2. **After mutations** -- after provisioning, adding, editing, or deleting a sensor (when the sensor list refetches)
+## Edits
 
-To avoid spamming TTN, the auto-verify will be debounced and will only run once per page load (not on every re-render).
+### Edit 1 -- Line 45: Update build version
+Change `BUILD_VERSION` from `"ttn-provision-gateway-v2-multi-strategy-20250102"` to `"ttn-provision-gateway-v3-eu1-identity-20250211"`.
 
-## Technical Approach
+### Edit 2 -- Lines 175-182: Switch baseUrl from NAM1 to EU1
+Replace the NAM1 cluster base URL assignment with `IDENTITY_SERVER_URL` imported from the shared `ttnBase.ts` module. This makes all `ttnFetch` calls (used by every registration strategy) go to the EU1 Identity Server. The `gateway_server_address` field in the payload already correctly points to NAM1 for radio traffic.
 
-### File: `src/components/settings/SensorManager.tsx`
+### Edit 3 -- Lines 266-268: Remove duplicate import
+The `IDENTITY_SERVER_URL` and `assertValidTtnHost` imports now happen in Edit 2 (line 175 area). Remove the duplicate import at line 268 and update the comment to note it was already imported above.
 
-1. **Add a `useRef` flag** (`hasAutoVerified`) to track whether the initial auto-verify has already run, preventing repeated calls on re-renders.
-
-2. **Add a `useEffect` for initial load auto-verify**:
-   - Depends on `sensors`, `isTtnConfiguredNow`, and `checkTtnStatus.isPending`
-   - Fires once when sensors are loaded, TTN is configured, and no check is already in progress
-   - Calls `handleCheckAllTtn()` and sets `hasAutoVerified` to `true`
-
-3. **Add auto-verify after mutations**: After each successful mutation (provision, add, edit, delete), the sensor query is already invalidated and refetches. We need to trigger a verify after the refetch settles.
-   - Add a second `useEffect` that watches `dataUpdatedAt` (from `useLoraSensors`). When it changes after the initial load, it means data was refreshed (likely from a mutation). This triggers `handleCheckAllTtn()` with a short delay (1.5s) to let the refetch complete.
-   - Use a `useRef` to store the previous `dataUpdatedAt` so we only trigger on actual changes, not the initial load (which is handled by the first effect).
-
-4. **Guard against concurrent calls**: Both effects check `checkTtnStatus.isPending` before triggering to avoid overlapping requests.
-
-### Behavioral Summary
-
-```text
-Page Load
-  -> sensors load
-  -> useEffect fires -> handleCheckAllTtn() 
-  -> all sensors verified automatically
-
-User provisions/adds/edits/deletes a sensor
-  -> mutation succeeds -> query invalidates -> sensors refetch
-  -> dataUpdatedAt changes -> useEffect fires -> handleCheckAllTtn()
-  -> verification re-runs with updated sensor list
-```
-
-### Edge Cases Handled
-
-- **No sensors**: Early return in `handleCheckAllTtn` already handles this
-- **TTN not configured**: Guard in `handleCheckAllTtn` shows toast and returns
-- **Already checking**: `isPending` guard prevents concurrent calls
-- **Component unmount during check**: React Query handles cleanup
-
-### Files Changed
-
-| File | Change |
-|------|--------|
-| `src/components/settings/SensorManager.tsx` | Add `useRef` + two `useEffect` hooks for auto-verify on load and after data changes |
+## Post-Deploy Verification
+- Health check should return version `ttn-provision-gateway-v3-eu1-identity-20250211`
+- Function logs should show requests going to `eu1.cloud.thethings.network`
+- Adding a gateway in the UI should succeed using Strategy C (org-scoped)
 

@@ -143,10 +143,6 @@ export function useCreateLoraSensor() {
         data.organization_id,
         data.unit_id
       );
-      toast.success("LoRa sensor created successfully");
-    },
-    onError: (error: Error) => {
-      toast.error(`Failed to create LoRa sensor: ${error.message}`);
     },
   });
 }

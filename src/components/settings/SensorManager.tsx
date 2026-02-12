@@ -349,7 +349,6 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
 
   // Auto-verify refs
   const hasAutoVerified = useRef(false);
-  const prevDataUpdatedAt = useRef<number>(0);
 
   // Determine if TTN is configured NOW (regardless of sensor's stored state)
   const isTtnConfiguredNow = Boolean(
@@ -407,24 +406,10 @@ export function SensorManager({ organizationId, sites, units, canEdit, autoOpenA
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sensors, isLoading, isTtnConfiguredNow, checkTtnStatus.isPending]);
 
-  // Auto-verify after mutations (dataUpdatedAt changes)
-  useEffect(() => {
-    if (!dataUpdatedAt || !hasAutoVerified.current) {
-      if (dataUpdatedAt) prevDataUpdatedAt.current = dataUpdatedAt;
-      return;
-    }
-    if (dataUpdatedAt === prevDataUpdatedAt.current) return;
-    prevDataUpdatedAt.current = dataUpdatedAt;
-
-    if (checkTtnStatus.isPending || !isTtnConfiguredNow || !sensors?.length) return;
-
-    const timer = setTimeout(() => {
-      debugLog.info('ttn', 'AUTO_VERIFY_AFTER_MUTATION', { dataUpdatedAt });
-      handleCheckAllTtn();
-    }, 1500);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataUpdatedAt]);
+  // NOTE: The previous "auto-verify after mutations" effect was removed because
+  // it created an infinite loop: verify → invalidate sensors query → refetch →
+  // dataUpdatedAt changes → verify again. The initial-load verify above covers
+  // the first check, and the "Verify All Sensors" button is available for manual use.
 
   const [editSensor, setEditSensor] = useState<LoraSensor | null>(null);
   const [deleteSensor_, setDeleteSensor] = useState<LoraSensor | null>(null);
