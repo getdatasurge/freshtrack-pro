@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useGateways, useDeleteGateway, useUpdateGateway, useProvisionGateway } from "@/hooks/useGateways";
+import { useGateways, useDeleteGateway, useUpdateGateway, useProvisionGateway, computeGatewayStatus } from "@/hooks/useGateways";
 import { useCheckTtnGatewayState } from "@/hooks/useCheckTtnGatewayState";
 import { useGatewayProvisioningPreflight } from "@/hooks/useGatewayProvisioningPreflight";
 import { Gateway, GatewayStatus } from "@/types/ttn";
@@ -83,34 +83,19 @@ const ColumnHeaderTooltip = ({ content }: { content: string }) => (
 );
 
 // Status badge with tooltip showing meaning, system state, and user action
-const GatewayStatusBadgeWithTooltip = ({ 
-  status, 
-  siteName 
-}: { 
-  status: GatewayStatus; 
+// Uses computeGatewayStatus to derive live status from last_seen_at
+const GatewayStatusBadgeWithTooltip = ({
+  status,
+  lastSeenAt,
+  siteName
+}: {
+  status: GatewayStatus;
+  lastSeenAt: string | null;
   siteName: string | null;
 }) => {
-  const statusConfig = GATEWAY_STATUS_CONFIG[status] || GATEWAY_STATUS_CONFIG.pending;
-  
-  // Special case for pending with linked site
-  if (status === "pending" && siteName) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge className="bg-primary/15 text-primary border-primary/30 cursor-help max-w-[160px] truncate">
-            Linked to {siteName}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs p-3">
-          <div className="space-y-1.5 text-sm">
-            <p><span className="font-medium">Status:</span> Gateway is registered and linked to a site</p>
-            <p><span className="font-medium">System:</span> Awaiting first connection to TTN network</p>
-            <p className="text-primary"><span className="font-medium">Action:</span> Power on gateway and connect to network</p>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
+  // Compute live status from last_seen_at if available, otherwise use DB status
+  const liveStatus = lastSeenAt ? computeGatewayStatus(lastSeenAt) : status;
+  const statusConfig = GATEWAY_STATUS_CONFIG[liveStatus] || GATEWAY_STATUS_CONFIG.pending;
 
   return (
     <Tooltip>
@@ -123,6 +108,9 @@ const GatewayStatusBadgeWithTooltip = ({
         <div className="space-y-1.5 text-sm">
           <p><span className="font-medium">Status:</span> {statusConfig.tooltip.meaning}</p>
           <p><span className="font-medium">System:</span> {statusConfig.tooltip.systemState}</p>
+          {siteName && (
+            <p><span className="font-medium">Site:</span> {siteName}</p>
+          )}
           {statusConfig.tooltip.userAction && (
             <p className="text-primary"><span className="font-medium">Action:</span> {statusConfig.tooltip.userAction}</p>
           )}
@@ -361,7 +349,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
     { autoRun: true }
   );
 
-  // Auto-verify unlinked gateways on load
+  // Auto-verify unlinked gateways on load (once)
   const autoVerifyFired = useRef(false);
   useEffect(() => {
     if (isLoading || !gateways || autoVerifyFired.current) return;
@@ -370,21 +358,6 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
     autoVerifyFired.current = true;
     checkTtn.mutate({ gatewayIds: unlinked.map(gw => gw.id) });
   }, [isLoading, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
-  
-  // Auto-verify: check unlinked gateways against TTN on page load
-  const checkTtnState = useCheckTtnGatewayState();
-  const autoVerifyDone = useRef(false);
-
-  useEffect(() => {
-    if (autoVerifyDone.current || !gateways || gateways.length === 0) return;
-    if (checkTtnState.isPending) return;
-
-    const unlinked = gateways.filter((gw) => !gw.ttn_gateway_id);
-    if (unlinked.length === 0) return;
-
-    autoVerifyDone.current = true;
-    checkTtnState.mutate({ organizationId });
-  }, [gateways, organizationId]);
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editGateway, setEditGateway] = useState<Gateway | null>(null);
@@ -482,7 +455,7 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
       {
         onError: () => {
           // Provisioning failed — auto-verify if the gateway already exists on TTN
-          checkTtnState.mutate({ gatewayIds: [gatewayId] });
+          checkTtn.mutate({ gatewayIds: [gatewayId] });
         },
       }
     );
@@ -600,9 +573,10 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
                         )}
                       </TableCell>
                       <TableCell className="hidden lg:table-cell">
-                        <GatewayStatusBadgeWithTooltip 
-                          status={gateway.status} 
-                          siteName={siteName} 
+                        <GatewayStatusBadgeWithTooltip
+                          status={gateway.status}
+                          lastSeenAt={gateway.last_seen_at}
+                          siteName={siteName}
                         />
                       </TableCell>
                       <TableCell className="py-3">
