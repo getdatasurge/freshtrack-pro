@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Radio, Plus, Pencil, Trash2, Loader2, Info, MapPin, CloudUpload, CheckCircle2 } from "lucide-react";
+import { Radio, Plus, Pencil, Trash2, Loader2, Info, MapPin, CloudUpload, CheckCircle2, AlertTriangle } from "lucide-react";
 import { AddGatewayDialog } from "./AddGatewayDialog";
 import { EditGatewayDialog } from "./EditGatewayDialog";
 import { TTNGatewayPreflightBanner } from "./TTNGatewayPreflightBanner";
@@ -146,6 +146,26 @@ const GatewayProvisionButton = ({
         </TooltipTrigger>
         <TooltipContent>
           <p>Registered in TTN as {gateway.ttn_gateway_id}</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // Gateway EUI registered to another TTN account — show conflict state
+  if (gateway.provisioning_state === "conflict") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="outline" className="text-warning border-warning/30 gap-1 cursor-help">
+            <AlertTriangle className="h-3 w-3" />
+            Claimed Elsewhere
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          <p className="font-medium text-warning">Gateway EUI registered to another account</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            This EUI is registered to a different TTN account. Use TTN Console to transfer or delete it first.
+          </p>
         </TooltipContent>
       </Tooltip>
     );
@@ -453,8 +473,13 @@ export function GatewayManager({ organizationId, sites, canEdit, ttnConfig }: Ga
     provisionGateway.mutate(
       { gatewayId, organizationId },
       {
-        onError: () => {
-          // Provisioning failed — auto-verify if the gateway already exists on TTN
+        onError: (error) => {
+          // Don't auto-verify for EUI conflicts — edge function already
+          // set provisioning_state = "conflict" in the DB
+          const details = (error as Error & { details?: Record<string, unknown> }).details;
+          if (details?.error_code === 'EUI_CONFLICT') return;
+
+          // Other errors — auto-verify if the gateway already exists on TTN
           checkTtn.mutate({ gatewayIds: [gatewayId] });
         },
       }
