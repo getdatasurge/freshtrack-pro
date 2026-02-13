@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useGateways, useUpdateGateway, useDeleteGateway } from "@/hooks/useGateways";
+import { useGateways, useUpdateGateway, useDeleteGateway, computeGatewayStatus } from "@/hooks/useGateways";
 import { AddGatewayDialog } from "@/components/settings/AddGatewayDialog";
 import { AssignGatewayDialog } from "@/components/settings/AssignGatewayDialog";
 import { EditGatewayDialog } from "@/components/settings/EditGatewayDialog";
@@ -43,8 +43,10 @@ export function SiteGatewaysCard({ siteId, siteName, organizationId }: SiteGatew
   const [deleteGatewayData, setDeleteGatewayData] = useState<Gateway | null>(null);
   const [unassignGateway, setUnassignGateway] = useState<Gateway | null>(null);
 
-  // Filter gateways assigned to this site
-  const siteGateways = allGateways.filter(g => g.site_id === siteId);
+  // Filter gateways assigned to this site — compute live status from last_seen_at
+  const siteGateways = allGateways
+    .filter(g => g.site_id === siteId)
+    .map(g => ({ ...g, status: computeGatewayStatus(g.last_seen_at) }));
   // Gateways available for assignment (not assigned to any site)
   const unassignedGateways = allGateways.filter(g => !g.site_id);
 
@@ -56,8 +58,14 @@ export function SiteGatewaysCard({ siteId, siteName, organizationId }: SiteGatew
     switch (status) {
       case "online":
         return <Badge variant="default" className="bg-green-500/10 text-green-600 border-green-500/20">Online</Badge>;
+      case "degraded":
+        return <Badge variant="secondary" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20">Degraded</Badge>;
       case "offline":
         return <Badge variant="secondary" className="bg-red-500/10 text-red-600 border-red-500/20">Offline</Badge>;
+      case "maintenance":
+        return <Badge variant="outline" className="bg-gray-500/10 text-gray-600 border-gray-500/20">Maintenance</Badge>;
+      case "pending":
+        return <Badge variant="outline">Pending</Badge>;
       default:
         return <Badge variant="outline">Pending</Badge>;
     }

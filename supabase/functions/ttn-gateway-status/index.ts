@@ -1,7 +1,7 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
-import { assertClusterHost } from "../_shared/ttnBase.ts";
+
+const BUILD_VERSION = "ttn-gateway-status-v1.1-keyscope-fix-20260213";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,9 +21,9 @@ interface StatusRequest {
  * registered gateway and updates last_seen_at + signal_quality in Supabase.
  *
  * TTN endpoint: GET /api/v3/gs/gateways/{gateway_id}/connection/stats
+ * This endpoint lives on the REGIONAL cluster (NAM1), not the Identity Server.
  */
-serve(async (req) => {
-  const BUILD_VERSION = "ttn-gateway-status-v1.0-20260211";
+Deno.serve(async (req) => {
   const requestId = crypto.randomUUID().slice(0, 8);
 
   console.log(`[ttn-gateway-status] Build: ${BUILD_VERSION}`);
@@ -88,6 +88,22 @@ serve(async (req) => {
       );
     }
 
+    // ---------------------------------------------------------------
+    // KEY SCOPE CHECK: Gateway Server connection stats require a key
+    // with gateway status rights. Application keys cannot read GS stats.
+    // Prefer org key or gateway key; only use app key as last resort.
+    // ---------------------------------------------------------------
+    const hasGatewayCapableKey = ttnConfig.hasOrgApiKey || ttnConfig.hasGatewayKey;
+    const apiKey = ttnConfig.orgApiKey || ttnConfig.gatewayApiKey || ttnConfig.apiKey;
+
+    if (!hasGatewayCapableKey) {
+      console.warn(
+        `[ttn-gateway-status] [${requestId}] Org ${organization_id}: ` +
+        `Only application API key available — gateway status sync will likely fail. ` +
+        `Application keys lack gateway status rights.`
+      );
+    }
+
     // Fetch gateways that have been provisioned on TTN (have ttn_gateway_id)
     let query = supabase
       .from("gateways")
@@ -121,23 +137,17 @@ serve(async (req) => {
       );
     }
 
+    // GS connection stats live on the REGIONAL cluster (NAM1), not EU1
     const baseUrl = ttnConfig.clusterBaseUrl;
-    const apiKey = ttnConfig.orgApiKey || ttnConfig.apiKey;
+    console.log(`[ttn-gateway-status] [${requestId}] Using ${hasGatewayCapableKey ? "org/gateway" : "app"} key, GS=${baseUrl}`);
 
     const results: Array<{ id: string; ttn_id: string; status: string; error?: string }> = [];
+    let authFailureDetected = false;
 
     // Fetch connection stats for each gateway
     for (const gw of gateways) {
       const ttnId = gw.ttn_gateway_id;
       const statsUrl = `${baseUrl}/api/v3/gs/gateways/${ttnId}/connection/stats`;
-
-      try {
-        assertClusterHost(statsUrl);
-      } catch (e) {
-        console.error(`[ttn-gateway-status] [${requestId}] Cluster check failed for ${ttnId}:`, e);
-        results.push({ id: gw.id, ttn_id: ttnId, status: "error", error: "cluster_violation" });
-        continue;
-      }
 
       try {
         const response = await fetch(statsUrl, {
@@ -159,7 +169,7 @@ serve(async (req) => {
           // Use the most recent timestamp
           const timestamps = [lastStatusAt, connectedAt, lastUplinkAt].filter(Boolean);
           const lastSeenAt = timestamps.length > 0
-            ? timestamps.reduce((a, b) => (new Date(a) > new Date(b) ? a : b))
+            ? timestamps.reduce((a: string, b: string) => (new Date(a) > new Date(b) ? a : b))
             : null;
 
           // Extract signal quality from round_trip_times or sub_bands
@@ -201,16 +211,42 @@ serve(async (req) => {
           console.log(`[ttn-gateway-status] [${requestId}] ${ttnId}: ${gatewayStatus} (last_seen: ${lastSeenAt})`);
 
         } else if (response.status === 404) {
-          // Gateway not connected (no active connection)
-          // This is normal for gateways that are powered off
-          await supabase
-            .from("gateways")
-            .update({ status: "offline" })
-            .eq("id", gw.id);
+          // 404 from GS means gateway is not currently connected — this is normal
+          // for gateways that are powered off or haven't connected recently.
+          // Do NOT mark as offline if we suspect it's actually an auth issue.
+          if (!hasGatewayCapableKey && !authFailureDetected) {
+            // First 404 with app-only key — likely a permissions issue, not truly offline
+            authFailureDetected = true;
+            console.warn(
+              `[ttn-gateway-status] [${requestId}] ${ttnId}: 404 with application key — ` +
+              `may be a permissions issue, not a real offline status`
+            );
+            results.push({
+              id: gw.id,
+              ttn_id: ttnId,
+              status: "error",
+              error: "Application API key may lack gateway status rights. Configure an Organization API key.",
+            });
+          } else {
+            await supabase
+              .from("gateways")
+              .update({ status: "offline" })
+              .eq("id", gw.id);
 
-          results.push({ id: gw.id, ttn_id: ttnId, status: "offline" });
-          console.log(`[ttn-gateway-status] [${requestId}] ${ttnId}: offline (not connected)`);
+            results.push({ id: gw.id, ttn_id: ttnId, status: "offline" });
+            console.log(`[ttn-gateway-status] [${requestId}] ${ttnId}: offline (not connected)`);
+          }
 
+        } else if (response.status === 403) {
+          // Explicit permission denied
+          console.warn(`[ttn-gateway-status] [${requestId}] ${ttnId}: 403 — key lacks gateway status rights`);
+          results.push({
+            id: gw.id,
+            ttn_id: ttnId,
+            status: "error",
+            error: "API key lacks gateway status rights",
+          });
+          authFailureDetected = true;
         } else {
           const errText = await response.text();
           console.warn(`[ttn-gateway-status] [${requestId}] ${ttnId}: API error ${response.status} - ${errText.slice(0, 200)}`);
@@ -231,6 +267,9 @@ serve(async (req) => {
         total: gateways.length,
         results,
         request_id: requestId,
+        ...(authFailureDetected && !hasGatewayCapableKey ? {
+          warning: "Application API key may lack gateway status rights. Configure an Organization API key in Settings for accurate gateway status.",
+        } : {}),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

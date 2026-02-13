@@ -164,9 +164,11 @@ export type TTNEndpointType = "IS" | "DATA";
  */
 export function getEndpointForPath(path: string): { url: string; type: TTNEndpointType } {
   // Data plane paths → regional cluster (NAM1)
+  // Includes Gateway Server (/api/v3/gs/) for connection stats
   if (path.includes("/api/v3/as/") ||
       path.includes("/api/v3/ns/") ||
-      path.includes("/api/v3/js/")) {
+      path.includes("/api/v3/js/") ||
+      path.includes("/api/v3/gs/")) {
     return { url: TTN_REGIONAL_URL, type: "DATA" };
   }
 
@@ -182,6 +184,8 @@ export function identifyPlane(endpoint: string): TTNPlane {
   if (endpoint.includes("/api/v3/js/")) return "JS";
   if (endpoint.includes("/api/v3/ns/")) return "NS";
   if (endpoint.includes("/api/v3/as/")) return "AS";
+  // Gateway Server (connection stats) lives on the regional cluster
+  if (endpoint.includes("/api/v3/gs/")) return "NS";
   if (
     endpoint.includes("/api/v3/applications/") ||
     endpoint.includes("/api/v3/devices/") ||
