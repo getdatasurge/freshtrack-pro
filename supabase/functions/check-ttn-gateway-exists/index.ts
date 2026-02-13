@@ -262,8 +262,6 @@ Deno.serve(async (req) => {
           } else if (response.status === 404) {
             // 404 = gateway genuinely not found (we already have a gateway-capable key)
             console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN (tried ${fallbackKey ? '2 keys' : '1 key'})`);
-
-            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN`);
             const result: CheckResult = {
               gateway_id: gw.id,
               organization_id: orgId,
