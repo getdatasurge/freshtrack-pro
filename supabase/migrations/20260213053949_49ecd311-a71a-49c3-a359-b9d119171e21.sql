@@ -1,0 +1,1 @@
+ALTER TABLE public.gateways ADD COLUMN IF NOT EXISTS signal_quality jsonb;
