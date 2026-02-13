@@ -1,4 +1,3 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
 import { IDENTITY_SERVER_URL, assertValidTtnHost, logTtnApiCall } from "../_shared/ttnBase.ts";
@@ -52,8 +51,8 @@ interface PreflightResult {
  * Returns actionable errors with step-by-step fix instructions.
  */
 
-serve(async (req) => {
-  const BUILD_VERSION = "ttn-gateway-preflight-v2.0-authinfo-fix-20260105";
+Deno.serve(async (req) => {
+  const BUILD_VERSION = "ttn-gateway-preflight-v3.0-denoserve-20260213";
   const requestId = crypto.randomUUID().slice(0, 8);
 
   console.log(`[ttn-gateway-preflight] Build: ${BUILD_VERSION}`);

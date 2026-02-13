@@ -1029,6 +1029,7 @@ export type Database = {
           name: string
           organization_id: string
           provisioning_state: string | null
+          signal_quality: Json | null
           site_id: string | null
           status: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id: string | null
@@ -1049,6 +1050,7 @@ export type Database = {
           name: string
           organization_id: string
           provisioning_state?: string | null
+          signal_quality?: Json | null
           site_id?: string | null
           status?: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id?: string | null
@@ -1069,6 +1071,7 @@ export type Database = {
           name?: string
           organization_id?: string
           provisioning_state?: string | null
+          signal_quality?: Json | null
           site_id?: string | null
           status?: Database["public"]["Enums"]["gateway_status"]
           ttn_application_id?: string | null
