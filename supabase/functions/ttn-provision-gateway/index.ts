@@ -1,6 +1,6 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
+import { findTtnGatewayByEui } from "../_shared/ttnGatewayLookup.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,8 +41,8 @@ interface RegistrationResult {
   details?: string;
 }
 
-serve(async (req) => {
-  const BUILD_VERSION = "ttn-provision-gateway-v3-eu1-identity-20250211";
+Deno.serve(async (req) => {
+  const BUILD_VERSION = "ttn-provision-gateway-v4-eui-search-20260213";
   const requestId = crypto.randomUUID().slice(0, 8);
   
   console.log(`[ttn-provision-gateway] Build: ${BUILD_VERSION}`);
@@ -203,20 +203,28 @@ serve(async (req) => {
     };
 
     if (action === "create") {
-      // Step 1: Check if gateway already exists
-      console.log(`[ttn-provision-gateway] [${requestId}] Checking if gateway exists`);
-      
-      const checkResponse = await ttnFetch(`/api/v3/gateways/${ttnGatewayId}`);
-      
-      if (checkResponse.ok) {
-        // Gateway already exists in TTN — claim it
-        console.log(`[ttn-provision-gateway] [${requestId}] Gateway already exists in TTN — claiming`);
+      // Step 1: Check if gateway already exists on TTN
+      // Uses findTtnGatewayByEui which handles custom IDs (not just eui-{eui})
+      console.log(`[ttn-provision-gateway] [${requestId}] Checking if gateway exists (EUI search enabled)`);
 
-        // Update our database with TTN info
+      const lookupKey = ttnConfig.orgApiKey || ttnConfig.apiKey;
+      let lookupResult = await findTtnGatewayByEui(lookupKey, gateway.gateway_eui, { requestId });
+
+      // Try admin key if org key can't find it
+      const earlyAdminKey = Deno.env.get("TTN_ADMIN_API_KEY");
+      if (!lookupResult.found && earlyAdminKey) {
+        lookupResult = await findTtnGatewayByEui(earlyAdminKey, gateway.gateway_eui, { requestId });
+      }
+
+      if (lookupResult.found && lookupResult.gatewayId) {
+        // Gateway already exists in TTN — claim it with the ACTUAL ID
+        const actualId = lookupResult.gatewayId;
+        console.log(`[ttn-provision-gateway] [${requestId}] Gateway already exists in TTN as ${actualId} — claiming`);
+
         await supabase
           .from("gateways")
           .update({
-            ttn_gateway_id: ttnGatewayId,
+            ttn_gateway_id: actualId,
             ttn_registered_at: new Date().toISOString(),
             ttn_last_error: null,
             provisioning_state: "exists_in_ttn",
@@ -230,41 +238,17 @@ serve(async (req) => {
           JSON.stringify({
             ok: true,
             success: true,
-            gateway_id: ttnGatewayId,
+            gateway_id: actualId,
             already_exists: true,
-            message: "Gateway already registered in TTN",
+            claimed: true,
+            message: `Gateway already registered in TTN as ${actualId}`,
             request_id: requestId,
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      if (checkResponse.status !== 404) {
-        const errorText = await checkResponse.text();
-        console.error(`[ttn-provision-gateway] [${requestId}] Check failed: ${checkResponse.status} - ${errorText}`);
-        
-        if (checkResponse.status === 403 || checkResponse.status === 401) {
-          // API key doesn't have gateway read rights - continue and try to create
-          console.log(`[ttn-provision-gateway] [${requestId}] Cannot check gateway existence (${checkResponse.status}), proceeding to create`);
-        } else {
-          await supabase
-            .from("gateways")
-            .update({ ttn_last_error: `Check failed: ${checkResponse.status}` })
-            .eq("id", gateway_id);
-          
-          return new Response(
-            JSON.stringify({
-              ok: false,
-              error: `TTN API error (${checkResponse.status})`,
-              error_code: "TTN_API_ERROR",
-              hint: "Check TTN API key permissions",
-              details: errorText.slice(0, 500),
-              request_id: requestId,
-            }),
-            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
-      }
+      console.log(`[ttn-provision-gateway] [${requestId}] Gateway not found in TTN — proceeding to create`);
 
       // Step 2: Determine API key scope using auth_info
       // auth_info goes to EU1 Identity Server (IDENTITY_SERVER_URL already imported above)
@@ -445,19 +429,22 @@ serve(async (req) => {
 
         if (createResponse.status === 409) {
           // 409 Conflict — gateway EUI already registered.
-          // Try to claim it: GET the gateway and link it locally if accessible.
-          console.log(`[ttn-provision-gateway] [${requestId}] 409 — attempting to claim existing gateway ${ttnGatewayId}`);
+          // Search by EUI to find the actual gateway (may have a custom ID)
+          console.log(`[ttn-provision-gateway] [${requestId}] 409 — searching for existing gateway by EUI`);
 
-          const claimResponse = await ttnFetch(`/api/v3/gateways/${ttnGatewayId}`);
+          let claimResult = await findTtnGatewayByEui(strategyApiKey, gateway.gateway_eui, { requestId });
+          if (!claimResult.found && adminApiKey) {
+            claimResult = await findTtnGatewayByEui(adminApiKey, gateway.gateway_eui, { requestId });
+          }
 
-          if (claimResponse.ok) {
-            // Gateway is accessible with our key — claim it
-            console.log(`[ttn-provision-gateway] [${requestId}] Gateway ${ttnGatewayId} exists and is accessible — claiming`);
+          if (claimResult.found && claimResult.gatewayId) {
+            const actualId = claimResult.gatewayId;
+            console.log(`[ttn-provision-gateway] [${requestId}] Found and claiming ${actualId}`);
 
             await supabase
               .from("gateways")
               .update({
-                ttn_gateway_id: ttnGatewayId,
+                ttn_gateway_id: actualId,
                 ttn_registered_at: new Date().toISOString(),
                 ttn_last_error: null,
                 provisioning_state: "exists_in_ttn",
@@ -471,18 +458,18 @@ serve(async (req) => {
               JSON.stringify({
                 ok: true,
                 success: true,
-                gateway_id: ttnGatewayId,
+                gateway_id: actualId,
                 already_exists: true,
                 claimed: true,
-                message: "Gateway already registered in TTN — claimed successfully",
+                message: `Gateway already registered in TTN as ${actualId} — claimed successfully`,
                 request_id: requestId,
               }),
               { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
           }
 
-          // Cannot read the gateway — it's owned by someone else
-          console.warn(`[ttn-provision-gateway] [${requestId}] Gateway ${ttnGatewayId} exists but not accessible (${claimResponse.status})`);
+          // Cannot find the gateway — it's owned by someone we can't see
+          console.warn(`[ttn-provision-gateway] [${requestId}] Gateway EUI exists on TTN but not accessible`);
 
           await supabase
             .from("gateways")

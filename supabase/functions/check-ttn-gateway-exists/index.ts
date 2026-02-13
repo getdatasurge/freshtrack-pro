@@ -1,8 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
-import { assertValidTtnHost } from "../_shared/ttnBase.ts";
+import { findTtnGatewayByEui } from "../_shared/ttnGatewayLookup.ts";
 
-const BUILD_VERSION = "check-ttn-gateway-exists-v2.1-keyscope-fix-20260213";
+const BUILD_VERSION = "check-ttn-gateway-exists-v3-eui-search-20260213";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -180,6 +180,9 @@ Deno.serve(async (req) => {
       const baseUrl = ttnConfig.identityServerUrl;
       console.log(`[check-ttn-gateway-exists] [${requestId}] Org ${orgId}: Using ${hasGatewayCapableKey ? "org/gateway" : "app"} key, IS=${baseUrl}`);
 
+      // Admin key as last-resort fallback for finding gateways with custom IDs
+      const adminApiKey = Deno.env.get("TTN_ADMIN_API_KEY");
+
       for (const gw of orgGateways) {
         // Skip gateways already linked to TTN
         if (gw.ttn_gateway_id) {
@@ -193,75 +196,52 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const euiClean = gw.gateway_eui.toLowerCase().replace(/[:-]/g, "");
-        const ttnGatewayId = `eui-${euiClean}`;
-        const gatewayUrl = `${baseUrl}/api/v3/gateways/${ttnGatewayId}`;
-
-        // Validate URL targets EU1 Identity Server (gateway registry)
         try {
-          assertValidTtnHost(gatewayUrl, "IS");
-        } catch (e) {
-          const result: CheckResult = {
-            gateway_id: gw.id,
-            organization_id: orgId,
-            provisioning_state: "error",
-            error: `URL validation failed: ${e instanceof Error ? e.message : String(e)}`,
-            checked_at: now,
-          };
-          await updateGateway(supabase, gw.id, result);
-          results.push(result);
-          continue;
-        }
+          console.log(`[check-ttn-gateway-exists] [${requestId}] Checking ${gw.name} (EUI: ${gw.gateway_eui})`);
 
-        try {
-          console.log(`[check-ttn-gateway-exists] [${requestId}] Checking ${gw.name}: GET ${ttnGatewayId} on ${baseUrl}`);
+          // findTtnGatewayByEui: tries GET /gateways/eui-{eui} first,
+          // then falls back to listing gateways and matching by EUI.
+          // This handles gateways registered with custom IDs.
+          let lookupResult = await findTtnGatewayByEui(primaryKey, gw.gateway_eui, { requestId });
 
-          let response = await fetch(gatewayUrl, {
-            headers: {
-              Authorization: `Bearer ${primaryKey}`,
-              "Content-Type": "application/json",
-            },
-          });
-
-          // If primary key gets 403 or 404, try fallback key before giving up.
-          // TTN returns 404 (not 403) when key lacks access to gateway registry.
-          if ((response.status === 404 || response.status === 403) && fallbackKey) {
-            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: ${response.status} with primary key, retrying with fallback key`);
-            response = await fetch(gatewayUrl, {
-              headers: {
-                Authorization: `Bearer ${fallbackKey}`,
-                "Content-Type": "application/json",
-              },
-            });
+          // If primary key didn't find it, try fallback key
+          if (!lookupResult.found && fallbackKey) {
+            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: primary key didn't find, trying fallback key`);
+            lookupResult = await findTtnGatewayByEui(fallbackKey, gw.gateway_eui, { requestId });
           }
 
-          if (response.ok) {
-            // Gateway exists on TTN — claim it
-            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: EXISTS in TTN as ${ttnGatewayId}`);
+          // Try admin key as last resort
+          if (!lookupResult.found && adminApiKey) {
+            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: trying admin key`);
+            lookupResult = await findTtnGatewayByEui(adminApiKey, gw.gateway_eui, { requestId });
+          }
+
+          if (lookupResult.found && lookupResult.gatewayId) {
+            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: EXISTS in TTN as ${lookupResult.gatewayId}`);
 
             const result: CheckResult = {
               gateway_id: gw.id,
               organization_id: orgId,
               provisioning_state: "exists_in_ttn",
-              ttn_gateway_id: ttnGatewayId,
+              ttn_gateway_id: lookupResult.gatewayId,
               checked_at: now,
             };
 
-            // Link the gateway to TTN
+            // Link the gateway to TTN with the actual ID (may differ from eui-{eui})
             await supabase
               .from("gateways")
               .update({
-                ttn_gateway_id: ttnGatewayId,
+                ttn_gateway_id: lookupResult.gatewayId,
                 provisioning_state: "exists_in_ttn",
                 last_provision_check_at: now,
                 last_provision_check_error: null,
+                ttn_last_error: null,
               })
               .eq("id", gw.id);
 
             results.push(result);
-          } else if (response.status === 404) {
-            // 404 = gateway genuinely not found (we already have a gateway-capable key)
-            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN (tried ${fallbackKey ? '2 keys' : '1 key'})`);
+          } else {
+            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN`);
             const result: CheckResult = {
               gateway_id: gw.id,
               organization_id: orgId,
@@ -270,36 +250,9 @@ Deno.serve(async (req) => {
             };
             await updateGateway(supabase, gw.id, result);
             results.push(result);
-          } else if (response.status === 403) {
-            // 403 = key exists but lacks gateway rights
-            const errText = await response.text().then(t => t.substring(0, 200));
-            console.error(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: PERMISSION DENIED (${response.status})`);
-
-            const result: CheckResult = {
-              gateway_id: gw.id,
-              organization_id: orgId,
-              provisioning_state: "error",
-              error: `API key lacks gateway read rights. Regenerate your Organization API key with 'View gateway' permission in TTN Console.`,
-              checked_at: now,
-            };
-            await updateGateway(supabase, gw.id, result);
-            results.push(result);
-          } else {
-            const errText = await response.text().then(t => t.substring(0, 200));
-            console.error(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: API error ${response.status}`);
-
-            const result: CheckResult = {
-              gateway_id: gw.id,
-              organization_id: orgId,
-              provisioning_state: "error",
-              error: `TTN API error (${response.status}): ${errText}`,
-              checked_at: now,
-            };
-            await updateGateway(supabase, gw.id, result);
-            results.push(result);
           }
         } catch (fetchErr) {
-          console.error(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: fetch error:`, fetchErr);
+          console.error(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: error:`, fetchErr);
           const result: CheckResult = {
             gateway_id: gw.id,
             organization_id: orgId,

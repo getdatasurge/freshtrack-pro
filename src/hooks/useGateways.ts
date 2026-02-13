@@ -399,9 +399,9 @@ export function useProvisionGateway() {
         toast.success("Gateway registered in TTN successfully");
       }
     },
-    onError: (error: Error & { details?: unknown }) => {
+    onError: (error: Error & { details?: unknown }, variables) => {
       const parsed = parseGatewayProvisionError(error.details || error);
-      
+
       // Build toast message with hint if available
       let toastMessage = `Gateway registration failed: ${parsed.message}`;
       if (parsed.hint) {
@@ -410,10 +410,14 @@ export function useProvisionGateway() {
       if (parsed.requestId) {
         toastMessage += ` (ref: ${parsed.requestId})`;
       }
-      
+
       toast.error(toastMessage, {
         duration: 8000, // Longer duration for actionable errors
       });
+
+      // Invalidate cache so DB updates from the edge function (e.g.
+      // provisioning_state = "conflict") are reflected in the UI
+      invalidateGateways(queryClient, variables.organizationId);
     },
   });
 
