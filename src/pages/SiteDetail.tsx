@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useEntityDashboardUrl } from "@/hooks/useEntityDashboardUrl";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -77,6 +77,7 @@ interface SiteData {
 const SiteDetail = () => {
   const { siteId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { layoutKey } = useEntityDashboardUrl();
   const { canDeleteEntities, isLoading: permissionsLoading } = usePermissions();
@@ -453,7 +454,19 @@ const SiteDetail = () => {
       />
 
       {/* Tab-based layout */}
-      <Tabs defaultValue="dashboard" className="space-y-4">
+      <Tabs
+        value={searchParams.get("tab") || "dashboard"}
+        onValueChange={(value) => {
+          const next = new URLSearchParams(searchParams);
+          if (value === "dashboard") {
+            next.delete("tab");
+          } else {
+            next.set("tab", value);
+          }
+          setSearchParams(next, { replace: true });
+        }}
+        className="space-y-4"
+      >
         <TabsList>
           <TabsTrigger value="dashboard">
             <LayoutDashboard className="w-4 h-4 mr-2" />

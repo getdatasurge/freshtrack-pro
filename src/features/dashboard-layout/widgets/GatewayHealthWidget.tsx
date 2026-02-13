@@ -2,16 +2,17 @@
  * Gateway Health Widget
  *
  * Displays gateway status for a site — count, individual status indicators,
- * last seen timestamps, and signal quality. Read-only; config remains in Settings.
+ * last seen timestamps, and signal quality. Clicking a gateway navigates
+ * to the site's Settings tab where gateways can be managed.
  *
  * On mount, triggers a TTN status sync to fetch live connection stats.
  */
 
 import { useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Server, Radio, Settings, Loader2 } from "lucide-react";
+import { Server, Radio, Settings, Loader2, AlertTriangle } from "lucide-react";
 import { useGatewaysBySite, useSyncGatewayStatus } from "@/hooks/useGateways";
 import { useCheckTtnGatewayState } from "@/hooks/useCheckTtnGatewayState";
 import { formatDistanceToNowStrict } from "date-fns";
@@ -36,6 +37,7 @@ function formatLastSeen(lastSeenAt: string | null): string {
 }
 
 export function GatewayHealthWidget({ site }: WidgetProps) {
+  const { siteId } = useParams();
   const { data: gateways = [], isLoading } = useGatewaysBySite(site?.id ?? null);
   const syncStatus = useSyncGatewayStatus();
   const checkTtn = useCheckTtnGatewayState();
@@ -43,6 +45,7 @@ export function GatewayHealthWidget({ site }: WidgetProps) {
   const hasVerified = useRef(false);
 
   const orgId = site?.organization_id;
+  const currentSiteId = site?.id ?? siteId;
 
   // Auto-verify: check unlinked gateways on mount (only once)
   useEffect(() => {
@@ -64,6 +67,9 @@ export function GatewayHealthWidget({ site }: WidgetProps) {
     hasSynced.current = true;
     syncStatus.mutate({ organizationId: orgId });
   }, [orgId, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Check for verify errors to show actionable messages
+  const verifyError = checkTtn.isError ? checkTtn.error?.message : null;
 
   return (
     <Card className="h-full flex flex-col">
@@ -89,22 +95,39 @@ export function GatewayHealthWidget({ site }: WidgetProps) {
             <p className="text-sm text-muted-foreground mb-1">
               No gateways assigned to this site
             </p>
-            <Link
-              to="/settings?tab=gateways"
-              className="text-xs text-primary hover:underline inline-flex items-center gap-1"
-            >
-              <Settings className="h-3 w-3" />
-              Settings &gt; Gateways
-            </Link>
+            {currentSiteId ? (
+              <Link
+                to={`/sites/${currentSiteId}?tab=settings`}
+                className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+              >
+                <Settings className="h-3 w-3" />
+                Manage Gateways in Settings
+              </Link>
+            ) : (
+              <Link
+                to="/settings?tab=gateways"
+                className="text-xs text-primary hover:underline inline-flex items-center gap-1"
+              >
+                <Settings className="h-3 w-3" />
+                Settings &gt; Gateways
+              </Link>
+            )}
           </div>
         ) : (
           <div className="space-y-2">
+            {/* Show verify error banner if auto-verify failed */}
+            {verifyError && (
+              <div className="flex items-start gap-2 p-2 rounded-md bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-700 dark:text-yellow-400">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span className="line-clamp-2">{verifyError}</span>
+              </div>
+            )}
             {gateways.map((gw) => {
               const indicator = STATUS_INDICATOR[gw.status] || STATUS_INDICATOR.offline;
               return (
                 <div
                   key={gw.id}
-                  className="flex items-center gap-3 p-2 rounded-md border bg-card"
+                  className="flex items-center gap-3 p-2 rounded-md border bg-card hover:bg-muted/50 transition-colors"
                 >
                   <span
                     className={`h-2.5 w-2.5 rounded-full shrink-0 ${indicator.dot}`}
@@ -124,6 +147,16 @@ export function GatewayHealthWidget({ site }: WidgetProps) {
                 </div>
               );
             })}
+            {/* Link to manage gateways */}
+            {currentSiteId && (
+              <Link
+                to={`/sites/${currentSiteId}?tab=settings`}
+                className="text-xs text-primary hover:underline inline-flex items-center gap-1 pt-1"
+              >
+                <Settings className="h-3 w-3" />
+                Manage Gateways
+              </Link>
+            )}
           </div>
         )}
       </CardContent>

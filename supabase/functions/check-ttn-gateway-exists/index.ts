@@ -1,8 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getTtnConfigForOrg } from "../_shared/ttnConfig.ts";
-import { assertClusterHost } from "../_shared/ttnBase.ts";
+import { assertValidTtnHost } from "../_shared/ttnBase.ts";
 
-const BUILD_VERSION = "check-ttn-gateway-exists-v2.0-eu1-orgkey-20260212";
+const BUILD_VERSION = "check-ttn-gateway-exists-v2.1-keyscope-fix-20260213";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -77,6 +77,7 @@ Deno.serve(async (req) => {
         success: true,
         checked_count: 0,
         message: "No unlinked gateways to check",
+        summary: { total: 0, exists_in_ttn: 0, missing_in_ttn: 0, not_configured: 0, error: 0 },
         results: [],
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -92,7 +93,12 @@ Deno.serve(async (req) => {
       .in("id", gatewayIds);
 
     if (gwError || !gateways || gateways.length === 0) {
-      return new Response(JSON.stringify({ error: "No gateways found" }), {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "No gateways found",
+        summary: { total: 0, exists_in_ttn: 0, missing_in_ttn: 0, not_configured: 0, error: 0 },
+        results: [],
+      }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -127,11 +133,52 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // ---------------------------------------------------------------
+      // KEY SCOPE CHECK: Application API keys CANNOT read the gateway
+      // registry. Only Organization or Personal (User) keys can.
+      // If we only have the application key (no orgApiKey, no gatewayApiKey),
+      // we must report this clearly instead of making a doomed API call
+      // that returns 404 — which we'd wrongly interpret as "missing_in_ttn".
+      // ---------------------------------------------------------------
+      const hasGatewayCapableKey = ttnConfig.hasOrgApiKey || ttnConfig.hasGatewayKey;
+      const primaryKey = ttnConfig.orgApiKey || ttnConfig.gatewayApiKey || ttnConfig.apiKey;
+      // fallbackKey is the other key type (if we have both org/gateway key AND app key)
+      const fallbackKey = hasGatewayCapableKey ? ttnConfig.apiKey : undefined;
+
+      if (!hasGatewayCapableKey) {
+        console.warn(
+          `[check-ttn-gateway-exists] [${requestId}] Org ${orgId}: ` +
+          `Only application API key available — cannot verify gateways. ` +
+          `Application keys lack gateway registry access on TTN Identity Server.`
+        );
+        for (const gw of orgGateways) {
+          // Skip gateways already linked
+          if (gw.ttn_gateway_id) {
+            results.push({
+              gateway_id: gw.id,
+              organization_id: orgId,
+              provisioning_state: "exists_in_ttn",
+              ttn_gateway_id: gw.ttn_gateway_id,
+              checked_at: now,
+            });
+            continue;
+          }
+          const result: CheckResult = {
+            gateway_id: gw.id,
+            organization_id: orgId,
+            provisioning_state: "error",
+            error: "Application API key cannot verify gateways. Configure an Organization API key in Settings → Developer → TTN Connection with gateway read/write rights.",
+            checked_at: now,
+          };
+          await updateGateway(supabase, gw.id, result);
+          results.push(result);
+        }
+        continue;
+      }
+
       // Gateway registry lives on EU1 Identity Server, not regional cluster
       const baseUrl = ttnConfig.identityServerUrl;
-      // Prefer org API key (has gateway rights), fall back to app key
-      const primaryKey = ttnConfig.orgApiKey || ttnConfig.apiKey;
-      const fallbackKey = ttnConfig.orgApiKey ? ttnConfig.apiKey : undefined;
+      console.log(`[check-ttn-gateway-exists] [${requestId}] Org ${orgId}: Using ${hasGatewayCapableKey ? "org/gateway" : "app"} key, IS=${baseUrl}`);
 
       for (const gw of orgGateways) {
         // Skip gateways already linked to TTN
@@ -150,14 +197,15 @@ Deno.serve(async (req) => {
         const ttnGatewayId = `eui-${euiClean}`;
         const gatewayUrl = `${baseUrl}/api/v3/gateways/${ttnGatewayId}`;
 
+        // Validate URL targets EU1 Identity Server (gateway registry)
         try {
-          assertClusterHost(gatewayUrl);
+          assertValidTtnHost(gatewayUrl, "IS");
         } catch (e) {
           const result: CheckResult = {
             gateway_id: gw.id,
             organization_id: orgId,
             provisioning_state: "error",
-            error: `Cluster check failed: ${e instanceof Error ? e.message : String(e)}`,
+            error: `URL validation failed: ${e instanceof Error ? e.message : String(e)}`,
             checked_at: now,
           };
           await updateGateway(supabase, gw.id, result);
@@ -175,9 +223,10 @@ Deno.serve(async (req) => {
             },
           });
 
-          // If primary key gets 404, try fallback key before giving up
-          if (response.status === 404 && fallbackKey) {
-            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: 404 with primary key, retrying with fallback key`);
+          // If primary key gets 403 or 404, try fallback key before giving up.
+          // TTN returns 404 (not 403) when key lacks access to gateway registry.
+          if ((response.status === 404 || response.status === 403) && fallbackKey) {
+            console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: ${response.status} with primary key, retrying with fallback key`);
             response = await fetch(gatewayUrl, {
               headers: {
                 Authorization: `Bearer ${fallbackKey}`,
@@ -211,6 +260,7 @@ Deno.serve(async (req) => {
 
             results.push(result);
           } else if (response.status === 404) {
+            // 404 = gateway genuinely not found (we already have a gateway-capable key)
             console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN (tried ${fallbackKey ? '2 keys' : '1 key'})`);
 
             console.log(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: NOT FOUND in TTN`);
@@ -218,6 +268,20 @@ Deno.serve(async (req) => {
               gateway_id: gw.id,
               organization_id: orgId,
               provisioning_state: "missing_in_ttn",
+              checked_at: now,
+            };
+            await updateGateway(supabase, gw.id, result);
+            results.push(result);
+          } else if (response.status === 403) {
+            // 403 = key exists but lacks gateway rights
+            const errText = await response.text().then(t => t.substring(0, 200));
+            console.error(`[check-ttn-gateway-exists] [${requestId}] ${gw.name}: PERMISSION DENIED (${response.status})`);
+
+            const result: CheckResult = {
+              gateway_id: gw.id,
+              organization_id: orgId,
+              provisioning_state: "error",
+              error: `API key lacks gateway read rights. Regenerate your Organization API key with 'View gateway' permission in TTN Console.`,
               checked_at: now,
             };
             await updateGateway(supabase, gw.id, result);
