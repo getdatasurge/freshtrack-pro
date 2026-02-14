@@ -46,6 +46,17 @@ verify_jwt = false
 [functions.process-escalations]
 verify_jwt = false
 
+[functions.process-escalation-steps]
+verify_jwt = false
+
+# Alert acknowledgment - user-facing, handles JWT verification in code
+[functions.acknowledge-alert]
+verify_jwt = false
+
+# Test notification - user-facing, handles JWT verification in code
+[functions.test-notification]
+verify_jwt = false
+
 [functions.ingest-readings]
 verify_jwt = false
 

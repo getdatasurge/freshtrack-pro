@@ -83,7 +83,7 @@ serve(async (req) => {
       );
     }
 
-    const validChannels = ["EMAIL", "SMS", "IN_APP", "WEB_TOAST"];
+    const validChannels = ["EMAIL", "SMS", "IN_APP", "IN_APP_CENTER", "WEB_TOAST"];
     const invalidChannels = channels.filter((ch) => !validChannels.includes(ch));
     if (invalidChannels.length > 0) {
       return new Response(
@@ -288,8 +288,9 @@ serve(async (req) => {
           break;
         }
 
-        // ── IN_APP ───────────────────────────────────────────────────────
-        case "IN_APP": {
+        // ── IN_APP / IN_APP_CENTER ────────────────────────────────────────
+        case "IN_APP":
+        case "IN_APP_CENTER": {
           try {
             const { error: inAppError } = await supabaseAdmin
               .from("in_app_notifications")
