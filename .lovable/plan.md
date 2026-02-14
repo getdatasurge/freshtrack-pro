@@ -1,58 +1,85 @@
 
-# FrostGuard Gateway Data Pipeline Repair
 
-## Diagnosis
+# Deploy Edge Functions + Fix Build Errors
 
-After investigating logs, database state, and code, here is what is actually broken:
+## Two Categories of Issues
 
-### Issue 1: Edge functions were never redeployed
-The code in the repository (v3 with EUI search fallback via `findTtnGatewayByEui`) is correct, but the **deployed** version is still `v2.0-eu1-orgkey-20260212` which only does direct `eui-{eui}` lookups. Previous deployment attempts failed due to duplicate TypeScript properties in `ttnConfig.ts` (now fixed). All four edge functions need to be redeployed.
+### A. Edge Function Deployment Blockers
 
-### Issue 2: Missing `signal_quality` column
-The `ttn-gateway-status` function tries to write `signal_quality` (JSONB) to the gateways table, but the column does not exist. This causes the status update to fail silently.
+**`test-notification`** uses `import { Resend } from "npm:resend"` which doesn't work in Deno edge runtime. The other functions (`process-escalations`, `process-escalation-steps`) correctly use `import { Resend } from "https://esm.sh/resend@2.0.0"`. Additionally, it uses the deprecated `serve` import.
 
-### Issue 3: `ttn-gateway-preflight` uses deprecated import
-The preflight function still uses `import { serve } from "https://deno.land/std@0.168.0/http/server.ts"` instead of `Deno.serve()`, which may cause deployment issues.
+**Fix:** In `test-notification/index.ts`:
+- Change `import { Resend } from "npm:resend"` to `import { Resend } from "https://esm.sh/resend@2.0.0"`
+- Change `import { serve } from "https://deno.land/std@0.168.0/http/server.ts"` to use `Deno.serve()`
 
-### What is already correct (no changes needed)
-- `ttnConfig.ts`: Already decrypts `orgApiKey` from `ttn_org_api_key_encrypted` and returns it (once, no duplicates)
-- `check-ttn-gateway-exists/index.ts`: Already uses `findTtnGatewayByEui` with 3-step lookup (direct, auth_info, list search) and multi-key fallback
-- `ttnGatewayLookup.ts`: Already implements the full EUI search strategy
-- `ttn-gateway-status/index.ts`: Already uses org API key priority and correct NAM1 cluster for GS stats
-- `GatewayHealthWidget.tsx`: Already auto-verifies unlinked gateways and triggers status sync
-- `SiteGatewaysCard.tsx`: Already handles all 5 status types (online, degraded, offline, pending, maintenance)
-- DB columns `provisioning_state`, `last_provision_check_at`, `last_provision_check_error`: Already exist
+The other 4 functions (`process-unit-states`, `process-escalations`, `process-escalation-steps`, `acknowledge-alert`) should deploy without code changes.
 
-## Changes Required
+### B. Frontend TypeScript Errors (Missing Tables)
 
-### 1. Database Migration: Add `signal_quality` column
-Add the missing JSONB column so `ttn-gateway-status` can persist signal data (RTT, uplink count, etc.).
+Three tables referenced in frontend code do not exist in the database:
+- `in_app_notifications` (used by `NotificationDropdown.tsx`)
+- `alert_audit_log` (used by `useAlertAuditLog.ts`)
+- `alert_suppressions` (used by `useAlertSuppressions.ts`)
+
+**Fix:** Create these tables via database migration. The schema will be inferred from how the frontend code uses them. After the migration, the auto-generated types file will update to include them, resolving all the TypeScript errors.
+
+Additionally, `ComplianceReportDialog.tsx` has a type casting issue with alert types that needs a minor code fix.
+
+## Execution Order
+
+1. **Create missing tables** via SQL migration (`in_app_notifications`, `alert_audit_log`, `alert_suppressions`) with appropriate columns and RLS policies
+2. **Fix `test-notification/index.ts`** -- replace `npm:resend` with `esm.sh` import, replace `serve` with `Deno.serve()`
+3. **Deploy all 5 edge functions**: `process-unit-states`, `process-escalations`, `process-escalation-steps`, `test-notification`, `acknowledge-alert`
+4. **Fix `ComplianceReportDialog.tsx`** type casting for alert types
+5. **Verify** deployments via health checks
+
+## Technical Details -- Table Schemas
+
+Based on frontend usage patterns:
 
 ```sql
-ALTER TABLE public.gateways
-ADD COLUMN IF NOT EXISTS signal_quality jsonb;
+-- in_app_notifications
+CREATE TABLE public.in_app_notifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  alert_id uuid,
+  organization_id uuid,
+  title text NOT NULL,
+  body text,
+  severity text DEFAULT 'info',
+  action_url text,
+  read boolean DEFAULT false,
+  dismissed boolean DEFAULT false,
+  metadata jsonb,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- alert_audit_log
+CREATE TABLE public.alert_audit_log (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  alert_id uuid NOT NULL,
+  organization_id uuid,
+  event_type text NOT NULL,
+  actor_user_id uuid,
+  actor_type text DEFAULT 'user',
+  details jsonb,
+  created_at timestamptz DEFAULT now()
+);
+
+-- alert_suppressions
+CREATE TABLE public.alert_suppressions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL,
+  unit_id uuid,
+  alert_type text,
+  reason text,
+  starts_at timestamptz DEFAULT now(),
+  ends_at timestamptz,
+  created_by uuid,
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now()
+);
 ```
 
-### 2. Fix `ttn-gateway-preflight/index.ts`
-- Replace deprecated `import { serve }` with `Deno.serve()`
-- Update build version string
-
-### 3. Deploy all four edge functions
-After the migration and preflight fix:
-- `check-ttn-gateway-exists` (v3 with EUI search — the key fix)
-- `ttn-gateway-status` (org API key priority)
-- `ttn-gateway-preflight` (fixed import)
-- `ttn-provision-gateway` (uses shared ttnConfig)
-
-### 4. Verify via health checks
-Hit each function's GET endpoint to confirm the new build versions are live.
-
-## Expected Result After Deployment
-
-1. Auto-verify fires for Orlando Burgers gateway (`ttn_gateway_id` is NULL)
-2. `findTtnGatewayByEui` tries `GET /gateways/eui-2cf7f1117280001e` on EU1 -- 404
-3. Falls back to `auth_info` to determine key scope (org-scoped)
-4. Lists org gateways, finds `orlandoburgersgateways` matching EUI `2CF7F1117280001E`
-5. Updates DB: `ttn_gateway_id = 'orlandoburgersgateways'`, `provisioning_state = 'exists_in_ttn'`
-6. Status sync fires for linked gateway via NAM1 Gateway Server
-7. Dashboard shows: Online with last seen timestamp
+RLS will be enabled on all three tables with policies scoped to the user's organization membership.
