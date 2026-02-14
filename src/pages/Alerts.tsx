@@ -328,7 +328,7 @@ const Alerts = () => {
       toast({ title: "Failed to load alerts", variant: "destructive" });
     }
     setIsLoading(false);
-  }, [session, navigate, toast]);
+  }, [session, navigate, toast, effectiveOrgId]);
 
   const handleAcknowledge = async () => {
     if (!selectedAlert || !acknowledgmentNotes.trim()) {
