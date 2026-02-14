@@ -29,8 +29,6 @@ export interface OrgAuditLogFilters {
 const AUDIT_LOG_SELECT =
   "*, actor:profiles!alert_audit_log_actor_user_id_fkey(full_name, email)";
 
-const AUDIT_LOG_SELECT_FALLBACK = "*";
-
 // ─── Hooks ───────────────────────────────────────────────────────────────────
 
 /**
@@ -46,7 +44,6 @@ export function useAlertAuditLog(alertId: string | null) {
     queryFn: async (): Promise<AuditLogEntry[]> => {
       if (!orgId || !alertId) return [];
 
-      // Try with the FK join first
       const { data, error } = await supabase
         .from("alert_audit_log")
         .select(AUDIT_LOG_SELECT)
@@ -54,24 +51,7 @@ export function useAlertAuditLog(alertId: string | null) {
         .eq("organization_id", orgId)
         .order("created_at", { ascending: true });
 
-      if (error) {
-        // FK relationship may not exist – fall back to a plain select
-        console.warn(
-          "alert_audit_log: FK join failed, falling back without actor join",
-          error.message,
-        );
-
-        const { data: fallback, error: fbError } = await supabase
-          .from("alert_audit_log")
-          .select(AUDIT_LOG_SELECT_FALLBACK)
-          .eq("alert_id", alertId)
-          .eq("organization_id", orgId)
-          .order("created_at", { ascending: true });
-
-        if (fbError) throw fbError;
-        return (fallback || []) as AuditLogEntry[];
-      }
-
+      if (error) throw error;
       return (data || []) as AuditLogEntry[];
     },
     enabled: !!orgId && !!alertId,
@@ -93,7 +73,6 @@ export function useOrgAuditLog(filters?: OrgAuditLogFilters) {
     queryFn: async (): Promise<AuditLogEntry[]> => {
       if (!orgId) return [];
 
-      // Try with the FK join first
       let query = supabase
         .from("alert_audit_log")
         .select(AUDIT_LOG_SELECT)
@@ -113,35 +92,7 @@ export function useOrgAuditLog(filters?: OrgAuditLogFilters) {
 
       const { data, error } = await query;
 
-      if (error) {
-        // FK relationship may not exist – fall back to a plain select
-        console.warn(
-          "alert_audit_log: FK join failed, falling back without actor join",
-          error.message,
-        );
-
-        let fallbackQuery = supabase
-          .from("alert_audit_log")
-          .select(AUDIT_LOG_SELECT_FALLBACK)
-          .eq("organization_id", orgId)
-          .order("created_at", { ascending: false })
-          .limit(limit);
-
-        if (filters?.dateFrom) {
-          fallbackQuery = fallbackQuery.gte("created_at", filters.dateFrom);
-        }
-        if (filters?.dateTo) {
-          fallbackQuery = fallbackQuery.lte("created_at", filters.dateTo);
-        }
-        if (filters?.eventType) {
-          fallbackQuery = fallbackQuery.eq("event_type", filters.eventType);
-        }
-
-        const { data: fallback, error: fbError } = await fallbackQuery;
-        if (fbError) throw fbError;
-        return (fallback || []) as AuditLogEntry[];
-      }
-
+      if (error) throw error;
       return (data || []) as AuditLogEntry[];
     },
     enabled: !!orgId,
