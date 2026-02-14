@@ -361,6 +361,7 @@ export type Database = {
           acknowledgment_notes: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
           area_id: string | null
+          correlated_with_alert_id: string | null
           created_at: string
           escalation_level: number
           escalation_steps_sent: Json | null
@@ -372,8 +373,10 @@ export type Database = {
           metadata: Json | null
           next_escalation_at: string | null
           organization_id: string
+          resolution_type: string | null
           resolved_at: string | null
           resolved_by: string | null
+          sensor_dev_eui: string | null
           severity: Database["public"]["Enums"]["alert_severity"]
           site_id: string | null
           source: string | null
@@ -392,6 +395,7 @@ export type Database = {
           acknowledgment_notes?: string | null
           alert_type: Database["public"]["Enums"]["alert_type"]
           area_id?: string | null
+          correlated_with_alert_id?: string | null
           created_at?: string
           escalation_level?: number
           escalation_steps_sent?: Json | null
@@ -403,8 +407,10 @@ export type Database = {
           metadata?: Json | null
           next_escalation_at?: string | null
           organization_id: string
+          resolution_type?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
+          sensor_dev_eui?: string | null
           severity?: Database["public"]["Enums"]["alert_severity"]
           site_id?: string | null
           source?: string | null
@@ -423,6 +429,7 @@ export type Database = {
           acknowledgment_notes?: string | null
           alert_type?: Database["public"]["Enums"]["alert_type"]
           area_id?: string | null
+          correlated_with_alert_id?: string | null
           created_at?: string
           escalation_level?: number
           escalation_steps_sent?: Json | null
@@ -434,8 +441,10 @@ export type Database = {
           metadata?: Json | null
           next_escalation_at?: string | null
           organization_id?: string
+          resolution_type?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
+          sensor_dev_eui?: string | null
           severity?: Database["public"]["Enums"]["alert_severity"]
           site_id?: string | null
           source?: string | null
@@ -453,6 +462,13 @@ export type Database = {
             columns: ["area_id"]
             isOneToOne: false
             referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alerts_correlated_with_alert_id_fkey"
+            columns: ["correlated_with_alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
             referencedColumns: ["id"]
           },
           {
