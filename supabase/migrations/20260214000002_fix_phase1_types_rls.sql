@@ -33,7 +33,7 @@ ALTER TABLE public.alert_audit_log
 -- profiles!alert_audit_log_actor_user_id_fkey works
 ALTER TABLE public.alert_audit_log
   ADD CONSTRAINT alert_audit_log_actor_user_id_fkey
-    FOREIGN KEY (actor_user_id) REFERENCES auth.users(id) ON DELETE SET NULL;
+    FOREIGN KEY (actor_user_id) REFERENCES public.profiles(user_id) ON DELETE SET NULL;
 
 -- ============================================================
 -- 3. in_app_notifications — change organization_id to uuid + add FK
