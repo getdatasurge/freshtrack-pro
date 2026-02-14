@@ -156,6 +156,8 @@ const Alerts = () => {
   useEffect(() => {
     if (isInitialized && effectiveOrgId && session?.user) {
       loadAlertsAndUnits();
+    } else if (isInitialized) {
+      setIsLoading(false);
     }
   }, [isInitialized, effectiveOrgId, session]);
 
@@ -210,11 +212,15 @@ const Alerts = () => {
       );
 
       const unitIds = filteredUnits.map((u: any) => u.id);
-      const { data: manualLogs } = await supabase
-        .from("manual_temperature_logs")
-        .select("unit_id, logged_at")
-        .in("unit_id", unitIds)
-        .order("logged_at", { ascending: false });
+      let manualLogs: any[] | null = null;
+      if (unitIds.length > 0) {
+        const { data } = await supabase
+          .from("manual_temperature_logs")
+          .select("unit_id, logged_at")
+          .in("unit_id", unitIds)
+          .order("logged_at", { ascending: false });
+        manualLogs = data;
+      }
 
       const latestLogByUnit: Record<string, string> = {};
       manualLogs?.forEach((log) => {
