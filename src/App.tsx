@@ -19,6 +19,7 @@ import SiteDetail from "./pages/SiteDetail";
 import AreaDetail from "./pages/AreaDetail";
 import ManualLog from "./pages/ManualLog";
 import Alerts from "./pages/Alerts";
+import AlertAnalytics from "./pages/AlertAnalytics";
 import UnitDetail from "./pages/UnitDetail";
 import Units from "./pages/Units";
 import Settings from "./pages/Settings";
@@ -94,6 +95,7 @@ const App = () => (
             <Route path="/units/:unitId" element={<RequireImpersonationGuard><UnitDetail /></RequireImpersonationGuard>} />
             <Route path="/manual-log" element={<RequireImpersonationGuard><ManualLog /></RequireImpersonationGuard>} />
             <Route path="/alerts" element={<RequireImpersonationGuard><Alerts /></RequireImpersonationGuard>} />
+            <Route path="/alert-analytics" element={<RequireImpersonationGuard><AlertAnalytics /></RequireImpersonationGuard>} />
             <Route path="/reports" element={<RequireImpersonationGuard><Reports /></RequireImpersonationGuard>} />
             <Route path="/settings" element={<RequireImpersonationGuard><Settings /></RequireImpersonationGuard>} />
             <Route path="/inspector" element={<RequireImpersonationGuard><Inspector /></RequireImpersonationGuard>} />
