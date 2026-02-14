@@ -62,6 +62,61 @@ export type Database = {
         }
         Relationships: []
       }
+      alert_audit_log: {
+        Row: {
+          actor_type: string | null
+          actor_user_id: string | null
+          alert_id: string
+          created_at: string | null
+          details: Json | null
+          event_type: string
+          id: string
+          organization_id: string | null
+        }
+        Insert: {
+          actor_type?: string | null
+          actor_user_id?: string | null
+          alert_id: string
+          created_at?: string | null
+          details?: Json | null
+          event_type: string
+          id?: string
+          organization_id?: string | null
+        }
+        Update: {
+          actor_type?: string | null
+          actor_user_id?: string | null
+          alert_id?: string
+          created_at?: string | null
+          details?: Json | null
+          event_type?: string
+          id?: string
+          organization_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_audit_log_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "alert_audit_log_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_audit_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alert_rules: {
         Row: {
           created_at: string
@@ -217,6 +272,80 @@ export type Database = {
           },
           {
             foreignKeyName: "alert_rules_history_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alert_suppressions: {
+        Row: {
+          alert_id: string | null
+          alert_types: string[] | null
+          created_at: string | null
+          created_by: string | null
+          custom_reason: string | null
+          ends_at: string
+          id: string
+          organization_id: string
+          reason: string
+          site_id: string | null
+          starts_at: string | null
+          unit_id: string | null
+        }
+        Insert: {
+          alert_id?: string | null
+          alert_types?: string[] | null
+          created_at?: string | null
+          created_by?: string | null
+          custom_reason?: string | null
+          ends_at: string
+          id?: string
+          organization_id: string
+          reason?: string
+          site_id?: string | null
+          starts_at?: string | null
+          unit_id?: string | null
+        }
+        Update: {
+          alert_id?: string | null
+          alert_types?: string[] | null
+          created_at?: string | null
+          created_by?: string | null
+          custom_reason?: string | null
+          ends_at?: string
+          id?: string
+          organization_id?: string
+          reason?: string
+          site_id?: string | null
+          starts_at?: string | null
+          unit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alert_suppressions_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_suppressions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_suppressions_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "alert_suppressions_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
             referencedRelation: "units"
@@ -1197,6 +1326,78 @@ export type Database = {
           {
             foreignKeyName: "impersonation_sessions_target_org_id_fkey"
             columns: ["target_org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      in_app_notifications: {
+        Row: {
+          action_url: string | null
+          alert_id: string | null
+          body: string | null
+          created_at: string | null
+          dismissed: boolean | null
+          dismissed_at: string | null
+          escalation_step: number | null
+          id: string
+          metadata: Json | null
+          organization_id: string | null
+          read: boolean | null
+          read_at: string | null
+          severity: string | null
+          title: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          action_url?: string | null
+          alert_id?: string | null
+          body?: string | null
+          created_at?: string | null
+          dismissed?: boolean | null
+          dismissed_at?: string | null
+          escalation_step?: number | null
+          id?: string
+          metadata?: Json | null
+          organization_id?: string | null
+          read?: boolean | null
+          read_at?: string | null
+          severity?: string | null
+          title: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          action_url?: string | null
+          alert_id?: string | null
+          body?: string | null
+          created_at?: string | null
+          dismissed?: boolean | null
+          dismissed_at?: string | null
+          escalation_step?: number | null
+          id?: string
+          metadata?: Json | null
+          organization_id?: string | null
+          read?: boolean | null
+          read_at?: string | null
+          severity?: string | null
+          title?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "in_app_notifications_alert_id_fkey"
+            columns: ["alert_id"]
+            isOneToOne: false
+            referencedRelation: "alerts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "in_app_notifications_organization_id_fkey"
+            columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]

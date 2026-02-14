@@ -28,6 +28,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Printer, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { useOrgScope } from "@/hooks/useOrgScope";
 import { ALERT_TYPE_LABELS } from "@/hooks/useNotificationPolicies";
 import { getAlertTypeConfig } from "@/lib/alertConfig";
@@ -224,7 +225,7 @@ export function ComplianceReportDialog({
       }
 
       if (selectedAlertTypes.length > 0) {
-        query = query.in("alert_type", selectedAlertTypes);
+        query = query.in("alert_type", selectedAlertTypes as Database["public"]["Enums"]["alert_type"][]);
       }
 
       const { data, error } = await query;
