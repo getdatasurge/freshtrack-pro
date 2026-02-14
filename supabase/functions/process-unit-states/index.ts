@@ -124,10 +124,144 @@ function isManualLoggingRequired(
 }
 
 /**
+ * Check if an alert type is suppressed for a given unit/site/org.
+ * Returns true if there's an active suppression that covers this alert type.
+ * Uses a cache to avoid repeated DB queries per unit.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const suppressionCache = new Map<string, { types: string[]; id: string }[]>();
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function isAlertSuppressed(
+  supabase: any,
+  unitId: string,
+  siteId: string,
+  orgId: string,
+  alertType: string
+): Promise<boolean> {
+  const cacheKey = `${unitId}:${siteId}:${orgId}`;
+  if (!suppressionCache.has(cacheKey)) {
+    const nowIso = new Date().toISOString();
+    const { data } = await supabase
+      .from("alert_suppressions")
+      .select("id, alert_types, unit_id, site_id, organization_id")
+      .or(`unit_id.eq.${unitId},site_id.eq.${siteId},and(unit_id.is.null,site_id.is.null,organization_id.eq.${orgId})`)
+      .lte("starts_at", nowIso)
+      .gt("ends_at", nowIso);
+
+    suppressionCache.set(
+      cacheKey,
+      (data || []).map((s: { id: string; alert_types: string[] }) => ({
+        types: s.alert_types || [],
+        id: s.id,
+      }))
+    );
+  }
+
+  const suppressions = suppressionCache.get(cacheKey) || [];
+  return suppressions.some(
+    (s) => s.types.length === 0 || s.types.includes(alertType)
+  );
+}
+
+/**
+ * Correlate a newly created alert with related active alerts on the same unit.
+ * Sets correlated_with_alert_id on the new alert if a relationship is found.
+ *
+ * Correlation rules:
+ * - temp_excursion → correlates with active door_open on same unit
+ * - suspected_cooling_failure → correlates with active temp_excursion on same unit
+ * - monitoring_interrupted → correlates with first monitoring_interrupted at same site (within 5 min)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function correlateAlert(
+  supabase: any,
+  newAlertId: string,
+  alertType: string,
+  unitId: string,
+  siteId: string,
+  orgId: string
+): Promise<void> {
+  try {
+    let correlationTarget: string | null = null;
+
+    if (alertType === "temp_excursion") {
+      // Correlate with active door_open on same unit
+      const { data } = await supabase
+        .from("alerts")
+        .select("id")
+        .eq("unit_id", unitId)
+        .eq("alert_type", "door_open")
+        .in("status", ["active", "acknowledged"])
+        .order("triggered_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) correlationTarget = data.id;
+    } else if (alertType === "suspected_cooling_failure") {
+      // Correlate with active temp_excursion on same unit
+      const { data } = await supabase
+        .from("alerts")
+        .select("id")
+        .eq("unit_id", unitId)
+        .eq("alert_type", "temp_excursion")
+        .in("status", ["active", "acknowledged"])
+        .order("triggered_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) correlationTarget = data.id;
+    } else if (alertType === "monitoring_interrupted") {
+      // Correlate with another monitoring_interrupted at same site within 5 min
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data } = await supabase
+        .from("alerts")
+        .select("id")
+        .eq("site_id", siteId)
+        .eq("alert_type", "monitoring_interrupted")
+        .in("status", ["active", "acknowledged"])
+        .neq("id", newAlertId)
+        .neq("unit_id", unitId)
+        .gte("triggered_at", fiveMinAgo)
+        .order("triggered_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (data) correlationTarget = data.id;
+    }
+
+    if (correlationTarget) {
+      await supabase
+        .from("alerts")
+        .update({ correlated_with_alert_id: correlationTarget })
+        .eq("id", newAlertId);
+
+      // Log correlation to audit log
+      try {
+        await supabase.from("alert_audit_log").insert({
+          alert_id: newAlertId,
+          organization_id: orgId,
+          event_type: "correlated",
+          actor_type: "system",
+          details: {
+            correlated_with: correlationTarget,
+            alert_type: alertType,
+            reason: alertType === "monitoring_interrupted" ? "site_wide_outage" : "causal_chain",
+          },
+        });
+      } catch {
+        // Audit log insert is best-effort
+      }
+
+      console.log(`Correlated alert ${newAlertId} (${alertType}) → ${correlationTarget}`);
+    }
+  } catch (err) {
+    console.error(`Correlation check failed for alert ${newAlertId}:`, err);
+  }
+}
+
+/**
  * Process Unit States - Internal Scheduled Function
- * 
+ *
  * Security: Requires INTERNAL_API_KEY when configured
- * 
+ *
  * This function processes all active units to:
  * - Detect offline status based on missed check-ins (WARNING at 1, CRITICAL at 5)
  * - Trigger manual_required only when 5+ missed check-ins AND 4+ hours since last reading
@@ -139,6 +273,9 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Clear suppression cache for each invocation
+  suppressionCache.clear();
 
   try {
     // Validate internal API key
@@ -270,6 +407,7 @@ Deno.serve(async (req) => {
             .update({
               status: "resolved",
               resolved_at: new Date().toISOString(),
+              resolution_type: "auto",
             })
             .eq("unit_id", u.id)
             .eq("alert_type", "monitoring_interrupted")
@@ -320,7 +458,7 @@ Deno.serve(async (req) => {
               .in("status", ["active", "acknowledged"])
               .maybeSingle();
 
-            if (!existingAlert) {
+            if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "temp_excursion"))) {
               const doorContext = doorState !== "unknown" ? ` (door ${doorState})` : "";
               const nowIso = new Date().toISOString();
               const { data: alertData, error: alertError } = await supabase.from("alerts").insert({
@@ -349,6 +487,7 @@ Deno.serve(async (req) => {
               
               if (!alertError && alertData) {
                 newAlertIds.push(alertData.id);
+                await correlateAlert(supabase, alertData.id, "temp_excursion", u.id, getSiteId(unit), getOrgId(unit));
                 console.log(`Created temp_excursion alert (CRITICAL) for unit ${u.name}`);
               }
             }
@@ -417,7 +556,7 @@ Deno.serve(async (req) => {
                     .in("status", ["active", "acknowledged"])
                     .maybeSingle();
 
-                  if (!existingAlert) {
+                  if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "suspected_cooling_failure"))) {
                     const { data: alertData } = await supabase.from("alerts").insert({
                       unit_id: u.id,
                       organization_id: getOrgId(unit),
@@ -440,6 +579,7 @@ Deno.serve(async (req) => {
                     
                     if (alertData) {
                       newAlertIds.push(alertData.id);
+                      await correlateAlert(supabase, alertData.id, "suspected_cooling_failure", u.id, getSiteId(unit), getOrgId(unit));
                       console.log(`Created suspected_cooling_failure alert for unit ${u.name}`);
                     }
                   }
@@ -464,19 +604,21 @@ Deno.serve(async (req) => {
                 .update({
                   status: "resolved",
                   resolved_at: new Date().toISOString(),
+                  resolution_type: "auto",
                 })
                 .eq("unit_id", u.id)
                 .eq("alert_type", "temp_excursion")
                 .in("status", ["active", "acknowledged"]);
-              
+
               console.log(`Resolved temp_excursion alert for unit ${u.name}`);
-              
+
               // Resolve suspected cooling failure alert if exists
               await supabase
                 .from("alerts")
                 .update({
                   status: "resolved",
                   resolved_at: new Date().toISOString(),
+                  resolution_type: "auto",
                 })
                 .eq("unit_id", u.id)
                 .eq("alert_type", "suspected_cooling_failure")
@@ -504,6 +646,334 @@ Deno.serve(async (req) => {
             }
           }
         }
+      }
+
+      // === DOOR LEFT OPEN ALERT ===
+      // Creates door_open alerts based on configurable time thresholds
+      if (doorState === "open" && doorLastChanged) {
+        const doorWarningMinutes = (rules?.door_open_warning_minutes as number) ?? 3;
+        const doorCriticalMinutes = (rules?.door_open_critical_minutes as number) ?? 10;
+
+        const { data: existingDoorAlert } = await supabase
+          .from("alerts")
+          .select("id, severity")
+          .eq("unit_id", u.id)
+          .eq("alert_type", "door_open")
+          .in("status", ["active", "acknowledged"])
+          .maybeSingle();
+
+        if (doorOpenDuration >= doorCriticalMinutes) {
+          if (!existingDoorAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "door_open"))) {
+            const { data: alertData } = await supabase.from("alerts").insert({
+              unit_id: u.id,
+              organization_id: getOrgId(unit),
+              site_id: getSiteId(unit),
+              area_id: getAreaId(unit),
+              source: "sensor",
+              title: `${u.name}: Door Open ${doorOpenDuration} min`,
+              message: `Door has been open for ${doorOpenDuration} minutes (critical threshold: ${doorCriticalMinutes} min)`,
+              alert_type: "door_open",
+              severity: "critical",
+              metadata: {
+                duration_minutes: doorOpenDuration,
+                warning_threshold: doorWarningMinutes,
+                critical_threshold: doorCriticalMinutes,
+                door_last_changed_at: u.door_last_changed_at,
+              },
+            }).select("id").single();
+            if (alertData) {
+              newAlertIds.push(alertData.id);
+              console.log(`Created door_open alert (CRITICAL) for unit ${u.name} — ${doorOpenDuration}m`);
+            }
+          } else if (existingDoorAlert.severity !== "critical") {
+            await supabase.from("alerts").update({
+              severity: "critical",
+              title: `${u.name}: Door Open ${doorOpenDuration} min`,
+              message: `Door has been open for ${doorOpenDuration} minutes (critical threshold: ${doorCriticalMinutes} min)`,
+              metadata: { duration_minutes: doorOpenDuration, warning_threshold: doorWarningMinutes, critical_threshold: doorCriticalMinutes },
+            }).eq("id", existingDoorAlert.id);
+            console.log(`Escalated door_open alert to critical for unit ${u.name}`);
+          }
+        } else if (doorOpenDuration >= doorWarningMinutes) {
+          if (!existingDoorAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "door_open"))) {
+            const { data: alertData } = await supabase.from("alerts").insert({
+              unit_id: u.id,
+              organization_id: getOrgId(unit),
+              site_id: getSiteId(unit),
+              area_id: getAreaId(unit),
+              source: "sensor",
+              title: `${u.name}: Door Open ${doorOpenDuration} min`,
+              message: `Door has been open for ${doorOpenDuration} minutes (warning threshold: ${doorWarningMinutes} min)`,
+              alert_type: "door_open",
+              severity: "warning",
+              metadata: {
+                duration_minutes: doorOpenDuration,
+                warning_threshold: doorWarningMinutes,
+                critical_threshold: doorCriticalMinutes,
+                door_last_changed_at: u.door_last_changed_at,
+              },
+            }).select("id").single();
+            if (alertData) {
+              newAlertIds.push(alertData.id);
+              console.log(`Created door_open alert (WARNING) for unit ${u.name} — ${doorOpenDuration}m`);
+            }
+          }
+        }
+      } else if (doorState === "closed" || doorState === "unknown") {
+        // Auto-resolve door_open alerts when door closes
+        const { data: activeDoorAlerts } = await supabase
+          .from("alerts")
+          .select("id")
+          .eq("unit_id", u.id)
+          .eq("alert_type", "door_open")
+          .in("status", ["active", "acknowledged"]);
+
+        if (activeDoorAlerts && activeDoorAlerts.length > 0) {
+          await supabase
+            .from("alerts")
+            .update({
+              status: "resolved",
+              resolved_at: new Date().toISOString(),
+              resolution_type: "auto",
+            })
+            .eq("unit_id", u.id)
+            .eq("alert_type", "door_open")
+            .in("status", ["active", "acknowledged"]);
+          console.log(`Auto-resolved door_open alert for unit ${u.name} — door closed`);
+        }
+      }
+
+      // === LOW BATTERY ALERT ===
+      // Check sensors assigned to this unit for low battery
+      {
+        const { data: sensors } = await supabase
+          .from("lora_sensors")
+          .select("id, dev_eui, name, battery_level, battery_voltage, sensor_catalog_id")
+          .eq("unit_id", u.id)
+          .is("deleted_at", null);
+
+        if (sensors && sensors.length > 0) {
+          for (const sensor of sensors) {
+            const batteryLevel = sensor.battery_level as number | null;
+            const batteryVoltage = sensor.battery_voltage as number | null;
+
+            // Determine low battery threshold
+            let lowThresholdV = 2.5; // Default voltage threshold
+            if (sensor.sensor_catalog_id) {
+              const { data: catalog } = await supabase
+                .from("sensor_catalog")
+                .select("battery_info")
+                .eq("id", sensor.sensor_catalog_id)
+                .maybeSingle();
+              if (catalog?.battery_info) {
+                const info = catalog.battery_info as { low_threshold_v?: number };
+                if (info.low_threshold_v) lowThresholdV = info.low_threshold_v;
+              }
+            }
+
+            const isLowByVoltage = batteryVoltage !== null && batteryVoltage > 0 && batteryVoltage < lowThresholdV;
+            const isLowByLevel = batteryLevel !== null && batteryLevel > 0 && batteryLevel <= 10; // 10% or below
+
+            if (isLowByVoltage || isLowByLevel) {
+              const { data: existingAlert } = await supabase
+                .from("alerts")
+                .select("id")
+                .eq("unit_id", u.id)
+                .eq("alert_type", "low_battery")
+                .eq("sensor_dev_eui", sensor.dev_eui)
+                .in("status", ["active", "acknowledged"])
+                .maybeSingle();
+
+              if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "low_battery"))) {
+                const voltageStr = batteryVoltage !== null ? `${batteryVoltage.toFixed(2)}V` : "N/A";
+                const levelStr = batteryLevel !== null ? `${batteryLevel}%` : "N/A";
+                const { data: alertData } = await supabase.from("alerts").insert({
+                  unit_id: u.id,
+                  organization_id: getOrgId(unit),
+                  site_id: getSiteId(unit),
+                  area_id: getAreaId(unit),
+                  source: "sensor",
+                  sensor_dev_eui: sensor.dev_eui,
+                  title: `${sensor.name || u.name}: Low Battery`,
+                  message: `Battery low (${levelStr}, ${voltageStr}). Schedule replacement within 2 weeks.`,
+                  alert_type: "low_battery",
+                  severity: "warning",
+                  metadata: {
+                    battery_level: batteryLevel,
+                    battery_voltage: batteryVoltage,
+                    low_threshold_v: lowThresholdV,
+                    sensor_id: sensor.id,
+                    sensor_name: sensor.name,
+                    sensor_dev_eui: sensor.dev_eui,
+                  },
+                }).select("id").single();
+                if (alertData) {
+                  newAlertIds.push(alertData.id);
+                  console.log(`Created low_battery alert for sensor ${sensor.name} on unit ${u.name}`);
+                }
+              }
+            } else if (batteryLevel !== null && batteryLevel > 20) {
+              // Auto-resolve low battery if battery is now healthy (e.g., replaced)
+              await supabase
+                .from("alerts")
+                .update({
+                  status: "resolved",
+                  resolved_at: new Date().toISOString(),
+                  resolution_type: "auto",
+                })
+                .eq("unit_id", u.id)
+                .eq("alert_type", "low_battery")
+                .eq("sensor_dev_eui", sensor.dev_eui)
+                .in("status", ["active", "acknowledged"]);
+            }
+          }
+        }
+      }
+
+      // === SENSOR FAULT ALERT ===
+      // Check most recent reading for error flags or impossible values
+      {
+        const { data: latestReading } = await supabase
+          .from("sensor_readings")
+          .select("temperature, humidity, source_metadata, recorded_at, lora_sensor_id")
+          .eq("unit_id", u.id)
+          .order("recorded_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestReading) {
+          const temp = latestReading.temperature as number | null;
+          const meta = (latestReading.source_metadata || {}) as Record<string, unknown>;
+          const decoderErrors = meta.decoder_errors as string[] | undefined;
+
+          // Detect sensor faults:
+          // 1. Impossible temperature values (sensor reports 0x7FFF / 327.67°C = 621.8°F or -40°F minimum)
+          // 2. Decoder errors from ttn-webhook
+          // 3. Temperature exactly 0 with humidity exactly 0 (common fault pattern)
+          const isImpossibleTemp = temp !== null && (temp > 300 || temp < -100);
+          const hasDecoderErrors = decoderErrors && decoderErrors.length > 0;
+          const isSensorFault = isImpossibleTemp || hasDecoderErrors;
+
+          if (isSensorFault) {
+            const sensorId = latestReading.lora_sensor_id as string | null;
+            let sensorDevEui: string | null = null;
+            let sensorName: string | null = null;
+
+            if (sensorId) {
+              const { data: sensor } = await supabase
+                .from("lora_sensors")
+                .select("dev_eui, name")
+                .eq("id", sensorId)
+                .maybeSingle();
+              sensorDevEui = sensor?.dev_eui || null;
+              sensorName = sensor?.name || null;
+            }
+
+            const { data: existingAlert } = await supabase
+              .from("alerts")
+              .select("id")
+              .eq("unit_id", u.id)
+              .eq("alert_type", "sensor_fault")
+              .in("status", ["active", "acknowledged"])
+              .maybeSingle();
+
+            if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "sensor_fault"))) {
+              const faultReason = isImpossibleTemp
+                ? `Impossible temperature reading: ${temp}${TEMP_UNIT_SYMBOL}`
+                : `Decoder errors: ${(decoderErrors || []).join(", ")}`;
+
+              const { data: alertData } = await supabase.from("alerts").insert({
+                unit_id: u.id,
+                organization_id: getOrgId(unit),
+                site_id: getSiteId(unit),
+                area_id: getAreaId(unit),
+                source: "sensor",
+                sensor_dev_eui: sensorDevEui,
+                title: `${sensorName || u.name}: Sensor Fault`,
+                message: `Hardware error detected. ${faultReason}. Manual monitoring required.`,
+                alert_type: "sensor_fault",
+                severity: "critical",
+                metadata: {
+                  fault_reason: faultReason,
+                  impossible_temp: isImpossibleTemp,
+                  decoder_errors: decoderErrors,
+                  raw_temperature: temp,
+                  sensor_id: sensorId,
+                  sensor_name: sensorName,
+                  sensor_dev_eui: sensorDevEui,
+                  reading_at: latestReading.recorded_at,
+                },
+              }).select("id").single();
+              if (alertData) {
+                newAlertIds.push(alertData.id);
+                console.log(`Created sensor_fault alert (CRITICAL) for unit ${u.name}`);
+              }
+            }
+          } else {
+            // Auto-resolve sensor_fault if readings are now normal
+            await supabase
+              .from("alerts")
+              .update({
+                status: "resolved",
+                resolved_at: new Date().toISOString(),
+                resolution_type: "auto",
+              })
+              .eq("unit_id", u.id)
+              .eq("alert_type", "sensor_fault")
+              .in("status", ["active", "acknowledged"]);
+          }
+        }
+      }
+
+      // === MISSED MANUAL ENTRY ALERT ===
+      // Separate from monitoring_interrupted — fires when sensor is offline 4+ hours AND no manual log
+      if (manualRequired && newStatus === "manual_required") {
+        const { data: existingManualAlert } = await supabase
+          .from("alerts")
+          .select("id")
+          .eq("unit_id", u.id)
+          .eq("alert_type", "missed_manual_entry")
+          .in("status", ["active", "acknowledged"])
+          .maybeSingle();
+
+        if (!existingManualAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "missed_manual_entry"))) {
+          const lastLogTime = lastManualLogAt
+            ? new Date(lastManualLogAt).toLocaleString("en-US", { timeStyle: "short", dateStyle: "short" })
+            : "never";
+          const { data: alertData } = await supabase.from("alerts").insert({
+            unit_id: u.id,
+            organization_id: getOrgId(unit),
+            site_id: getSiteId(unit),
+            area_id: getAreaId(unit),
+            source: "system",
+            title: `${u.name}: Manual Temp Log Overdue`,
+            message: `Manual temperature log required. Last entry: ${lastLogTime}. Monitoring has been interrupted for ${missedCheckins} check-ins.`,
+            alert_type: "missed_manual_entry",
+            severity: "warning",
+            metadata: {
+              missed_checkins: missedCheckins,
+              manual_cadence_minutes: manualCadenceMinutes,
+              last_manual_log_at: lastManualLogAt,
+              last_reading_at: lastReadingAt,
+            },
+          }).select("id").single();
+          if (alertData) {
+            newAlertIds.push(alertData.id);
+            console.log(`Created missed_manual_entry alert for unit ${u.name}`);
+          }
+        }
+      } else if (!manualRequired) {
+        // Auto-resolve missed_manual_entry when a manual log is submitted or sensor comes back
+        await supabase
+          .from("alerts")
+          .update({
+            status: "resolved",
+            resolved_at: new Date().toISOString(),
+            resolution_type: "auto",
+          })
+          .eq("unit_id", u.id)
+          .eq("alert_type", "missed_manual_entry")
+          .in("status", ["active", "acknowledged"]);
       }
 
       // Update status if changed
@@ -543,7 +1013,7 @@ Deno.serve(async (req) => {
           // Determine alert severity based on offline severity
           const alertSeverity = offlineSeverity === "critical" ? "critical" : "warning";
 
-          if (!existingAlert) {
+          if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "monitoring_interrupted"))) {
             const { data: alertData } = await supabase.from("alerts").insert({
               unit_id: u.id,
               organization_id: getOrgId(unit),
@@ -565,6 +1035,7 @@ Deno.serve(async (req) => {
 
             if (alertData) {
               newAlertIds.push(alertData.id);
+              await correlateAlert(supabase, alertData.id, "monitoring_interrupted", u.id, getSiteId(unit), getOrgId(unit));
               console.log(`Created monitoring_interrupted alert (${alertSeverity}) for unit ${u.name}`);
             }
           } else if (existingAlert.severity !== alertSeverity) {

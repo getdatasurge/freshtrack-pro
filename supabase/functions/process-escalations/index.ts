@@ -8,6 +8,14 @@ import {
   getDisplayUnitSymbol,
   type SystemUnitsPreference
 } from "../_shared/unitConversion.ts";
+import {
+  ALERT_TYPE_LABELS,
+  getAlertTypeLabel,
+  SEVERITY_EMAIL_COLORS,
+  buildEmailSubject,
+  buildInAppTitle,
+  buildInAppBody,
+} from "../_shared/alertTemplates.ts";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
@@ -82,31 +90,15 @@ interface EligibleRecipient {
   user_id: string;
 }
 
-const alertTypeLabels: Record<string, string> = {
-  alarm_active: "Temperature Alarm",
-  monitoring_interrupted: "Monitoring Interrupted",
-  missed_manual_entry: "Missed Manual Entry",
-  low_battery: "Low Battery",
-  sensor_fault: "Sensor Fault",
-  door_open: "Door Left Open",
-  calibration_due: "Calibration Due",
-  suspected_cooling_failure: "Suspected Cooling Failure",
-  temp_excursion: "Temperature Excursion",
-};
+// alertTypeLabels is now imported from _shared/alertTemplates.ts as ALERT_TYPE_LABELS
 
 function generateAlertEmailHtml(
   alert: Alert,
   unit: UnitInfo,
   appUrl: string
 ): string {
-  const severityColors: Record<string, string> = {
-    critical: "#dc2626",
-    warning: "#f59e0b",
-    info: "#3b82f6",
-  };
-
-  const severityColor = severityColors[alert.severity] || severityColors.info;
-  const alertLabel = alertTypeLabels[alert.alert_type] || alert.alert_type;
+  const severityColor = SEVERITY_EMAIL_COLORS[alert.severity] || SEVERITY_EMAIL_COLORS.info;
+  const alertLabel = getAlertTypeLabel(alert.alert_type);
   const triggeredDate = new Date(alert.triggered_at).toLocaleString("en-US", {
     timeZone: unit.area.site.timezone,
     dateStyle: "medium",
@@ -201,7 +193,10 @@ function generateAlertEmailHtml(
                   
                   ${alert.message ? `<p style="margin: 0 0 24px; padding: 16px; background-color: #fef3c7; border-radius: 6px; color: #92400e; font-size: 14px;">${alert.message}</p>` : ""}
                   
-                  <a href="${appUrl}/unit/${unit.id}" style="display: inline-block; padding: 12px 24px; background-color: ${severityColor}; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 500;">
+                  <a href="${appUrl}/alerts" style="display: inline-block; padding: 12px 24px; background-color: ${severityColor}; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 500; margin-right: 8px;">
+                    Acknowledge Alert
+                  </a>
+                  <a href="${appUrl}/unit/${unit.id}" style="display: inline-block; padding: 12px 24px; background-color: #6b7280; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 500;">
                     View Unit Details
                   </a>
                 </td>
@@ -508,7 +503,7 @@ function buildSmsMessage(alert: Alert, unit: UnitInfo): string {
       return `🚨 FreshTrack Alert: ${unitName} may have a cooling failure. Temperature rising consistently. Check immediately.`;
 
     default:
-      return `🔔 FreshTrack Alert: ${unitName} - ${alertTypeLabels[alert.alert_type] || alert.alert_type}. Please check.`;
+      return `🔔 FreshTrack Alert: ${unitName} - ${getAlertTypeLabel(alert.alert_type)}. Please check.`;
   }
 }
 
@@ -706,8 +701,35 @@ const handler = async (req: Request): Promise<Response> => {
 
       const channelsToUse = policy.initial_channels || ["IN_APP_CENTER"];
 
+      // Resolve all recipients once (needed for in-app notifications)
+      const allRecipients = await getRecipients(supabaseAdmin, orgId, policy);
+
       for (const channel of channelsToUse) {
         if (channel === "IN_APP_CENTER") {
+          // Insert per-user in_app_notifications records
+          for (const recipient of allRecipients) {
+            try {
+              await supabaseAdmin.from("in_app_notifications").insert({
+                user_id: recipient.user_id,
+                alert_id: alert.id,
+                organization_id: orgId,
+                title: buildInAppTitle(alert.alert_type, alert.severity, unitInfo.name),
+                body: buildInAppBody(alert.message, alert.title),
+                severity: alert.severity,
+                action_url: `/unit/${unitInfo.id}`,
+                escalation_step: 0,
+                metadata: {
+                  alert_type: alert.alert_type,
+                  site_name: unitInfo.area.site.name,
+                  area_name: unitInfo.area.name,
+                  unit_name: unitInfo.name,
+                },
+              });
+            } catch (inAppErr) {
+              console.error(`Failed to create in_app_notification for ${recipient.email}:`, inAppErr);
+            }
+          }
+
           await logNotificationEvent(supabaseAdmin, {
             organization_id: orgId,
             site_id: siteId,
@@ -715,7 +737,7 @@ const handler = async (req: Request): Promise<Response> => {
             alert_id: alert.id,
             channel: "IN_APP_CENTER",
             event_type: "ALERT_ACTIVE",
-            to_recipients: [],
+            to_recipients: allRecipients.map(r => r.email),
             status: "SENT",
           });
           inAppLogged++;
@@ -751,14 +773,13 @@ const handler = async (req: Request): Promise<Response> => {
             continue;
           }
 
-          const alertLabel = alertTypeLabels[alert.alert_type] || alert.alert_type;
           const emailHtml = generateAlertEmailHtml(alert, unitInfo, appUrl);
 
           try {
             const { data: emailData, error: emailError } = await resend.emails.send({
               from: "FrostGuard Alerts <alerts@frostguard.app>",
               to: recipients.map(r => r.email),
-              subject: `[${alert.severity.toUpperCase()}] ${alertLabel}: ${unitInfo.name}`,
+              subject: buildEmailSubject(alert.alert_type, alert.severity, unitInfo.name),
               html: emailHtml,
             });
 

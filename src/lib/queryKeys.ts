@@ -71,6 +71,11 @@ export const qk = {
     // TTN Cleanup logs
     ttnCleanupLogs: () => ['org', orgId, 'ttn-cleanup-logs'] as const,
 
+    // Alert suppressions & audit
+    alertSuppressions: () => ['org', orgId, 'alert-suppressions'] as const,
+    alertAuditLog: (filters?: Record<string, unknown>) => ['org', orgId, 'alert-audit-log', filters] as const,
+    channelHealth: () => ['org', orgId, 'channel-health'] as const,
+
     // Health & status
     healthCheck: () => ['org', orgId, 'health-check'] as const,
     pipelineStatus: () => ['org', orgId, 'pipeline-status'] as const,

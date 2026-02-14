@@ -1,17 +1,8 @@
 import { formatDistanceToNow } from "date-fns";
+import { ALERT_TYPE_LABELS, formatAlertDetail as sharedFormatDetail } from "./alertTemplates";
 
-// Map alert_type to human-readable titles
-export const alertTypeLabels: Record<string, string> = {
-  temp_excursion: "Temperature Excursion",
-  alarm_active: "Temperature Alarm",
-  monitoring_interrupted: "Sensor Offline",
-  missed_manual_entry: "Manual Logging Required",
-  low_battery: "Low Battery",
-  door_open: "Door Left Open",
-  suspected_cooling_failure: "Suspected Cooling Failure",
-  calibration_due: "Calibration Due",
-  sensor_fault: "Sensor Fault",
-};
+// Re-export from shared templates for backwards compatibility
+export const alertTypeLabels = ALERT_TYPE_LABELS;
 
 // Map severity to styling
 export const severityConfig = {
@@ -75,57 +66,17 @@ export interface AlertWithContext {
 }
 
 /**
- * Format alert detail based on alert type and available data
+ * Format alert detail based on alert type and available data.
+ * Delegates to shared template function.
  */
 function formatAlertDetail(alert: AlertWithContext): string {
-  const { alert_type, temp_reading, temp_limit, message, metadata } = alert;
-
-  // Temperature-related alerts
-  if ((alert_type === "temp_excursion" || alert_type === "alarm_active") && 
-      temp_reading !== null && temp_limit !== null) {
-    const direction = temp_reading > temp_limit ? ">" : "<";
-    return `Current ${temp_reading.toFixed(1)}°F ${direction} Limit ${temp_limit.toFixed(1)}°F`;
-  }
-
-  // Offline/monitoring interrupted - use metadata if available
-  if (alert_type === "monitoring_interrupted") {
-    const missedCheckins = metadata?.missed_checkins;
-    if (missedCheckins) {
-      return `Missed ${missedCheckins} check-in${missedCheckins > 1 ? "s" : ""}`;
-    }
-    return "No sensor data received";
-  }
-
-  // Manual logging required
-  if (alert_type === "missed_manual_entry") {
-    return "Manual temperature log overdue";
-  }
-
-  // Low battery
-  if (alert_type === "low_battery") {
-    const level = metadata?.battery_level;
-    if (level !== undefined) {
-      return `Battery at ${level}%`;
-    }
-    return "Battery level low";
-  }
-
-  // Door open
-  if (alert_type === "door_open") {
-    const duration = metadata?.open_duration_minutes;
-    if (duration) {
-      return `Door open for ${duration} minutes`;
-    }
-    return "Door has been left open";
-  }
-
-  // Cooling failure
-  if (alert_type === "suspected_cooling_failure") {
-    return "Temperature rising despite door closed";
-  }
-
-  // Fallback to message or generic
-  return message || "Alert triggered";
+  return sharedFormatDetail({
+    alertType: alert.alert_type,
+    tempReading: alert.temp_reading,
+    tempLimit: alert.temp_limit,
+    message: alert.message,
+    metadata: alert.metadata,
+  });
 }
 
 /**

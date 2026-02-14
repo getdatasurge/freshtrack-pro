@@ -57,6 +57,8 @@ import { TTNConnectionSettings } from "@/components/settings/TTNConnectionSettin
 import { TTNCredentialsPanel } from "@/components/settings/TTNCredentialsPanel";
 import { TTNProvisioningLogs } from "@/components/settings/TTNProvisioningLogs";
 import { EmulatorSyncHistory } from "@/components/settings/EmulatorSyncHistory";
+import { NotificationTestPanel } from "@/components/settings/NotificationTestPanel";
+import { ChannelHealthCard } from "@/components/settings/ChannelHealthCard";
 import { EmulatorResyncCard } from "@/components/settings/EmulatorResyncCard";
 import { AccountDeletionModal } from "@/components/settings/AccountDeletionModal";
 import { SecurityTab } from "@/components/settings/SecurityTab";
@@ -1049,6 +1051,12 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Channel Health */}
+          {canManageUsers && <ChannelHealthCard />}
+
+          {/* Notification Testing Panel */}
+          {canManageUsers && <NotificationTestPanel />}
 
           {/* Webhook Status + Toll-Free Verification + Opt-In Image + SMS Alert History */}
           {canManageUsers && organization && (

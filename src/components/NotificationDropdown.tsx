@@ -1,14 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   Bell,
   Thermometer,
@@ -21,6 +25,11 @@ import {
   Wrench,
   Loader2,
   CheckCircle2,
+  Check,
+  CheckCheck,
+  Trash2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -33,6 +42,22 @@ import {
 
 interface NotificationDropdownProps {
   alertCount: number;
+}
+
+interface InAppNotification {
+  id: string;
+  user_id: string;
+  alert_id: string | null;
+  title: string;
+  body: string;
+  severity: string;
+  read: boolean;
+  read_at: string | null;
+  dismissed: boolean;
+  action_url: string | null;
+  escalation_step: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 // Map alert types to icons
@@ -48,18 +73,41 @@ const alertTypeIcons: Record<string, typeof AlertTriangle> = {
   sensor_fault: AlertTriangle,
 };
 
+function getRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  return `${diffDays}d ago`;
+}
+
+function getSeverityForIcon(severity: string) {
+  if (severity === "critical") return { textColor: "text-alarm", iconBg: "bg-alarm/10" };
+  if (severity === "warning") return { textColor: "text-warning", iconBg: "bg-warning/10" };
+  return { textColor: "text-accent", iconBg: "bg-accent/10" };
+}
+
 const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
   const navigate = useNavigate();
-  const [notifications, setNotifications] = useState<AlertNotification[]>([]);
+  const [inAppNotifs, setInAppNotifs] = useState<InAppNotification[]>([]);
+  const [alertNotifs, setAlertNotifs] = useState<AlertNotification[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("all");
 
-  // Load user's organization_id on mount
+  // Load user identity on mount
   useEffect(() => {
-    const loadOrgId = async () => {
+    const loadIdentity = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        setUserId(user.id);
         const { data } = await supabase
           .from("profiles")
           .select("organization_id")
@@ -68,67 +116,44 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
         setOrgId(data?.organization_id || null);
       }
     };
-    loadOrgId();
+    loadIdentity();
   }, []);
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
+    if (!userId || !orgId) return;
     setIsLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setNotifications([]);
-        return;
-      }
+      // Load in_app_notifications (per-user, with read state)
+      const { data: inAppData } = await supabase
+        .from("in_app_notifications")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("dismissed", false)
+        .order("created_at", { ascending: false })
+        .limit(50);
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("organization_id")
-        .eq("user_id", user.id)
-        .maybeSingle();
+      setInAppNotifs((inAppData || []) as InAppNotification[]);
 
-      if (!profile?.organization_id) {
-        setNotifications([]);
-        return;
-      }
-
-      // Query alerts with unit/area/site context
-      const { data: alerts, error } = await supabase
+      // Also load alerts as fallback (for backwards compat / orgs without in_app_notifications)
+      const { data: alerts } = await supabase
         .from("alerts")
         .select(`
-          id,
-          title,
-          message,
-          alert_type,
-          severity,
-          status,
-          temp_reading,
-          temp_limit,
-          triggered_at,
-          metadata,
-          unit_id,
+          id, title, message, alert_type, severity, status, temp_reading, temp_limit,
+          triggered_at, metadata, unit_id,
           unit:units!alerts_unit_id_fkey (
-            id,
-            name,
+            id, name,
             area:areas!units_area_id_fkey (
-              id,
-              name,
-              site:sites!areas_site_id_fkey (
-                id,
-                name
-              )
+              id, name,
+              site:sites!areas_site_id_fkey ( id, name )
             )
           )
         `)
-        .eq("organization_id", profile.organization_id)
+        .eq("organization_id", orgId)
         .in("status", ["active", "acknowledged"])
         .order("triggered_at", { ascending: false })
         .limit(20);
 
-      if (error) throw error;
-
-      // Map alerts to notification format
-      const mappedNotifications = (alerts || []).map((alert: any) => {
-        // Transform the nested unit data structure
+      const mapped = (alerts || []).map((alert: any) => {
         const alertWithContext: AlertWithContext = {
           ...alert,
           unit: alert.unit ? {
@@ -146,55 +171,59 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
         };
         return mapAlertToNotification(alertWithContext);
       });
-
-      setNotifications(mappedNotifications);
+      setAlertNotifs(mapped);
     } catch (error) {
       console.error("Error loading notifications:", error);
-      setNotifications([]);
     }
     setIsLoading(false);
-  };
+  }, [userId, orgId]);
 
   useEffect(() => {
-    if (isOpen) {
-      loadNotifications();
-    }
-  }, [isOpen]);
+    if (isOpen) loadNotifications();
+  }, [isOpen, loadNotifications]);
 
-// Check if toast should be shown based on notification policy
-  const shouldShowToast = async (
-    alert: { unit_id: string; alert_type: string; severity: string }
-  ): Promise<boolean> => {
-    try {
-      const { data: policy } = await supabase.rpc("get_effective_notification_policy", {
-        p_unit_id: alert.unit_id,
-        p_alert_type: alert.alert_type,
-      });
+  // Real-time subscription for new in_app_notifications
+  useEffect(() => {
+    if (!userId) return;
 
-      if (!policy || typeof policy !== "object") return false;
+    const channel = supabase
+      .channel(`in-app-notifs-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "in_app_notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const newNotif = payload.new as InAppNotification;
+          setInAppNotifs(prev => [newNotif, ...prev]);
 
-      const policyObj = policy as Record<string, unknown>;
+          // Show toast for critical alerts
+          if (newNotif.severity === "critical") {
+            toast.error(newNotif.title, {
+              description: newNotif.body,
+              duration: 10000,
+              action: newNotif.action_url ? {
+                label: "View",
+                onClick: () => navigate(newNotif.action_url!),
+              } : undefined,
+            });
+          } else if (newNotif.severity === "warning") {
+            toast.warning(newNotif.title, {
+              description: newNotif.body,
+              duration: 8000,
+            });
+          }
+        }
+      )
+      .subscribe();
 
-      // Check if WEB_TOAST is in initial_channels
-      const initialChannels = (policyObj.initial_channels as string[]) || [];
-      if (!initialChannels.includes("WEB_TOAST")) return false;
+    return () => { supabase.removeChannel(channel); };
+  }, [userId, navigate]);
 
-      // Check severity threshold
-      const severityThreshold = (policyObj.severity_threshold as string) || "WARNING";
-      const allowWarnings = policyObj.allow_warning_notifications as boolean;
-
-      if (alert.severity === "critical") return true;
-      if (alert.severity === "warning" && allowWarnings) return true;
-      if (alert.severity === "info" && severityThreshold === "INFO") return true;
-
-      return false;
-    } catch (error) {
-      console.error("Error checking notification policy:", error);
-      return false;
-    }
-  };
-
-  // Real-time subscription for new alerts
+  // Real-time subscription for alert changes (status updates)
   useEffect(() => {
     if (!orgId) return;
 
@@ -203,173 +232,289 @@ const NotificationDropdown = ({ alertCount }: NotificationDropdownProps) => {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          event: "*",
           schema: "public",
           table: "alerts",
           filter: `organization_id=eq.${orgId}`,
         },
-        async (payload) => {
-          const alert = payload.new as any;
-          const title = alertTypeLabels[alert.alert_type] || alert.title || "New Alert";
-          
-          // Check policy to determine if toast should be shown
-          if (alert.status === "active") {
-            const showToast = await shouldShowToast(alert);
-            if (showToast) {
-              const toastFn = alert.severity === "critical" ? toast.error : toast.warning;
-              toastFn(title, {
-                description: alert.message || `${alert.severity} alert triggered`,
-                duration: 10000,
-                action: {
-                  label: "View",
-                  onClick: () => navigate(`/unit/${alert.unit_id}`),
-                },
-              });
-            }
-          }
-          
-          // Refresh notifications if dropdown is open
-          if (isOpen) {
-            loadNotifications();
-          }
+        () => {
+          if (isOpen) loadNotifications();
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [navigate, orgId, isOpen]);
+    return () => { supabase.removeChannel(channel); };
+  }, [orgId, isOpen, loadNotifications]);
 
-  const handleViewAll = () => {
-    setIsOpen(false);
-    navigate("/alerts");
+  // === Actions ===
+  const markAsRead = async (notifId: string) => {
+    await supabase
+      .from("in_app_notifications")
+      .update({ read: true, read_at: new Date().toISOString() })
+      .eq("id", notifId);
+    setInAppNotifs(prev => prev.map(n => n.id === notifId ? { ...n, read: true, read_at: new Date().toISOString() } : n));
   };
 
-  const handleNotificationClick = (notification: AlertNotification) => {
-    setIsOpen(false);
-    navigate(`/unit/${notification.unitId}`);
+  const markAsUnread = async (notifId: string) => {
+    await supabase
+      .from("in_app_notifications")
+      .update({ read: false, read_at: null })
+      .eq("id", notifId);
+    setInAppNotifs(prev => prev.map(n => n.id === notifId ? { ...n, read: false, read_at: null } : n));
   };
+
+  const markAllAsRead = async () => {
+    if (!userId) return;
+    await supabase
+      .from("in_app_notifications")
+      .update({ read: true, read_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("read", false);
+    setInAppNotifs(prev => prev.map(n => ({ ...n, read: true, read_at: new Date().toISOString() })));
+  };
+
+  const clearResolved = async () => {
+    if (!userId) return;
+    // Dismiss notifications whose alerts are resolved
+    const resolvedAlertIds = alertNotifs
+      .filter(a => a.status === "resolved")
+      .map(a => a.id);
+
+    if (resolvedAlertIds.length > 0) {
+      await supabase
+        .from("in_app_notifications")
+        .update({ dismissed: true, dismissed_at: new Date().toISOString() })
+        .eq("user_id", userId)
+        .in("alert_id", resolvedAlertIds);
+      setInAppNotifs(prev => prev.filter(n => !resolvedAlertIds.includes(n.alert_id || "")));
+    }
+  };
+
+  const handleNotifClick = (notif: InAppNotification) => {
+    if (!notif.read) markAsRead(notif.id);
+    setIsOpen(false);
+    if (notif.action_url) navigate(notif.action_url);
+    else navigate("/alerts");
+  };
+
+  const handleAlertClick = (notif: AlertNotification) => {
+    setIsOpen(false);
+    navigate(`/unit/${notif.unitId}`);
+  };
+
+  // Computed values
+  const unreadCount = inAppNotifs.filter(n => !n.read).length;
+  const criticalNotifs = inAppNotifs.filter(n => n.severity === "critical");
+  const displayCount = unreadCount > 0 ? unreadCount : alertCount;
+
+  // Determine which notifications to show based on tab
+  const useInApp = inAppNotifs.length > 0;
+
+  const filteredInApp = activeTab === "unread"
+    ? inAppNotifs.filter(n => !n.read)
+    : activeTab === "critical"
+    ? criticalNotifs
+    : inAppNotifs;
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <PopoverTrigger asChild>
+    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+      <SheetTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="w-5 h-5" />
-          {alertCount > 0 && (
+          {displayCount > 0 && (
             <span className="absolute -top-1 -right-1 w-4 h-4 bg-alarm text-alarm-foreground text-xs rounded-full flex items-center justify-center">
-              {alertCount > 9 ? "9+" : alertCount}
+              {displayCount > 9 ? "9+" : displayCount}
             </span>
           )}
         </Button>
-      </PopoverTrigger>
-      <PopoverContent 
-        className="w-96 p-0 bg-popover border border-border shadow-lg" 
-        align="end"
-        sideOffset={8}
-      >
-        <div className="p-3 border-b border-border">
+      </SheetTrigger>
+      <SheetContent side="right" className="w-[420px] sm:w-[460px] p-0">
+        <SheetHeader className="px-4 pt-4 pb-3 border-b">
           <div className="flex items-center justify-between">
-            <h4 className="font-semibold text-foreground">Notifications</h4>
-            {alertCount > 0 && (
-              <Badge variant="destructive" className="text-xs">
-                {alertCount} active
-              </Badge>
-            )}
+            <SheetTitle className="text-base">Notifications</SheetTitle>
+            <div className="flex items-center gap-2">
+              {unreadCount > 0 && (
+                <Badge variant="destructive" className="text-xs">
+                  {unreadCount} unread
+                </Badge>
+              )}
+              {alertCount > 0 && (
+                <Badge variant="outline" className="text-xs">
+                  {alertCount} active
+                </Badge>
+              )}
+            </div>
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            {notifications.length > 0 ? `Last updated just now` : "No recent updates"}
-          </p>
-        </div>
+        </SheetHeader>
 
-        <ScrollArea className="h-[350px]">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : notifications.length > 0 ? (
-            <div className="divide-y divide-border">
-              {notifications.map((notif) => {
-                const Icon = alertTypeIcons[notif.alertType] || AlertTriangle;
-                const severity = severityConfig[notif.severity] || severityConfig.warning;
-                const isAcknowledged = notif.status === "acknowledged";
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-[calc(100%-60px)]">
+          <div className="px-4 pt-2">
+            <TabsList className="w-full">
+              <TabsTrigger value="all" className="flex-1 text-xs">All</TabsTrigger>
+              <TabsTrigger value="unread" className="flex-1 text-xs">
+                Unread {unreadCount > 0 && `(${unreadCount})`}
+              </TabsTrigger>
+              <TabsTrigger value="critical" className="flex-1 text-xs">
+                Critical {criticalNotifs.length > 0 && `(${criticalNotifs.length})`}
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
-                return (
-                  <button
-                    key={notif.id}
-                    onClick={() => handleNotificationClick(notif)}
-                    className={`w-full p-3 text-left hover:bg-muted/50 transition-colors ${
-                      isAcknowledged ? "opacity-70" : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`w-9 h-9 rounded-lg ${severity.iconBg} flex items-center justify-center flex-shrink-0`}>
-                        <Icon className={`w-4.5 h-4.5 ${severity.textColor}`} />
-                      </div>
-                      <div className="flex-1 min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-sm font-medium ${severity.textColor}`}>
-                            {notif.title}
-                          </span>
-                          {isAcknowledged && (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                          )}
-                          <Badge 
-                            variant="outline" 
-                            className={`text-[10px] px-1.5 py-0 ${severity.textColor} ${severity.borderColor} ml-auto`}
-                          >
-                            {notif.severity}
-                          </Badge>
+          <ScrollArea className="flex-1 mt-2">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : useInApp ? (
+              /* === In-App Notifications (per-user, with read state) === */
+              filteredInApp.length > 0 ? (
+                <div className="divide-y divide-border">
+                  {filteredInApp.map((notif) => {
+                    const alertType = (notif.metadata?.alert_type as string) || "temp_excursion";
+                    const Icon = alertTypeIcons[alertType] || AlertTriangle;
+                    const sev = getSeverityForIcon(notif.severity);
+
+                    return (
+                      <div
+                        key={notif.id}
+                        className={`flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors ${
+                          !notif.read ? "bg-accent/5" : ""
+                        }`}
+                        onClick={() => handleNotifClick(notif)}
+                      >
+                        <div className={`w-9 h-9 rounded-lg ${sev.iconBg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                          <Icon className={`w-4 h-4 ${sev.textColor}`} />
                         </div>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {notif.context}
-                        </p>
-                        <p className="text-xs text-foreground/80">
-                          {notif.detail}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground/70">
-                          {notif.relativeTime}
-                        </p>
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-sm font-medium leading-tight ${!notif.read ? "text-foreground" : "text-muted-foreground"}`}>
+                              {notif.title}
+                            </span>
+                            {!notif.read && (
+                              <span className="w-2 h-2 rounded-full bg-accent flex-shrink-0" />
+                            )}
+                          </div>
+                          <p className="text-xs text-muted-foreground line-clamp-2">
+                            {notif.body}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground/70">
+                              {getRelativeTime(notif.created_at)}
+                            </span>
+                            {notif.escalation_step > 0 && (
+                              <Badge variant="outline" className="text-[10px] px-1 py-0 text-alarm border-alarm/30">
+                                Escalation {notif.escalation_step}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            notif.read ? markAsUnread(notif.id) : markAsRead(notif.id);
+                          }}
+                          className="flex-shrink-0 p-1 rounded hover:bg-muted"
+                          title={notif.read ? "Mark as unread" : "Mark as read"}
+                        >
+                          {notif.read ? (
+                            <EyeOff className="w-3.5 h-3.5 text-muted-foreground" />
+                          ) : (
+                            <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+                          )}
+                        </button>
                       </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-8 text-center px-4">
-              <Bell className="w-8 h-8 text-muted-foreground/50 mb-2" />
-              <p className="text-sm text-muted-foreground">No active alerts</p>
-              <p className="text-xs text-muted-foreground/70 mt-1">
-                Alerts will appear here when triggered
-              </p>
-            </div>
-          )}
-        </ScrollArea>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                  <Bell className="w-8 h-8 text-muted-foreground/50 mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    {activeTab === "unread" ? "All caught up!" : activeTab === "critical" ? "No critical alerts" : "No notifications"}
+                  </p>
+                </div>
+              )
+            ) : (
+              /* === Fallback: Alert-based notifications (legacy) === */
+              alertNotifs.length > 0 ? (
+                <div className="divide-y divide-border">
+                  {alertNotifs.map((notif) => {
+                    const Icon = alertTypeIcons[notif.alertType] || AlertTriangle;
+                    const severity = severityConfig[notif.severity] || severityConfig.warning;
+                    const isAcknowledged = notif.status === "acknowledged";
 
-        <div className="p-2 border-t border-border space-y-1">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="w-full text-accent hover:text-accent"
-            onClick={handleViewAll}
-          >
-            View all alerts
-          </Button>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="w-full text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              setIsOpen(false);
-              navigate("/events");
-            }}
-          >
-            Event history
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
+                    return (
+                      <button
+                        key={notif.id}
+                        onClick={() => handleAlertClick(notif)}
+                        className={`w-full p-3 text-left hover:bg-muted/50 transition-colors ${
+                          isAcknowledged ? "opacity-70" : ""
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-9 h-9 rounded-lg ${severity.iconBg} flex items-center justify-center flex-shrink-0`}>
+                            <Icon className={`w-4 h-4 ${severity.textColor}`} />
+                          </div>
+                          <div className="flex-1 min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-sm font-medium ${severity.textColor}`}>
+                                {notif.title}
+                              </span>
+                              {isAcknowledged && (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                              )}
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 ${severity.textColor} ${severity.borderColor} ml-auto`}
+                              >
+                                {notif.severity}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">{notif.context}</p>
+                            <p className="text-xs text-foreground/80">{notif.detail}</p>
+                            <p className="text-[11px] text-muted-foreground/70">{notif.relativeTime}</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+                  <Bell className="w-8 h-8 text-muted-foreground/50 mb-2" />
+                  <p className="text-sm text-muted-foreground">No active alerts</p>
+                  <p className="text-xs text-muted-foreground/70 mt-1">
+                    Alerts will appear here when triggered
+                  </p>
+                </div>
+              )
+            )}
+          </ScrollArea>
+
+          <div className="border-t border-border p-2 space-y-1">
+            {useInApp && unreadCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-muted-foreground hover:text-foreground"
+                onClick={markAllAsRead}
+              >
+                <CheckCheck className="w-4 h-4 mr-2" />
+                Mark all as read
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-accent hover:text-accent"
+              onClick={() => { setIsOpen(false); navigate("/alerts"); }}
+            >
+              View all alerts
+            </Button>
+          </div>
+        </Tabs>
+      </SheetContent>
+    </Sheet>
   );
 };
 

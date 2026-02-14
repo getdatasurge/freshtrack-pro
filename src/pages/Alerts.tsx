@@ -31,6 +31,11 @@ import {
   Mail,
   MailCheck,
   MailX,
+  Link2,
+  AlarmClockOff,
+  History,
+  FileText,
+  BarChart3,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Session } from "@supabase/supabase-js";
@@ -59,6 +64,7 @@ interface DBAlert {
   resolved_at: string | null;
   last_notified_at: string | null;
   last_notified_reason: string | null;
+  correlated_with_alert_id: string | null;
   unit: {
     id: string;
     name: string;
@@ -91,9 +97,15 @@ interface UnifiedAlert {
   escalation_level?: number;
   last_notified_at?: string | null;
   last_notified_reason?: string | null;
+  correlated_with_alert_id?: string | null;
 }
 
 import { ALERT_TYPE_CONFIG, SEVERITY_CONFIG, getAlertTypeConfig, getSeverityConfig } from "@/lib/alertConfig";
+import { AlertTypeInfoCard, AlertInfoToggle } from "@/components/alerts/AlertTypeInfoCard";
+import { SuppressionManager } from "@/components/alerts/SuppressionManager";
+import { SnoozeAlertDialog } from "@/components/alerts/SnoozeAlertDialog";
+import { AuditLogTimeline } from "@/components/alerts/AuditLogTimeline";
+import { ComplianceReportDialog } from "@/components/alerts/ComplianceReportDialog";
 import { useEffectiveIdentity } from "@/hooks/useEffectiveIdentity";
 
 const Alerts = () => {
@@ -112,6 +124,16 @@ const Alerts = () => {
   const [rootCause, setRootCause] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState("active");
+
+  // Alert info card state — tracks which alert type's info panel is open
+  const [openInfoAlertType, setOpenInfoAlertType] = useState<string | null>(null);
+
+  // Snooze dialog state
+  const [snoozeAlert, setSnoozeAlert] = useState<UnifiedAlert | null>(null);
+
+  // Audit log + compliance report state
+  const [timelineAlertId, setTimelineAlertId] = useState<string | null>(null);
+  const [showComplianceReport, setShowComplianceReport] = useState(false);
 
   // Log temp modal state
   const [selectedUnit, setSelectedUnit] = useState<LogTempUnit | null>(null);
@@ -148,7 +170,7 @@ const Alerts = () => {
           id, title, message, alert_type, severity, status, escalation_level,
           temp_reading, temp_limit, triggered_at, acknowledged_at, acknowledged_by,
           acknowledgment_notes, resolved_at, last_notified_at, last_notified_reason,
-          organization_id, site_id, area_id, source,
+          organization_id, site_id, area_id, source, correlated_with_alert_id,
           unit:units!inner(
             id, name,
             area:areas!inner(name, site:sites!inner(name))
@@ -277,6 +299,7 @@ const Alerts = () => {
           escalation_level: dbAlert.escalation_level,
           last_notified_at: dbAlert.last_notified_at,
           last_notified_reason: dbAlert.last_notified_reason,
+          correlated_with_alert_id: dbAlert.correlated_with_alert_id,
         });
       }
 
@@ -444,6 +467,26 @@ const Alerts = () => {
 
   return (
     <DashboardLayout title="Alerts Center">
+      {/* Page header actions */}
+      <div className="flex justify-end gap-2 mb-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => navigate("/alert-analytics")}
+        >
+          <BarChart3 className="w-4 h-4 mr-1" />
+          Analytics
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowComplianceReport(true)}
+        >
+          <FileText className="w-4 h-4 mr-1" />
+          Generate Report
+        </Button>
+      </div>
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="active" className="relative">
@@ -488,6 +531,12 @@ const Alerts = () => {
                           <div className="space-y-1 min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <h3 className="font-semibold text-foreground">{alert.title}</h3>
+                              <AlertInfoToggle
+                                isOpen={openInfoAlertType === alert.alertType}
+                                onClick={() => setOpenInfoAlertType(
+                                  openInfoAlertType === alert.alertType ? null : alert.alertType
+                                )}
+                              />
                               <Badge className={`${severity.bgColor} ${severity.color} border-0`}>
                                 {alert.severity}
                               </Badge>
@@ -500,6 +549,12 @@ const Alerts = () => {
                               {alert.isComputed && (
                                 <Badge variant="outline" className="text-muted-foreground">
                                   Live
+                                </Badge>
+                              )}
+                              {alert.correlated_with_alert_id && (
+                                <Badge variant="outline" className="text-accent border-accent/40">
+                                  <Link2 className="w-3 h-3 mr-1" />
+                                  Linked
                                 </Badge>
                               )}
                             </div>
@@ -518,6 +573,14 @@ const Alerts = () => {
                             )}
                           </div>
                         </div>
+
+                        {/* Inline alert type documentation */}
+                        {openInfoAlertType === alert.alertType && (
+                          <AlertTypeInfoCard
+                            alertType={alert.alertType}
+                            onClose={() => setOpenInfoAlertType(null)}
+                          />
+                        )}
 
                         {/* Message - fully wrapped, no truncation */}
                         {alert.message && (
@@ -558,6 +621,13 @@ const Alerts = () => {
                           </div>
                         )}
 
+                        {/* Audit log timeline (inline, expandable) */}
+                        {!alert.isComputed && timelineAlertId === alert.id && (
+                          <div className="rounded-lg border p-3">
+                            <AuditLogTimeline alertId={alert.id} />
+                          </div>
+                        )}
+
                         {/* Action Buttons */}
                         {alert.status === "active" && (
                           <div className="flex flex-wrap gap-2 pt-1">
@@ -583,6 +653,17 @@ const Alerts = () => {
                                 Acknowledge
                               </Button>
                             )}
+                            {!alert.isComputed && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-muted-foreground"
+                                onClick={() => setSnoozeAlert(alert)}
+                              >
+                                <AlarmClockOff className="w-4 h-4 mr-1" />
+                                Snooze
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               className="bg-safe hover:bg-safe/90 text-safe-foreground"
@@ -594,6 +675,19 @@ const Alerts = () => {
                               <CheckCircle2 className="w-4 h-4 mr-1" />
                               Resolve
                             </Button>
+                            {!alert.isComputed && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-muted-foreground"
+                                onClick={() => setTimelineAlertId(
+                                  timelineAlertId === alert.id ? null : alert.id
+                                )}
+                              >
+                                <History className="w-4 h-4 mr-1" />
+                                Timeline
+                              </Button>
+                            )}
                           </div>
                         )}
 
@@ -656,6 +750,9 @@ const Alerts = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Alert Suppressions */}
+      <SuppressionManager />
 
       {/* Resolve Dialog */}
       <Dialog open={showResolveDialog} onOpenChange={setShowResolveDialog}>
@@ -794,6 +891,27 @@ const Alerts = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Compliance Report Dialog */}
+      <ComplianceReportDialog
+        open={showComplianceReport}
+        onOpenChange={setShowComplianceReport}
+      />
+
+      {/* Snooze Alert Dialog */}
+      {snoozeAlert && (
+        <SnoozeAlertDialog
+          open={!!snoozeAlert}
+          onOpenChange={(open) => { if (!open) setSnoozeAlert(null); }}
+          alert={{
+            id: snoozeAlert.dbAlertId || snoozeAlert.id,
+            alertType: snoozeAlert.alertType,
+            unit_id: snoozeAlert.unit_id,
+            title: snoozeAlert.title,
+          }}
+          organizationId={effectiveOrgId || ""}
+        />
+      )}
 
       {/* Log Temp Modal */}
       <LogTempModal
