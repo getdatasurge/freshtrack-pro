@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Gateway, GatewayInsert, GatewayStatus } from "@/types/ttn";
@@ -35,9 +35,34 @@ function withComputedStatus(gateway: Gateway): Gateway {
 }
 
 /**
- * Hook to fetch all gateways for an organization
+ * Hook to fetch all gateways for an organization.
+ * Subscribes to Supabase Realtime so edge-function updates
+ * (e.g. ttn-gateway-status writing last_seen_at) propagate instantly.
  */
 export function useGateways(orgId: string | null) {
+  const queryClient = useQueryClient();
+
+  // Realtime: invalidate cache when any gateway row for this org changes
+  useEffect(() => {
+    if (!orgId) return;
+    const channel = supabase
+      .channel(`gateways-org-${orgId}`)
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "gateways",
+        filter: `organization_id=eq.${orgId}`,
+      }, () => {
+        queryClient.invalidateQueries({ queryKey: qk.org(orgId).gateways() });
+        // Also refresh site-scoped gateway queries
+        queryClient.invalidateQueries({
+          predicate: (q) => q.queryKey[0] === "site" && q.queryKey[2] === "gateways",
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [orgId, queryClient]);
+
   return useQuery({
     queryKey: qk.org(orgId).gateways(),
     queryFn: async (): Promise<Gateway[]> => {
@@ -53,14 +78,35 @@ export function useGateways(orgId: string | null) {
       return data as unknown as Gateway[];
     },
     enabled: !!orgId,
+    refetchInterval: 60_000,
   });
 }
 
 /**
- * Hook to fetch gateways for a specific site with computed health status.
- * Status is derived from last_seen_at: online (<5min), degraded (5-30min), offline (>30min).
+ * Hook to fetch gateways for a specific site.
+ * Status is authoritative from the DB — set by the ttn-gateway-status edge function.
+ * Realtime subscription ensures instant updates when the edge function writes new data.
  */
 export function useGatewaysBySite(siteId: string | null) {
+  const queryClient = useQueryClient();
+
+  // Realtime: invalidate cache when any gateway row for this site changes
+  useEffect(() => {
+    if (!siteId) return;
+    const channel = supabase
+      .channel(`gateways-site-${siteId}`)
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "gateways",
+        filter: `site_id=eq.${siteId}`,
+      }, () => {
+        queryClient.invalidateQueries({ queryKey: qk.site(siteId).gateways() });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [siteId, queryClient]);
+
   return useQuery({
     queryKey: qk.site(siteId).gateways(),
     queryFn: async (): Promise<Gateway[]> => {
@@ -73,11 +119,11 @@ export function useGatewaysBySite(siteId: string | null) {
         .order("name");
 
       if (error) throw error;
-      return (data as unknown as Gateway[]).map(withComputedStatus);
+      // Trust DB status — set by ttn-gateway-status edge function
+      return data as unknown as Gateway[];
     },
     enabled: !!siteId,
-    // Refresh every 60s so status stays current
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
   });
 }
 

@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useGateways, useUpdateGateway, useDeleteGateway, computeGatewayStatus } from "@/hooks/useGateways";
+import { useState, useEffect, useRef } from "react";
+import { useGateways, useUpdateGateway, useDeleteGateway, useSyncGatewayStatus } from "@/hooks/useGateways";
+import { useCheckTtnGatewayState } from "@/hooks/useCheckTtnGatewayState";
 import { AddGatewayDialog } from "@/components/settings/AddGatewayDialog";
 import { AssignGatewayDialog } from "@/components/settings/AssignGatewayDialog";
 import { EditGatewayDialog } from "@/components/settings/EditGatewayDialog";
@@ -36,17 +37,36 @@ export function SiteGatewaysCard({ siteId, siteName, organizationId }: SiteGatew
   const { data: allGateways = [], isLoading } = useGateways(organizationId);
   const updateGateway = useUpdateGateway();
   const deleteGateway = useDeleteGateway();
-  
+  const syncStatus = useSyncGatewayStatus();
+  const checkTtn = useCheckTtnGatewayState();
+  const hasVerified = useRef(false);
+
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [editGateway, setEditGateway] = useState<Gateway | null>(null);
   const [deleteGatewayData, setDeleteGatewayData] = useState<Gateway | null>(null);
   const [unassignGateway, setUnassignGateway] = useState<Gateway | null>(null);
 
-  // Filter gateways assigned to this site — compute live status from last_seen_at
-  const siteGateways = allGateways
-    .filter(g => g.site_id === siteId)
-    .map(g => ({ ...g, status: computeGatewayStatus(g.last_seen_at) }));
+  // Auto-verify: check unlinked gateways on mount (once)
+  useEffect(() => {
+    if (hasVerified.current || isLoading || allGateways.length === 0) return;
+    const unlinked = allGateways.filter(g => g.site_id === siteId && !g.ttn_gateway_id);
+    if (unlinked.length === 0) { hasVerified.current = true; return; }
+    hasVerified.current = true;
+    checkTtn.mutate({ gatewayIds: unlinked.map(g => g.id) });
+  }, [isLoading, allGateways.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync gateway status from TTN on mount and every 60 seconds
+  useEffect(() => {
+    syncStatus.mutate({ organizationId });
+    const interval = setInterval(() => {
+      syncStatus.mutate({ organizationId });
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [organizationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trust DB status — set authoritatively by ttn-gateway-status edge function
+  const siteGateways = allGateways.filter(g => g.site_id === siteId);
   // Gateways available for assignment (not assigned to any site)
   const unassignedGateways = allGateways.filter(g => !g.site_id);
 

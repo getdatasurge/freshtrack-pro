@@ -41,7 +41,6 @@ export function GatewayHealthWidget({ site }: WidgetProps) {
   const { data: gateways = [], isLoading } = useGatewaysBySite(site?.id ?? null);
   const syncStatus = useSyncGatewayStatus();
   const checkTtn = useCheckTtnGatewayState();
-  const hasSynced = useRef(false);
   const hasVerified = useRef(false);
 
   const orgId = site?.organization_id;
@@ -59,14 +58,19 @@ export function GatewayHealthWidget({ site }: WidgetProps) {
     checkTtn.mutate({ gatewayIds: unlinked.map(gw => gw.id) });
   }, [orgId, isLoading, gateways.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Trigger a TTN status sync for provisioned gateways
+  // Trigger TTN status sync on mount and every 60 seconds.
+  // The edge function fetches live connection stats from TTN and
+  // writes last_seen_at + status to the DB. Realtime propagates instantly.
   useEffect(() => {
-    if (!orgId || hasSynced.current) return;
-    const linked = gateways.filter(gw => !!gw.ttn_gateway_id);
-    if (linked.length === 0) return;
-    hasSynced.current = true;
+    if (!orgId) return;
+    // Sync immediately
     syncStatus.mutate({ organizationId: orgId });
-  }, [orgId, gateways]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Then every 60 seconds
+    const interval = setInterval(() => {
+      syncStatus.mutate({ organizationId: orgId });
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check for verify errors to show actionable messages
   const verifyError = checkTtn.isError ? checkTtn.error?.message : null;
