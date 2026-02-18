@@ -336,28 +336,26 @@ Deno.serve(async (req) => {
       // Log but still process - the webhook secret was valid
     }
 
-    // Validate DevEUI
+    // Normalize DevEUI if present (may be absent for emulated uplinks)
+    let devEuiLower = '';
+    let devEuiUpper = '';
+    let devEuiColonUpper = '';
+    let devEuiColonLower = '';
+    const normalizedDevEui = rawDevEui ? normalizeDevEui(rawDevEui) : '';
     if (!rawDevEui) {
-      console.warn(`[TTN-WEBHOOK] ${requestId} | Missing dev_eui`);
-      return new Response(
-        JSON.stringify({ accepted: true, processed: false, reason: 'Missing dev_eui' }),
-        { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const normalizedDevEui = normalizeDevEui(rawDevEui);
-    if (!normalizedDevEui) {
+      console.log(`[TTN-WEBHOOK] ${requestId} | No dev_eui in uplink, using ttn_device_id fallback`);
+    } else if (!normalizedDevEui) {
       return new Response(
         JSON.stringify({ accepted: true, processed: false, reason: 'Invalid dev_eui format' }),
         { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    } else {
+      // Generate match variants
+      devEuiLower = normalizedDevEui;
+      devEuiUpper = normalizedDevEui.toUpperCase();
+      devEuiColonUpper = formatDevEuiForDisplay(normalizedDevEui);
+      devEuiColonLower = devEuiColonUpper.toLowerCase();
     }
-    
-    // Generate match variants
-    const devEuiLower = normalizedDevEui;
-    const devEuiUpper = normalizedDevEui.toUpperCase();
-    const devEuiColonUpper = formatDevEuiForDisplay(normalizedDevEui);
-    const devEuiColonLower = devEuiColonUpper.toLowerCase();
 
     // ========================================
     // LOOKUP: Find sensor in authenticated org only
@@ -380,8 +378,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fallback to dev_eui
-    if (!loraSensor) {
+    // Fallback to dev_eui (only when dev_eui is available)
+    if (!loraSensor && normalizedDevEui) {
       const { data: sensorByDevEui } = await supabase
         .from('lora_sensors')
         .select('*')
@@ -412,36 +410,39 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Legacy fallback - also scope to org if possible
-    const { data: device } = await supabase
-      .from('devices')
-      .select('id, unit_id, status, organization_id')
-      .or(`serial_number.eq.${devEuiLower},serial_number.eq.${devEuiUpper},serial_number.eq.${devEuiColonUpper},serial_number.eq.${devEuiColonLower}`)
-      .eq('organization_id', authenticatedOrgId)
-      .maybeSingle();
+    // Legacy fallback - also scope to org if possible (only when dev_eui is available)
+    if (normalizedDevEui) {
+      const { data: device } = await supabase
+        .from('devices')
+        .select('id, unit_id, status, organization_id')
+        .or(`serial_number.eq.${devEuiLower},serial_number.eq.${devEuiUpper},serial_number.eq.${devEuiColonUpper},serial_number.eq.${devEuiColonLower}`)
+        .eq('organization_id', authenticatedOrgId)
+        .maybeSingle();
 
-    if (device) {
-      return await handleLegacyDevice(supabase, device, {
-        devEui: devEuiLower,
-        deviceId,
-        decoded,
-        rssi,
-        receivedAt,
-        requestId,
-        frmPayloadBase64,
-        fPort,
-        rawPayloadHex,
-      });
+      if (device) {
+        return await handleLegacyDevice(supabase, device, {
+          devEui: devEuiLower,
+          deviceId,
+          decoded,
+          rssi,
+          receivedAt,
+          requestId,
+          frmPayloadBase64,
+          fPort,
+          rawPayloadHex,
+        });
+      }
     }
 
     // Unknown device
-    console.warn(`[TTN-WEBHOOK] ${requestId} | Unknown device for org ${authenticatedOrgId}: ${devEuiLower}`);
+    console.warn(`[TTN-WEBHOOK] ${requestId} | Unknown device for org ${authenticatedOrgId}: ${devEuiLower || deviceId}`);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         accepted: true,
         processed: false,
         reason: 'Unknown device - not registered for this organization',
-        dev_eui: devEuiLower,
+        dev_eui: devEuiLower || null,
+        device_id: deviceId || null,
         organization_id: authenticatedOrgId,
       }),
       { status: 202, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
