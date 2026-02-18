@@ -316,6 +316,7 @@ Deno.serve(async (req) => {
     for (const unit of (units || []) as unknown[]) {
       const u = unit as Record<string, unknown>;
       const currentStatus = u.status as UnitStatus;
+      const unitId = u.id as string;
       let newStatus: UnitStatus = currentStatus;
       let reason = "";
 
@@ -458,7 +459,7 @@ Deno.serve(async (req) => {
               .in("status", ["active", "acknowledged"])
               .maybeSingle();
 
-            if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "temp_excursion"))) {
+            if (!existingAlert && !(await isAlertSuppressed(supabase, unitId, getSiteId(unit), getOrgId(unit), "temp_excursion"))) {
               const doorContext = doorState !== "unknown" ? ` (door ${doorState})` : "";
               const nowIso = new Date().toISOString();
               const { data: alertData, error: alertError } = await supabase.from("alerts").insert({
@@ -487,7 +488,7 @@ Deno.serve(async (req) => {
               
               if (!alertError && alertData) {
                 newAlertIds.push(alertData.id);
-                await correlateAlert(supabase, alertData.id, "temp_excursion", u.id, getSiteId(unit), getOrgId(unit));
+                await correlateAlert(supabase, alertData.id, "temp_excursion", unitId, getSiteId(unit), getOrgId(unit));
                 console.log(`Created temp_excursion alert (CRITICAL) for unit ${u.name}`);
               }
             }
@@ -556,7 +557,7 @@ Deno.serve(async (req) => {
                     .in("status", ["active", "acknowledged"])
                     .maybeSingle();
 
-                  if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "suspected_cooling_failure"))) {
+                  if (!existingAlert && !(await isAlertSuppressed(supabase, unitId, getSiteId(unit), getOrgId(unit), "suspected_cooling_failure"))) {
                     const { data: alertData } = await supabase.from("alerts").insert({
                       unit_id: u.id,
                       organization_id: getOrgId(unit),
@@ -579,7 +580,7 @@ Deno.serve(async (req) => {
                     
                     if (alertData) {
                       newAlertIds.push(alertData.id);
-                      await correlateAlert(supabase, alertData.id, "suspected_cooling_failure", u.id, getSiteId(unit), getOrgId(unit));
+                      await correlateAlert(supabase, alertData.id, "suspected_cooling_failure", unitId, getSiteId(unit), getOrgId(unit));
                       console.log(`Created suspected_cooling_failure alert for unit ${u.name}`);
                     }
                   }
@@ -663,7 +664,7 @@ Deno.serve(async (req) => {
           .maybeSingle();
 
         if (doorOpenDuration >= doorCriticalMinutes) {
-          if (!existingDoorAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "door_open"))) {
+          if (!existingDoorAlert && !(await isAlertSuppressed(supabase, unitId, getSiteId(unit), getOrgId(unit), "door_open"))) {
             const { data: alertData } = await supabase.from("alerts").insert({
               unit_id: u.id,
               organization_id: getOrgId(unit),
@@ -685,7 +686,7 @@ Deno.serve(async (req) => {
               newAlertIds.push(alertData.id);
               console.log(`Created door_open alert (CRITICAL) for unit ${u.name} — ${doorOpenDuration}m`);
             }
-          } else if (existingDoorAlert.severity !== "critical") {
+          } else if (existingDoorAlert && existingDoorAlert.severity !== "critical") {
             await supabase.from("alerts").update({
               severity: "critical",
               title: `${u.name}: Door Open ${doorOpenDuration} min`,
@@ -695,7 +696,7 @@ Deno.serve(async (req) => {
             console.log(`Escalated door_open alert to critical for unit ${u.name}`);
           }
         } else if (doorOpenDuration >= doorWarningMinutes) {
-          if (!existingDoorAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "door_open"))) {
+          if (!existingDoorAlert && !(await isAlertSuppressed(supabase, unitId, getSiteId(unit), getOrgId(unit), "door_open"))) {
             const { data: alertData } = await supabase.from("alerts").insert({
               unit_id: u.id,
               organization_id: getOrgId(unit),
@@ -784,7 +785,7 @@ Deno.serve(async (req) => {
                 .in("status", ["active", "acknowledged"])
                 .maybeSingle();
 
-              if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "low_battery"))) {
+              if (!existingAlert && !(await isAlertSuppressed(supabase, unitId, getSiteId(unit), getOrgId(unit), "low_battery"))) {
                 const voltageStr = batteryVoltage !== null ? `${batteryVoltage.toFixed(2)}V` : "N/A";
                 const levelStr = batteryLevel !== null ? `${batteryLevel}%` : "N/A";
                 const { data: alertData } = await supabase.from("alerts").insert({
@@ -877,7 +878,7 @@ Deno.serve(async (req) => {
               .in("status", ["active", "acknowledged"])
               .maybeSingle();
 
-            if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "sensor_fault"))) {
+            if (!existingAlert && !(await isAlertSuppressed(supabase, unitId, getSiteId(unit), getOrgId(unit), "sensor_fault"))) {
               const faultReason = isImpossibleTemp
                 ? `Impossible temperature reading: ${temp}${TEMP_UNIT_SYMBOL}`
                 : `Decoder errors: ${(decoderErrors || []).join(", ")}`;
@@ -936,7 +937,7 @@ Deno.serve(async (req) => {
           .in("status", ["active", "acknowledged"])
           .maybeSingle();
 
-        if (!existingManualAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "missed_manual_entry"))) {
+        if (!existingManualAlert && !(await isAlertSuppressed(supabase, unitId, getSiteId(unit), getOrgId(unit), "missed_manual_entry"))) {
           const lastLogTime = lastManualLogAt
             ? new Date(lastManualLogAt).toLocaleString("en-US", { timeStyle: "short", dateStyle: "short" })
             : "never";
@@ -1013,7 +1014,7 @@ Deno.serve(async (req) => {
           // Determine alert severity based on offline severity
           const alertSeverity = offlineSeverity === "critical" ? "critical" : "warning";
 
-          if (!existingAlert && !(await isAlertSuppressed(supabase, u.id, getSiteId(unit), getOrgId(unit), "monitoring_interrupted"))) {
+          if (!existingAlert && !(await isAlertSuppressed(supabase, unitId, getSiteId(unit), getOrgId(unit), "monitoring_interrupted"))) {
             const { data: alertData } = await supabase.from("alerts").insert({
               unit_id: u.id,
               organization_id: getOrgId(unit),
@@ -1035,10 +1036,10 @@ Deno.serve(async (req) => {
 
             if (alertData) {
               newAlertIds.push(alertData.id);
-              await correlateAlert(supabase, alertData.id, "monitoring_interrupted", u.id, getSiteId(unit), getOrgId(unit));
+              await correlateAlert(supabase, alertData.id, "monitoring_interrupted", unitId, getSiteId(unit), getOrgId(unit));
               console.log(`Created monitoring_interrupted alert (${alertSeverity}) for unit ${u.name}`);
             }
-          } else if (existingAlert.severity !== alertSeverity) {
+          } else if (existingAlert && existingAlert.severity !== alertSeverity) {
             // Update existing alert severity if it changed
             await supabase
               .from("alerts")
