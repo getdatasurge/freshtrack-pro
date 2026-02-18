@@ -1,85 +1,49 @@
 
 
-# Deploy Edge Functions + Fix Build Errors
+# Fix 15 TypeScript Errors in process-unit-states
 
-## Two Categories of Issues
+## Root Cause
 
-### A. Edge Function Deployment Blockers
+The unit loop casts units to `Record<string, unknown>`, making `u.id` type `unknown`. Functions like `isAlertSuppressed` and `correlateAlert` expect `string`. Two `else if` branches also access properties on possibly-null variables.
 
-**`test-notification`** uses `import { Resend } from "npm:resend"` which doesn't work in Deno edge runtime. The other functions (`process-escalations`, `process-escalation-steps`) correctly use `import { Resend } from "https://esm.sh/resend@2.0.0"`. Additionally, it uses the deprecated `serve` import.
+## Changes (1 file)
 
-**Fix:** In `test-notification/index.ts`:
-- Change `import { Resend } from "npm:resend"` to `import { Resend } from "https://esm.sh/resend@2.0.0"`
-- Change `import { serve } from "https://deno.land/std@0.168.0/http/server.ts"` to use `Deno.serve()`
+**File:** `supabase/functions/process-unit-states/index.ts`
 
-The other 4 functions (`process-unit-states`, `process-escalations`, `process-escalation-steps`, `acknowledge-alert`) should deploy without code changes.
+### 1. Add typed unit ID at line 318
 
-### B. Frontend TypeScript Errors (Missing Tables)
-
-Three tables referenced in frontend code do not exist in the database:
-- `in_app_notifications` (used by `NotificationDropdown.tsx`)
-- `alert_audit_log` (used by `useAlertAuditLog.ts`)
-- `alert_suppressions` (used by `useAlertSuppressions.ts`)
-
-**Fix:** Create these tables via database migration. The schema will be inferred from how the frontend code uses them. After the migration, the auto-generated types file will update to include them, resolving all the TypeScript errors.
-
-Additionally, `ComplianceReportDialog.tsx` has a type casting issue with alert types that needs a minor code fix.
-
-## Execution Order
-
-1. **Create missing tables** via SQL migration (`in_app_notifications`, `alert_audit_log`, `alert_suppressions`) with appropriate columns and RLS policies
-2. **Fix `test-notification/index.ts`** -- replace `npm:resend` with `esm.sh` import, replace `serve` with `Deno.serve()`
-3. **Deploy all 5 edge functions**: `process-unit-states`, `process-escalations`, `process-escalation-steps`, `test-notification`, `acknowledge-alert`
-4. **Fix `ComplianceReportDialog.tsx`** type casting for alert types
-5. **Verify** deployments via health checks
-
-## Technical Details -- Table Schemas
-
-Based on frontend usage patterns:
-
-```sql
--- in_app_notifications
-CREATE TABLE public.in_app_notifications (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  alert_id uuid,
-  organization_id uuid,
-  title text NOT NULL,
-  body text,
-  severity text DEFAULT 'info',
-  action_url text,
-  read boolean DEFAULT false,
-  dismissed boolean DEFAULT false,
-  metadata jsonb,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
-
--- alert_audit_log
-CREATE TABLE public.alert_audit_log (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  alert_id uuid NOT NULL,
-  organization_id uuid,
-  event_type text NOT NULL,
-  actor_user_id uuid,
-  actor_type text DEFAULT 'user',
-  details jsonb,
-  created_at timestamptz DEFAULT now()
-);
-
--- alert_suppressions
-CREATE TABLE public.alert_suppressions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id uuid NOT NULL,
-  unit_id uuid,
-  alert_type text,
-  reason text,
-  starts_at timestamptz DEFAULT now(),
-  ends_at timestamptz,
-  created_by uuid,
-  is_active boolean DEFAULT true,
-  created_at timestamptz DEFAULT now()
-);
+After `const currentStatus = u.status as UnitStatus;`, add:
+```typescript
+const unitId = u.id as string;
 ```
 
-RLS will be enabled on all three tables with policies scoped to the user's organization membership.
+### 2. Replace `u.id` with `unitId` in 11 function calls
+
+Lines 461, 490, 559, 582, 666, 698, 787, 880, 939, 1016, 1038 -- only where `u.id` is passed as a function argument to `isAlertSuppressed` or `correlateAlert`.
+
+### 3. Add null guards on 2 else-if branches
+
+**Line 688:**
+```typescript
+// Before:
+} else if (existingDoorAlert.severity !== "critical") {
+// After:
+} else if (existingDoorAlert && existingDoorAlert.severity !== "critical") {
+```
+
+**Line 1041:**
+```typescript
+// Before:
+} else if (existingAlert.severity !== alertSeverity) {
+// After:
+} else if (existingAlert && existingAlert.severity !== alertSeverity) {
+```
+
+### 4. Redeploy
+
+Deploy `process-unit-states` after the fix.
+
+## TTN Webhook Status
+
+The webhook is healthy -- processing uplinks from 3 devices. Two devices (`sensor-c441725e8aa5f523`, `sensor-8059a496ab11ecfe`) have "Missing dev_eui" warnings which is a separate data issue (not related to this fix).
+
