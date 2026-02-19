@@ -20,7 +20,8 @@ export type SensorChangeType =
   | 'alarm'
   | 'clear_datalog'
   | 'pnackmd'
-  | 'raw';
+  | 'raw'
+  | 'catalog';
 
 export type ExtMode = 'e3_ext1' | 'e3_ext9';
 
@@ -103,7 +104,8 @@ export type DownlinkCommandParams =
   | { type: 'alarm'; enable: boolean; check_minutes: number; low_c: number; high_c: number }
   | { type: 'clear_datalog' }
   | { type: 'pnackmd'; enable: boolean }
-  | { type: 'raw'; hex: string; fport?: number };
+  | { type: 'raw'; hex: string; fport?: number }
+  | { type: 'catalog'; hex: string; fport: number; commandKey: string; commandName: string; expectedResult: string };
 
 // ---------------------------------------------------------------------------
 // Preset definitions

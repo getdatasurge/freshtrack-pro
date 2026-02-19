@@ -62,16 +62,86 @@ export interface SensorCatalogBatteryInfo {
   notes?: string;
 }
 
-export interface SensorCatalogDownlinkCommand {
+// ---------------------------------------------------------------------------
+// Legacy command schema (backward-compatible)
+// ---------------------------------------------------------------------------
+
+export interface SensorCatalogDownlinkCommandLegacy {
   name: string;
   hex_template: string;
   description: string;
 }
 
+// ---------------------------------------------------------------------------
+// Extended command schema — drives the Sensor Settings UI
+// ---------------------------------------------------------------------------
+
+export type DownlinkCommandCategory = 'interval' | 'alarm' | 'mode' | 'action' | 'advanced';
+
+export type DownlinkFieldType = 'integer' | 'boolean' | 'select';
+export type DownlinkFieldControl = 'number' | 'toggle' | 'select' | 'slider';
+export type DownlinkFieldEncoding =
+  | 'u8'
+  | 'u16be'
+  | 'u24be'
+  | 'u32be'
+  | 'bool01'
+  | 'invertBool01'
+  | 'temp_celsius_x100';
+export type DownlinkFieldInputTransform = 'minutes_to_seconds';
+
+export interface DownlinkFieldOption {
+  value: string | number;
+  label: string;
+}
+
+export interface CatalogDownlinkField {
+  name: string;
+  label: string;
+  type: DownlinkFieldType;
+  unit?: string;
+  min?: number;
+  max?: number;
+  default?: number | boolean | string;
+  step?: number;
+  control: DownlinkFieldControl;
+  trueLabel?: string;
+  falseLabel?: string;
+  options?: DownlinkFieldOption[];
+  helperText?: string;
+  encoding: DownlinkFieldEncoding;
+  inputTransform?: DownlinkFieldInputTransform;
+}
+
+export interface CatalogDownlinkCommand {
+  key: string;
+  name: string;
+  description: string;
+  hex_template: string;
+  category: DownlinkCommandCategory;
+  fields: CatalogDownlinkField[];
+  confirmation?: string;
+  dangerous?: boolean;
+}
+
+/**
+ * Type guard: does this command use the extended schema (has `key` and `fields`)?
+ */
+export function isExtendedCommand(
+  cmd: CatalogDownlinkCommand | SensorCatalogDownlinkCommandLegacy
+): cmd is CatalogDownlinkCommand {
+  return 'key' in cmd && 'fields' in cmd;
+}
+
+// Legacy alias
+export type SensorCatalogDownlinkCommand = SensorCatalogDownlinkCommandLegacy;
+
 export interface SensorCatalogDownlinkInfo {
   supports_remote_config?: boolean;
   config_port?: number;
-  commands?: SensorCatalogDownlinkCommand[];
+  native_temp_unit?: 'celsius' | 'fahrenheit';
+  native_temp_resolution?: number;
+  commands?: (CatalogDownlinkCommand | SensorCatalogDownlinkCommandLegacy)[];
 }
 
 export interface SensorCatalogDecoderProvenance {
@@ -172,6 +242,7 @@ export interface SensorCatalogPublicEntry {
   decoded_fields: SensorCatalogDecodedField[];
   uplink_info: SensorCatalogUplinkInfo;
   battery_info: SensorCatalogBatteryInfo;
+  downlink_info: SensorCatalogDownlinkInfo;
   is_supported: boolean;
   tags: string[];
   decode_mode: "ttn" | "trust" | "app" | "off";

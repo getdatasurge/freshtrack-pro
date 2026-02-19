@@ -1,8 +1,14 @@
 /**
- * Readings Count Widget
+ * Readings Count Widget — Per-Sensor Breakdown with Smart Default
  *
  * Displays the count of sensor readings in the current time period,
  * along with expected readings based on uplink interval and coverage percentage.
+ *
+ * Per-sensor breakdown:
+ * - Queries sensor_readings grouped by lora_sensor_id for each sensor in the unit
+ * - Batch-fetches sensor_configurations for all sensors
+ * - Dropdown selector to pick a specific sensor or "All Sensors"
+ * - Smart default: auto-selects the sensor with lowest coverage if any < 100%
  *
  * Coverage Status Thresholds:
  * - Green (Good):    >= 95% coverage - sensor is reporting reliably
@@ -14,12 +20,15 @@
  */
 
 import { useMemo, useState, useEffect, useRef } from "react";
-import { Activity } from "lucide-react";
+import { Activity, ChevronDown } from "lucide-react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import type { WidgetProps, TimelineState } from "../types";
 
-// Range to seconds mapping for preset ranges
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
 const RANGE_SECONDS: Record<string, number> = {
   "1h": 3600,
   "6h": 21600,
@@ -28,7 +37,6 @@ const RANGE_SECONDS: Record<string, number> = {
   "30d": 2592000,
 };
 
-// Human-readable labels for preset ranges
 const RANGE_LABELS: Record<string, string> = {
   "1h": "Last 1 hour",
   "6h": "Last 6 hours",
@@ -37,45 +45,63 @@ const RANGE_LABELS: Record<string, string> = {
   "30d": "Last 30 days",
 };
 
-// Maximum expected count to display (prevents layout blowups)
 const MAX_EXPECTED_DISPLAY = 99999;
 
-// Coverage thresholds for status determination
-const COVERAGE_GOOD_THRESHOLD = 95;  // >= 95% = Good (green)
-const COVERAGE_FAIR_THRESHOLD = 80;  // >= 80% = Fair (yellow), < 80% = Poor (red)
+// Coverage thresholds — easy to adjust
+const COVERAGE_GOOD_THRESHOLD = 95;
+const COVERAGE_FAIR_THRESHOLD = 80;
 
-type CoverageStatus = "good" | "fair" | "poor" | "unknown";
+// Don't flag as underperforming if expected < this (newly provisioned)
+const MIN_EXPECTED_FOR_ALERT = 3;
+
+type CoverageStatus = "good" | "fair" | "poor" | "nodata" | "unknown";
+
+/** "all" means combined view, otherwise a sensor ID */
+type SensorSelection = "all" | string;
+
+// ---------------------------------------------------------------------------
+// Per-sensor stats
+// ---------------------------------------------------------------------------
+
+interface SensorStats {
+  sensorId: string;
+  sensorName: string;
+  sensorType: string;
+  actualCount: number;
+  expectedCount: number | null;
+  intervalSeconds: number | null;
+  isEstimated: boolean;
+  coveragePct: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 interface ReadingsCountWidgetProps extends WidgetProps {
   count?: number;
 }
 
-/**
- * Calculate range duration in seconds from timeline state
- */
+// ---------------------------------------------------------------------------
+// Pure helpers (no state)
+// ---------------------------------------------------------------------------
+
 function getRangeSeconds(state: TimelineState | undefined): number | null {
   if (!state) return RANGE_SECONDS["24h"];
-
   if (state.range === "custom") {
     if (state.customFrom && state.customTo) {
       const from = new Date(state.customFrom).getTime();
       const to = new Date(state.customTo).getTime();
       const seconds = Math.floor((to - from) / 1000);
-      if (seconds <= 0) return null;
-      return seconds;
+      return seconds > 0 ? seconds : null;
     }
     return null;
   }
-
   return RANGE_SECONDS[state.range] || RANGE_SECONDS["24h"];
 }
 
-/**
- * Get human-readable time range label
- */
 function getTimeRangeLabel(state: TimelineState | undefined): string {
   if (!state) return RANGE_LABELS["24h"];
-
   if (state.range === "custom") {
     if (state.customFrom && state.customTo) {
       const from = new Date(state.customFrom);
@@ -84,14 +110,25 @@ function getTimeRangeLabel(state: TimelineState | undefined): string {
     }
     return "Custom range";
   }
-
   return RANGE_LABELS[state.range] || RANGE_LABELS["24h"];
 }
 
-/**
- * Infer uplink interval from readings by calculating median time delta
- * between consecutive readings. Requires at least 5 readings.
- */
+/** Get ISO date string for "now minus rangeSeconds" */
+function getRangeFromDate(state: TimelineState | undefined): string {
+  if (state?.range === "custom" && state.customFrom) {
+    return state.customFrom;
+  }
+  const rangeSeconds = getRangeSeconds(state) ?? 86400;
+  return new Date(Date.now() - rangeSeconds * 1000).toISOString();
+}
+
+function getRangeToDate(state: TimelineState | undefined): string {
+  if (state?.range === "custom" && state.customTo) {
+    return state.customTo;
+  }
+  return new Date().toISOString();
+}
+
 function inferIntervalFromReadings(
   readings: Array<{ recorded_at: string }> | undefined
 ): { intervalSeconds: number; isEstimated: true } | null {
@@ -126,9 +163,6 @@ function inferIntervalFromReadings(
   return { intervalSeconds: medianSeconds, isEstimated: true };
 }
 
-/**
- * Format interval for display
- */
 function formatInterval(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
@@ -137,44 +171,30 @@ function formatInterval(seconds: number): string {
   return `${(hours / 24).toFixed(1).replace(/\.0$/, "")}d`;
 }
 
-/**
- * Format large numbers with commas
- */
 function formatNumber(num: number): string {
   if (num > MAX_EXPECTED_DISPLAY) return `${MAX_EXPECTED_DISPLAY.toLocaleString()}+`;
   return num.toLocaleString();
 }
 
-/**
- * Calculate coverage percentage (raw value for logic, not display)
- */
 function getCoveragePercent(actual: number, expected: number | null): number | null {
   if (expected === null || expected <= 0) return null;
   return (actual / expected) * 100;
 }
 
-/**
- * Format coverage percentage for display
- */
 function formatCoverage(pct: number | null): string {
   if (pct === null) return "—";
   if (pct > 100) return "100%+";
   return `${Math.max(0, Math.round(pct))}%`;
 }
 
-/**
- * Determine coverage status based on percentage
- */
-function getCoverageStatus(pct: number | null): CoverageStatus {
+function getCoverageStatus(pct: number | null, actual?: number): CoverageStatus {
+  if (actual === 0) return "nodata";
   if (pct === null) return "unknown";
   if (pct >= COVERAGE_GOOD_THRESHOLD) return "good";
   if (pct >= COVERAGE_FAIR_THRESHOLD) return "fair";
   return "poor";
 }
 
-/**
- * Get status-based styling
- */
 function getStatusStyles(status: CoverageStatus): {
   bgTint: string;
   textColor: string;
@@ -203,6 +223,13 @@ function getStatusStyles(status: CoverageStatus): {
         badgeClass: "bg-alarm/20 text-alarm",
         badgeLabel: "Poor",
       };
+    case "nodata":
+      return {
+        bgTint: "bg-alarm/[0.08]",
+        textColor: "text-alarm",
+        badgeClass: "bg-alarm/20 text-alarm",
+        badgeLabel: "No Data",
+      };
     default:
       return {
         bgTint: "",
@@ -213,101 +240,311 @@ function getStatusStyles(status: CoverageStatus): {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Smart default: pick the sensor with worst coverage if any < 100%
+// ---------------------------------------------------------------------------
+
+function getSmartDefault(stats: SensorStats[]): SensorSelection {
+  if (stats.length <= 1) return "all";
+
+  const underperforming = stats
+    .filter((s) => {
+      if (s.expectedCount === null) return false;
+      // Don't flag newly provisioned sensors
+      if (s.expectedCount < MIN_EXPECTED_FOR_ALERT) return false;
+      return s.actualCount < s.expectedCount;
+    })
+    .sort((a, b) => {
+      const aCov = a.coveragePct ?? 100;
+      const bCov = b.coveragePct ?? 100;
+      return aCov - bCov;
+    });
+
+  if (underperforming.length > 0) {
+    return underperforming[0].sensorId;
+  }
+
+  return "all";
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export function ReadingsCountWidget({
   sensor,
   loraSensors,
   readings,
   timelineState,
   count,
+  entityId,
 }: ReadingsCountWidgetProps) {
-  const [configuredInterval, setConfiguredInterval] = useState<number | null>(null);
-  const [intervalLoading, setIntervalLoading] = useState(false);
-  const fetchedSensorIdRef = useRef<string | null>(null);
+  // ---- Per-sensor reading counts (queried from DB) ----
+  const [perSensorCounts, setPerSensorCounts] = useState<Map<string, number>>(new Map());
+  const [configIntervals, setConfigIntervals] = useState<Map<string, number | null>>(new Map());
+  const [dataLoading, setDataLoading] = useState(false);
 
-  const sensorId = useMemo(() => {
-    const primarySensor = sensor || loraSensors?.find(s => s.is_primary) || loraSensors?.[0];
-    return primarySensor?.id || null;
-  }, [sensor, loraSensors]);
+  // ---- Sensor selection ----
+  const [selectedSensor, setSelectedSensor] = useState<SensorSelection>("all");
+  const [smartDefaultApplied, setSmartDefaultApplied] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Stable sensor list (exclude deleted)
+  const sensorList = useMemo(() => {
+    return loraSensors?.filter((s) => s.status !== "deleted") ?? [];
+  }, [loraSensors]);
+
+  const singleSensor = sensorList.length <= 1;
+
+  // ---- Fetch per-sensor reading counts + configurations ----
+  const fetchKeyRef = useRef<string>("");
 
   useEffect(() => {
-    if (!sensorId || fetchedSensorIdRef.current === sensorId) {
-      return;
-    }
+    if (sensorList.length === 0) return;
+
+    const sensorIds = sensorList.map((s) => s.id);
+    const fromDate = getRangeFromDate(timelineState);
+    const toDate = getRangeToDate(timelineState);
+    const key = `${sensorIds.join(",")}-${fromDate}-${toDate}`;
+
+    // Skip if already fetched for same params
+    if (fetchKeyRef.current === key) return;
 
     let cancelled = false;
 
-    async function fetchConfig() {
-      setIntervalLoading(true);
+    async function fetchData() {
+      setDataLoading(true);
       try {
-        const { data } = await supabase
+        // Fetch reading counts per sensor
+        const countPromises = sensorIds.map(async (id) => {
+          const { count: cnt, error } = await supabase
+            .from("sensor_readings")
+            .select("*", { count: "exact", head: true })
+            .eq("lora_sensor_id", id)
+            .gte("recorded_at", fromDate)
+            .lte("recorded_at", toDate);
+          return { id, count: error ? 0 : (cnt ?? 0) };
+        });
+
+        // Fetch configs (uplink_interval_s) for all sensors
+        const { data: configs } = await supabase
           .from("sensor_configurations")
-          .select("uplink_interval_s")
-          .eq("sensor_id", sensorId)
-          .maybeSingle();
+          .select("sensor_id, uplink_interval_s")
+          .in("sensor_id", sensorIds);
 
-        if (!cancelled && data?.uplink_interval_s) {
-          setConfiguredInterval(data.uplink_interval_s);
+        const [counts] = await Promise.all([
+          Promise.all(countPromises),
+        ]);
+
+        if (cancelled) return;
+
+        const countMap = new Map<string, number>();
+        for (const c of counts) {
+          countMap.set(c.id, c.count);
         }
+        setPerSensorCounts(countMap);
+
+        const configMap = new Map<string, number | null>();
+        for (const row of configs ?? []) {
+          configMap.set(row.sensor_id, row.uplink_interval_s ?? null);
+        }
+        setConfigIntervals(configMap);
+
+        fetchKeyRef.current = key;
       } catch (err) {
-        console.warn("Failed to fetch sensor config for readings widget:", err);
+        console.warn("ReadingsCountWidget: fetch error", err);
       } finally {
-        if (!cancelled) {
-          setIntervalLoading(false);
-          fetchedSensorIdRef.current = sensorId;
-        }
+        if (!cancelled) setDataLoading(false);
       }
     }
 
-    fetchConfig();
+    fetchData();
+    return () => { cancelled = true; };
+  }, [sensorList, timelineState]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [sensorId]);
-
-  const actualCount = count ?? readings?.length ?? 0;
-
-  const { expectedCount, intervalSeconds, isEstimated } = useMemo(() => {
+  // ---- Build per-sensor stats ----
+  const perSensorStats: SensorStats[] = useMemo(() => {
     const rangeSeconds = getRangeSeconds(timelineState);
+    if (!rangeSeconds) return [];
 
-    let interval = configuredInterval;
-    let estimated = false;
+    return sensorList.map((s) => {
+      const actual = perSensorCounts.get(s.id) ?? 0;
+      const configInterval = configIntervals.get(s.id) ?? null;
 
-    if (!interval) {
-      const inferred = inferIntervalFromReadings(readings);
-      if (inferred) {
-        interval = inferred.intervalSeconds;
-        estimated = true;
+      let interval = configInterval;
+      let isEstimated = false;
+
+      // No configured interval — can't estimate per-sensor from combined readings
+      // Use 600s (10 min) default as last resort
+      if (!interval) {
+        interval = 600;
+        isEstimated = true;
+      }
+
+      const expected = interval > 0 ? Math.max(1, Math.floor(rangeSeconds / interval)) : null;
+      const coveragePct = getCoveragePercent(actual, expected);
+
+      return {
+        sensorId: s.id,
+        sensorName: s.name,
+        sensorType: s.sensor_type,
+        actualCount: actual,
+        expectedCount: expected,
+        intervalSeconds: interval,
+        isEstimated,
+        coveragePct,
+      };
+    });
+  }, [sensorList, perSensorCounts, configIntervals, timelineState]);
+
+  // ---- Smart default (apply once after data loads) ----
+  useEffect(() => {
+    if (smartDefaultApplied || dataLoading || perSensorStats.length === 0) return;
+    const defaultSensor = getSmartDefault(perSensorStats);
+    setSelectedSensor(defaultSensor);
+    setSmartDefaultApplied(true);
+  }, [perSensorStats, dataLoading, smartDefaultApplied]);
+
+  // Reset smart default when timeline changes
+  useEffect(() => {
+    setSmartDefaultApplied(false);
+  }, [timelineState?.range, timelineState?.customFrom, timelineState?.customTo]);
+
+  // ---- Close dropdown on click outside ----
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
       }
     }
+    if (dropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [dropdownOpen]);
 
-    if (!interval || interval <= 0 || !rangeSeconds) {
-      return { expectedCount: null, intervalSeconds: null, isEstimated: false };
+  // ---- Compute display values for selected sensor ----
+  const displayStats = useMemo(() => {
+    if (selectedSensor === "all" || singleSensor) {
+      // Combined view
+      const totalActual = singleSensor
+        ? (perSensorStats[0]?.actualCount ?? (count ?? readings?.length ?? 0))
+        : perSensorStats.reduce((sum, s) => sum + s.actualCount, 0);
+      const totalExpected = perSensorStats.reduce((sum, s) => sum + (s.expectedCount ?? 0), 0);
+      const hasAnyExpected = perSensorStats.some((s) => s.expectedCount !== null);
+
+      // For combined "All" interval, show the primary sensor interval
+      const primaryStat = perSensorStats.find((s) =>
+        sensorList.find((ls) => ls.id === s.sensorId)?.is_primary
+      ) ?? perSensorStats[0];
+
+      return {
+        actual: totalActual,
+        expected: hasAnyExpected ? totalExpected : null,
+        intervalSeconds: primaryStat?.intervalSeconds ?? null,
+        isEstimated: primaryStat?.isEstimated ?? false,
+        coveragePct: hasAnyExpected && totalExpected > 0
+          ? (totalActual / totalExpected) * 100
+          : null,
+      };
     }
 
-    let expected = Math.floor(rangeSeconds / interval);
-    if (expected < 1) expected = 1;
+    const stat = perSensorStats.find((s) => s.sensorId === selectedSensor);
+    if (!stat) {
+      return { actual: 0, expected: null, intervalSeconds: null, isEstimated: false, coveragePct: null };
+    }
 
     return {
-      expectedCount: expected,
-      intervalSeconds: interval,
-      isEstimated: estimated
+      actual: stat.actualCount,
+      expected: stat.expectedCount,
+      intervalSeconds: stat.intervalSeconds,
+      isEstimated: stat.isEstimated,
+      coveragePct: stat.coveragePct,
     };
-  }, [configuredInterval, readings, timelineState]);
+  }, [selectedSensor, singleSensor, perSensorStats, sensorList, count, readings]);
 
-  const coveragePct = getCoveragePercent(actualCount, expectedCount);
-  const coverageStatus = getCoverageStatus(coveragePct);
+  const coverageStatus = getCoverageStatus(displayStats.coveragePct, displayStats.actual);
   const styles = getStatusStyles(coverageStatus);
   const timeRangeLabel = getTimeRangeLabel(timelineState);
 
+  // Selected sensor display name
+  const selectedLabel = useMemo(() => {
+    if (selectedSensor === "all" || singleSensor) return "All Sensors";
+    const s = sensorList.find((ls) => ls.id === selectedSensor);
+    return s?.name ?? "Sensor";
+  }, [selectedSensor, singleSensor, sensorList]);
+
   return (
     <div className={`h-full flex flex-col p-3 rounded-lg ${styles.bgTint}`}>
-      {/* Header row */}
+      {/* Header row with optional sensor selector */}
       <div className="flex items-center gap-1.5 mb-1">
         <Activity className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
         <span className="text-xs font-medium text-muted-foreground truncate">
           Readings in Period
         </span>
+
+        {/* Sensor selector dropdown — only if multiple sensors */}
+        {!singleSensor && sensorList.length > 1 && (
+          <div className="relative ml-auto flex-shrink-0" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors bg-background/60 rounded px-1.5 py-0.5 border border-border/50"
+            >
+              <span className="truncate max-w-[80px]">{selectedLabel}</span>
+              <ChevronDown className="w-3 h-3 flex-shrink-0" />
+            </button>
+
+            {dropdownOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-md shadow-md py-1 min-w-[140px] max-w-[200px]">
+                {/* All Sensors option */}
+                <button
+                  type="button"
+                  onClick={() => { setSelectedSensor("all"); setDropdownOpen(false); }}
+                  className={`w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-muted/50 transition-colors flex items-center justify-between gap-2 ${
+                    selectedSensor === "all" ? "font-semibold text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  <span>All Sensors</span>
+                  {selectedSensor === "all" && (
+                    <span className="text-[9px] opacity-60">selected</span>
+                  )}
+                </button>
+
+                <div className="h-px bg-border/50 mx-2 my-0.5" />
+
+                {/* Per-sensor options with inline coverage */}
+                {sensorList.map((s) => {
+                  const stat = perSensorStats.find((ps) => ps.sensorId === s.id);
+                  const pct = stat?.coveragePct;
+                  const coverageStr = pct !== null && pct !== undefined
+                    ? pct > 100 ? "100%+" : `${Math.round(pct)}%`
+                    : "—";
+                  const isSelected = selectedSensor === s.id;
+                  const covStatus = getCoverageStatus(pct, stat?.actualCount);
+                  const covStyles = getStatusStyles(covStatus);
+
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => { setSelectedSensor(s.id); setDropdownOpen(false); }}
+                      className={`w-full text-left px-2.5 py-1.5 text-[11px] hover:bg-muted/50 transition-colors flex items-center justify-between gap-2 ${
+                        isSelected ? "font-semibold text-foreground" : "text-muted-foreground"
+                      }`}
+                    >
+                      <span className="truncate">{s.name}</span>
+                      <span className={`text-[9px] font-medium flex-shrink-0 ${covStyles.textColor}`}>
+                        {coverageStr}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Time range label */}
@@ -317,7 +554,7 @@ export function ReadingsCountWidget({
 
       {/* Main number */}
       <p className="text-2xl font-bold text-foreground leading-none mb-3">
-        {formatNumber(actualCount)}
+        {dataLoading ? "..." : formatNumber(displayStats.actual)}
       </p>
 
       {/* Stats grid - compact rows */}
@@ -326,7 +563,7 @@ export function ReadingsCountWidget({
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Expected</span>
           <span className="font-medium tabular-nums">
-            {expectedCount !== null ? formatNumber(expectedCount) : "—"}
+            {displayStats.expected !== null ? formatNumber(displayStats.expected) : "—"}
           </span>
         </div>
 
@@ -335,7 +572,7 @@ export function ReadingsCountWidget({
           <span className="text-muted-foreground">Coverage</span>
           <div className="flex items-center gap-1.5">
             <span className={`font-semibold tabular-nums ${styles.textColor}`}>
-              {formatCoverage(coveragePct)}
+              {formatCoverage(displayStats.coveragePct)}
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${styles.badgeClass}`}>
               {styles.badgeLabel}
@@ -347,18 +584,39 @@ export function ReadingsCountWidget({
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Interval</span>
           <span className="text-muted-foreground tabular-nums">
-            {intervalSeconds !== null ? (
+            {displayStats.intervalSeconds !== null ? (
               <>
-                {formatInterval(intervalSeconds)}
-                {isEstimated && <span className="opacity-60 ml-0.5">(est.)</span>}
+                {formatInterval(displayStats.intervalSeconds)}
+                {displayStats.isEstimated && <span className="opacity-60 ml-0.5">(est.)</span>}
               </>
-            ) : intervalLoading ? (
+            ) : dataLoading ? (
               "..."
             ) : (
               <span className="opacity-60">unknown</span>
             )}
           </span>
         </div>
+
+        {/* Mini sensor breakdown when "All Sensors" is selected and multiple sensors */}
+        {!singleSensor && selectedSensor === "all" && perSensorStats.length > 1 && !dataLoading && (
+          <div className="pt-1 mt-1 border-t border-border/30">
+            {perSensorStats.map((stat) => {
+              const covStatus = getCoverageStatus(stat.coveragePct, stat.actualCount);
+              const covStyles = getStatusStyles(covStatus);
+              const pctStr = stat.coveragePct !== null
+                ? stat.coveragePct > 100 ? "100%+" : `${Math.round(stat.coveragePct)}%`
+                : "—";
+              return (
+                <div key={stat.sensorId} className="flex items-center justify-between py-0.5">
+                  <span className="text-muted-foreground truncate mr-2">{stat.sensorName}</span>
+                  <span className={`font-medium tabular-nums flex-shrink-0 ${covStyles.textColor}`}>
+                    {pctStr}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
