@@ -92,7 +92,7 @@ interface SensorSettingsDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sensor: LoraSensor;
-  /** Unit alarm defaults (from unit settings) — informational only */
+  /** Unit alarm defaults (from unit settings) — used to pre-fill alarm fields */
   unitAlarmLow: number | null;
   unitAlarmHigh: number | null;
 }
@@ -503,8 +503,17 @@ export function SensorSettingsDrawer({
       initial["set_tdc"]["minutes"] = Math.round(config.uplink_interval_s / 60);
     }
 
+    // Pre-fill alarm temps from unit defaults (canonical storage is °F,
+    // matching the drawer's displayTempUnit)
+    if (unitAlarmHigh !== null && initial["set_temp_alarm_high"]) {
+      initial["set_temp_alarm_high"]["temperature"] = unitAlarmHigh;
+    }
+    if (unitAlarmLow !== null && initial["set_temp_alarm_low"]) {
+      initial["set_temp_alarm_low"]["temperature"] = unitAlarmLow;
+    }
+
     setFieldValues(initial);
-  }, [catalogEntry, config]);
+  }, [catalogEntry, config, unitAlarmLow, unitAlarmHigh]);
 
   const updateFieldValue = useCallback(
     (commandKey: string, fieldName: string, value: number | boolean | string) => {
