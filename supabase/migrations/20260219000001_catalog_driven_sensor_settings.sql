@@ -203,13 +203,19 @@ SET downlink_info = '{
 }'::jsonb
 WHERE manufacturer = 'Dragino' AND model = 'LDS02';
 
--- 4. Update sensor_catalog_public view to include downlink_info and temperature_unit
+-- 4. Update sensor_catalog_public view to include downlink_info
+--    IMPORTANT: CREATE OR REPLACE VIEW cannot remove or reorder columns.
+--    The existing view (from 20260203110000) has columns in this order:
+--      id, manufacturer, model, model_variant, display_name, sensor_kind,
+--      description, frequency_bands, supports_class, f_ports, decoded_fields,
+--      uplink_info, battery_info, is_supported, tags, decode_mode, temperature_unit
+--    We must keep all existing columns in the same order and only append new ones.
 CREATE OR REPLACE VIEW sensor_catalog_public AS
 SELECT
   id, manufacturer, model, model_variant, display_name, sensor_kind,
-  description, frequency_bands, f_ports, decoded_fields, uplink_info,
-  battery_info, downlink_info, is_supported, tags,
-  decode_mode, temperature_unit
+  description, frequency_bands, supports_class, f_ports, decoded_fields,
+  uplink_info, battery_info, is_supported, tags, decode_mode, temperature_unit,
+  downlink_info
 FROM sensor_catalog
 WHERE is_visible = true
   AND deprecated_at IS NULL
