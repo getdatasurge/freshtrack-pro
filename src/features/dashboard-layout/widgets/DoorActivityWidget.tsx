@@ -2,20 +2,23 @@
  * Door Activity Widget
  *
  * Rich timeline of door open/close events with:
+ * - Period-aware header showing the active time range
  * - Current state badge (top-right)
- * - Summary: opens today + longest open duration
+ * - Summary: total opens in period + longest open duration
+ * - Daily breakdown with bar chart for multi-day views
  * - Timeline with per-event duration badges
  * - EXTENDED warning for opens exceeding the warning threshold
  * - "Show X more events" pagination
+ * - Events sorted newest-first
  */
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { DoorOpen, DoorClosed, Clock, AlertTriangle, Activity } from "lucide-react";
+import { DoorOpen, DoorClosed, Clock, AlertTriangle, Activity, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import type { WidgetProps } from "../types";
-import { format, startOfDay, differenceInSeconds } from "date-fns";
+import type { WidgetProps, TimelineState } from "../types";
+import { format, startOfDay, differenceInSeconds, differenceInHours, subHours, subDays, parseISO } from "date-fns";
 import { createLoadingState, createNotConfiguredState, createEmptyState, createHealthyState } from "../hooks/useWidgetState";
 import { WidgetEmptyState } from "../components/WidgetEmptyState";
 import type { WidgetStateInfo } from "../types/widgetState";
@@ -37,6 +40,12 @@ interface DoorEvent {
   durationSeconds: number | null;
   /** Whether the open duration exceeded the warning threshold */
   isExtended: boolean;
+}
+
+interface DailyCount {
+  date: string;
+  label: string;
+  count: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,15 +87,87 @@ function computeEventsWithDuration(
   });
 }
 
+function computeDateRangeFromTimeline(timelineState?: TimelineState): { from: Date; to: Date } {
+  const now = new Date();
+  if (!timelineState) return { from: subHours(now, 24), to: now };
+
+  switch (timelineState.range) {
+    case "1h": return { from: subHours(now, 1), to: now };
+    case "6h": return { from: subHours(now, 6), to: now };
+    case "24h": return { from: subHours(now, 24), to: now };
+    case "7d": return { from: subDays(now, 7), to: now };
+    case "30d": return { from: subDays(now, 30), to: now };
+    case "custom":
+      if (timelineState.customFrom && timelineState.customTo) {
+        return { from: parseISO(timelineState.customFrom), to: parseISO(timelineState.customTo) };
+      }
+      return { from: subHours(now, 24), to: now };
+    default: return { from: subHours(now, 24), to: now };
+  }
+}
+
+function formatPeriodLabel(timelineState?: TimelineState): string {
+  if (!timelineState) return "Last 24 Hours";
+
+  switch (timelineState.range) {
+    case "1h": return "Last Hour";
+    case "6h": return "Last 6 Hours";
+    case "24h": return "Last 24 Hours";
+    case "7d": return "Last 7 Days";
+    case "30d": return "Last 30 Days";
+    case "custom": {
+      if (timelineState.customFrom && timelineState.customTo) {
+        const from = parseISO(timelineState.customFrom);
+        const to = parseISO(timelineState.customTo);
+        const fmt = (d: Date) => format(d, "MMM d");
+        return `${fmt(from)} \u2013 ${fmt(to)}`;
+      }
+      return "Last 24 Hours";
+    }
+    default: return "Last 24 Hours";
+  }
+}
+
+function computeDailyCounts(events: DoorEvent[]): DailyCount[] {
+  const byDay: Record<string, { date: string; count: number }> = {};
+
+  for (const ev of events) {
+    if (ev.state !== "open") continue;
+    const d = startOfDay(new Date(ev.occurred_at));
+    const key = d.toISOString();
+    if (!byDay[key]) {
+      byDay[key] = { date: key, count: 0 };
+    }
+    byDay[key].count++;
+  }
+
+  return Object.values(byDay)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .map((entry) => ({
+      date: entry.date,
+      label: format(new Date(entry.date), "MMM d"),
+      count: entry.count,
+    }));
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refreshTick }: WidgetProps) {
+export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refreshTick, timelineState }: WidgetProps) {
   const [rawEvents, setRawEvents] = useState<Array<{ id: string; state: "open" | "closed"; occurred_at: string }>>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
+
+  // Compute date range from the dashboard's timeline state
+  const dateRange = useMemo(() => computeDateRangeFromTimeline(timelineState), [timelineState]);
+  const periodLabel = useMemo(() => formatPeriodLabel(timelineState), [timelineState]);
+  const periodHours = useMemo(
+    () => differenceInHours(dateRange.to, dateRange.from),
+    [dateRange],
+  );
+  const isMultiDay = periodHours > 24;
 
   // Find the door sensor — accept "door", "contact", or "combo" sensor types.
   // Also fall back to the first available sensor: if this widget is on the
@@ -110,7 +191,7 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
   // Warning threshold for EXTENDED badge
   const warningMinutes = DEFAULT_ALERT_RULES.door_open_warning_minutes;
 
-  // Fetch events
+  // Fetch events filtered by the timeline date range
   useEffect(() => {
     async function fetchDoorEvents() {
       if (!entityId || !doorSensor?.id) {
@@ -124,8 +205,10 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
           .select("id, door_open, recorded_at")
           .eq("lora_sensor_id", doorSensor.id)
           .not("door_open", "is", null)
+          .gte("recorded_at", dateRange.from.toISOString())
+          .lte("recorded_at", dateRange.to.toISOString())
           .order("recorded_at", { ascending: false })
-          .limit(50);
+          .limit(200);
 
         if (fetchError) throw fetchError;
 
@@ -150,8 +233,9 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
       }
     }
 
+    setIsLoading(true);
     fetchDoorEvents();
-  }, [entityId, doorSensor?.id, refreshTick]);
+  }, [entityId, doorSensor?.id, refreshTick, dateRange.from.getTime(), dateRange.to.getTime()]);
 
   // Compute events with durations
   const events = useMemo(
@@ -176,22 +260,31 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
     return () => clearInterval(interval);
   }, [isCurrentlyOpenLive, mostRecentEvent?.occurred_at]);
 
-  // Summary stats: opens today & longest open
-  const { opensToday, longestOpen } = useMemo(() => {
-    const todayStart = startOfDay(new Date());
+  // Summary stats: opens in period & longest open
+  const { opensInPeriod, longestOpen } = useMemo(() => {
     let opens = 0;
     let longest: { seconds: number; time: string } | null = null;
 
     for (const ev of events) {
-      if (ev.state === "open" && new Date(ev.occurred_at) >= todayStart) {
+      if (ev.state === "open") {
         opens++;
         if (ev.durationSeconds !== null && (longest === null || ev.durationSeconds > longest.seconds)) {
           longest = { seconds: ev.durationSeconds, time: ev.occurred_at };
         }
       }
     }
-    return { opensToday: opens, longestOpen: longest };
+    return { opensInPeriod: opens, longestOpen: longest };
   }, [events]);
+
+  // Daily breakdown for multi-day views
+  const dailyCounts = useMemo(
+    () => (isMultiDay ? computeDailyCounts(events) : []),
+    [events, isMultiDay],
+  );
+  const maxDailyCount = useMemo(
+    () => Math.max(1, ...dailyCounts.map((d) => d.count)),
+    [dailyCounts],
+  );
 
   // Pagination
   const visibleEvents = events.slice(0, visibleCount);
@@ -247,7 +340,7 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-base font-semibold">
             <Activity className="w-4 h-4" />
-            Door Activity
+            <span>Door Opens <span className="font-normal text-muted-foreground">&mdash; {periodLabel}</span></span>
           </h3>
           {displayState && (
             <span
@@ -266,7 +359,7 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
         {/* Summary stats */}
         <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
           <span>
-            <span className="font-semibold text-foreground">{opensToday}</span> opens today
+            <span className="font-semibold text-foreground">{opensInPeriod}</span> opens
           </span>
           {longestOpen && (
             <span>
@@ -276,6 +369,30 @@ export function DoorActivityWidget({ entityId, unit, sensor, loraSensors, refres
           )}
         </div>
       </div>
+
+      {/* Daily breakdown for multi-day views */}
+      {isMultiDay && dailyCounts.length > 0 && (
+        <div className="flex-shrink-0 px-4 pb-2">
+          <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-muted-foreground">
+            <BarChart3 className="h-3 w-3" />
+            Daily Breakdown
+          </div>
+          <div className="space-y-1.5">
+            {dailyCounts.map((day) => (
+              <div key={day.date} className="flex items-center gap-2 text-xs">
+                <span className="w-12 flex-shrink-0 text-muted-foreground tabular-nums">{day.label}</span>
+                <div className="flex-1 h-4 bg-muted/50 rounded-sm overflow-hidden">
+                  <div
+                    className="h-full bg-amber-500/70 dark:bg-amber-400/50 rounded-sm transition-all"
+                    style={{ width: `${(day.count / maxDailyCount) * 100}%` }}
+                  />
+                </div>
+                <span className="w-8 flex-shrink-0 text-right font-semibold text-foreground tabular-nums">{day.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Timeline */}
       <div className="flex-1 min-h-0 overflow-hidden px-4 pb-4">
