@@ -226,6 +226,14 @@ export function buildCommand(params: DownlinkCommandParams, defaultFport: number
         expectedResult: `Raw command: ${params.hex}`,
       };
 
+    case 'catalog':
+      return {
+        hex: params.hex.replace(/\s+/g, '').toUpperCase(),
+        fport: params.fport,
+        changeType: 'catalog',
+        expectedResult: params.expectedResult,
+      };
+
     default:
       throw new Error(`Unknown command type: ${(params as any).type}`);
   }

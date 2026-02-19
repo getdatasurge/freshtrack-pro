@@ -183,6 +183,13 @@ export function buildCommand(params: any, defaultFport: number = 2): BuiltComman
         changeType: "raw",
         expectedResult: `Raw: ${params.hex}`,
       };
+    case "catalog":
+      return {
+        hex: params.hex.replace(/\s+/g, "").toUpperCase(),
+        fport: params.fport,
+        changeType: "catalog",
+        expectedResult: params.expectedResult ?? "Catalog command",
+      };
     default:
       throw new Error(`Unknown command type: ${params.type}`);
   }

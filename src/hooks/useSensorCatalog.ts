@@ -26,6 +26,21 @@ export function useSensorCatalogPublic() {
 }
 
 /**
+ * Hook to fetch a single catalog entry by ID (from the public view).
+ * Returns null if the catalogId is null or the entry isn't found.
+ * Uses the same shared cache as useSensorCatalogPublic for efficiency.
+ */
+export function useSensorCatalogById(catalogId: string | null) {
+  const { data: entries, isLoading } = useSensorCatalogPublic();
+
+  const entry = catalogId && entries
+    ? entries.find((e) => e.id === catalogId) ?? null
+    : null;
+
+  return { data: entry, isLoading };
+}
+
+/**
  * Hook for super admins to read all catalog entries (including deprecated).
  */
 export function useSensorCatalog() {
