@@ -26,18 +26,37 @@ export function useSensorCatalogPublic() {
 }
 
 /**
- * Hook to fetch a single catalog entry by ID (from the public view).
- * Returns null if the catalogId is null or the entry isn't found.
- * Uses the same shared cache as useSensorCatalogPublic for efficiency.
+ * Hook to fetch a single catalog entry by ID directly from the sensor_catalog
+ * table (not the public view). This ensures downlink_info is always available,
+ * even if the sensor_catalog_public view has not been updated to include it.
+ *
+ * Uses explicit column selection to avoid pulling internal fields (decoder JS,
+ * sample payloads, provenance, notes). RLS policy "Authenticated users can
+ * read visible" restricts results to is_visible=true AND deprecated_at IS NULL.
  */
 export function useSensorCatalogById(catalogId: string | null) {
-  const { data: entries, isLoading } = useSensorCatalogPublic();
+  return useQuery<SensorCatalogPublicEntry | null>({
+    queryKey: ["sensor-catalog-by-id", catalogId],
+    queryFn: async () => {
+      if (!catalogId) return null;
 
-  const entry = catalogId && entries
-    ? entries.find((e) => e.id === catalogId) ?? null
-    : null;
+      const { data, error } = await supabase
+        .from("sensor_catalog")
+        .select(
+          "id, manufacturer, model, model_variant, display_name, sensor_kind, " +
+          "description, frequency_bands, supports_class, f_ports, decoded_fields, " +
+          "uplink_info, battery_info, downlink_info, is_supported, tags, " +
+          "decode_mode, temperature_unit"
+        )
+        .eq("id", catalogId)
+        .maybeSingle();
 
-  return { data: entry, isLoading };
+      if (error) throw error;
+      return (data ?? null) as unknown as SensorCatalogPublicEntry | null;
+    },
+    enabled: !!catalogId,
+    staleTime: 5 * 60_000, // 5 min — catalog changes rarely
+  });
 }
 
 /**
