@@ -4512,6 +4512,7 @@ export type Database = {
         | "clear_datalog"
         | "pnackmd"
         | "raw"
+        | "catalog"
       subscription_plan: "starter" | "pro" | "haccp" | "enterprise"
       subscription_status:
         | "trial"
@@ -4712,6 +4713,7 @@ export const Constants = {
         "clear_datalog",
         "pnackmd",
         "raw",
+        "catalog",
       ],
       subscription_plan: ["starter", "pro", "haccp", "enterprise"],
       subscription_status: [
