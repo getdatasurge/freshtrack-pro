@@ -472,7 +472,9 @@ export function SensorSettingsDrawer({
   // --- Estimated confirmation time ---
   const estimatedMinutes = config?.uplink_interval_s
     ? Math.round(config.uplink_interval_s / 60)
-    : null;
+    : catalogEntry?.uplink_info?.default_interval_s
+      ? Math.round(catalogEntry.uplink_info.default_interval_s / 60)
+      : null;
 
   // --- Field values state: keyed by commandKey ---
   const [fieldValues, setFieldValues] = useState<
@@ -562,6 +564,7 @@ export function SensorSettingsDrawer({
           commandKey: command.key,
           commandName: command.name,
           expectedResult,
+          fieldValues: values,
         },
       });
     },
@@ -629,11 +632,17 @@ export function SensorSettingsDrawer({
         <Alert className="mb-4 border-blue-200 bg-blue-50/50">
           <Info className="w-4 h-4 text-blue-500" />
           <AlertDescription className="text-xs text-blue-700">
-            This sensor reports every{" "}
-            <span className="font-semibold">
-              {estimatedMinutes || "10"} minutes
-            </span>
-            . Any changes you make will apply on the next report.
+            {estimatedMinutes ? (
+              <>
+                This sensor reports every{" "}
+                <span className="font-semibold">
+                  {estimatedMinutes} minutes
+                </span>
+                . Any changes you make will apply on the next report.
+              </>
+            ) : (
+              <>Changes are sent as Class A downlinks and apply on the next uplink.</>
+            )}
           </AlertDescription>
         </Alert>
 

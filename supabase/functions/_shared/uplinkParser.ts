@@ -184,6 +184,7 @@ export function matchChangeToUplink(
     case "clear_datalog":
     case "pnackmd":
     case "raw":
+    case "catalog":
       return "confirmed";
 
     default:
