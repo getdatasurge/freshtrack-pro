@@ -10,6 +10,8 @@
 ALTER TYPE sensor_change_type ADD VALUE IF NOT EXISTS 'catalog';
 
 -- 2. Update LHT65 downlink_info with extended command schema
+--    All hex templates match the Dragino LHT65N AT command protocol.
+--    Commands ported from src/lib/downlinkCommands.ts.
 UPDATE sensor_catalog
 SET downlink_info = '{
   "supports_remote_config": true,
@@ -21,7 +23,7 @@ SET downlink_info = '{
       "key": "set_tdc",
       "name": "How often this sensor reports",
       "description": "The sensor sends a reading at this interval.",
-      "hex_template": "01{seconds_4byte_hex}",
+      "hex_template": "01{seconds_hex}",
       "category": "interval",
       "fields": [
         {
@@ -34,43 +36,47 @@ SET downlink_info = '{
           "default": 10,
           "step": 1,
           "control": "number",
-          "encoding": "u32be",
-          "inputTransform": "minutes_to_seconds"
+          "encoding": "u24be",
+          "inputTransform": "minutes_to_seconds",
+          "configField": "uplink_interval_s"
         }
       ]
     },
     {
-      "key": "set_temp_alarm_high",
-      "name": "High temperature alert",
-      "description": "Alert if temperature goes above this threshold.",
-      "hex_template": "02{temp_2byte_hex}",
+      "key": "set_alarm",
+      "name": "Temperature alerts",
+      "description": "Configure on-device temperature alarm with low and high thresholds. Sends one command with all alarm parameters.",
+      "hex_template": "AA{wmod}{check_min}{low_c}{high_c}",
       "category": "alarm",
       "fields": [
         {
-          "name": "temperature",
-          "label": "High threshold",
+          "name": "enabled",
+          "label": "Enable on-device alarm",
+          "type": "boolean",
+          "default": true,
+          "control": "toggle",
+          "trueLabel": "Enabled",
+          "falseLabel": "Disabled",
+          "encoding": "bool01",
+          "configField": "alarm_enabled"
+        },
+        {
+          "name": "check_minutes",
+          "label": "Check interval",
           "type": "integer",
-          "unit": "\u00b0",
-          "min": -40,
-          "max": 125,
-          "default": 41,
+          "unit": "min",
+          "min": 1,
+          "max": 65535,
+          "default": 1,
           "step": 1,
           "control": "number",
-          "encoding": "temp_celsius_x100",
-          "helperText": "Uses your display unit \u2014 converted automatically for the sensor."
-        }
-      ]
-    },
-    {
-      "key": "set_temp_alarm_low",
-      "name": "Low temperature alert",
-      "description": "Alert if temperature drops below this threshold.",
-      "hex_template": "03{temp_2byte_hex}",
-      "category": "alarm",
-      "fields": [
+          "encoding": "u16be",
+          "helperText": "How often the sensor checks temperature against thresholds.",
+          "configField": "alarm_check_minutes"
+        },
         {
-          "name": "temperature",
-          "label": "Low threshold",
+          "name": "low_c",
+          "label": "Alert if below",
           "type": "integer",
           "unit": "\u00b0",
           "min": -40,
@@ -79,7 +85,102 @@ SET downlink_info = '{
           "step": 1,
           "control": "number",
           "encoding": "temp_celsius_x100",
-          "helperText": "Uses your display unit \u2014 converted automatically for the sensor."
+          "helperText": "Uses your display unit \u2014 converted automatically for the sensor.",
+          "configField": "alarm_low"
+        },
+        {
+          "name": "high_c",
+          "label": "Alert if above",
+          "type": "integer",
+          "unit": "\u00b0",
+          "min": -40,
+          "max": 125,
+          "default": 41,
+          "step": 1,
+          "control": "number",
+          "encoding": "temp_celsius_x100",
+          "helperText": "Uses your display unit \u2014 converted automatically for the sensor.",
+          "configField": "alarm_high"
+        }
+      ]
+    },
+    {
+      "key": "set_ext_mode",
+      "name": "External probe type",
+      "description": "Configure which type of external probe is connected.",
+      "hex_template": "A2{mode_byte}",
+      "category": "mode",
+      "fields": [
+        {
+          "name": "mode",
+          "label": "Probe type",
+          "type": "select",
+          "control": "select",
+          "options": [
+            { "value": 1, "label": "E3 Temp Probe (ext=1)" },
+            { "value": 9, "label": "E3 + Timestamp (ext=9)" }
+          ],
+          "default": 1,
+          "encoding": "u8"
+        }
+      ]
+    },
+    {
+      "key": "set_time_sync",
+      "name": "Keep sensor clock accurate",
+      "description": "Enable or disable automatic clock synchronization.",
+      "hex_template": "28{enable_byte}",
+      "category": "mode",
+      "fields": [
+        {
+          "name": "enabled",
+          "label": "Clock sync",
+          "type": "boolean",
+          "default": true,
+          "control": "toggle",
+          "trueLabel": "Enabled",
+          "falseLabel": "Disabled",
+          "encoding": "bool01",
+          "configField": "time_sync_enabled"
+        }
+      ]
+    },
+    {
+      "key": "set_time_sync_days",
+      "name": "Clock sync frequency",
+      "description": "How often the sensor re-synchronizes its internal clock.",
+      "hex_template": "29{days_byte}",
+      "category": "mode",
+      "fields": [
+        {
+          "name": "days",
+          "label": "Sync every N days",
+          "type": "integer",
+          "unit": "days",
+          "min": 1,
+          "max": 255,
+          "default": 10,
+          "step": 1,
+          "control": "number",
+          "encoding": "u8",
+          "configField": "time_sync_days"
+        }
+      ]
+    },
+    {
+      "key": "sync_clock_now",
+      "name": "Sync clock now",
+      "description": "Sets the device clock to the current time. Helps with accurate timestamps in readings.",
+      "hex_template": "30{unix_ts}00",
+      "category": "action",
+      "fields": [
+        {
+          "name": "unix_ts",
+          "label": "Timestamp",
+          "type": "integer",
+          "control": "number",
+          "encoding": "unix_timestamp_now",
+          "hidden": true
         }
       ]
     },
@@ -105,7 +206,7 @@ SET downlink_info = '{
       "key": "set_tdc",
       "name": "How often this sensor reports",
       "description": "The sensor sends a heartbeat at this interval even if nothing changes.",
-      "hex_template": "01{seconds_4byte_hex}",
+      "hex_template": "01{seconds_hex}",
       "category": "interval",
       "fields": [
         {
@@ -118,8 +219,9 @@ SET downlink_info = '{
           "default": 10,
           "step": 1,
           "control": "number",
-          "encoding": "u32be",
-          "inputTransform": "minutes_to_seconds"
+          "encoding": "u24be",
+          "inputTransform": "minutes_to_seconds",
+          "configField": "uplink_interval_s"
         }
       ]
     },

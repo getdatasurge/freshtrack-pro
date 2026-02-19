@@ -92,6 +92,11 @@ function encodeField(
       const encoded = Math.round(celsius * 100);
       return encodeSigned16BE(encoded);
     }
+    case "unix_timestamp_now": {
+      // Auto-compute current unix timestamp (ignores passed value)
+      const ts = Math.floor(Date.now() / 1000);
+      return encodeU32BE(ts);
+    }
     default: {
       // Exhaustive check
       const _never: never = encoding;
@@ -118,23 +123,44 @@ export function encodeDownlinkCommand(
     return command.hex_template.toUpperCase();
   }
 
-  // Extract the fixed prefix bytes from hex_template (everything before first '{')
-  const braceIdx = command.hex_template.indexOf("{");
-  const commandPrefix = braceIdx >= 0
-    ? command.hex_template.substring(0, braceIdx)
-    : command.hex_template;
+  // Parse hex_template into alternating literal and placeholder segments.
+  // Example: "30{ts}00" → literals=["30","00"], placeholders=["ts"]
+  // Example: "AA{a}{b}{c}{d}" → literals=["AA","","","",""], placeholders=["a","b","c","d"]
+  const literals: string[] = [];
+  const placeholders: string[] = [];
+  let remaining = command.hex_template;
 
-  // Encode each field in order
-  let paramBytes = "";
-  for (const field of command.fields) {
-    const value = fieldValues[field.name] ?? field.default;
-    if (value === undefined) {
-      throw new Error(`Missing value for field "${field.name}" in command "${command.key}"`);
+  while (remaining.length > 0) {
+    const openIdx = remaining.indexOf("{");
+    if (openIdx < 0) {
+      // No more placeholders — rest is a trailing literal
+      literals.push(remaining);
+      break;
     }
-    paramBytes += encodeField(field, value, displayTempUnit);
+    literals.push(remaining.substring(0, openIdx));
+    const closeIdx = remaining.indexOf("}", openIdx);
+    if (closeIdx < 0) {
+      throw new Error(`Unclosed '{' in hex_template for command "${command.key}"`);
+    }
+    placeholders.push(remaining.substring(openIdx + 1, closeIdx));
+    remaining = remaining.substring(closeIdx + 1);
   }
 
-  return (commandPrefix + paramBytes).toUpperCase();
+  // Encode each field in order (one field per placeholder)
+  let result = "";
+  for (let i = 0; i < literals.length; i++) {
+    result += literals[i];
+    if (i < command.fields.length) {
+      const field = command.fields[i];
+      const value = fieldValues[field.name] ?? field.default;
+      if (value === undefined) {
+        throw new Error(`Missing value for field "${field.name}" in command "${command.key}"`);
+      }
+      result += encodeField(field, value, displayTempUnit);
+    }
+  }
+
+  return result.toUpperCase();
 }
 
 /**
@@ -144,12 +170,13 @@ export function buildExpectedResult(
   command: CatalogDownlinkCommand,
   fieldValues: Record<string, number | boolean | string>,
 ): string {
-  if (command.fields.length === 0) {
+  const visibleFields = command.fields.filter((f) => !f.hidden);
+  if (visibleFields.length === 0) {
     return command.name;
   }
 
   const parts: string[] = [command.name + " →"];
-  for (const field of command.fields) {
+  for (const field of visibleFields) {
     const value = fieldValues[field.name] ?? field.default;
     if (field.type === "boolean") {
       const label = value ? (field.trueLabel || "Enabled") : (field.falseLabel || "Disabled");

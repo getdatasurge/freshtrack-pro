@@ -87,7 +87,8 @@ export type DownlinkFieldEncoding =
   | 'u32be'
   | 'bool01'
   | 'invertBool01'
-  | 'temp_celsius_x100';
+  | 'temp_celsius_x100'
+  | 'unix_timestamp_now';
 export type DownlinkFieldInputTransform = 'minutes_to_seconds';
 
 export interface DownlinkFieldOption {
@@ -111,6 +112,10 @@ export interface CatalogDownlinkField {
   helperText?: string;
   encoding: DownlinkFieldEncoding;
   inputTransform?: DownlinkFieldInputTransform;
+  /** If true, field is auto-computed and not rendered in the UI */
+  hidden?: boolean;
+  /** Column name in sensor_configurations to pre-fill from (e.g. "alarm_high") */
+  configField?: string;
 }
 
 export interface CatalogDownlinkCommand {

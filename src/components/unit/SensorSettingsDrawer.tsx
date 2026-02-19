@@ -44,6 +44,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Loader2,
   Zap,
   Clock,
@@ -271,6 +278,48 @@ function ToggleFieldControl({
   );
 }
 
+function SelectFieldControl({
+  field,
+  value,
+  onChange,
+  disabled,
+}: {
+  field: CatalogDownlinkField;
+  value: string | number;
+  onChange: (val: string | number) => void;
+  disabled: boolean;
+}) {
+  const options = field.options ?? [];
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs font-medium">{field.label}</Label>
+      <Select
+        value={String(value)}
+        onValueChange={(v) => {
+          // Preserve original type: if first option value is a number, convert
+          const numVal = Number(v);
+          onChange(options.some((o) => typeof o.value === "number") && !isNaN(numVal) ? numVal : v);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Select..." />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((opt) => (
+            <SelectItem key={String(opt.value)} value={String(opt.value)}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {field.helperText && (
+        <p className="text-[10px] text-muted-foreground">{field.helperText}</p>
+      )}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Command Renderer
 // ---------------------------------------------------------------------------
@@ -295,12 +344,13 @@ function CommandControl({
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const isAction = command.fields.length === 0;
-  const hasFields = command.fields.length > 0;
+  const visibleFields = command.fields.filter((f) => !f.hidden);
+  const isAction = visibleFields.length === 0;
+  const hasFields = visibleFields.length > 0;
 
-  // Validate all fields
-  const hasValidationError = command.fields.some((field) => {
-    if (field.type === "boolean") return false;
+  // Validate visible fields only
+  const hasValidationError = visibleFields.some((field) => {
+    if (field.type === "boolean" || field.type === "select") return false;
     const val = fieldValues[field.name];
     if (val === undefined || val === "") return true;
     const numVal = Number(val);
@@ -333,7 +383,7 @@ function CommandControl({
       </div>
 
       {hasFields &&
-        command.fields.map((field) => {
+        visibleFields.map((field) => {
           if (field.type === "boolean") {
             return (
               <ToggleFieldControl
@@ -342,6 +392,21 @@ function CommandControl({
                 value={Boolean(
                   fieldValues[field.name] ?? field.default ?? false
                 )}
+                onChange={(v) => onFieldChange(field.name, v)}
+                disabled={isDisabled}
+              />
+            );
+          }
+          if (field.control === "select" && field.options) {
+            return (
+              <SelectFieldControl
+                key={field.name}
+                field={field}
+                value={
+                  (fieldValues[field.name] as string | number) ??
+                  field.default ??
+                  ""
+                }
                 onChange={(v) => onFieldChange(field.name, v)}
                 disabled={isDisabled}
               />
@@ -479,7 +544,7 @@ export function SensorSettingsDrawer({
     Record<string, Record<string, number | boolean | string>>
   >({});
 
-  // Initialize field values from command defaults when catalog loads
+  // Initialize field values from command defaults + sensor config when available
   useEffect(() => {
     if (!catalogEntry?.downlink_info) return;
     const info = catalogEntry.downlink_info;
@@ -491,20 +556,32 @@ export function SensorSettingsDrawer({
     for (const cmd of commands) {
       const cmdValues: Record<string, number | boolean | string> = {};
       for (const field of cmd.fields) {
+        // Start with catalog default
         if (field.default !== undefined) {
           cmdValues[field.name] = field.default;
+        }
+        // Override with sensor config if configField is set and config has a value
+        if (field.configField && config) {
+          const configVal = (config as Record<string, unknown>)[field.configField];
+          if (configVal != null) {
+            let val: number | boolean | string = configVal as number | boolean | string;
+            // For temp fields stored in °C, convert to display unit
+            if (field.encoding === "temp_celsius_x100" && displayTempUnit === "fahrenheit") {
+              val = Math.round(Number(val) * 9 / 5 + 32);
+            }
+            // Reverse inputTransform: config stores seconds, field expects minutes
+            if (field.inputTransform === "minutes_to_seconds" && typeof val === "number") {
+              val = Math.round(val / 60);
+            }
+            cmdValues[field.name] = val;
+          }
         }
       }
       initial[cmd.key] = cmdValues;
     }
 
-    // Pre-fill set_tdc from config if available
-    if (config?.uplink_interval_s && initial["set_tdc"]) {
-      initial["set_tdc"]["minutes"] = Math.round(config.uplink_interval_s / 60);
-    }
-
     setFieldValues(initial);
-  }, [catalogEntry, config]);
+  }, [catalogEntry, config, displayTempUnit]);
 
   const updateFieldValue = useCallback(
     (commandKey: string, fieldName: string, value: number | boolean | string) => {
