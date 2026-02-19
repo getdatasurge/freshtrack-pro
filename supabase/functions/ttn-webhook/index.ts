@@ -963,6 +963,18 @@ async function confirmPendingChanges(
         }
       }
 
+      // If this was a catalog TDC (interval) change, persist the new interval
+      if (change.change_type === 'catalog' && change.command_params?.commandKey === 'set_tdc') {
+        const minutes = change.command_params?.fieldValues?.minutes;
+        if (typeof minutes === 'number' && minutes > 0) {
+          await supabase
+            .from('sensor_configurations')
+            .update({ uplink_interval_s: minutes * 60 })
+            .eq('sensor_id', sensorId);
+          console.log(`[TTN-WEBHOOK] ${requestId} | Catalog set_tdc confirmed: ${minutes} min → uplink_interval_s=${minutes * 60}`);
+        }
+      }
+
     } else if (result === 'mismatch') {
       console.warn(`[TTN-WEBHOOK] ${requestId} | Change ${change.id} (${change.change_type}) MISMATCH - keeping as 'sent'`);
       // Don't fail the change on first mismatch; the device may not

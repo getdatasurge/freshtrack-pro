@@ -282,6 +282,7 @@ export function ReadingsCountWidget({
   // ---- Per-sensor reading counts (queried from DB) ----
   const [perSensorCounts, setPerSensorCounts] = useState<Map<string, number>>(new Map());
   const [configIntervals, setConfigIntervals] = useState<Map<string, number | null>>(new Map());
+  const [catalogIntervals, setCatalogIntervals] = useState<Map<string, number>>(new Map());
   const [dataLoading, setDataLoading] = useState(false);
 
   // ---- Sensor selection ----
@@ -333,6 +334,21 @@ export function ReadingsCountWidget({
           .select("sensor_id, uplink_interval_s")
           .in("sensor_id", sensorIds);
 
+        // Fetch catalog default intervals for sensors with a catalog reference
+        const catalogIds = [
+          ...new Set(
+            sensorList
+              .map((s) => s.sensor_catalog_id)
+              .filter((id): id is string => !!id)
+          ),
+        ];
+        const { data: catalogRows } = catalogIds.length > 0
+          ? await supabase
+              .from("sensor_catalog")
+              .select("id, uplink_info")
+              .in("id", catalogIds)
+          : { data: [] as { id: string; uplink_info: unknown }[] };
+
         const [counts] = await Promise.all([
           Promise.all(countPromises),
         ]);
@@ -350,6 +366,17 @@ export function ReadingsCountWidget({
           configMap.set(row.sensor_id, row.uplink_interval_s ?? null);
         }
         setConfigIntervals(configMap);
+
+        // Build catalog_id → default_interval_s map
+        const catIntervalMap = new Map<string, number>();
+        for (const cat of catalogRows ?? []) {
+          const info = cat.uplink_info as Record<string, unknown> | null;
+          const defaultInterval = info?.default_interval_s;
+          if (typeof defaultInterval === "number" && defaultInterval > 0) {
+            catIntervalMap.set(cat.id, defaultInterval);
+          }
+        }
+        setCatalogIntervals(catIntervalMap);
 
         fetchKeyRef.current = key;
       } catch (err) {
@@ -375,10 +402,15 @@ export function ReadingsCountWidget({
       let interval = configInterval;
       let isEstimated = false;
 
-      // No configured interval — can't estimate per-sensor from combined readings
-      // Use 600s (10 min) default as last resort
+      // No configured interval — try catalog default before hardcoded fallback
       if (!interval) {
-        interval = 600;
+        const catalogId = s.sensor_catalog_id;
+        const catalogDefault = catalogId ? catalogIntervals.get(catalogId) : undefined;
+        if (catalogDefault) {
+          interval = catalogDefault;
+        } else {
+          interval = 600; // last resort
+        }
         isEstimated = true;
       }
 
@@ -396,7 +428,7 @@ export function ReadingsCountWidget({
         coveragePct,
       };
     });
-  }, [sensorList, perSensorCounts, configIntervals, timelineState]);
+  }, [sensorList, perSensorCounts, configIntervals, catalogIntervals, timelineState]);
 
   // ---- Smart default (apply once after data loads) ----
   useEffect(() => {
