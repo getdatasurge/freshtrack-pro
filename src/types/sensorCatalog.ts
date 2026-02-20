@@ -122,6 +122,8 @@ export interface CatalogDownlinkCommand {
   fields: CatalogDownlinkField[];
   confirmation?: string;
   dangerous?: boolean;
+  /** Hidden commands are not shown in the UI but can be used for auto-provisioning */
+  hidden?: boolean;
 }
 
 /**

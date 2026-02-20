@@ -4,21 +4,19 @@
  * Generic renderer that builds its UI entirely from the sensor_catalog
  * `downlink_info.commands` definition. No hardcoded sensor-type layouts.
  *
- * Adding a new sensor model with new commands to the catalog requires
- * ZERO UI code changes — the drawer reads the commands and renders
- * the appropriate controls automatically.
- *
  * Design decisions:
  *  - Every control, label, validation rule, and encoding comes from the catalog.
  *  - Quick Presets are shown only if the sensor has a `set_tdc` command.
  *  - Action buttons with `confirmation` show a dialog before sending.
  *  - Temperature fields convert from display unit using the encoder.
- *  - Per-button loading states track which command is being sent.
- *  - Pending changes list auto-refreshes while there are 'sent' items.
- *  - Fallback for sensors not yet extended: read-only command summary.
+ *  - Hidden commands (e.g. set_confirmed_uplinks) are filtered from the UI.
+ *  - Settings fields use a single "Apply All Changes" button (no per-field Apply).
+ *  - Action buttons (Reset, Request Status) remain immediate one-shot actions.
+ *  - Interval display shows the confirmed value, not pending.
+ *  - Fallback catalog lookup by model name when sensor_catalog_id is null.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Sheet,
   SheetContent,
@@ -72,7 +70,7 @@ import {
   useSensorPendingChanges,
   useSendDownlink,
 } from "@/hooks/useSensorConfig";
-import { useSensorCatalogById } from "@/hooks/useSensorCatalog";
+import { useSensorCatalogById, useSensorCatalogByModel } from "@/hooks/useSensorCatalog";
 import type {
   CatalogDownlinkCommand,
   CatalogDownlinkField,
@@ -83,6 +81,7 @@ import {
   encodeDownlinkCommand,
   buildExpectedResult,
 } from "@/lib/downlink/encoder";
+import { toast } from "sonner";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -187,6 +186,11 @@ function getExtendedCommands(downlinkInfo: SensorCatalogDownlinkInfo): CatalogDo
   return (downlinkInfo.commands ?? []).filter(isExtendedCommand) as CatalogDownlinkCommand[];
 }
 
+/** Get visible extended commands (filter out hidden ones like set_confirmed_uplinks) */
+function getVisibleCommands(downlinkInfo: SensorCatalogDownlinkInfo): CatalogDownlinkCommand[] {
+  return getExtendedCommands(downlinkInfo).filter((cmd) => !cmd.hidden);
+}
+
 // ---------------------------------------------------------------------------
 // Field Renderer Sub-Components
 // ---------------------------------------------------------------------------
@@ -196,11 +200,13 @@ function NumberFieldControl({
   value,
   onChange,
   disabled,
+  isDirty,
 }: {
   field: CatalogDownlinkField;
   value: string;
   onChange: (val: string) => void;
   disabled: boolean;
+  isDirty?: boolean;
 }) {
   const numVal = Number(value);
   const hasError =
@@ -216,6 +222,9 @@ function NumberFieldControl({
         {field.unit && (
           <span className="text-muted-foreground ml-1">({field.unit})</span>
         )}
+        {isDirty && (
+          <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />
+        )}
       </Label>
       <Input
         type="number"
@@ -226,7 +235,10 @@ function NumberFieldControl({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className={cn(hasError && "border-red-400")}
+        className={cn(
+          hasError && "border-red-400",
+          isDirty && !hasError && "border-blue-400/50",
+        )}
       />
       {hasError && (
         <p className="text-[11px] text-red-500 mt-0.5">
@@ -247,16 +259,26 @@ function ToggleFieldControl({
   value,
   onChange,
   disabled,
+  isDirty,
 }: {
   field: CatalogDownlinkField;
   value: boolean;
   onChange: (val: boolean) => void;
   disabled: boolean;
+  isDirty?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between p-2 rounded bg-muted/30">
+    <div className={cn(
+      "flex items-center justify-between p-2 rounded bg-muted/30",
+      isDirty && "ring-1 ring-blue-400/50",
+    )}>
       <div>
-        <Label className="text-xs font-medium">{field.label}</Label>
+        <Label className="text-xs font-medium">
+          {field.label}
+          {isDirty && (
+            <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />
+          )}
+        </Label>
         {field.helperText && (
           <p className="text-[10px] text-muted-foreground">{field.helperText}</p>
         )}
@@ -272,20 +294,77 @@ function ToggleFieldControl({
 }
 
 // ---------------------------------------------------------------------------
-// Command Renderer
+// Setting Command Renderer (no per-command Apply button)
 // ---------------------------------------------------------------------------
 
-function CommandControl({
+function SettingCommandControl({
   command,
   fieldValues,
   onFieldChange,
+  isDisabled,
+  dirtyFields,
+}: {
+  command: CatalogDownlinkCommand;
+  fieldValues: Record<string, number | boolean | string>;
+  onFieldChange: (fieldName: string, value: number | boolean | string) => void;
+  isDisabled: boolean;
+  dirtyFields: Set<string>;
+}) {
+  return (
+    <div className="space-y-2">
+      <div>
+        <Label className="text-xs font-medium">{command.name}</Label>
+        <p className="text-[10px] text-muted-foreground">
+          {command.description}
+        </p>
+      </div>
+
+      {command.fields.map((field) => {
+        const fieldKey = `${command.key}.${field.name}`;
+        const isDirty = dirtyFields.has(fieldKey);
+
+        if (field.type === "boolean") {
+          return (
+            <ToggleFieldControl
+              key={field.name}
+              field={field}
+              value={Boolean(
+                fieldValues[field.name] ?? field.default ?? false
+              )}
+              onChange={(v) => onFieldChange(field.name, v)}
+              disabled={isDisabled}
+              isDirty={isDirty}
+            />
+          );
+        }
+        return (
+          <NumberFieldControl
+            key={field.name}
+            field={field}
+            value={String(fieldValues[field.name] ?? "")}
+            onChange={(v) =>
+              onFieldChange(field.name, v === "" ? "" : Number(v))
+            }
+            disabled={isDisabled}
+            isDirty={isDirty}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Action Command Renderer (keeps its own immediate button)
+// ---------------------------------------------------------------------------
+
+function ActionCommandControl({
+  command,
   onApply,
   isApplying,
   isDisabled,
 }: {
   command: CatalogDownlinkCommand;
-  fieldValues: Record<string, number | boolean | string>;
-  onFieldChange: (fieldName: string, value: number | boolean | string) => void;
   onApply: (
     command: CatalogDownlinkCommand,
     fieldValues: Record<string, number | boolean | string>
@@ -295,32 +374,17 @@ function CommandControl({
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const isAction = command.fields.length === 0;
-  const hasFields = command.fields.length > 0;
-
-  // Validate all fields
-  const hasValidationError = command.fields.some((field) => {
-    if (field.type === "boolean") return false;
-    const val = fieldValues[field.name];
-    if (val === undefined || val === "") return true;
-    const numVal = Number(val);
-    if (isNaN(numVal)) return true;
-    if (field.min != null && numVal < field.min) return true;
-    if (field.max != null && numVal > field.max) return true;
-    return false;
-  });
-
-  const handleApplyClick = () => {
+  const handleClick = () => {
     if (command.confirmation) {
       setConfirmOpen(true);
     } else {
-      onApply(command, fieldValues);
+      onApply(command, {});
     }
   };
 
   const handleConfirmedApply = () => {
     setConfirmOpen(false);
-    onApply(command, fieldValues);
+    onApply(command, {});
   };
 
   return (
@@ -332,39 +396,11 @@ function CommandControl({
         </p>
       </div>
 
-      {hasFields &&
-        command.fields.map((field) => {
-          if (field.type === "boolean") {
-            return (
-              <ToggleFieldControl
-                key={field.name}
-                field={field}
-                value={Boolean(
-                  fieldValues[field.name] ?? field.default ?? false
-                )}
-                onChange={(v) => onFieldChange(field.name, v)}
-                disabled={isDisabled}
-              />
-            );
-          }
-          return (
-            <NumberFieldControl
-              key={field.name}
-              field={field}
-              value={String(fieldValues[field.name] ?? "")}
-              onChange={(v) =>
-                onFieldChange(field.name, v === "" ? "" : Number(v))
-              }
-              disabled={isDisabled}
-            />
-          );
-        })}
-
       <Button
-        variant={isAction ? "outline" : "default"}
+        variant="outline"
         size="sm"
-        disabled={isDisabled || hasValidationError}
-        onClick={handleApplyClick}
+        disabled={isDisabled}
+        onClick={handleClick}
         className={cn(
           "w-full",
           command.dangerous && "border-red-400 text-red-600 hover:bg-red-50"
@@ -375,7 +411,7 @@ function CommandControl({
         ) : (
           <Send className="w-3.5 h-3.5 mr-1.5" />
         )}
-        {isAction ? command.name : "Apply"}
+        {command.name}
       </Button>
 
       {/* Confirmation dialog for dangerous/confirmation-required actions */}
@@ -429,11 +465,17 @@ export function SensorSettingsDrawer({
   } = useSensorPendingChanges(open ? sensor.id : null);
   const sendDownlink = useSendDownlink();
 
-  // Fetch the catalog entry for this sensor
-  const { data: catalogEntry, isLoading: catalogLoading } =
+  // --- Catalog lookup: primary by ID, fallback by model name ---
+  const { data: catalogByIdEntry, isLoading: catalogByIdLoading } =
     useSensorCatalogById(open ? sensor.sensor_catalog_id : null);
+  const { data: catalogByModelEntry, isLoading: catalogByModelLoading } =
+    useSensorCatalogByModel(
+      open && !sensor.sensor_catalog_id ? sensor.model : null
+    );
+  const catalogEntry = catalogByIdEntry ?? catalogByModelEntry;
+  const catalogLoading = catalogByIdLoading || catalogByModelLoading;
 
-  // --- Per-command loading tracking ---
+  // --- Per-command loading tracking (for action commands) ---
   const [activeCommandKey, setActiveCommandKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -469,15 +511,33 @@ export function SensorSettingsDrawer({
     };
   }, [open, hasSentChanges, refetchChanges]);
 
-  // --- Estimated confirmation time ---
-  const estimatedMinutes = config?.uplink_interval_s
-    ? Math.round(config.uplink_interval_s / 60)
-    : catalogEntry?.uplink_info?.default_interval_s
-      ? Math.round(catalogEntry.uplink_info.default_interval_s / 60)
-      : null;
+  // --- Confirmed interval (Issue 5) ---
+  // Use confirmed_uplink_interval_s (last sensor-acknowledged value).
+  // Fall back to uplink_interval_s, then catalog default.
+  const confirmedIntervalMinutes = config?.confirmed_uplink_interval_s
+    ? Math.round(config.confirmed_uplink_interval_s / 60)
+    : config?.uplink_interval_s
+      ? Math.round(config.uplink_interval_s / 60)
+      : catalogEntry?.uplink_info?.default_interval_s
+        ? Math.round(catalogEntry.uplink_info.default_interval_s / 60)
+        : null;
+
+  // Check for pending interval change
+  const pendingIntervalChange = pendingChanges?.find(
+    (c) =>
+      (c.status === "sent" || c.status === "queued") &&
+      (c.change_type === "catalog" || c.change_type === "uplink_interval") &&
+      ((c.command_params as Record<string, unknown>)?.commandKey === "set_tdc" ||
+        c.change_type === "uplink_interval")
+  );
 
   // --- Field values state: keyed by commandKey ---
   const [fieldValues, setFieldValues] = useState<
+    Record<string, Record<string, number | boolean | string>>
+  >({});
+
+  // Track initial values for dirty detection
+  const [initialFieldValues, setInitialFieldValues] = useState<
     Record<string, Record<string, number | boolean | string>>
   >({});
 
@@ -500,9 +560,10 @@ export function SensorSettingsDrawer({
       initial[cmd.key] = cmdValues;
     }
 
-    // Pre-fill set_tdc from config if available
-    if (config?.uplink_interval_s && initial["set_tdc"]) {
-      initial["set_tdc"]["minutes"] = Math.round(config.uplink_interval_s / 60);
+    // Pre-fill set_tdc from confirmed config (Issue 5: show confirmed, not pending)
+    const confirmedInterval = config?.confirmed_uplink_interval_s ?? config?.uplink_interval_s;
+    if (confirmedInterval && initial["set_tdc"]) {
+      initial["set_tdc"]["minutes"] = Math.round(confirmedInterval / 60);
     }
 
     // Pre-fill alarm temps from unit defaults (canonical storage is °F,
@@ -515,6 +576,7 @@ export function SensorSettingsDrawer({
     }
 
     setFieldValues(initial);
+    setInitialFieldValues(initial);
   }, [catalogEntry, config, unitAlarmLow, unitAlarmHigh]);
 
   const updateFieldValue = useCallback(
@@ -530,6 +592,51 @@ export function SensorSettingsDrawer({
     []
   );
 
+  // --- Dirty state tracking ---
+  const dirtyCommandKeys = useMemo(() => {
+    const dirty = new Set<string>();
+    for (const [cmdKey, values] of Object.entries(fieldValues)) {
+      const initValues = initialFieldValues[cmdKey];
+      if (!initValues) continue;
+      for (const [fieldName, fieldValue] of Object.entries(values)) {
+        const initVal = initValues[fieldName];
+        // Compare stringified values to handle type coercion (number vs string)
+        if (String(fieldValue) !== String(initVal ?? "")) {
+          dirty.add(cmdKey);
+          break;
+        }
+      }
+    }
+    return dirty;
+  }, [fieldValues, initialFieldValues]);
+
+  // Per-field dirty tracking for visual indicators
+  const dirtyFieldKeys = useMemo(() => {
+    const dirty = new Set<string>();
+    for (const [cmdKey, values] of Object.entries(fieldValues)) {
+      const initValues = initialFieldValues[cmdKey];
+      if (!initValues) continue;
+      for (const [fieldName, fieldValue] of Object.entries(values)) {
+        const initVal = initValues[fieldName];
+        if (String(fieldValue) !== String(initVal ?? "")) {
+          dirty.add(`${cmdKey}.${fieldName}`);
+        }
+      }
+    }
+    return dirty;
+  }, [fieldValues, initialFieldValues]);
+
+  // Only count setting commands (not action commands) as dirty
+  const visibleCommands = catalogEntry?.downlink_info
+    ? getVisibleCommands(catalogEntry.downlink_info)
+    : [];
+  const settingCommandKeys = new Set(
+    visibleCommands.filter((c) => c.fields.length > 0).map((c) => c.key)
+  );
+  const dirtySettingCount = [...dirtyCommandKeys].filter((k) =>
+    settingCommandKeys.has(k)
+  ).length;
+
   // --- Disable conditions ---
   const isBusy = sendDownlink.isPending;
   const hasPendingSent = !!hasSentChanges;
@@ -541,7 +648,7 @@ export function SensorSettingsDrawer({
   // --- Advanced section toggle ---
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  // --- Send a catalog command ---
+  // --- Send a catalog command (used for action commands and Apply All) ---
   const sendCatalogCommand = useCallback(
     (
       command: CatalogDownlinkCommand,
@@ -571,6 +678,71 @@ export function SensorSettingsDrawer({
     [sensor.id, catalogEntry, displayTempUnit, sendDownlink, canSend]
   );
 
+  // --- Apply All Changes handler ---
+  const [isApplyingAll, setIsApplyingAll] = useState(false);
+  const handleApplyAll = useCallback(async () => {
+    if (!catalogEntry?.downlink_info?.config_port) return;
+    if (dirtySettingCount === 0) return;
+
+    const allCommands = getExtendedCommands(catalogEntry.downlink_info);
+    const fport = catalogEntry.downlink_info.config_port;
+    const summaryParts: string[] = [];
+
+    setIsApplyingAll(true);
+    let successCount = 0;
+
+    for (const cmdKey of dirtyCommandKeys) {
+      if (!settingCommandKeys.has(cmdKey)) continue;
+      const command = allCommands.find((c) => c.key === cmdKey);
+      if (!command) continue;
+
+      const values = fieldValues[cmdKey] || {};
+      const hex = encodeDownlinkCommand(command, values, displayTempUnit);
+      const expectedResult = buildExpectedResult(command, values);
+
+      try {
+        await sendDownlink.mutateAsync({
+          sensorId: sensor.id,
+          commandType: "catalog",
+          commandParams: {
+            type: "catalog",
+            hex,
+            fport,
+            commandKey: command.key,
+            commandName: command.name,
+            expectedResult,
+            fieldValues: values,
+          },
+        });
+        summaryParts.push(expectedResult);
+        successCount++;
+      } catch {
+        // Individual error already toasted by useSendDownlink
+      }
+    }
+
+    setIsApplyingAll(false);
+
+    if (successCount > 0) {
+      // Update initial values so these fields are no longer dirty
+      setInitialFieldValues({ ...fieldValues });
+      refetchChanges();
+      toast.success(
+        `Queued ${successCount} change${successCount > 1 ? "s" : ""}: ${summaryParts.join(", ")}`
+      );
+    }
+  }, [
+    catalogEntry,
+    dirtyCommandKeys,
+    dirtySettingCount,
+    settingCommandKeys,
+    fieldValues,
+    displayTempUnit,
+    sendDownlink,
+    sensor.id,
+    refetchChanges,
+  ]);
+
   // --- Quick Preset handler ---
   const handlePreset = useCallback(
     (intervalMinutes: number) => {
@@ -584,29 +756,55 @@ export function SensorSettingsDrawer({
     [catalogEntry, sendCatalogCommand]
   );
 
+  // --- Validate all dirty setting fields ---
+  const hasValidationError = useMemo(() => {
+    if (!catalogEntry?.downlink_info) return false;
+    const allCommands = getExtendedCommands(catalogEntry.downlink_info);
+    for (const cmdKey of dirtyCommandKeys) {
+      if (!settingCommandKeys.has(cmdKey)) continue;
+      const command = allCommands.find((c) => c.key === cmdKey);
+      if (!command) continue;
+      const values = fieldValues[cmdKey] || {};
+      for (const field of command.fields) {
+        if (field.type === "boolean") continue;
+        const val = values[field.name];
+        if (val === undefined || val === "") return true;
+        const numVal = Number(val);
+        if (isNaN(numVal)) return true;
+        if (field.min != null && numVal < field.min) return true;
+        if (field.max != null && numVal > field.max) return true;
+      }
+    }
+    return false;
+  }, [catalogEntry, dirtyCommandKeys, settingCommandKeys, fieldValues]);
+
   // Determine what to render
   const downlinkInfo = catalogEntry?.downlink_info;
   const supportsRemoteConfig = downlinkInfo?.supports_remote_config;
   const extendedCommands = downlinkInfo
-    ? getExtendedCommands(downlinkInfo)
+    ? getVisibleCommands(downlinkInfo)
     : [];
   const isExtended = downlinkInfo ? hasExtendedCommands(downlinkInfo) : false;
   const hasSetTdc = extendedCommands.some((c) => c.key === "set_tdc");
 
-  // Split commands: interval + alarm = main; mode + action + advanced = advanced
-  const mainCommands = sortCommands(
-    extendedCommands.filter(
-      (c) => c.category === "interval" || c.category === "alarm"
-    )
+  // Split commands: settings (have fields) vs actions (no fields)
+  const settingCommands = sortCommands(
+    extendedCommands.filter((c) => c.fields.length > 0)
   );
-  const advancedCommandsList = sortCommands(
-    extendedCommands.filter(
-      (c) =>
-        c.category === "mode" ||
-        c.category === "action" ||
-        c.category === "advanced"
-    )
+  const actionCommands = sortCommands(
+    extendedCommands.filter((c) => c.fields.length === 0)
   );
+
+  // Split settings: main (interval + alarm) vs advanced (mode + advanced)
+  const mainSettingCommands = settingCommands.filter(
+    (c) => c.category === "interval" || c.category === "alarm"
+  );
+  const advancedSettingCommands = settingCommands.filter(
+    (c) => c.category === "mode" || c.category === "advanced"
+  );
+  const advancedCommandsList = [...advancedSettingCommands, ...actionCommands.filter(
+    (c) => c.category !== "action" || c.category === "action"
+  )];
 
   const isLoadingData = configLoading || catalogLoading;
 
@@ -632,11 +830,11 @@ export function SensorSettingsDrawer({
         <Alert className="mb-4 border-blue-200 bg-blue-50/50">
           <Info className="w-4 h-4 text-blue-500" />
           <AlertDescription className="text-xs text-blue-700">
-            {estimatedMinutes ? (
+            {confirmedIntervalMinutes ? (
               <>
                 This sensor reports every{" "}
                 <span className="font-semibold">
-                  {estimatedMinutes} minutes
+                  {confirmedIntervalMinutes} minutes
                 </span>
                 . Any changes you make will apply on the next report.
               </>
@@ -679,10 +877,20 @@ export function SensorSettingsDrawer({
               </span>
             </div>
           )}
-          {config?.uplink_interval_s && (
+          {confirmedIntervalMinutes && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Reports every</span>
-              <span>{Math.round(config.uplink_interval_s / 60)} min</span>
+              <div className="text-right">
+                <span>{confirmedIntervalMinutes} min</span>
+                {pendingIntervalChange && (
+                  <p className="text-[10px] text-amber-600">
+                    Pending change queued{" "}
+                    {formatDistanceToNow(new Date(pendingIntervalChange.requested_at), {
+                      addSuffix: true,
+                    })}
+                  </p>
+                )}
+              </div>
             </div>
           )}
           {config?.last_applied_at && (
@@ -723,7 +931,7 @@ export function SensorSettingsDrawer({
               changesLoading={changesLoading}
               hasSentChanges={!!hasSentChanges}
               refetchChanges={refetchChanges}
-              estimatedMinutes={estimatedMinutes}
+              estimatedMinutes={confirmedIntervalMinutes}
             />
           </div>
         ) : !isExtended ? (
@@ -752,7 +960,7 @@ export function SensorSettingsDrawer({
               changesLoading={changesLoading}
               hasSentChanges={!!hasSentChanges}
               refetchChanges={refetchChanges}
-              estimatedMinutes={estimatedMinutes}
+              estimatedMinutes={confirmedIntervalMinutes}
             />
           </div>
         ) : (
@@ -801,26 +1009,25 @@ export function SensorSettingsDrawer({
               </>
             )}
 
-            {/* Main commands (interval + alarm) */}
-            {mainCommands.length > 0 && (
+            {/* Main settings (interval + alarm) — no per-field Apply buttons */}
+            {mainSettingCommands.length > 0 && (
               <div className="space-y-5">
-                {mainCommands.map((command) => (
-                  <CommandControl
+                {mainSettingCommands.map((command) => (
+                  <SettingCommandControl
                     key={command.key}
                     command={command}
                     fieldValues={fieldValues[command.key] || {}}
                     onFieldChange={(fieldName, value) =>
                       updateFieldValue(command.key, fieldName, value)
                     }
-                    onApply={sendCatalogCommand}
-                    isApplying={isBusy && activeCommandKey === command.key}
                     isDisabled={isDisabled}
+                    dirtyFields={dirtyFieldKeys}
                   />
                 ))}
               </div>
             )}
 
-            {/* Advanced Settings (mode + action + advanced) */}
+            {/* Advanced Settings (mode, advanced settings + action commands) */}
             {advancedCommandsList.length > 0 && (
               <>
                 <Separator />
@@ -839,14 +1046,22 @@ export function SensorSettingsDrawer({
 
                   {advancedOpen && (
                     <div className="mt-4 space-y-5">
-                      {advancedCommandsList.map((command) => (
-                        <CommandControl
+                      {advancedSettingCommands.map((command) => (
+                        <SettingCommandControl
                           key={command.key}
                           command={command}
                           fieldValues={fieldValues[command.key] || {}}
                           onFieldChange={(fieldName, value) =>
                             updateFieldValue(command.key, fieldName, value)
                           }
+                          isDisabled={isDisabled}
+                          dirtyFields={dirtyFieldKeys}
+                        />
+                      ))}
+                      {actionCommands.map((command) => (
+                        <ActionCommandControl
+                          key={command.key}
+                          command={command}
                           onApply={sendCatalogCommand}
                           isApplying={
                             isBusy && activeCommandKey === command.key
@@ -860,6 +1075,30 @@ export function SensorSettingsDrawer({
               </>
             )}
 
+            {/* Apply All Changes button — only visible when fields are dirty */}
+            {dirtySettingCount > 0 && (
+              <div className="sticky bottom-0 bg-background pt-3 pb-1 border-t">
+                <Button
+                  className="w-full"
+                  size="sm"
+                  disabled={isDisabled || hasValidationError || isApplyingAll}
+                  onClick={handleApplyAll}
+                >
+                  {isApplyingAll ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5 mr-1.5" />
+                  )}
+                  Apply All Changes ({dirtySettingCount})
+                </Button>
+                {hasValidationError && (
+                  <p className="text-[10px] text-red-500 text-center mt-1">
+                    Fix validation errors before applying
+                  </p>
+                )}
+              </div>
+            )}
+
             <Separator />
 
             {/* Recent Changes */}
@@ -868,7 +1107,7 @@ export function SensorSettingsDrawer({
               changesLoading={changesLoading}
               hasSentChanges={!!hasSentChanges}
               refetchChanges={refetchChanges}
-              estimatedMinutes={estimatedMinutes}
+              estimatedMinutes={confirmedIntervalMinutes}
             />
           </div>
         )}
@@ -936,12 +1175,14 @@ function RecentChanges({
                     )}
                   >
                     {change.status === "sent"
-                      ? "\u23F3"
+                      ? "\u23F3 Pending"
                       : change.status === "applied"
                         ? "\u2705"
                         : change.status === "failed"
                           ? "\u274C"
-                          : change.status}
+                          : change.status === "queued"
+                            ? "\u23F3 Queued"
+                            : change.status}
                   </Badge>
                 </div>
                 <span className="text-muted-foreground">
@@ -958,10 +1199,16 @@ function RecentChanges({
                 {change.status === "sent" && (
                   <p className="text-muted-foreground mt-0.5 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3 text-amber-400" />
-                    Waiting for next report
+                    Waiting for confirmation
                     {estimatedMinutes && (
                       <span> (~{estimatedMinutes} min)</span>
                     )}
+                  </p>
+                )}
+                {change.status === "queued" && (
+                  <p className="text-muted-foreground mt-0.5 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-muted-foreground" />
+                    Waiting for next report
                   </p>
                 )}
                 {change.status === "applied" && change.applied_at && (
