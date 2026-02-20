@@ -54,9 +54,9 @@ export function DeviceReadinessWidget({
 
   // ⚠️ SINGLE SOURCE OF TRUTH for uplink interval ⚠️
   // Fetch from sensor_config.uplink_interval_s (the actual configured value)
-  // NOT from units.checkin_interval_minutes (which may be stale/null)
+  // Falls back to catalog default, then 10 min (standard LoRaWAN default)
   const { data: sensorUplinkInterval } = useSensorUplinkInterval(unit?.id ?? null);
-  const uplinkIntervalMinutes = sensorUplinkInterval ?? unit?.checkin_interval_minutes ?? 5;
+  const uplinkIntervalMinutes = sensorUplinkInterval ?? unit?.checkin_interval_minutes ?? 10;
 
   // Resolve battery chemistry from sensor catalog (e.g. CR17450, LiFeS2_AA).
   // null means unknown — we'll still derive % using a generic curve but label it "N/A".
