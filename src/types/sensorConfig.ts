@@ -35,6 +35,8 @@ export interface SensorConfiguration {
   organization_id: string;
 
   uplink_interval_s: number | null;
+  /** Last interval confirmed by the sensor (only updated on confirmation) */
+  confirmed_uplink_interval_s: number | null;
   ext_mode: ExtMode | null;
 
   time_sync_enabled: boolean;
@@ -105,7 +107,7 @@ export type DownlinkCommandParams =
   | { type: 'clear_datalog' }
   | { type: 'pnackmd'; enable: boolean }
   | { type: 'raw'; hex: string; fport?: number }
-  | { type: 'catalog'; hex: string; fport: number; commandKey: string; commandName: string; expectedResult: string };
+  | { type: 'catalog'; hex: string; fport: number; commandKey: string; commandName: string; expectedResult: string; fieldValues?: Record<string, unknown> };
 
 // ---------------------------------------------------------------------------
 // Preset definitions

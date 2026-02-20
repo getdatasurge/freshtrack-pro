@@ -60,6 +60,37 @@ export function useSensorCatalogById(catalogId: string | null) {
 }
 
 /**
+ * Fallback hook: fetch a catalog entry by model name when sensor_catalog_id is null.
+ * Used when a sensor hasn't been linked to a catalog entry via FK but has a model string.
+ * Matches case-insensitively on the model column.
+ */
+export function useSensorCatalogByModel(model: string | null) {
+  return useQuery<SensorCatalogPublicEntry | null>({
+    queryKey: ["sensor-catalog-by-model", model?.toLowerCase()],
+    queryFn: async () => {
+      if (!model) return null;
+
+      const { data, error } = await supabase
+        .from("sensor_catalog")
+        .select(
+          "id, manufacturer, model, model_variant, display_name, sensor_kind, " +
+          "description, frequency_bands, supports_class, f_ports, decoded_fields, " +
+          "uplink_info, battery_info, downlink_info, is_supported, tags, " +
+          "decode_mode, temperature_unit"
+        )
+        .ilike("model", model.trim())
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      return (data ?? null) as unknown as SensorCatalogPublicEntry | null;
+    },
+    enabled: !!model,
+    staleTime: 5 * 60_000,
+  });
+}
+
+/**
  * Hook for super admins to read all catalog entries (including deprecated).
  */
 export function useSensorCatalog() {

@@ -328,10 +328,10 @@ export function ReadingsCountWidget({
           return { id, count: error ? 0 : (cnt ?? 0) };
         });
 
-        // Fetch configs (uplink_interval_s) for all sensors
+        // Fetch configs (prefer confirmed interval) for all sensors
         const { data: configs } = await supabase
           .from("sensor_configurations")
-          .select("sensor_id, uplink_interval_s")
+          .select("sensor_id, uplink_interval_s, confirmed_uplink_interval_s")
           .in("sensor_id", sensorIds);
 
         // Fetch catalog default intervals for sensors with a catalog reference
@@ -363,7 +363,7 @@ export function ReadingsCountWidget({
 
         const configMap = new Map<string, number | null>();
         for (const row of configs ?? []) {
-          configMap.set(row.sensor_id, row.uplink_interval_s ?? null);
+          configMap.set(row.sensor_id, row.confirmed_uplink_interval_s ?? row.uplink_interval_s ?? null);
         }
         setConfigIntervals(configMap);
 

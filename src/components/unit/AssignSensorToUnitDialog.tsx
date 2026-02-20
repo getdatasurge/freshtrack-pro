@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Radio, Check } from "lucide-react";
 import { useLoraSensors, useLinkSensorToUnit } from "@/hooks/useLoraSensors";
 import { LoraSensor } from "@/types/ttn";
+import { queueInitialSensorConfig } from "@/lib/sensorProvisioning";
+import { toast } from "sonner";
 
 interface AssignSensorToUnitDialogProps {
   open: boolean;
@@ -51,13 +53,29 @@ export function AssignSensorToUnitDialog({
 
   const handleAssign = () => {
     if (!selectedSensorId) return;
-    
+
     linkSensor.mutate(
       { sensorId: selectedSensorId, unitId, orgId: organizationId },
       {
-        onSuccess: () => {
+        onSuccess: async ({ sensor }) => {
           setSelectedSensorId(null);
           onOpenChange(false);
+
+          // Auto-queue initial config downlinks (confirmed uplinks, interval, alarms)
+          try {
+            const result = await queueInitialSensorConfig(
+              sensor.id,
+              unitId,
+              organizationId,
+            );
+            if (result.queued > 0) {
+              toast.success(
+                `Queued ${result.queued} initial config downlink${result.queued > 1 ? "s" : ""} — sensor will apply on next report`
+              );
+            }
+          } catch {
+            // Non-critical — sensor is linked, config can be set manually
+          }
         },
       }
     );

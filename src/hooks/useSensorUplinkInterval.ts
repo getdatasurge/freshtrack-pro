@@ -57,13 +57,18 @@ export function useSensorUplinkInterval(unitId: string | null) {
 async function fetchSensorConfig(sensorId: string): Promise<number | null> {
   const { data: configData, error: configError } = await supabase
     .from("sensor_configurations")
-    .select("uplink_interval_s")
+    .select("uplink_interval_s, confirmed_uplink_interval_s")
     .eq("sensor_id", sensorId)
     .maybeSingle();
 
-  if (configError || !configData || !configData.uplink_interval_s) {
+  if (configError || !configData) {
     return null;
   }
 
-  return Math.round(configData.uplink_interval_s / 60);
+  // Prefer confirmed value (last sensor-acknowledged interval).
+  // Fall back to uplink_interval_s for backward compatibility.
+  const intervalS = configData.confirmed_uplink_interval_s ?? configData.uplink_interval_s;
+  if (!intervalS) return null;
+
+  return Math.round(intervalS / 60);
 }
