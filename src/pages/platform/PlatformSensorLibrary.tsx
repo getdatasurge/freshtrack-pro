@@ -68,6 +68,18 @@ import {
   Play,
   Pencil,
   Save,
+  UtensilsCrossed,
+  Snowflake,
+  Building2,
+  Sprout,
+  Factory,
+  HeartPulse,
+  Sun,
+  Bell,
+  Layers,
+  Eye,
+  Gauge,
+  SlidersHorizontal,
 } from "lucide-react";
 import type {
   SensorCatalogEntry,
@@ -79,6 +91,7 @@ import type {
   TemperatureUnit,
   ActiveDecoderSource,
   RepoTestFixture,
+  IndustryVertical,
 } from "@/types/sensorCatalog";
 import { runDecoderFromHex, compareDecoders } from "@/lib/client-codec-runner";
 import type { DecoderTestResult } from "@/lib/client-codec-runner";
@@ -151,6 +164,9 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
     repo_test_fixtures: [{ description: "Temperature with DS18B20 probe", fPort: 2, bytes: "CBF60B0D03760100ADD7FFF", expectedOutput: { BatV: 3.062, Bat_status: 3, Ext_sensor: "Temperature Sensor", Hum_SHT: 88.6, TempC_DS: 27.81, TempC_SHT: 28.29 } }],
     active_decoder_source: "ttn_only",
+    industries: ["food_service", "cold_chain", "healthcare"],
+    industry_use_cases: { food_service: "Walk-in cooler/freezer monitoring", cold_chain: "Cold storage temperature tracking", healthcare: "Vaccine refrigerator compliance" },
+    subcategory: "temperature",
   },
   {
     id: "seed-2",
@@ -204,6 +220,9 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
     repo_test_fixtures: [{ description: "Door mode - distance detection", fPort: 10, bytes: "0B880100250001", expectedOutput: { ALARM: 0, BAT_V: 2.952, DOOR_OPEN_STATUS: 0, DOOR_OPEN_TIMES: 9472, LAST_DOOR_OPEN_DURATION: 65536, MOD: 1 } }],
     active_decoder_source: "ttn_only",
+    industries: ["food_service", "cold_chain", "healthcare"],
+    industry_use_cases: { food_service: "Walk-in door monitoring", cold_chain: "Loading dock door tracking", healthcare: "Medication cabinet access" },
+    subcategory: "door_contact",
   },
   {
     id: "seed-3",
@@ -255,6 +274,9 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
     repo_test_fixtures: [{ description: "ERS CO2 temperature, humidity, light, motion and co2", fPort: 1, bytes: "0100E2022900270506060308", expectedOutput: { temperature: 22.6, humidity: 41, light: 39, motion: 6, co2: 776 } }],
     active_decoder_source: "repo",
+    industries: ["food_service", "smart_building"],
+    industry_use_cases: { food_service: "Kitchen ventilation and CO2 monitoring", smart_building: "Indoor air quality and CO2 compliance" },
+    subcategory: "air_quality",
   },
   {
     id: "seed-4",
@@ -297,6 +319,9 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
     repo_test_fixtures: [{ description: "Status report - door open", fPort: 6, bytes: "0102011E0100000000", expectedOutput: { Device: "R311A", Volt: 3, OnOff: 1 } }],
     active_decoder_source: "repo",
+    industries: ["food_service", "cold_chain", "healthcare"],
+    industry_use_cases: { food_service: "Cooler door monitoring", cold_chain: "Container door access", healthcare: "Restricted access monitoring" },
+    subcategory: "door_contact",
   },
   {
     id: "seed-5",
@@ -343,6 +368,131 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     repo_decoder_js: null, repo_decoder_source: null, repo_decoder_updated_at: null,
     user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
     repo_test_fixtures: [], active_decoder_source: "repo",
+    industries: ["food_service", "smart_building", "industrial"],
+    industry_use_cases: { food_service: "Floor drain and pipe leak detection", smart_building: "Water damage prevention", industrial: "Equipment leak detection" },
+    subcategory: "water_leak",
+  },
+  // ─── Additional seed entries for industry coverage ──────────
+  {
+    id: "seed-6",
+    manufacturer: "Milesight",
+    model: "EM300-TH",
+    model_variant: null,
+    display_name: "Milesight EM300-TH Temperature & Humidity Sensor",
+    sensor_kind: "temp_humidity",
+    description: "IP67-rated outdoor/indoor LoRaWAN temperature and humidity sensor. High accuracy with wide operating range.",
+    frequency_bands: ["US915", "EU868", "AU915", "AS923"],
+    lorawan_version: "1.0.3", regional_params: null, supports_otaa: true, supports_abp: false, supports_class: "A",
+    f_ports: [{ port: 1, direction: "up", description: "Telemetry uplink", is_default: true }],
+    decoded_fields: [
+      { field: "temperature", type: "number", unit: "\u00b0C", range: [-40, 85], description: "Temperature" },
+      { field: "humidity", type: "number", unit: "%", range: [0, 100], description: "Relative humidity" },
+    ],
+    sample_payloads: [], uplink_info: {}, battery_info: {}, downlink_info: {},
+    decoder_js: null, decoder_python: null, decoder_source_url: null,
+    decoder_provenance: {}, sample_payload_provenance: {}, decoder_test_vectors: [],
+    image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: "milesight-iot/em300-th",
+    is_supported: true, is_visible: true, sort_order: 400,
+    tags: ["temperature", "humidity", "ip67"], notes: null,
+    decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
+    created_at: "2026-02-20T00:00:00Z", updated_at: "2026-02-20T00:00:00Z", created_by: null,
+    repo_decoder_js: null, repo_decoder_source: "TheThingsNetwork/lorawan-devices @ 0db7de31", repo_decoder_updated_at: null,
+    user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
+    repo_test_fixtures: [], active_decoder_source: "repo",
+    industries: ["food_service", "cold_chain", "smart_building", "healthcare"],
+    industry_use_cases: { food_service: "Commercial refrigeration", cold_chain: "Cold storage rooms", smart_building: "HVAC monitoring", healthcare: "Vaccine storage compliance" },
+    subcategory: "temperature",
+  },
+  {
+    id: "seed-7",
+    manufacturer: "Tektelic",
+    model: "Smart Room Base",
+    model_variant: null,
+    display_name: "Tektelic Smart Room Sensor Base",
+    sensor_kind: "multi_sensor",
+    description: "Premium indoor smart room sensor measuring temperature, humidity, light, and motion.",
+    frequency_bands: ["US915", "EU868", "AU915", "AS923"],
+    lorawan_version: "1.0.3", regional_params: null, supports_otaa: true, supports_abp: false, supports_class: "A",
+    f_ports: [{ port: 10, direction: "up", description: "Sensor data", is_default: true }],
+    decoded_fields: [
+      { field: "temperature", type: "number", unit: "\u00b0C", range: [-40, 85], description: "Temperature" },
+      { field: "humidity", type: "number", unit: "%", range: [0, 100], description: "Relative humidity" },
+      { field: "light", type: "number", unit: "lux", range: [0, 65535], description: "Ambient light" },
+    ],
+    sample_payloads: [], uplink_info: {}, battery_info: {}, downlink_info: {},
+    decoder_js: null, decoder_python: null, decoder_source_url: null,
+    decoder_provenance: {}, sample_payload_provenance: {}, decoder_test_vectors: [],
+    image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: "tektelic/t000489x-smart-room-base",
+    is_supported: true, is_visible: true, sort_order: 500,
+    tags: ["indoor", "multi-sensor", "enterprise"], notes: null,
+    decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
+    created_at: "2026-02-20T00:00:00Z", updated_at: "2026-02-20T00:00:00Z", created_by: null,
+    repo_decoder_js: null, repo_decoder_source: "TheThingsNetwork/lorawan-devices @ 0db7de31", repo_decoder_updated_at: null,
+    user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
+    repo_test_fixtures: [], active_decoder_source: "repo",
+    industries: ["smart_building"],
+    industry_use_cases: { smart_building: "Room environment \u2014 temp, humidity, light, motion" },
+    subcategory: "multi_sensor",
+  },
+  {
+    id: "seed-8",
+    manufacturer: "Milesight",
+    model: "EM500-SMTC",
+    model_variant: null,
+    display_name: "Milesight EM500-SMTC Soil Moisture/Temp/Conductivity",
+    sensor_kind: "soil",
+    description: "LoRaWAN soil sensor measuring moisture, temperature, and electrical conductivity for precision agriculture.",
+    frequency_bands: ["US915", "EU868", "AU915", "AS923"],
+    lorawan_version: "1.0.3", regional_params: null, supports_otaa: true, supports_abp: false, supports_class: "A",
+    f_ports: [{ port: 1, direction: "up", description: "Telemetry uplink", is_default: true }],
+    decoded_fields: [
+      { field: "soil_moisture", type: "number", unit: "%", range: [0, 100], description: "Soil moisture" },
+      { field: "soil_temperature", type: "number", unit: "\u00b0C", range: [-40, 85], description: "Soil temperature" },
+      { field: "soil_ec", type: "number", unit: "uS/cm", range: [0, 20000], description: "Soil electrical conductivity" },
+    ],
+    sample_payloads: [], uplink_info: {}, battery_info: {}, downlink_info: {},
+    decoder_js: null, decoder_python: null, decoder_source_url: null,
+    decoder_provenance: {}, sample_payload_provenance: {}, decoder_test_vectors: [],
+    image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: "milesight-iot/em500-smtc",
+    is_supported: true, is_visible: true, sort_order: 430,
+    tags: ["soil", "moisture", "agriculture"], notes: null,
+    decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
+    created_at: "2026-02-20T00:00:00Z", updated_at: "2026-02-20T00:00:00Z", created_by: null,
+    repo_decoder_js: null, repo_decoder_source: "TheThingsNetwork/lorawan-devices @ 0db7de31", repo_decoder_updated_at: null,
+    user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
+    repo_test_fixtures: [], active_decoder_source: "repo",
+    industries: ["agriculture"],
+    industry_use_cases: { agriculture: "Soil moisture, temperature, and conductivity" },
+    subcategory: "soil",
+  },
+  {
+    id: "seed-9",
+    manufacturer: "Milesight",
+    model: "EM500-PT100",
+    model_variant: null,
+    display_name: "Milesight EM500-PT100 Industrial Temperature Sensor",
+    sensor_kind: "temp",
+    description: "LoRaWAN high-precision RTD temperature sensor using PT100 probe. Operating range -200\u00b0C to 800\u00b0C.",
+    frequency_bands: ["US915", "EU868", "AU915", "AS923"],
+    lorawan_version: "1.0.3", regional_params: null, supports_otaa: true, supports_abp: false, supports_class: "A",
+    f_ports: [{ port: 1, direction: "up", description: "Telemetry uplink", is_default: true }],
+    decoded_fields: [
+      { field: "temperature", type: "number", unit: "\u00b0C", range: [-200, 800], description: "PT100 RTD temperature" },
+    ],
+    sample_payloads: [], uplink_info: {}, battery_info: {}, downlink_info: {},
+    decoder_js: null, decoder_python: null, decoder_source_url: null,
+    decoder_provenance: {}, sample_payload_provenance: {}, decoder_test_vectors: [],
+    image_url: null, datasheet_url: null, product_url: null, ttn_device_repo_id: "milesight-iot/em500-pt100",
+    is_supported: true, is_visible: true, sort_order: 440,
+    tags: ["temperature", "pt100", "industrial", "precision"], notes: null,
+    decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
+    created_at: "2026-02-20T00:00:00Z", updated_at: "2026-02-20T00:00:00Z", created_by: null,
+    repo_decoder_js: null, repo_decoder_source: "TheThingsNetwork/lorawan-devices @ 0db7de31", repo_decoder_updated_at: null,
+    user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
+    repo_test_fixtures: [], active_decoder_source: "repo",
+    industries: ["industrial", "healthcare"],
+    industry_use_cases: { industrial: "High-precision RTD temperature", healthcare: "Ultra-low freezer monitoring" },
+    subcategory: "temperature",
   },
 ];
 
@@ -352,7 +502,7 @@ const KIND_META: Record<string, { icon: typeof Thermometer; label: string; color
   temp_humidity: { icon: Droplets, label: "Temp & Humidity", color: "text-teal-600", bg: "bg-teal-50 dark:bg-teal-950/30" },
   door: { icon: DoorOpen, label: "Door/Contact", color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-950/30" },
   combo: { icon: Cpu, label: "Combo", color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-950/30" },
-  co2: { icon: Wind, label: "CO₂ / Air Quality", color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30" },
+  co2: { icon: Wind, label: "CO\u2082 / Air Quality", color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30" },
   leak: { icon: Droplets, label: "Water Leak", color: "text-cyan-600", bg: "bg-cyan-50 dark:bg-cyan-950/30" },
   gps: { icon: MapPin, label: "GPS Tracker", color: "text-red-600", bg: "bg-red-50 dark:bg-red-950/30" },
   pulse: { icon: Zap, label: "Pulse Counter", color: "text-orange-600", bg: "bg-orange-50 dark:bg-orange-950/30" },
@@ -361,11 +511,50 @@ const KIND_META: Record<string, { icon: typeof Thermometer; label: string; color
   vibration: { icon: Activity, label: "Vibration", color: "text-pink-600", bg: "bg-pink-50 dark:bg-pink-950/30" },
   meter: { icon: Database, label: "Meter", color: "text-slate-600", bg: "bg-slate-50 dark:bg-slate-950/30" },
   tilt: { icon: Radio, label: "Tilt", color: "text-violet-600", bg: "bg-violet-50 dark:bg-violet-950/30" },
+  light: { icon: Sun, label: "Light", color: "text-yellow-600", bg: "bg-yellow-50 dark:bg-yellow-950/30" },
+  panic_button: { icon: Bell, label: "Panic Button", color: "text-red-600", bg: "bg-red-50 dark:bg-red-950/30" },
+  multi_sensor: { icon: Layers, label: "Multi-Sensor", color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-950/30" },
+  occupancy: { icon: Eye, label: "Occupancy", color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30" },
+  level: { icon: Gauge, label: "Level", color: "text-sky-600", bg: "bg-sky-50 dark:bg-sky-950/30" },
+  analog_digital: { icon: SlidersHorizontal, label: "Analog/Digital", color: "text-gray-600", bg: "bg-gray-50 dark:bg-gray-950/30" },
 };
 
 function getKindMeta(kind: string) {
   return KIND_META[kind] ?? KIND_META.temp;
 }
+
+// ─── Industry metadata ───────────────────────────────────────
+const INDUSTRY_META: Record<IndustryVertical, { icon: typeof Thermometer; label: string; color: string; bg: string; border: string }> = {
+  food_service: { icon: UtensilsCrossed, label: "Food Service", color: "text-orange-700", bg: "bg-orange-100 dark:bg-orange-900/30", border: "border-orange-200 dark:border-orange-800" },
+  cold_chain: { icon: Snowflake, label: "Cold Chain", color: "text-blue-700", bg: "bg-blue-100 dark:bg-blue-900/30", border: "border-blue-200 dark:border-blue-800" },
+  smart_building: { icon: Building2, label: "Smart Building", color: "text-violet-700", bg: "bg-violet-100 dark:bg-violet-900/30", border: "border-violet-200 dark:border-violet-800" },
+  agriculture: { icon: Sprout, label: "Agriculture", color: "text-green-700", bg: "bg-green-100 dark:bg-green-900/30", border: "border-green-200 dark:border-green-800" },
+  industrial: { icon: Factory, label: "Industrial", color: "text-slate-700", bg: "bg-slate-100 dark:bg-slate-900/30", border: "border-slate-200 dark:border-slate-800" },
+  healthcare: { icon: HeartPulse, label: "Healthcare", color: "text-rose-700", bg: "bg-rose-100 dark:bg-rose-900/30", border: "border-rose-200 dark:border-rose-800" },
+  utilities: { icon: Zap, label: "Utilities", color: "text-amber-700", bg: "bg-amber-100 dark:bg-amber-900/30", border: "border-amber-200 dark:border-amber-800" },
+};
+
+const INDUSTRY_ORDER: IndustryVertical[] = [
+  "food_service", "cold_chain", "smart_building", "agriculture",
+  "industrial", "healthcare", "utilities",
+];
+
+// ─── Subcategory labels ──────────────────────────────────────
+const SUBCATEGORY_LABELS: Record<string, string> = {
+  temperature: "Temperature Sensors",
+  door_contact: "Door & Contact Sensors",
+  air_quality: "Air Quality Sensors",
+  multi_sensor: "Multi-Sensors",
+  vibration: "Vibration Sensors",
+  water_leak: "Water Leak Sensors",
+  level: "Level Sensors",
+  occupancy: "Occupancy Sensors",
+  soil: "Soil Sensors",
+  tilt: "Tilt Sensors",
+  light: "Light Sensors",
+  analog_digital: "Analog/Digital Inputs",
+  panic_button: "Panic Buttons",
+};
 
 // ─── JSON Block with copy ────────────────────────────────────
 function JsonBlock({ data, maxHeight = "360px" }: { data: unknown; maxHeight?: string }) {
@@ -892,8 +1081,26 @@ function SensorCard({ sensor, onClick }: { sensor: SensorCatalogEntry; onClick: 
           </CardDescription>
         </div>
       </CardHeader>
-      <CardContent className="pt-0">
-        <div className="flex gap-4 text-xs text-muted-foreground border-t pt-3">
+      <CardContent className="pt-0 space-y-2.5">
+        {/* Industry badges */}
+        {sensor.industries?.length > 0 && (
+          <div className="flex gap-1 flex-wrap">
+            {sensor.industries.slice(0, 3).map((ind) => {
+              const indMeta = INDUSTRY_META[ind];
+              if (!indMeta) return null;
+              const IndIcon = indMeta.icon;
+              return (
+                <span key={ind} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${indMeta.bg} ${indMeta.color}`}>
+                  <IndIcon className="w-2.5 h-2.5" />{indMeta.label}
+                </span>
+              );
+            })}
+            {sensor.industries.length > 3 && (
+              <span className="text-[10px] text-muted-foreground">+{sensor.industries.length - 3}</span>
+            )}
+          </div>
+        )}
+        <div className="flex gap-4 text-xs text-muted-foreground border-t pt-2.5">
           <span className="flex items-center gap-1">
             <FileJson className="w-3.5 h-3.5" />
             {sensor.sample_payloads?.length || 0} samples
@@ -902,10 +1109,11 @@ function SensorCard({ sensor, onClick }: { sensor: SensorCatalogEntry; onClick: 
             <Database className="w-3.5 h-3.5" />
             {sensor.decoded_fields?.length || 0} fields
           </span>
-          <span className="flex items-center gap-1">
-            <Radio className="w-3.5 h-3.5" />
-            {sensor.f_ports?.length || 0} ports
-          </span>
+          {(sensor.repo_decoder_js || sensor.decoder_js) && (
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-green-300 text-green-700 dark:border-green-700 dark:text-green-400">
+              TTN Decoder
+            </Badge>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -1211,6 +1419,37 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
           <Badge variant="outline" className="text-xs">TTN: {sensor.ttn_device_repo_id}</Badge>
         )}
       </div>
+
+      {/* Industries & Use Cases */}
+      {sensor.industries?.length > 0 && (
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Industries & Use Cases</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {sensor.industries.map((ind) => {
+                const indMeta = INDUSTRY_META[ind];
+                if (!indMeta) return null;
+                const IndIcon = indMeta.icon;
+                const useCase = sensor.industry_use_cases?.[ind];
+                return (
+                  <div key={ind} className={`flex items-start gap-2.5 p-2.5 rounded-lg border ${indMeta.border} ${indMeta.bg}`}>
+                    <IndIcon className={`w-4 h-4 mt-0.5 ${indMeta.color}`} />
+                    <div>
+                      <p className={`text-xs font-semibold ${indMeta.color}`}>{indMeta.label}</p>
+                      {useCase && <p className="text-xs text-muted-foreground mt-0.5">{useCase}</p>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {sensor.subcategory && (
+              <div className="mt-2 text-xs text-muted-foreground">
+                Subcategory: <Badge variant="secondary" className="text-xs ml-1">{SUBCATEGORY_LABELS[sensor.subcategory] ?? sensor.subcategory}</Badge>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tags */}
       {sensor.tags?.length > 0 && (
@@ -1667,6 +1906,7 @@ export default function PlatformSensorLibrary() {
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState("all");
   const [mfrFilter, setMfrFilter] = useState("all");
+  const [industryFilter, setIndustryFilter] = useState<IndustryVertical | "all">("all");
   const [selectedSensorId, setSelectedSensorId] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -1680,10 +1920,23 @@ export default function PlatformSensorLibrary() {
   const manufacturers = useMemo(() => [...new Set(catalog.map((s) => s.manufacturer))].sort(), [catalog]);
   const kinds = useMemo(() => [...new Set(catalog.map((s) => s.sensor_kind))].sort(), [catalog]);
 
+  // Count sensors per industry
+  const industryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const ind of INDUSTRY_ORDER) counts[ind] = 0;
+    for (const s of catalog) {
+      for (const ind of (s.industries ?? [])) {
+        counts[ind] = (counts[ind] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [catalog]);
+
   const filtered = useMemo(() => {
     return catalog.filter((s) => {
       if (kindFilter !== "all" && s.sensor_kind !== kindFilter) return false;
       if (mfrFilter !== "all" && s.manufacturer !== mfrFilter) return false;
+      if (industryFilter !== "all" && !(s.industries ?? []).includes(industryFilter)) return false;
       if (search) {
         const q = search.toLowerCase();
         return (
@@ -1691,19 +1944,32 @@ export default function PlatformSensorLibrary() {
           s.model.toLowerCase().includes(q) ||
           s.display_name.toLowerCase().includes(q) ||
           s.description?.toLowerCase().includes(q) ||
-          s.tags?.some((t) => t.includes(q))
+          s.tags?.some((t) => t.includes(q)) ||
+          s.subcategory?.toLowerCase().includes(q)
         );
       }
       return true;
     });
-  }, [catalog, search, kindFilter, mfrFilter]);
+  }, [catalog, search, kindFilter, mfrFilter, industryFilter]);
+
+  // Group filtered sensors by subcategory when industry filter is active
+  const groupedBySubcategory = useMemo(() => {
+    if (industryFilter === "all") return null;
+    const groups: Record<string, SensorCatalogEntry[]> = {};
+    for (const s of filtered) {
+      const cat = s.subcategory ?? "other";
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(s);
+    }
+    return groups;
+  }, [filtered, industryFilter]);
 
   const stats = useMemo(() => ({
     total: catalog.length,
     supported: catalog.filter((s) => s.is_supported).length,
     manufacturers: manufacturers.length,
-    totalPayloads: catalog.reduce((sum, s) => sum + (s.sample_payloads?.length || 0), 0),
-  }), [catalog, manufacturers]);
+    industries: Object.values(industryCounts).filter((c) => c > 0).length,
+  }), [catalog, manufacturers, industryCounts]);
 
   const handleAddSensor = useCallback(async (entry: SensorCatalogInsert) => {
     try {
@@ -1798,7 +2064,7 @@ export default function PlatformSensorLibrary() {
           { label: "Total Models", value: stats.total, color: "text-blue-600" },
           { label: "Supported", value: stats.supported, color: "text-green-600" },
           { label: "Manufacturers", value: stats.manufacturers, color: "text-purple-600" },
-          { label: "Sample Payloads", value: stats.totalPayloads, color: "text-amber-600" },
+          { label: "Industries", value: stats.industries, color: "text-amber-600" },
         ].map((s) => (
           <Card key={s.label}>
             <CardContent className="flex items-center gap-3 py-3 px-4">
@@ -1815,6 +2081,39 @@ export default function PlatformSensorLibrary() {
           Database query failed — showing seed data. Run the sensor_catalog migration to enable live data.
         </div>
       )}
+
+      {/* Industry filter bar */}
+      <div className="flex gap-2 mb-4 items-center flex-wrap">
+        <Button
+          variant={industryFilter === "all" ? "default" : "outline"}
+          size="sm"
+          className="h-8 text-xs"
+          onClick={() => setIndustryFilter("all")}
+        >
+          All Industries
+          <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">{catalog.length}</Badge>
+        </Button>
+        {INDUSTRY_ORDER.map((ind) => {
+          const indMeta = INDUSTRY_META[ind];
+          const count = industryCounts[ind] ?? 0;
+          if (count === 0) return null;
+          const IndIcon = indMeta.icon;
+          const isActive = industryFilter === ind;
+          return (
+            <Button
+              key={ind}
+              variant={isActive ? "default" : "outline"}
+              size="sm"
+              className={`h-8 text-xs ${isActive ? "" : `${indMeta.color} hover:${indMeta.bg}`}`}
+              onClick={() => setIndustryFilter(isActive ? "all" : ind)}
+            >
+              <IndIcon className="w-3.5 h-3.5 mr-1" />
+              {indMeta.label}
+              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">{count}</Badge>
+            </Button>
+          );
+        })}
+      </div>
 
       {/* Filters */}
       <div className="flex gap-3 mb-6 items-center bg-muted/50 rounded-xl p-3">
@@ -1875,6 +2174,25 @@ export default function PlatformSensorLibrary() {
           <Cpu className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="font-semibold">No sensors found</p>
           <p className="text-sm mt-1">Try adjusting your filters or add a new sensor model.</p>
+        </div>
+      ) : groupedBySubcategory && viewMode === "grid" ? (
+        /* Grouped by subcategory when industry is selected */
+        <div className="space-y-6">
+          {Object.entries(groupedBySubcategory)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([subcategory, sensors]) => (
+            <div key={subcategory}>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+                {SUBCATEGORY_LABELS[subcategory] ?? subcategory}
+                <Badge variant="secondary" className="text-xs">{sensors.length}</Badge>
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {sensors.map((s) => (
+                  <SensorCard key={s.id} sensor={s} onClick={() => setSelectedSensorId(s.id)} />
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       ) : viewMode === "grid" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

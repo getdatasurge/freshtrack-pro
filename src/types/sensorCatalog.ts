@@ -178,7 +178,22 @@ export type SensorKind =
   | "air_quality"
   | "vibration"
   | "meter"
-  | "tilt";
+  | "tilt"
+  | "light"
+  | "panic_button"
+  | "multi_sensor"
+  | "occupancy"
+  | "level"
+  | "analog_digital";
+
+export type IndustryVertical =
+  | "food_service"
+  | "cold_chain"
+  | "smart_building"
+  | "agriculture"
+  | "industrial"
+  | "healthcare"
+  | "utilities";
 
 export type ActiveDecoderSource = 'repo' | 'user' | 'ttn_only';
 
@@ -242,6 +257,10 @@ export interface SensorCatalogEntry {
   user_decoder_updated_at: string | null;
   repo_test_fixtures: RepoTestFixture[];
   active_decoder_source: ActiveDecoderSource;
+  // Industry taxonomy
+  industries: IndustryVertical[];
+  industry_use_cases: Record<string, string>;
+  subcategory: string | null;
 }
 
 /**
@@ -268,6 +287,10 @@ export interface SensorCatalogPublicEntry {
   tags: string[];
   decode_mode: "ttn" | "trust" | "app" | "off";
   temperature_unit: "C" | "F";
+  // Industry taxonomy
+  industries: IndustryVertical[];
+  industry_use_cases: Record<string, string>;
+  subcategory: string | null;
 }
 
 export type DecodeMode = "ttn" | "trust" | "app" | "off";
