@@ -73,11 +73,13 @@ import type {
   SensorCatalogEntry,
   SensorCatalogInsert,
   SensorCatalogBatteryInfo,
+  SensorCatalogDownlinkInfo,
   SensorKind,
   DecodeMode,
   TemperatureUnit,
 } from "@/types/sensorCatalog";
 import BatterySpecifications from "@/components/platform/BatterySpecifications";
+import DownlinkEditor from "@/components/platform/DownlinkEditor";
 
 // ─── Seed data (fallback when DB is empty or loading) ────────
 const SEED_CATALOG: SensorCatalogEntry[] = [
@@ -911,45 +913,25 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
 
         {/* Downlink Config */}
         <TabsContent value="downlink">
-          {sensor.downlink_info?.supports_remote_config ? (
-            <div className="space-y-4">
-              <div className="flex gap-3 items-center">
-                <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  Remote Config Supported
-                </Badge>
-                {sensor.downlink_info.config_port != null && (
-                  <Badge variant="outline">Config Port: {sensor.downlink_info.config_port}</Badge>
-                )}
-              </div>
-              <Card>
-                <CardContent className="p-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Command</TableHead>
-                        <TableHead>Hex Template</TableHead>
-                        <TableHead>Description</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sensor.downlink_info.commands?.map((c, i) => (
-                        <TableRow key={i}>
-                          <TableCell className="font-semibold">{c.name}</TableCell>
-                          <TableCell className="font-mono text-xs text-amber-600">{c.hex_template}</TableCell>
-                          <TableCell className="text-muted-foreground">{c.description}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <div className="text-center py-12 text-muted-foreground">
-              <Settings className="w-8 h-8 mx-auto mb-2 opacity-40" />
-              <p>This sensor does not support remote configuration via downlinks.</p>
-            </div>
-          )}
+          <DownlinkEditor
+            downlinkInfo={sensor.downlink_info || {}}
+            sensorId={sensor.id}
+            parentEditing={editing}
+            onSave={(updatedDownlink: SensorCatalogDownlinkInfo) => {
+              updateCatalog.mutate(
+                { id: sensor.id, downlink_info: updatedDownlink },
+                {
+                  onSuccess: () => {
+                    toast({ title: "Saved", description: "Downlink configuration updated." });
+                  },
+                  onError: (err) => {
+                    toast({ title: "Save failed", description: err instanceof Error ? err.message : "Could not update. Ensure migrations are applied.", variant: "destructive" });
+                  },
+                }
+              );
+            }}
+            isSaving={updateCatalog.isPending}
+          />
         </TabsContent>
 
         {/* Decoder Code */}

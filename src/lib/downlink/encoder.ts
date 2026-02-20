@@ -107,6 +107,20 @@ function encodeField(
 /**
  * Encode a downlink command from its catalog definition + user-provided field values.
  * Returns the uppercase hex string ready to send to TTS.
+ *
+ * Uses positional template substitution: for each field (in command.fields order),
+ * the first remaining `{...}` placeholder in hex_template is replaced with the
+ * encoded hex bytes. Literal hex between or after placeholders is preserved.
+ *
+ * This means placeholder names (e.g. `{seconds_3byte_hex}`) are documentation
+ * only — the encoder matches by position, not name. The field's `encoding` type
+ * determines the byte count and format.
+ *
+ * Examples:
+ *   "01{seconds_3byte_hex}"           + [u24be field]        → "010001E0"
+ *   "A9{enable_byte}{seconds_2byte}"  + [bool01, u16be]      → "A901012C"
+ *   "34{confirmed_byte}"              + [bool01 field]        → "3401"
+ *   "2601"                            + [] (no fields)        → "2601"
  */
 export function encodeDownlinkCommand(
   command: CatalogDownlinkCommand,
@@ -118,23 +132,22 @@ export function encodeDownlinkCommand(
     return command.hex_template.toUpperCase();
   }
 
-  // Extract the fixed prefix bytes from hex_template (everything before first '{')
-  const braceIdx = command.hex_template.indexOf("{");
-  const commandPrefix = braceIdx >= 0
-    ? command.hex_template.substring(0, braceIdx)
-    : command.hex_template;
+  // Positional template substitution: replace each {…} placeholder in order
+  // with the corresponding field's encoded hex bytes.
+  let hex = command.hex_template;
 
-  // Encode each field in order
-  let paramBytes = "";
   for (const field of command.fields) {
     const value = fieldValues[field.name] ?? field.default;
     if (value === undefined) {
       throw new Error(`Missing value for field "${field.name}" in command "${command.key}"`);
     }
-    paramBytes += encodeField(field, value, displayTempUnit);
+    const encoded = encodeField(field, value, displayTempUnit);
+
+    // Replace the first remaining {…} placeholder (any name) with encoded bytes
+    hex = hex.replace(/\{[^}]+\}/, encoded);
   }
 
-  return (commandPrefix + paramBytes).toUpperCase();
+  return hex.toUpperCase();
 }
 
 /**
