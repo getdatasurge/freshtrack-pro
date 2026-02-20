@@ -180,6 +180,16 @@ export type SensorKind =
   | "meter"
   | "tilt";
 
+export type ActiveDecoderSource = 'repo' | 'user' | 'ttn_only';
+
+export interface RepoTestFixture {
+  description: string;
+  fPort: number;
+  bytes: string;
+  expectedOutput: Record<string, unknown> | null;
+  expectedErrors?: string[];
+}
+
 export interface SensorCatalogEntry {
   id: string;
   manufacturer: string;
@@ -223,6 +233,15 @@ export interface SensorCatalogEntry {
   created_at: string;
   updated_at: string;
   created_by: string | null;
+  // Dual decoder architecture
+  repo_decoder_js: string | null;
+  repo_decoder_source: string | null;
+  repo_decoder_updated_at: string | null;
+  user_decoder_js: string | null;
+  user_decoder_notes: string | null;
+  user_decoder_updated_at: string | null;
+  repo_test_fixtures: RepoTestFixture[];
+  active_decoder_source: ActiveDecoderSource;
 }
 
 /**

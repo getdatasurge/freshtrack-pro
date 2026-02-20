@@ -77,7 +77,11 @@ import type {
   SensorKind,
   DecodeMode,
   TemperatureUnit,
+  ActiveDecoderSource,
+  RepoTestFixture,
 } from "@/types/sensorCatalog";
+import { runDecoderFromHex, compareDecoders } from "@/lib/client-codec-runner";
+import type { DecoderTestResult } from "@/lib/client-codec-runner";
 import BatterySpecifications from "@/components/platform/BatterySpecifications";
 import DownlinkEditor from "@/components/platform/DownlinkEditor";
 
@@ -143,6 +147,10 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     created_at: "2025-12-01T00:00:00Z",
     updated_at: "2025-12-01T00:00:00Z",
     created_by: null,
+    repo_decoder_js: null, repo_decoder_source: "TheThingsNetwork/lorawan-devices @ 0db7de31", repo_decoder_updated_at: null,
+    user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
+    repo_test_fixtures: [{ description: "Temperature with DS18B20 probe", fPort: 2, bytes: "CBF60B0D03760100ADD7FFF", expectedOutput: { BatV: 3.062, Bat_status: 3, Ext_sensor: "Temperature Sensor", Hum_SHT: 88.6, TempC_DS: 27.81, TempC_SHT: 28.29 } }],
+    active_decoder_source: "ttn_only",
   },
   {
     id: "seed-2",
@@ -192,6 +200,10 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     notes: "Primary door sensor for FrostGuard. Paired with LHT65 per walk-in unit.",
     decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-01T00:00:00Z", updated_at: "2025-12-01T00:00:00Z", created_by: null,
+    repo_decoder_js: null, repo_decoder_source: "TheThingsNetwork/lorawan-devices @ 0db7de31", repo_decoder_updated_at: null,
+    user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
+    repo_test_fixtures: [{ description: "Door mode - distance detection", fPort: 10, bytes: "0B880100250001", expectedOutput: { ALARM: 0, BAT_V: 2.952, DOOR_OPEN_STATUS: 0, DOOR_OPEN_TIMES: 9472, LAST_DOOR_OPEN_DURATION: 65536, MOD: 1 } }],
+    active_decoder_source: "ttn_only",
   },
   {
     id: "seed-3",
@@ -239,6 +251,10 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     notes: "Premium multi-sensor. Consider for kitchen air quality compliance monitoring.",
     decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-15T00:00:00Z", updated_at: "2025-12-15T00:00:00Z", created_by: null,
+    repo_decoder_js: null, repo_decoder_source: "TheThingsNetwork/lorawan-devices @ 0db7de31", repo_decoder_updated_at: null,
+    user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
+    repo_test_fixtures: [{ description: "ERS CO2 temperature, humidity, light, motion and co2", fPort: 1, bytes: "0100E2022900270506060308", expectedOutput: { temperature: 22.6, humidity: 41, light: 39, motion: 6, co2: 776 } }],
+    active_decoder_source: "repo",
   },
   {
     id: "seed-4",
@@ -277,6 +293,10 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     notes: "Budget-friendly door sensor alternative.",
     decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2025-12-20T00:00:00Z", updated_at: "2025-12-20T00:00:00Z", created_by: null,
+    repo_decoder_js: null, repo_decoder_source: "TheThingsNetwork/lorawan-devices @ 0db7de31", repo_decoder_updated_at: null,
+    user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
+    repo_test_fixtures: [{ description: "Status report - door open", fPort: 6, bytes: "0102011E0100000000", expectedOutput: { Device: "R311A", Volt: 3, OnOff: 1 } }],
+    active_decoder_source: "repo",
   },
   {
     id: "seed-5",
@@ -320,6 +340,9 @@ const SEED_CATALOG: SensorCatalogEntry[] = [
     notes: "Detect water leaks near refrigeration equipment.",
     decode_mode: "trust", temperature_unit: "C", revision: 1, deprecated_at: null, deprecated_reason: null,
     created_at: "2026-01-05T00:00:00Z", updated_at: "2026-01-05T00:00:00Z", created_by: null,
+    repo_decoder_js: null, repo_decoder_source: null, repo_decoder_updated_at: null,
+    user_decoder_js: null, user_decoder_notes: null, user_decoder_updated_at: null,
+    repo_test_fixtures: [], active_decoder_source: "repo",
   },
 ];
 
@@ -367,6 +390,468 @@ function JsonBlock({ data, maxHeight = "360px" }: { data: unknown; maxHeight?: s
       >
         {json}
       </pre>
+    </div>
+  );
+}
+
+// ─── Decoder Tab (Dual Decoder Architecture) ────────────────
+function DecoderTab({
+  sensor,
+  editing,
+  editForm,
+  setEditForm,
+  updateCatalog,
+  toast,
+}: {
+  sensor: SensorCatalogEntry;
+  editing: boolean;
+  editForm: { decoder_js: string; [key: string]: unknown };
+  setEditForm: (form: any) => void;
+  updateCatalog: ReturnType<typeof useUpdateSensorCatalogEntry>;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  const [decoderSubTab, setDecoderSubTab] = useState<"official" | "custom" | "test" | "fixtures">("official");
+  const [testHex, setTestHex] = useState("");
+  const [testFPort, setTestFPort] = useState(sensor.f_ports?.find((p) => p.is_default)?.port ?? 2);
+  const [testResult, setTestResult] = useState<DecoderTestResult | null>(null);
+  const [comparisonResult, setComparisonResult] = useState<{ repo: DecoderTestResult | null; user: DecoderTestResult | null } | null>(null);
+  const [userDecoderDraft, setUserDecoderDraft] = useState(sensor.user_decoder_js ?? "");
+  const [userNotesDraft, setUserNotesDraft] = useState(sensor.user_decoder_notes ?? "");
+  const [savingUser, setSavingUser] = useState(false);
+  const [localActiveSource, setLocalActiveSource] = useState<ActiveDecoderSource>(sensor.active_decoder_source ?? "repo");
+
+  // Determine which decoder JS to use based on the active source
+  const activeDecoderJs = localActiveSource === "user"
+    ? (sensor.user_decoder_js ?? null)
+    : localActiveSource === "repo"
+    ? (sensor.repo_decoder_js ?? sensor.decoder_js ?? null)
+    : null;
+
+  const hasRepoDecoder = !!(sensor.repo_decoder_js || sensor.decoder_js);
+  const hasUserDecoder = !!(sensor.user_decoder_js);
+  const ttnDeviceRepoUrl = sensor.ttn_device_repo_id
+    ? `https://github.com/TheThingsNetwork/lorawan-devices/blob/master/vendor/${sensor.ttn_device_repo_id}.js`
+    : null;
+
+  const handleTestDecode = (source: "active" | "repo" | "user") => {
+    if (!testHex.trim()) return;
+    const decoderJs = source === "user"
+      ? (sensor.user_decoder_js ?? userDecoderDraft)
+      : source === "repo"
+      ? (sensor.repo_decoder_js ?? sensor.decoder_js)
+      : activeDecoderJs;
+
+    if (!decoderJs) {
+      setTestResult({ success: false, result: null, error: "No decoder available for this source", durationMs: 0 });
+      return;
+    }
+    const result = runDecoderFromHex(decoderJs, testHex, testFPort);
+    setTestResult(result);
+  };
+
+  const handleCompare = () => {
+    if (!testHex.trim()) return;
+    const repoJs = sensor.repo_decoder_js ?? sensor.decoder_js ?? null;
+    const userJs = sensor.user_decoder_js ?? (userDecoderDraft.trim() ? userDecoderDraft : null);
+    const repo = repoJs ? runDecoderFromHex(repoJs, testHex, testFPort) : null;
+    const user = userJs ? runDecoderFromHex(userJs, testHex, testFPort) : null;
+    setComparisonResult({ repo, user });
+  };
+
+  const handleSaveUserDecoder = () => {
+    setSavingUser(true);
+    updateCatalog.mutate(
+      {
+        id: sensor.id,
+        user_decoder_js: userDecoderDraft.trim() || null,
+        user_decoder_notes: userNotesDraft.trim() || null,
+        user_decoder_updated_at: new Date().toISOString(),
+        active_decoder_source: userDecoderDraft.trim() ? "user" : localActiveSource,
+      } as any,
+      {
+        onSuccess: () => {
+          setSavingUser(false);
+          toast({ title: "Saved", description: "Custom decoder updated." });
+        },
+        onError: (err) => {
+          setSavingUser(false);
+          toast({ title: "Save failed", description: err instanceof Error ? err.message : "Could not save custom decoder.", variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  const handleResetUserDecoder = () => {
+    setUserDecoderDraft("");
+    setUserNotesDraft("");
+    updateCatalog.mutate(
+      {
+        id: sensor.id,
+        user_decoder_js: null,
+        user_decoder_notes: null,
+        user_decoder_updated_at: null,
+        active_decoder_source: "repo",
+      } as any,
+      {
+        onSuccess: () => {
+          setLocalActiveSource("repo");
+          toast({ title: "Reset", description: "Custom decoder cleared. Using official TTN decoder." });
+        },
+        onError: (err) => {
+          toast({ title: "Reset failed", description: err instanceof Error ? err.message : "Could not reset.", variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  const handleChangeActiveSource = (source: ActiveDecoderSource) => {
+    setLocalActiveSource(source);
+    updateCatalog.mutate(
+      { id: sensor.id, active_decoder_source: source } as any,
+      {
+        onError: (err) => {
+          toast({ title: "Update failed", description: err instanceof Error ? err.message : "Could not update active decoder source.", variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  const loadFixture = (fixture: RepoTestFixture) => {
+    setTestHex(fixture.bytes);
+    setTestFPort(fixture.fPort);
+    setDecoderSubTab("test");
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Active decoder indicator */}
+      <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+        <span className="text-sm font-medium">Active decoder:</span>
+        <Select value={localActiveSource} onValueChange={(v) => handleChangeActiveSource(v as ActiveDecoderSource)}>
+          <SelectTrigger className="h-8 w-[200px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="repo">Official TTN Decoder</SelectItem>
+            <SelectItem value="user">Custom Override</SelectItem>
+            <SelectItem value="ttn_only">TTN Only (no local decode)</SelectItem>
+          </SelectContent>
+        </Select>
+        <Badge
+          className={
+            localActiveSource === "repo" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+            localActiveSource === "user" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+            "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400"
+          }
+        >
+          {localActiveSource === "repo" ? "Using: Official TTN" :
+           localActiveSource === "user" ? "Using: Custom" :
+           "Using: TTN Only (no local decode)"}
+        </Badge>
+      </div>
+
+      {/* Sub-tabs */}
+      <Tabs value={decoderSubTab} onValueChange={(v) => setDecoderSubTab(v as typeof decoderSubTab)}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="official" className="text-xs">Official TTN</TabsTrigger>
+          <TabsTrigger value="custom" className="text-xs">Custom Decoder</TabsTrigger>
+          <TabsTrigger value="test" className="text-xs">Test Decoder</TabsTrigger>
+          <TabsTrigger value="fixtures" className="text-xs">
+            Test Fixtures {sensor.repo_test_fixtures?.length > 0 && (
+              <Badge variant="secondary" className="ml-1 text-xs px-1">{sensor.repo_test_fixtures.length}</Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Official TTN Decoder (read-only) */}
+        <TabsContent value="official" className="space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+              Official TTN Decoder
+            </Badge>
+            {sensor.repo_decoder_source && (
+              <span className="text-xs text-muted-foreground">{sensor.repo_decoder_source}</span>
+            )}
+            {sensor.repo_decoder_updated_at && (
+              <span className="text-xs text-muted-foreground">
+                Synced {new Date(sensor.repo_decoder_updated_at).toLocaleDateString()}
+              </span>
+            )}
+            {ttnDeviceRepoUrl && (
+              <a
+                href={ttnDeviceRepoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+              >
+                <ExternalLink className="w-3 h-3" /> View on GitHub
+              </a>
+            )}
+          </div>
+          {(sensor.repo_decoder_js || sensor.decoder_js) ? (
+            <JsonBlock data={sensor.repo_decoder_js || sensor.decoder_js} maxHeight="500px" />
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Code className="w-8 h-8 mx-auto mb-2 opacity-40" />
+              <p className="text-sm">No official TTN decoder available for this sensor model.</p>
+              <p className="text-xs mt-1">Check if the sensor is in the TTN device repository, or add a custom decoder.</p>
+            </div>
+          )}
+          {/* Show legacy decoder_provenance if present */}
+          {sensor.decoder_provenance?.source && (
+            <div className="flex gap-2 items-center flex-wrap text-xs text-muted-foreground">
+              <Badge variant="outline" className="text-xs">
+                Source: {sensor.decoder_provenance.source.replace(/_/g, " ")}
+              </Badge>
+              {sensor.decoder_provenance?.commit_sha && (
+                <Badge variant="secondary" className="text-xs font-mono">
+                  {sensor.decoder_provenance.commit_sha.slice(0, 8)}
+                </Badge>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Custom Decoder (admin-editable) */}
+        <TabsContent value="custom" className="space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+              Custom Decoder Override
+            </Badge>
+            {sensor.user_decoder_updated_at && (
+              <span className="text-xs text-muted-foreground">
+                Updated {new Date(sensor.user_decoder_updated_at).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+
+          <Textarea
+            value={userDecoderDraft}
+            onChange={(e) => setUserDecoderDraft(e.target.value)}
+            rows={16}
+            className="font-mono text-xs leading-relaxed"
+            placeholder={"No custom decoder. Using official TTN decoder.\n\nPaste custom JavaScript here. Must define:\n  function decodeUplink(input) {\n    var bytes = input.bytes;\n    var fPort = input.fPort;\n    var data = {};\n    // ... decode bytes ...\n    return { data: data };\n  }"}
+          />
+
+          <div>
+            <Label className="text-xs text-muted-foreground">Notes (explain why this was customized)</Label>
+            <Textarea
+              value={userNotesDraft}
+              onChange={(e) => setUserNotesDraft(e.target.value)}
+              rows={2}
+              className="text-xs mt-1"
+              placeholder="e.g., Official decoder missing ext_sensor field for our hardware revision..."
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleSaveUserDecoder} disabled={savingUser}>
+              <Save className="w-4 h-4 mr-1" /> Save Custom Decoder
+            </Button>
+            {hasUserDecoder && (
+              <Button variant="outline" size="sm" onClick={handleResetUserDecoder}>
+                <RefreshCw className="w-4 h-4 mr-1" /> Reset to Official
+              </Button>
+            )}
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Must define a <code className="bg-muted px-1 py-0.5 rounded">decodeUplink(input)</code> function that accepts <code className="bg-muted px-1 py-0.5 rounded">{`{ bytes, fPort }`}</code> and returns <code className="bg-muted px-1 py-0.5 rounded">{`{ data: {...} }`}</code>.
+          </p>
+        </TabsContent>
+
+        {/* Test Decoder */}
+        <TabsContent value="test" className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Test Decoder</CardTitle>
+              <CardDescription className="text-xs">
+                Paste a hex payload to decode it using the active decoder. Use "Compare" to run both decoders side-by-side.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-3 items-end">
+                <div className="flex-1">
+                  <Label className="text-xs text-muted-foreground">Hex Payload</Label>
+                  <Input
+                    value={testHex}
+                    onChange={(e) => setTestHex(e.target.value)}
+                    placeholder="e.g., CBF60B0D037601 0ADD7FFF"
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div className="w-20">
+                  <Label className="text-xs text-muted-foreground">fPort</Label>
+                  <Input
+                    type="number"
+                    value={testFPort}
+                    onChange={(e) => setTestFPort(Number(e.target.value))}
+                    className="text-xs"
+                  />
+                </div>
+                <Button size="sm" onClick={() => handleTestDecode("active")} disabled={!testHex.trim() || !activeDecoderJs}>
+                  <Play className="w-4 h-4 mr-1" /> Decode
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleCompare} disabled={!testHex.trim()}>
+                  <Code className="w-4 h-4 mr-1" /> Compare
+                </Button>
+              </div>
+
+              {/* Quick fixture buttons */}
+              {sensor.repo_test_fixtures?.length > 0 && (
+                <div className="flex gap-2 flex-wrap items-center">
+                  <span className="text-xs text-muted-foreground">Load fixture:</span>
+                  {sensor.repo_test_fixtures.map((f, i) => (
+                    <Button
+                      key={i}
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-6 px-2"
+                      onClick={() => { setTestHex(f.bytes); setTestFPort(f.fPort); }}
+                    >
+                      {f.description}
+                    </Button>
+                  ))}
+                </div>
+              )}
+
+              {/* Single decode result */}
+              {testResult && !comparisonResult && (
+                <div className={`p-3 rounded-lg border ${testResult.success ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {testResult.success ? <Check className="w-4 h-4 text-green-600" /> : <X className="w-4 h-4 text-red-600" />}
+                    <span className="text-sm font-medium">{testResult.success ? "Decoded successfully" : "Decode failed"}</span>
+                    <span className="text-xs text-muted-foreground ml-auto">{testResult.durationMs.toFixed(1)}ms</span>
+                  </div>
+                  {testResult.error && <p className="text-xs text-red-600 font-mono">Error: {testResult.error}</p>}
+                  {testResult.result && (
+                    <JsonBlock data={testResult.result.data} maxHeight="280px" />
+                  )}
+                  {testResult.result?.warnings && testResult.result.warnings.length > 0 && (
+                    <div className="mt-2 text-xs text-amber-600">Warnings: {testResult.result.warnings.join(", ")}</div>
+                  )}
+                </div>
+              )}
+
+              {/* Side-by-side comparison */}
+              {comparisonResult && (
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Repo result */}
+                  <div className={`p-3 rounded-lg border ${comparisonResult.repo?.success ? "border-green-200 dark:border-green-800" : "border-red-200 dark:border-red-800"}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-xs">Official TTN</Badge>
+                      {comparisonResult.repo?.success ? (
+                        <Check className="w-3.5 h-3.5 text-green-600" />
+                      ) : (
+                        <X className="w-3.5 h-3.5 text-red-600" />
+                      )}
+                    </div>
+                    {comparisonResult.repo?.error && <p className="text-xs text-red-600 font-mono mb-2">{comparisonResult.repo.error}</p>}
+                    {comparisonResult.repo?.result && (
+                      <pre className="text-xs font-mono bg-muted p-2 rounded overflow-auto max-h-48">
+                        {JSON.stringify(comparisonResult.repo.result.data, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                  {/* User result */}
+                  <div className={`p-3 rounded-lg border ${comparisonResult.user?.success ? "border-blue-200 dark:border-blue-800" : "border-red-200 dark:border-red-800"}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-xs">Custom</Badge>
+                      {comparisonResult.user?.success ? (
+                        <Check className="w-3.5 h-3.5 text-blue-600" />
+                      ) : (
+                        <X className="w-3.5 h-3.5 text-red-600" />
+                      )}
+                    </div>
+                    {comparisonResult.user?.error && <p className="text-xs text-red-600 font-mono mb-2">{comparisonResult.user.error}</p>}
+                    {comparisonResult.user?.result && (
+                      <pre className="text-xs font-mono bg-muted p-2 rounded overflow-auto max-h-48">
+                        {JSON.stringify(comparisonResult.user.result.data, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                  {/* Match indicator */}
+                  {comparisonResult.repo?.success && comparisonResult.user?.success && (
+                    <div className="col-span-2">
+                      {JSON.stringify(comparisonResult.repo?.result?.data) === JSON.stringify(comparisonResult.user?.result?.data) ? (
+                        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 rounded text-xs text-green-700 dark:text-green-300">
+                          <Check className="w-4 h-4" /> Outputs match
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded text-xs text-amber-700 dark:text-amber-300">
+                          <AlertTriangle className="w-4 h-4" /> Outputs differ
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Test Fixtures from repo */}
+        <TabsContent value="fixtures" className="space-y-3">
+          {sensor.repo_test_fixtures?.length > 0 ? (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Test examples from the official TTN device repository codec YAML files.
+              </p>
+              {sensor.repo_test_fixtures.map((fixture, i) => (
+                <Card key={i}>
+                  <CardContent className="pt-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{fixture.description}</span>
+                      <div className="flex gap-2">
+                        <Badge variant="outline" className="text-xs">fPort: {fixture.fPort}</Badge>
+                        <Button variant="ghost" size="sm" className="text-xs h-6" onClick={() => loadFixture(fixture)}>
+                          <Play className="w-3 h-3 mr-1" /> Run This Example
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="font-mono text-xs bg-muted p-2 rounded">
+                      HEX: {fixture.bytes}
+                    </div>
+                    {fixture.expectedOutput && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Expected output:</p>
+                        <pre className="text-xs font-mono bg-muted p-2 rounded overflow-auto max-h-32">
+                          {JSON.stringify(fixture.expectedOutput, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                    {fixture.expectedErrors && (
+                      <div className="text-xs text-red-600">
+                        Expected errors: {fixture.expectedErrors.join(", ")}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <FileJson className="w-8 h-8 mx-auto mb-2 opacity-40" />
+              <p className="text-sm">No test fixtures available for this sensor model.</p>
+              <p className="text-xs mt-1">Test fixtures come from the TTN device repository codec YAML files.</p>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Legacy decoder_js — show if editing for backward compat */}
+      {editing && (
+        <div className="space-y-3 border-t pt-4">
+          <Label className="text-xs text-muted-foreground">Legacy Decoder JS (decoder_js column — existing)</Label>
+          <Textarea
+            value={editForm.decoder_js}
+            onChange={(e) => setEditForm({ ...editForm, decoder_js: e.target.value })}
+            rows={12}
+            className="font-mono text-xs leading-relaxed"
+            placeholder="function decodeUplink(input) { ... }"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -440,7 +925,6 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
   const [retireReason, setRetireReason] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [testResults, setTestResults] = useState<{ passed: boolean; actual: Record<string, unknown> | null; error?: string }[] | null>(null);
   const updateCatalog = useUpdateSensorCatalogEntry();
   const { toast } = useToast();
   // Local overrides for dropdowns — allows UI to respond even when DB mutation fails (e.g. seed data)
@@ -511,26 +995,6 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
 
   const meta = getKindMeta(editing ? editForm.sensor_kind : sensor.sensor_kind);
   const Icon = meta.icon;
-
-  const runTestVectors = useCallback(() => {
-    if (!sensor.decoder_js || !sensor.decoder_test_vectors?.length) return;
-    const results = sensor.decoder_test_vectors.map((tv) => {
-      try {
-        const hexPairs = tv.raw_hex.match(/.{1,2}/g);
-        if (!hexPairs) throw new Error("Invalid hex string");
-        const bytes = hexPairs.map((b) => parseInt(b, 16));
-        const wrappedCode = `${sensor.decoder_js}\nreturn decodeUplink(input);`;
-        const fn = new Function("input", wrappedCode);
-        const result = fn({ bytes, fPort: tv.f_port });
-        const actual = (result?.data ?? result) as Record<string, unknown>;
-        const passed = JSON.stringify(actual) === JSON.stringify(tv.expected_decoded);
-        return { passed, actual };
-      } catch (err: unknown) {
-        return { passed: false, actual: null, error: err instanceof Error ? err.message : String(err) };
-      }
-    });
-    setTestResults(results);
-  }, [sensor.decoder_js, sensor.decoder_test_vectors]);
 
   return (
     <div className="space-y-6">
@@ -934,125 +1398,16 @@ function SensorDetail({ sensor, onBack, onRetire, onDelete }: {
           />
         </TabsContent>
 
-        {/* Decoder Code */}
+        {/* Decoder Code — Dual Decoder Architecture */}
         <TabsContent value="decoder">
-          {editing ? (
-            <div className="space-y-3">
-              <Label className="text-xs text-muted-foreground">Decoder JavaScript (decodeUplink function)</Label>
-              <Textarea
-                value={editForm.decoder_js}
-                onChange={(e) => setEditForm({ ...editForm, decoder_js: e.target.value })}
-                rows={20}
-                className="font-mono text-xs leading-relaxed"
-                placeholder={`function decodeUplink(input) {\n  var bytes = input.bytes;\n  var port = input.fPort;\n  var data = {};\n  // ... decode bytes ...\n  return { data: data };\n}`}
-              />
-              <p className="text-xs text-muted-foreground">
-                Must export a <code className="bg-muted px-1 py-0.5 rounded">decodeUplink(input)</code> function that accepts <code className="bg-muted px-1 py-0.5 rounded">{`{ bytes, fPort }`}</code> and returns <code className="bg-muted px-1 py-0.5 rounded">{`{ data: {...} }`}</code>.
-              </p>
-            </div>
-          ) : sensor.decoder_js ? (
-            <div className="space-y-3">
-              <div className="flex gap-2 items-center flex-wrap">
-                <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">JavaScript</Badge>
-                {sensor.decoder_source_url && (
-                  <a
-                    href={sensor.decoder_source_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:underline flex items-center gap-1"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" /> Official Source
-                  </a>
-                )}
-                {sensor.decoder_provenance?.source && (
-                  <Badge variant="outline" className="text-xs">
-                    Source: {sensor.decoder_provenance.source.replace(/_/g, " ")}
-                  </Badge>
-                )}
-                {sensor.decoder_provenance?.commit_sha && (
-                  <Badge variant="secondary" className="text-xs font-mono">
-                    {sensor.decoder_provenance.commit_sha.slice(0, 8)}
-                  </Badge>
-                )}
-                {sensor.decoder_provenance?.retrieved_at && (
-                  <span className="text-xs text-muted-foreground">
-                    Retrieved {new Date(sensor.decoder_provenance.retrieved_at).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-              {sensor.decoder_test_vectors?.length > 0 && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-green-800 dark:text-green-200">
-                      {sensor.decoder_test_vectors.length} test vector{sensor.decoder_test_vectors.length !== 1 ? "s" : ""} available for verification
-                    </div>
-                    <Button variant="outline" size="sm" onClick={runTestVectors}>
-                      <Play className="w-4 h-4 mr-1" /> Run Tests
-                    </Button>
-                  </div>
-                  {testResults && (
-                    <div className="space-y-2">
-                      {sensor.decoder_test_vectors.map((tv, i) => {
-                        const result = testResults[i];
-                        if (!result) return null;
-                        return (
-                          <div
-                            key={i}
-                            className={`p-3 rounded-lg border ${
-                              result.passed
-                                ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
-                                : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              {result.passed ? (
-                                <Check className="w-4 h-4 text-green-600" />
-                              ) : (
-                                <X className="w-4 h-4 text-red-600" />
-                              )}
-                              <span className="text-sm font-medium">
-                                Vector {i + 1}: <code className="font-mono text-xs">{tv.raw_hex}</code> (port {tv.f_port})
-                              </span>
-                              <span className={`text-xs font-semibold ml-auto ${result.passed ? "text-green-600" : "text-red-600"}`}>
-                                {result.passed ? "PASS" : "FAIL"}
-                              </span>
-                            </div>
-                            {result.error && (
-                              <p className="text-xs text-red-600 mt-1 font-mono">Error: {result.error}</p>
-                            )}
-                            {!result.passed && result.actual && (
-                              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                                <div>
-                                  <p className="text-muted-foreground font-semibold mb-1">Expected:</p>
-                                  <pre className="font-mono bg-background p-2 rounded border overflow-auto max-h-32">{JSON.stringify(tv.expected_decoded, null, 2)}</pre>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground font-semibold mb-1">Got:</p>
-                                  <pre className="font-mono bg-background p-2 rounded border overflow-auto max-h-32">{JSON.stringify(result.actual, null, 2)}</pre>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      <div className={`text-sm font-semibold ${
-                        testResults.every((r) => r.passed) ? "text-green-600" : "text-red-600"
-                      }`}>
-                        {testResults.filter((r) => r.passed).length}/{testResults.length} tests passed
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-              <JsonBlock data={sensor.decoder_js} maxHeight="500px" />
-            </div>
-          ) : !editing ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Code className="w-8 h-8 mx-auto mb-2 opacity-40" />
-              <p>No decoder code uploaded yet.</p>
-              <p className="text-xs mt-1">Click Edit to add a JavaScript decoder function for this sensor model.</p>
-            </div>
-          ) : null}
+          <DecoderTab
+            sensor={sensor}
+            editing={editing}
+            editForm={editForm}
+            setEditForm={setEditForm}
+            updateCatalog={updateCatalog}
+            toast={toast}
+          />
         </TabsContent>
 
         {/* Battery */}

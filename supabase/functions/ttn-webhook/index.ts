@@ -776,6 +776,33 @@ async function handleLoraSensor(
       insertedReading = fullInsert;
     }
 
+    // ========================================
+    // DECODER CONFIDENCE: Fire-and-forget background comparison
+    // Writes to decoder_confidence_results for the admin dashboard.
+    // Failures are silent — never blocks or affects the production pipeline.
+    // ========================================
+    if (appDecoded && decodeMatch !== null && decoderIdStr) {
+      try {
+        const decoderSource = effectiveMode === 'app' ? 'user' : 'repo';
+        await supabase.from('decoder_confidence_results').insert({
+          sensor_id: sensor.id,
+          sensor_model: sensor.model,
+          ttn_decoded: networkHadData ? data.decoded : null,
+          local_decoded: appDecoded,
+          decoder_source: decoderSource,
+          is_match: decodeMatch,
+          mismatched_fields: decodeMismatchReason?.startsWith('key_diff:')
+            ? decodeMismatchReason.replace('key_diff:', '').split(',')
+            : [],
+          frm_payload_hex: rawPayloadHex,
+          f_port: fPort,
+        });
+      } catch (dcErr) {
+        // Silent — decoder confidence failures must never affect production
+        console.warn(`[TTN-WEBHOOK] ${requestId} | decoder_confidence_results insert failed (silent):`, dcErr);
+      }
+    }
+
     // Update unit
     const unitUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
 

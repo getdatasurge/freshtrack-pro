@@ -4,6 +4,9 @@ import {
   encodeDownlink,
   getSupportedDevices,
   clearCodecCache,
+  getActiveDecoder,
+  decodeWithSource,
+  getRepoDecoderSource,
 } from '../lorawan-codec-loader';
 
 describe('lorawan-codec-loader', () => {
@@ -85,6 +88,51 @@ describe('lorawan-codec-loader', () => {
       expect(result).not.toBeNull();
       expect(result!.fPort).toBe(7);
       expect(Array.isArray(result!.bytes)).toBe(true);
+    });
+  });
+
+  describe('getActiveDecoder (3-tier fallback)', () => {
+    it('returns user decoder when provided', () => {
+      const userJs = 'function decodeUplink(input) { return { data: { test: true } }; }';
+      const result = getActiveDecoder('DRAGINO_LHT65', userJs);
+      expect(result).toBe(userJs);
+    });
+
+    it('falls back to repo decoder when user is null', () => {
+      const result = getActiveDecoder('DRAGINO_LHT65', null);
+      expect(result).not.toBeNull();
+      expect(result).toContain('decodeUplink');
+    });
+
+    it('returns null for unknown model with no user decoder', () => {
+      const result = getActiveDecoder('NONEXISTENT_MODEL', null);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('decodeWithSource', () => {
+    it('decodes using an arbitrary JS string', () => {
+      const repoSource = getRepoDecoderSource('DRAGINO_LHT65');
+      expect(repoSource).not.toBeNull();
+
+      const bytes = [0xcb, 0xf6, 0x0b, 0x0d, 0x03, 0x76, 0x01, 0x0a, 0xdd, 0x7f, 0xff];
+      const result = decodeWithSource(repoSource!, bytes, 2);
+
+      expect(result.data).toBeDefined();
+      expect((result.data as Record<string, unknown>).BatV).toBeCloseTo(3.062, 2);
+      expect((result.data as Record<string, unknown>).TempC_SHT).toBeCloseTo(28.29, 1);
+    });
+  });
+
+  describe('getRepoDecoderSource', () => {
+    it('returns JS source for known models', () => {
+      const source = getRepoDecoderSource('DRAGINO_LHT65');
+      expect(source).not.toBeNull();
+      expect(source!.length).toBeGreaterThan(100);
+    });
+
+    it('returns null for unknown models', () => {
+      expect(getRepoDecoderSource('NONEXISTENT')).toBeNull();
     });
   });
 });

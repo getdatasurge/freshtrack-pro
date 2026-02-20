@@ -126,3 +126,76 @@ export function getSupportedDevices(): string[] {
 export function clearCodecCache(): void {
   codecCache.clear();
 }
+
+// --- 3-Tier Decoder Support ---
+
+/**
+ * Get the active decoder JS source using the 3-tier priority system:
+ *   1. User override (if provided and non-empty)
+ *   2. Repo default from CODEC_REGISTRY (loaded from submodule files)
+ *   3. null (no decoder available)
+ */
+export function getActiveDecoder(
+  sensorModel: string,
+  userDecoderJs?: string | null,
+): string | null {
+  // Priority 1: User override
+  if (userDecoderJs && userDecoderJs.trim().length > 0) {
+    return userDecoderJs;
+  }
+
+  // Priority 2: Repo default
+  const codecPath = CODEC_REGISTRY[sensorModel];
+  if (codecPath) {
+    try {
+      const fullPath = resolve(getSubmodulePath(), codecPath);
+      return readFileSync(fullPath, 'utf-8');
+    } catch {
+      // Submodule file not available
+      return null;
+    }
+  }
+
+  // Priority 3: No decoder
+  return null;
+}
+
+/**
+ * Decode an uplink using an arbitrary JS decoder string.
+ * Does not use the CODEC_REGISTRY or cached modules.
+ * Useful for testing user-provided or repo decoders from the admin UI.
+ */
+export function decodeWithSource(
+  decoderJs: string,
+  bytes: number[],
+  fPort: number,
+): DecodedPayload {
+  const wrappedSource = `
+    ${decoderJs}
+    return decodeUplink(input);
+  `;
+  const factory = new Function('input', wrappedSource);
+  const result = factory({ bytes, fPort });
+
+  return {
+    data: (result?.data ?? result) as Record<string, unknown> | undefined,
+    errors: Array.isArray(result?.errors) ? result.errors : undefined,
+    warnings: Array.isArray(result?.warnings) ? result.warnings : undefined,
+  };
+}
+
+/**
+ * Read the raw JS source for a sensor model from the submodule.
+ * Returns null if the model is not in the registry or the file is missing.
+ */
+export function getRepoDecoderSource(sensorModel: string): string | null {
+  const codecPath = CODEC_REGISTRY[sensorModel];
+  if (!codecPath) return null;
+
+  try {
+    const fullPath = resolve(getSubmodulePath(), codecPath);
+    return readFileSync(fullPath, 'utf-8');
+  } catch {
+    return null;
+  }
+}

@@ -82,3 +82,78 @@ export function useDecoderMismatches(decoderId: string | null, limit = 50) {
     staleTime: 30_000,
   });
 }
+
+// ─── decoder_confidence_results table hooks ───────────────────
+
+export interface DecoderConfidenceResult {
+  id: string;
+  sensor_id: string | null;
+  sensor_model: string | null;
+  ttn_decoded: Record<string, unknown> | null;
+  local_decoded: Record<string, unknown> | null;
+  decoder_source: string | null;
+  is_match: boolean;
+  mismatched_fields: string[];
+  frm_payload_hex: string | null;
+  f_port: number | null;
+  created_at: string;
+}
+
+export interface DecoderConfidenceStats {
+  totalComparisons: number;
+  totalMatches: number;
+  totalMismatches: number;
+  matchRate: number | null;
+}
+
+/**
+ * Fetch recent decoder confidence results from the dedicated table.
+ * Returns per-model aggregated stats.
+ */
+export function useDecoderConfidenceResults(limit = 200) {
+  return useQuery<DecoderConfidenceResult[]>({
+    queryKey: ["decoder-confidence-results"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("decoder_confidence_results" as any)
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        const msg = error.message ?? "";
+        if (msg.includes("does not exist") || msg.includes("404") || msg.includes("Not Found")) {
+          console.warn("[DecoderConfidence] decoder_confidence_results table not available:", msg);
+          return [];
+        }
+        throw error;
+      }
+      return (data ?? []) as unknown as DecoderConfidenceResult[];
+    },
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/**
+ * Fetch recent mismatches from decoder_confidence_results for a specific sensor.
+ */
+export function useDecoderConfidenceMismatches(sensorId: string | null, limit = 50) {
+  return useQuery<DecoderConfidenceResult[]>({
+    queryKey: ["decoder-confidence-mismatches", sensorId],
+    enabled: !!sensorId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("decoder_confidence_results" as any)
+        .select("*")
+        .eq("sensor_id", sensorId!)
+        .eq("is_match", false)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (error) throw error;
+      return (data ?? []) as unknown as DecoderConfidenceResult[];
+    },
+    staleTime: 30_000,
+  });
+}

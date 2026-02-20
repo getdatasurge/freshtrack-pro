@@ -3,7 +3,9 @@ import PlatformLayout from "@/components/platform/PlatformLayout";
 import {
   useDecoderConfidence,
   useDecoderMismatches,
+  useDecoderConfidenceResults,
   type DecoderConfidenceRow,
+  type DecoderConfidenceResult,
 } from "@/hooks/useDecoderConfidence";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -287,6 +289,9 @@ export default function PlatformDecoderConfidence() {
         </div>
       )}
 
+      {/* Recent Decoder Confidence Results (from dedicated table) */}
+      <RecentConfidenceResults />
+
       {/* Mismatch drilldown dialog */}
       <Dialog open={!!selectedDecoder} onOpenChange={() => setSelectedDecoder(null)}>
         {selectedDecoder && (
@@ -297,5 +302,74 @@ export default function PlatformDecoderConfidence() {
         )}
       </Dialog>
     </PlatformLayout>
+  );
+}
+
+function RecentConfidenceResults() {
+  const { data: results = [], isLoading } = useDecoderConfidenceResults(100);
+
+  if (isLoading) return null;
+  if (results.length === 0) return null;
+
+  // Aggregate by sensor_model
+  const byModel = new Map<string, { total: number; matches: number; mismatches: number; recent: DecoderConfidenceResult[] }>();
+  for (const r of results) {
+    const key = r.sensor_model ?? "unknown";
+    const existing = byModel.get(key) ?? { total: 0, matches: 0, mismatches: 0, recent: [] };
+    existing.total++;
+    if (r.is_match) existing.matches++; else existing.mismatches++;
+    if (existing.recent.length < 5) existing.recent.push(r);
+    byModel.set(key, existing);
+  }
+
+  return (
+    <div className="mt-8 space-y-4">
+      <h2 className="text-lg font-semibold">Per-Model Confidence (decoder_confidence_results)</h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[...byModel.entries()].map(([model, stats]) => {
+          const rate = stats.total > 0 ? ((stats.matches / stats.total) * 100) : null;
+          return (
+            <Card key={model}>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-mono">{model}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3 text-sm">
+                  <span>{stats.total} compared</span>
+                  <span className="text-green-600">{stats.matches} match</span>
+                  <span className="text-destructive">{stats.mismatches} mismatch</span>
+                </div>
+                {rate !== null && (
+                  <div className="mt-1 flex items-center gap-1.5">
+                    {matchRateIcon(rate)}
+                    {matchRateBadge(rate)}
+                  </div>
+                )}
+                {stats.recent.filter(r => !r.is_match).length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Recent mismatches:</p>
+                    {stats.recent.filter(r => !r.is_match).slice(0, 3).map(r => (
+                      <div key={r.id} className="text-xs p-2 bg-red-50 dark:bg-red-900/20 rounded">
+                        <div className="flex gap-2 items-center">
+                          <Badge variant="outline" className="text-xs">fPort {r.f_port ?? "?"}</Badge>
+                          {r.frm_payload_hex && (
+                            <code className="font-mono truncate max-w-[120px]">{r.frm_payload_hex}</code>
+                          )}
+                        </div>
+                        {r.mismatched_fields?.length > 0 && (
+                          <p className="text-xs text-red-600 mt-1">
+                            Diff: {r.mismatched_fields.join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
   );
 }
