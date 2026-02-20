@@ -18,6 +18,7 @@ import {
   Activity,
   QrCode,
   Radio,
+  Bell,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,7 @@ const platformNavItems = [
   { href: "/platform/qr-provisioning", label: "QR Provisioning", icon: QrCode },
   { href: "/platform/gateways", label: "Gateways", icon: Radio },
   { href: "/platform/decoder-confidence", label: "Decoder Confidence", icon: Activity },
+  { href: "/platform/alarm-library", label: "Alarm Library", icon: Bell },
   { href: "/platform/audit", label: "Audit Log", icon: FileText },
   { href: "/platform/developer-tools", label: "Developer Tools", icon: Wrench },
 ];

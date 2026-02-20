@@ -79,6 +79,11 @@ export const qk = {
     // Health & status
     healthCheck: () => ['org', orgId, 'health-check'] as const,
     pipelineStatus: () => ['org', orgId, 'pipeline-status'] as const,
+
+    // Alarm Definition Library
+    alarmDefinitions: (filters?: Record<string, unknown>) => ['org', orgId, 'alarm-definitions', filters] as const,
+    alarmEvents: (filters?: Record<string, unknown>) => ['org', orgId, 'alarm-events', filters] as const,
+    alarmOverrides: () => ['org', orgId, 'alarm-overrides'] as const,
   }),
 
   /**
@@ -119,6 +124,9 @@ export const qk = {
 
     // Layouts (for unit dashboard)
     layouts: () => ['unit', unitId, 'layouts'] as const,
+
+    // Alarm Definition Library
+    alarmDefinitions: () => ['unit', unitId, 'alarm-definitions'] as const,
   }),
 
   /**
