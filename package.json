@@ -17,7 +17,8 @@
     "docs:tag": "node scripts/docs/create-docs-tag.js",
     "docs:site:dev": "cd docs-site && mkdocs serve",
     "docs:site:build": "cd docs-site && mkdocs build --strict",
-    "adr:new": "node scripts/docs/adr-new.js"
+    "adr:new": "node scripts/docs/adr-new.js",
+    "postinstall": "git submodule update --init --depth 1"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
