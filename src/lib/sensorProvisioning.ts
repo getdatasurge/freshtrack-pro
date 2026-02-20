@@ -154,12 +154,12 @@ export async function queueInitialSensorConfig(
     });
   }
 
-  // Door-open alarm
+  // Door-open alarm (TTRIG: A9 + enable + seconds)
   const openAlarmCmd = commands.find((c) => c.key === "set_open_alarm");
   if (openAlarmCmd && unitConfig.door_open_grace_minutes != null) {
     downlinksToQueue.push({
       command: openAlarmCmd,
-      values: { minutes: unitConfig.door_open_grace_minutes },
+      values: { enabled: true, minutes: unitConfig.door_open_grace_minutes },
     });
   }
 
