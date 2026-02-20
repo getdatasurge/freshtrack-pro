@@ -48,6 +48,7 @@ import PlatformSensorLibrary from "./pages/platform/PlatformSensorLibrary";
 import PlatformDecoderConfidence from "./pages/platform/PlatformDecoderConfidence";
 import PlatformQRProvisioning from "./pages/platform/PlatformQRProvisioning";
 import PlatformGateways from "./pages/platform/PlatformGateways";
+import PlatformAlarmLibrary from "./pages/platform/PlatformAlarmLibrary";
 import { PlatformGuard, ImpersonationCacheSync } from "./components/platform";
 import { RequireImpersonationGuard } from "./components/guards/RequireImpersonationGuard";
 
@@ -120,6 +121,7 @@ const App = () => (
               <Route path="/platform/qr-provisioning" element={<PlatformGuard><PlatformQRProvisioning /></PlatformGuard>} />
               <Route path="/platform/gateways" element={<PlatformGuard><PlatformGateways /></PlatformGuard>} />
               <Route path="/platform/decoder-confidence" element={<PlatformGuard><PlatformDecoderConfidence /></PlatformGuard>} />
+              <Route path="/platform/alarm-library" element={<PlatformGuard><PlatformAlarmLibrary /></PlatformGuard>} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
