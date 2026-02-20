@@ -833,7 +833,7 @@ const UnitDetail = () => {
       lastSeenAgeSec,
       lastReadingAt: lastReadingAtVal,
       lastReadingAgeSec,
-      checkinIntervalMinutes: effectiveRules.expected_reading_interval_seconds / 60,
+      checkinIntervalMinutes: sensorUplinkInterval ?? effectiveRules.expected_reading_interval_seconds / 60,
       sources: {
         primaryLoraSensorId: primaryLoraSensor?.id || null,
         loraSensorLastSeenAt: primaryLoraSensor?.last_seen_at || null,
@@ -849,6 +849,7 @@ const UnitDetail = () => {
     device?.id,
     computedStatus,
     effectiveRules.expected_reading_interval_seconds,
+    sensorUplinkInterval,
   ]);
 
   // Widget-compatible unit object (uses effective door state)

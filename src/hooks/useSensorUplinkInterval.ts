@@ -3,6 +3,12 @@
  *
  * This is the TRUE source of truth for uplink intervals.
  * Returns the interval in MINUTES (converted from seconds).
+ *
+ * Fallback chain:
+ * 1. sensor_configurations.confirmed_uplink_interval_s (sensor-acknowledged)
+ * 2. sensor_configurations.uplink_interval_s (pending/legacy)
+ * 3. sensor_catalog.uplink_info.default_interval_s (catalog default)
+ * 4. null (no data — caller decides final fallback)
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -21,7 +27,7 @@ export function useSensorUplinkInterval(unitId: string | null) {
       // have is_primary=true (each sensor_type group has its own primary).
       const { data: sensorRows, error: sensorError } = await supabase
         .from("lora_sensors")
-        .select("id, dev_eui, is_primary, sensor_type")
+        .select("id, dev_eui, is_primary, sensor_type, sensor_catalog_id")
         .eq("unit_id", unitId)
         .not("sensor_type", "in", '("door","contact")')
         .is("deleted_at", null)
@@ -36,17 +42,17 @@ export function useSensorUplinkInterval(unitId: string | null) {
         // No temp/combo sensor — try ANY sensor as last resort
         const { data: anySensor, error: anyError } = await supabase
           .from("lora_sensors")
-          .select("id, dev_eui, is_primary")
+          .select("id, dev_eui, is_primary, sensor_catalog_id")
           .eq("unit_id", unitId)
           .is("deleted_at", null)
           .limit(1)
           .maybeSingle();
 
         if (anyError || !anySensor) return null;
-        return fetchSensorConfig(anySensor.id);
+        return fetchSensorConfig(anySensor.id, anySensor.sensor_catalog_id);
       }
 
-      return fetchSensorConfig(sensorData.id);
+      return fetchSensorConfig(sensorData.id, sensorData.sensor_catalog_id);
     },
     enabled: !!unitId,
     staleTime: 60000, // Cache for 1 minute
@@ -54,21 +60,41 @@ export function useSensorUplinkInterval(unitId: string | null) {
   });
 }
 
-async function fetchSensorConfig(sensorId: string): Promise<number | null> {
+async function fetchSensorConfig(
+  sensorId: string,
+  catalogId?: string | null,
+): Promise<number | null> {
   const { data: configData, error: configError } = await supabase
     .from("sensor_configurations")
     .select("uplink_interval_s, confirmed_uplink_interval_s")
     .eq("sensor_id", sensorId)
     .maybeSingle();
 
-  if (configError || !configData) {
-    return null;
+  if (!configError && configData) {
+    // Prefer confirmed value (last sensor-acknowledged interval).
+    // Fall back to uplink_interval_s for backward compatibility.
+    const intervalS = configData.confirmed_uplink_interval_s ?? configData.uplink_interval_s;
+    if (intervalS) {
+      return Math.round(intervalS / 60);
+    }
   }
 
-  // Prefer confirmed value (last sensor-acknowledged interval).
-  // Fall back to uplink_interval_s for backward compatibility.
-  const intervalS = configData.confirmed_uplink_interval_s ?? configData.uplink_interval_s;
-  if (!intervalS) return null;
+  // No config row or both interval fields null — fall back to catalog default
+  if (catalogId) {
+    const { data: catalogData } = await supabase
+      .from("sensor_catalog")
+      .select("uplink_info")
+      .eq("id", catalogId)
+      .maybeSingle();
 
-  return Math.round(intervalS / 60);
+    if (catalogData?.uplink_info) {
+      const uplinkInfo = catalogData.uplink_info as Record<string, unknown>;
+      const defaultIntervalS = uplinkInfo?.default_interval_s;
+      if (typeof defaultIntervalS === "number" && defaultIntervalS > 0) {
+        return Math.round(defaultIntervalS / 60);
+      }
+    }
+  }
+
+  return null;
 }
