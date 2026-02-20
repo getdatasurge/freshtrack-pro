@@ -1,0 +1,62 @@
+name: Sync LoRaWAN Device Repository
+
+on:
+  schedule:
+    # Every Monday at midnight UTC
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-submodule:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Get current submodule commit
+        id: before
+        run: |
+          cd lib/lorawan-devices
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Update submodule to latest
+        run: git submodule update --remote lib/lorawan-devices
+
+      - name: Get updated submodule commit
+        id: after
+        run: |
+          cd lib/lorawan-devices
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short_commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Create Pull Request
+        if: steps.before.outputs.commit != steps.after.outputs.commit
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/sync-lorawan-devices
+          commit-message: 'chore: update lorawan-devices submodule to ${{ steps.after.outputs.short_commit }}'
+          title: 'chore: sync lorawan-devices (${{ steps.after.outputs.short_commit }} — ${{ steps.after.outputs.date }})'
+          body: |
+            ## LoRaWAN Device Repository Update
+
+            Updates `lib/lorawan-devices` submodule to upstream commit `${{ steps.after.outputs.commit }}`.
+
+            **Previous commit:** `${{ steps.before.outputs.commit }}`
+            **New commit:** `${{ steps.after.outputs.commit }}`
+
+            ### Review Checklist
+
+            - [ ] Check for new devices added to supported vendors (dragino, netvox, elsys)
+            - [ ] Review codec changes for devices we use (LHT65, LHT65N, LDS02, R311A, ERS CO2)
+            - [ ] Verify no breaking changes to `decodeUplink` / `encodeDownlink` function signatures
+            - [ ] Check for device profile changes that affect our configuration
+            - [ ] Run codec loader tests: `npx vitest run src/lib/__tests__/lorawan-codec-loader.test.ts`
+          labels: automated,sensor-library
