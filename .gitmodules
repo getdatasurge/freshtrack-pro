@@ -1,0 +1,3 @@
+[submodule "lib/lorawan-devices"]
+	path = lib/lorawan-devices
+	url = https://github.com/TheThingsNetwork/lorawan-devices.git
