@@ -62,6 +62,428 @@ export type Database = {
         }
         Relationships: []
       }
+      alarm_definitions: {
+        Row: {
+          ai_hints: string[] | null
+          applicable_sensor_types: Database["public"]["Enums"]["alarm_sensor_type"][]
+          applicable_unit_types: Database["public"]["Enums"]["alarm_unit_type"][]
+          category: Database["public"]["Enums"]["alarm_category"]
+          color: string | null
+          confidence_level: string
+          cooldown_minutes: number | null
+          corrective_action_text: string | null
+          created_at: string | null
+          description: string
+          detection_tier: Database["public"]["Enums"]["detection_tier"]
+          display_name: string
+          duration_minutes: number | null
+          emulator_enabled: boolean | null
+          emulator_payload: Json | null
+          enabled_by_default: boolean | null
+          escalation_minutes: number | null
+          escalation_to: string | null
+          eval_field: string | null
+          eval_logic: string | null
+          eval_params: Json | null
+          haccp_category: string | null
+          icon_name: string | null
+          id: string
+          is_system: boolean | null
+          notification_channels: string[] | null
+          notification_template: string | null
+          regulatory_reference: string | null
+          required_sensors: string
+          requires_corrective_action: boolean | null
+          severity: Database["public"]["Enums"]["alarm_severity"]
+          short_description: string | null
+          slug: string
+          sort_order: number
+          subcategory: Database["public"]["Enums"]["alarm_subcategory"]
+          tags: string[] | null
+          threshold_max: number | null
+          threshold_min: number | null
+          threshold_unit: string | null
+          updated_at: string | null
+          what_it_might_mean: string | null
+          what_we_observe: string
+        }
+        Insert: {
+          ai_hints?: string[] | null
+          applicable_sensor_types?: Database["public"]["Enums"]["alarm_sensor_type"][]
+          applicable_unit_types?: Database["public"]["Enums"]["alarm_unit_type"][]
+          category: Database["public"]["Enums"]["alarm_category"]
+          color?: string | null
+          confidence_level?: string
+          cooldown_minutes?: number | null
+          corrective_action_text?: string | null
+          created_at?: string | null
+          description: string
+          detection_tier?: Database["public"]["Enums"]["detection_tier"]
+          display_name: string
+          duration_minutes?: number | null
+          emulator_enabled?: boolean | null
+          emulator_payload?: Json | null
+          enabled_by_default?: boolean | null
+          escalation_minutes?: number | null
+          escalation_to?: string | null
+          eval_field?: string | null
+          eval_logic?: string | null
+          eval_params?: Json | null
+          haccp_category?: string | null
+          icon_name?: string | null
+          id?: string
+          is_system?: boolean | null
+          notification_channels?: string[] | null
+          notification_template?: string | null
+          regulatory_reference?: string | null
+          required_sensors: string
+          requires_corrective_action?: boolean | null
+          severity?: Database["public"]["Enums"]["alarm_severity"]
+          short_description?: string | null
+          slug: string
+          sort_order?: number
+          subcategory: Database["public"]["Enums"]["alarm_subcategory"]
+          tags?: string[] | null
+          threshold_max?: number | null
+          threshold_min?: number | null
+          threshold_unit?: string | null
+          updated_at?: string | null
+          what_it_might_mean?: string | null
+          what_we_observe: string
+        }
+        Update: {
+          ai_hints?: string[] | null
+          applicable_sensor_types?: Database["public"]["Enums"]["alarm_sensor_type"][]
+          applicable_unit_types?: Database["public"]["Enums"]["alarm_unit_type"][]
+          category?: Database["public"]["Enums"]["alarm_category"]
+          color?: string | null
+          confidence_level?: string
+          cooldown_minutes?: number | null
+          corrective_action_text?: string | null
+          created_at?: string | null
+          description?: string
+          detection_tier?: Database["public"]["Enums"]["detection_tier"]
+          display_name?: string
+          duration_minutes?: number | null
+          emulator_enabled?: boolean | null
+          emulator_payload?: Json | null
+          enabled_by_default?: boolean | null
+          escalation_minutes?: number | null
+          escalation_to?: string | null
+          eval_field?: string | null
+          eval_logic?: string | null
+          eval_params?: Json | null
+          haccp_category?: string | null
+          icon_name?: string | null
+          id?: string
+          is_system?: boolean | null
+          notification_channels?: string[] | null
+          notification_template?: string | null
+          regulatory_reference?: string | null
+          required_sensors?: string
+          requires_corrective_action?: boolean | null
+          severity?: Database["public"]["Enums"]["alarm_severity"]
+          short_description?: string | null
+          slug?: string
+          sort_order?: number
+          subcategory?: Database["public"]["Enums"]["alarm_subcategory"]
+          tags?: string[] | null
+          threshold_max?: number | null
+          threshold_min?: number | null
+          threshold_unit?: string | null
+          updated_at?: string | null
+          what_it_might_mean?: string | null
+          what_we_observe?: string
+        }
+        Relationships: []
+      }
+      alarm_events: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          alarm_definition_id: string
+          corrective_action_taken: string | null
+          dev_eui: string | null
+          escalated: boolean | null
+          escalated_at: string | null
+          escalation_count: number | null
+          id: string
+          org_id: string
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity_at_trigger: Database["public"]["Enums"]["alarm_severity"]
+          site_id: string | null
+          snoozed_until: string | null
+          state: string
+          trigger_field: string | null
+          trigger_payload: Json | null
+          trigger_value: number | null
+          triggered_at: string | null
+          unit_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alarm_definition_id: string
+          corrective_action_taken?: string | null
+          dev_eui?: string | null
+          escalated?: boolean | null
+          escalated_at?: string | null
+          escalation_count?: number | null
+          id?: string
+          org_id: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity_at_trigger: Database["public"]["Enums"]["alarm_severity"]
+          site_id?: string | null
+          snoozed_until?: string | null
+          state?: string
+          trigger_field?: string | null
+          trigger_payload?: Json | null
+          trigger_value?: number | null
+          triggered_at?: string | null
+          unit_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alarm_definition_id?: string
+          corrective_action_taken?: string | null
+          dev_eui?: string | null
+          escalated?: boolean | null
+          escalated_at?: string | null
+          escalation_count?: number | null
+          id?: string
+          org_id?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity_at_trigger?: Database["public"]["Enums"]["alarm_severity"]
+          site_id?: string | null
+          snoozed_until?: string | null
+          state?: string
+          trigger_field?: string | null
+          trigger_payload?: Json | null
+          trigger_value?: number | null
+          triggered_at?: string | null
+          unit_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alarm_events_alarm_definition_id_fkey"
+            columns: ["alarm_definition_id"]
+            isOneToOne: false
+            referencedRelation: "alarm_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alarm_org_overrides: {
+        Row: {
+          alarm_definition_id: string
+          cooldown_minutes: number | null
+          created_at: string | null
+          custom_corrective_action: string | null
+          duration_minutes: number | null
+          enabled: boolean | null
+          escalation_minutes: number | null
+          id: string
+          notification_channels: string[] | null
+          org_id: string
+          severity_override:
+            | Database["public"]["Enums"]["alarm_severity"]
+            | null
+          threshold_max: number | null
+          threshold_min: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          alarm_definition_id: string
+          cooldown_minutes?: number | null
+          created_at?: string | null
+          custom_corrective_action?: string | null
+          duration_minutes?: number | null
+          enabled?: boolean | null
+          escalation_minutes?: number | null
+          id?: string
+          notification_channels?: string[] | null
+          org_id: string
+          severity_override?:
+            | Database["public"]["Enums"]["alarm_severity"]
+            | null
+          threshold_max?: number | null
+          threshold_min?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          alarm_definition_id?: string
+          cooldown_minutes?: number | null
+          created_at?: string | null
+          custom_corrective_action?: string | null
+          duration_minutes?: number | null
+          enabled?: boolean | null
+          escalation_minutes?: number | null
+          id?: string
+          notification_channels?: string[] | null
+          org_id?: string
+          severity_override?:
+            | Database["public"]["Enums"]["alarm_severity"]
+            | null
+          threshold_max?: number | null
+          threshold_min?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alarm_org_overrides_alarm_definition_id_fkey"
+            columns: ["alarm_definition_id"]
+            isOneToOne: false
+            referencedRelation: "alarm_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alarm_site_overrides: {
+        Row: {
+          alarm_definition_id: string
+          cooldown_minutes: number | null
+          created_at: string | null
+          custom_corrective_action: string | null
+          duration_minutes: number | null
+          enabled: boolean | null
+          escalation_minutes: number | null
+          id: string
+          notification_channels: string[] | null
+          org_id: string
+          severity_override:
+            | Database["public"]["Enums"]["alarm_severity"]
+            | null
+          site_id: string
+          threshold_max: number | null
+          threshold_min: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          alarm_definition_id: string
+          cooldown_minutes?: number | null
+          created_at?: string | null
+          custom_corrective_action?: string | null
+          duration_minutes?: number | null
+          enabled?: boolean | null
+          escalation_minutes?: number | null
+          id?: string
+          notification_channels?: string[] | null
+          org_id: string
+          severity_override?:
+            | Database["public"]["Enums"]["alarm_severity"]
+            | null
+          site_id: string
+          threshold_max?: number | null
+          threshold_min?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          alarm_definition_id?: string
+          cooldown_minutes?: number | null
+          created_at?: string | null
+          custom_corrective_action?: string | null
+          duration_minutes?: number | null
+          enabled?: boolean | null
+          escalation_minutes?: number | null
+          id?: string
+          notification_channels?: string[] | null
+          org_id?: string
+          severity_override?:
+            | Database["public"]["Enums"]["alarm_severity"]
+            | null
+          site_id?: string
+          threshold_max?: number | null
+          threshold_min?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alarm_site_overrides_alarm_definition_id_fkey"
+            columns: ["alarm_definition_id"]
+            isOneToOne: false
+            referencedRelation: "alarm_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      alarm_unit_overrides: {
+        Row: {
+          alarm_definition_id: string
+          cooldown_minutes: number | null
+          created_at: string | null
+          custom_corrective_action: string | null
+          duration_minutes: number | null
+          enabled: boolean | null
+          escalation_minutes: number | null
+          id: string
+          notification_channels: string[] | null
+          org_id: string
+          severity_override:
+            | Database["public"]["Enums"]["alarm_severity"]
+            | null
+          threshold_max: number | null
+          threshold_min: number | null
+          unit_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          alarm_definition_id: string
+          cooldown_minutes?: number | null
+          created_at?: string | null
+          custom_corrective_action?: string | null
+          duration_minutes?: number | null
+          enabled?: boolean | null
+          escalation_minutes?: number | null
+          id?: string
+          notification_channels?: string[] | null
+          org_id: string
+          severity_override?:
+            | Database["public"]["Enums"]["alarm_severity"]
+            | null
+          threshold_max?: number | null
+          threshold_min?: number | null
+          unit_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          alarm_definition_id?: string
+          cooldown_minutes?: number | null
+          created_at?: string | null
+          custom_corrective_action?: string | null
+          duration_minutes?: number | null
+          enabled?: boolean | null
+          escalation_minutes?: number | null
+          id?: string
+          notification_channels?: string[] | null
+          org_id?: string
+          severity_override?:
+            | Database["public"]["Enums"]["alarm_severity"]
+            | null
+          threshold_max?: number | null
+          threshold_min?: number | null
+          unit_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alarm_unit_overrides_alarm_definition_id_fkey"
+            columns: ["alarm_definition_id"]
+            isOneToOne: false
+            referencedRelation: "alarm_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alert_audit_log: {
         Row: {
           actor_type: string | null
@@ -4313,8 +4735,31 @@ export type Database = {
           target_user_name: string
         }[]
       }
+      get_available_alarms_for_unit: {
+        Args: { p_org_id: string; p_site_id?: string; p_unit_id: string }
+        Returns: {
+          alarm_id: string
+          category: Database["public"]["Enums"]["alarm_category"]
+          confidence_level: string
+          detection_tier: Database["public"]["Enums"]["detection_tier"]
+          display_name: string
+          enabled: boolean
+          severity: Database["public"]["Enums"]["alarm_severity"]
+          slug: string
+          what_we_observe: string
+        }[]
+      }
       get_deprovision_job_stats: {
         Args: { p_organization_id: string }
+        Returns: Json
+      }
+      get_effective_alarm_config: {
+        Args: {
+          p_alarm_slug: string
+          p_org_id: string
+          p_site_id?: string
+          p_unit_id?: string
+        }
         Returns: Json
       }
       get_effective_alert_rules: { Args: { p_unit_id: string }; Returns: Json }
@@ -4380,6 +4825,10 @@ export type Database = {
         Returns: string
       }
       process_sensor_cleanup_queue: { Args: never; Returns: Json }
+      resolve_available_tiers: {
+        Args: { p_org_id: string; p_site_id?: string; p_unit_id: string }
+        Returns: string[]
+      }
       search_sensor_catalog: {
         Args: { search_term: string }
         Returns: {
@@ -4464,6 +4913,60 @@ export type Database = {
       watchdog_fail_stale_ttn_provisioning: { Args: never; Returns: number }
     }
     Enums: {
+      alarm_category:
+        | "temperature"
+        | "door"
+        | "environmental"
+        | "sensor_health"
+        | "security"
+        | "compliance"
+      alarm_sensor_type:
+        | "temp"
+        | "door"
+        | "combo"
+        | "leak"
+        | "co2"
+        | "humidity"
+        | "motion"
+        | "tvoc"
+        | "gateway"
+        | "any"
+      alarm_severity: "info" | "normal" | "warning" | "critical" | "emergency"
+      alarm_subcategory:
+        | "refrigerator"
+        | "freezer"
+        | "hot_holding"
+        | "walk_in_cooler"
+        | "walk_in_freezer"
+        | "prep_table"
+        | "general_temp"
+        | "door_state"
+        | "door_behavior"
+        | "door_conflict"
+        | "humidity"
+        | "air_quality"
+        | "tvoc"
+        | "water"
+        | "ambient"
+        | "battery"
+        | "signal"
+        | "connectivity"
+        | "data_integrity"
+        | "calibration"
+        | "gateway"
+        | "physical"
+        | "access"
+        | "haccp"
+        | "maintenance"
+        | "escalation"
+      alarm_unit_type:
+        | "refrigerator"
+        | "freezer"
+        | "walk_in_cooler"
+        | "walk_in_freezer"
+        | "prep_table"
+        | "hot_holding"
+        | "any"
       alert_severity: "info" | "warning" | "critical"
       alert_status: "active" | "acknowledged" | "resolved" | "escalated"
       alert_type:
@@ -4478,6 +4981,7 @@ export type Database = {
         | "temp_excursion"
       app_role: "owner" | "admin" | "manager" | "staff" | "viewer" | "inspector"
       compliance_mode: "standard" | "haccp"
+      detection_tier: "T1" | "T2" | "T3" | "T4" | "T5"
       device_status: "active" | "inactive" | "pairing" | "fault" | "low_battery"
       gateway_status: "pending" | "online" | "offline" | "maintenance"
       lora_sensor_status: "pending" | "joining" | "active" | "offline" | "fault"
@@ -4662,6 +5166,64 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      alarm_category: [
+        "temperature",
+        "door",
+        "environmental",
+        "sensor_health",
+        "security",
+        "compliance",
+      ],
+      alarm_sensor_type: [
+        "temp",
+        "door",
+        "combo",
+        "leak",
+        "co2",
+        "humidity",
+        "motion",
+        "tvoc",
+        "gateway",
+        "any",
+      ],
+      alarm_severity: ["info", "normal", "warning", "critical", "emergency"],
+      alarm_subcategory: [
+        "refrigerator",
+        "freezer",
+        "hot_holding",
+        "walk_in_cooler",
+        "walk_in_freezer",
+        "prep_table",
+        "general_temp",
+        "door_state",
+        "door_behavior",
+        "door_conflict",
+        "humidity",
+        "air_quality",
+        "tvoc",
+        "water",
+        "ambient",
+        "battery",
+        "signal",
+        "connectivity",
+        "data_integrity",
+        "calibration",
+        "gateway",
+        "physical",
+        "access",
+        "haccp",
+        "maintenance",
+        "escalation",
+      ],
+      alarm_unit_type: [
+        "refrigerator",
+        "freezer",
+        "walk_in_cooler",
+        "walk_in_freezer",
+        "prep_table",
+        "hot_holding",
+        "any",
+      ],
       alert_severity: ["info", "warning", "critical"],
       alert_status: ["active", "acknowledged", "resolved", "escalated"],
       alert_type: [
@@ -4677,6 +5239,7 @@ export const Constants = {
       ],
       app_role: ["owner", "admin", "manager", "staff", "viewer", "inspector"],
       compliance_mode: ["standard", "haccp"],
+      detection_tier: ["T1", "T2", "T3", "T4", "T5"],
       device_status: ["active", "inactive", "pairing", "fault", "low_battery"],
       gateway_status: ["pending", "online", "offline", "maintenance"],
       lora_sensor_status: ["pending", "joining", "active", "offline", "fault"],
