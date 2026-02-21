@@ -97,6 +97,22 @@ INSERT INTO sensor_catalog (
   'trust', 'C'
 ),
 
+-- LHT65N
+(
+  'Dragino', 'LHT65N',
+  'Dragino LHT65N Temperature & Humidity Sensor',
+  'temp_humidity',
+  'Next-gen indoor LoRaWAN temperature and humidity sensor with NFC provisioning and improved battery life. Successor to the LHT65.',
+  '{US915,EU868,AU915,AS923}', '1.0.3', true, 'A',
+  'dragino/lht65n', true, true, 15,
+  '{"temperature","humidity","indoor","nfc","probe"}',
+  '{food_service,cold_chain,smart_building,healthcare}',
+  '{"food_service":"Walk-in cooler/freezer monitoring","cold_chain":"Cold storage tracking","smart_building":"Room temperature monitoring","healthcare":"Vaccine storage compliance"}'::jsonb,
+  'temperature',
+  'TheThingsNetwork/lorawan-devices @ 0db7de31', 'repo',
+  'trust', 'C'
+),
+
 -- LDS03A
 (
   'Dragino', 'LDS03A',
