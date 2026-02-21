@@ -667,7 +667,7 @@ export default function PlatformAlarmLibrary() {
                 </h4>
                 <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto">
                   {Object.entries(AI_HINTS).map(([key, hint]) => {
-                    const usedBy = alarms.filter((a: AlarmDefinition) => a.ai_hints?.includes(key));
+                    const usedBy = alarms.filter((a: AlarmDefinition) => a.ai_hints?.includes(key as never));
                     return (
                       <div key={key} className="p-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/20">
                         <div className="flex items-center gap-2 mb-1">

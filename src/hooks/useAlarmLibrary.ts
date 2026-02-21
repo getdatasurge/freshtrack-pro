@@ -13,6 +13,10 @@ import type {
   AlarmOverride,
 } from "@/types/alarms";
 
+// Helper: untyped supabase access for alarm library tables
+// (Generated types may lag behind migrations; this avoids TS errors)
+const db = supabase as any;
+
 // ─── Alarm Definitions ───────────────────────────────────────
 
 interface AlarmDefinitionFilters {
@@ -29,7 +33,7 @@ export function useAlarmDefinitions(filters?: AlarmDefinitionFilters) {
   return useQuery({
     queryKey: ['alarm-definitions', filters],
     queryFn: async (): Promise<AlarmDefinition[]> => {
-      let query = supabase
+      let query = db
         .from("alarm_definitions")
         .select("*")
         .order("category")
@@ -47,7 +51,7 @@ export function useAlarmDefinitions(filters?: AlarmDefinitionFilters) {
 
       const { data, error } = await query;
       if (error) throw error;
-      return data as unknown as AlarmDefinition[];
+      return (data ?? []) as AlarmDefinition[];
     },
   });
 }
@@ -65,14 +69,14 @@ export function useUnitAlarms(unitId: string | null, orgId: string | null, siteI
     queryFn: async (): Promise<AvailableAlarmRow[]> => {
       if (!unitId || !orgId) return [];
 
-      const { data, error } = await supabase.rpc("get_available_alarms_for_unit", {
+      const { data, error } = await db.rpc("get_available_alarms_for_unit", {
         p_unit_id: unitId,
         p_org_id: orgId,
         p_site_id: siteId ?? null,
       });
 
       if (error) throw error;
-      return (data ?? []) as unknown as AvailableAlarmRow[];
+      return (data ?? []) as AvailableAlarmRow[];
     },
     enabled: !!unitId && !!orgId,
   });
@@ -91,11 +95,11 @@ interface AlarmEventFilters {
  */
 export function useAlarmEvents(orgId: string | null, filters?: AlarmEventFilters) {
   return useQuery({
-    queryKey: qk.org(orgId).alarmEvents(filters),
+    queryKey: qk.org(orgId).alarmEvents(filters as Record<string, unknown>),
     queryFn: async (): Promise<AlarmEvent[]> => {
       if (!orgId) return [];
 
-      let query = supabase
+      let query = db
         .from("alarm_events")
         .select("*, alarm_definitions(*)")
         .eq("org_id", orgId)
@@ -114,10 +118,10 @@ export function useAlarmEvents(orgId: string | null, filters?: AlarmEventFilters
       const { data, error } = await query;
       if (error) throw error;
 
-      return (data ?? []).map((row: Record<string, unknown>) => ({
+      return (data ?? []).map((row: any) => ({
         ...row,
         alarm_definition: row.alarm_definitions ?? undefined,
-      })) as unknown as AlarmEvent[];
+      })) as AlarmEvent[];
     },
     enabled: !!orgId,
   });
@@ -133,7 +137,7 @@ export function useAlarmEventActions() {
 
   const acknowledge = useMutation({
     mutationFn: async ({ eventId, userId }: { eventId: string; userId: string }) => {
-      const { error } = await supabase
+      const { error } = await db
         .from("alarm_events")
         .update({
           state: "acknowledged",
@@ -154,17 +158,11 @@ export function useAlarmEventActions() {
 
   const resolve = useMutation({
     mutationFn: async ({
-      eventId,
-      userId,
-      notes,
-      correctiveAction,
+      eventId, userId, notes, correctiveAction,
     }: {
-      eventId: string;
-      userId: string;
-      notes?: string;
-      correctiveAction?: string;
+      eventId: string; userId: string; notes?: string; correctiveAction?: string;
     }) => {
-      const { error } = await supabase
+      const { error } = await db
         .from("alarm_events")
         .update({
           state: "resolved",
@@ -187,12 +185,9 @@ export function useAlarmEventActions() {
 
   const snooze = useMutation({
     mutationFn: async ({ eventId, until }: { eventId: string; until: string }) => {
-      const { error } = await supabase
+      const { error } = await db
         .from("alarm_events")
-        .update({
-          state: "snoozed",
-          snoozed_until: until,
-        })
+        .update({ state: "snoozed", snoozed_until: until })
         .eq("id", eventId);
       if (error) throw error;
     },
@@ -218,7 +213,7 @@ export function useAlarmOverrides(orgId: string | null) {
 
   const upsertOrgOverride = useMutation({
     mutationFn: async (override: Omit<AlarmOverride, 'id' | 'created_at' | 'updated_at' | 'site_id' | 'unit_id'>) => {
-      const { data: existing } = await supabase
+      const { data: existing } = await db
         .from("alarm_org_overrides")
         .select("id")
         .eq("alarm_definition_id", override.alarm_definition_id)
@@ -226,15 +221,10 @@ export function useAlarmOverrides(orgId: string | null) {
         .maybeSingle();
 
       if (existing) {
-        const { error } = await supabase
-          .from("alarm_org_overrides")
-          .update(override)
-          .eq("id", existing.id);
+        const { error } = await db.from("alarm_org_overrides").update(override).eq("id", existing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from("alarm_org_overrides")
-          .insert(override);
+        const { error } = await db.from("alarm_org_overrides").insert(override);
         if (error) throw error;
       }
     },
@@ -249,7 +239,7 @@ export function useAlarmOverrides(orgId: string | null) {
 
   const upsertSiteOverride = useMutation({
     mutationFn: async (override: Omit<AlarmOverride, 'id' | 'created_at' | 'updated_at' | 'unit_id'> & { site_id: string }) => {
-      const { data: existing } = await supabase
+      const { data: existing } = await db
         .from("alarm_site_overrides")
         .select("id")
         .eq("alarm_definition_id", override.alarm_definition_id)
@@ -258,15 +248,10 @@ export function useAlarmOverrides(orgId: string | null) {
         .maybeSingle();
 
       if (existing) {
-        const { error } = await supabase
-          .from("alarm_site_overrides")
-          .update(override)
-          .eq("id", existing.id);
+        const { error } = await db.from("alarm_site_overrides").update(override).eq("id", existing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from("alarm_site_overrides")
-          .insert(override);
+        const { error } = await db.from("alarm_site_overrides").insert(override);
         if (error) throw error;
       }
     },
@@ -281,7 +266,7 @@ export function useAlarmOverrides(orgId: string | null) {
 
   const upsertUnitOverride = useMutation({
     mutationFn: async (override: Omit<AlarmOverride, 'id' | 'created_at' | 'updated_at' | 'site_id'> & { unit_id: string }) => {
-      const { data: existing } = await supabase
+      const { data: existing } = await db
         .from("alarm_unit_overrides")
         .select("id")
         .eq("alarm_definition_id", override.alarm_definition_id)
@@ -290,15 +275,10 @@ export function useAlarmOverrides(orgId: string | null) {
         .maybeSingle();
 
       if (existing) {
-        const { error } = await supabase
-          .from("alarm_unit_overrides")
-          .update(override)
-          .eq("id", existing.id);
+        const { error } = await db.from("alarm_unit_overrides").update(override).eq("id", existing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from("alarm_unit_overrides")
-          .insert(override);
+        const { error } = await db.from("alarm_unit_overrides").insert(override);
         if (error) throw error;
       }
     },
@@ -324,7 +304,7 @@ export function useAlarmDefinitionAdmin() {
 
   const create = useMutation({
     mutationFn: async (definition: Partial<AlarmDefinition>) => {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from("alarm_definitions")
         .insert(definition)
         .select()
@@ -343,7 +323,7 @@ export function useAlarmDefinitionAdmin() {
 
   const update = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<AlarmDefinition> }) => {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from("alarm_definitions")
         .update(updates)
         .eq("id", id)
