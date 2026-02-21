@@ -2534,6 +2534,7 @@ export type Database = {
           alarm_enabled: boolean | null
           alarm_high: number | null
           alarm_low: number | null
+          confirmed_uplink_interval_s: number | null
           created_at: string
           default_fport: number | null
           ext_mode: string | null
@@ -2553,6 +2554,7 @@ export type Database = {
           alarm_enabled?: boolean | null
           alarm_high?: number | null
           alarm_low?: number | null
+          confirmed_uplink_interval_s?: number | null
           created_at?: string
           default_fport?: number | null
           ext_mode?: string | null
@@ -2572,6 +2574,7 @@ export type Database = {
           alarm_enabled?: boolean | null
           alarm_high?: number | null
           alarm_low?: number | null
+          confirmed_uplink_interval_s?: number | null
           created_at?: string
           default_fport?: number | null
           ext_mode?: string | null
@@ -4164,10 +4167,10 @@ export type Database = {
       sensor_catalog_public: {
         Row: {
           battery_info: Json | null
-          decode_mode: string | null
           decoded_fields: Json | null
           description: string | null
           display_name: string | null
+          downlink_info: Json | null
           f_ports: Json | null
           frequency_bands: string[] | null
           id: string | null
@@ -4177,15 +4180,14 @@ export type Database = {
           model_variant: string | null
           sensor_kind: string | null
           tags: string[] | null
-          temperature_unit: string | null
           uplink_info: Json | null
         }
         Insert: {
           battery_info?: Json | null
-          decode_mode?: string | null
           decoded_fields?: Json | null
           description?: string | null
           display_name?: string | null
+          downlink_info?: Json | null
           f_ports?: Json | null
           frequency_bands?: string[] | null
           id?: string | null
@@ -4195,15 +4197,14 @@ export type Database = {
           model_variant?: string | null
           sensor_kind?: string | null
           tags?: string[] | null
-          temperature_unit?: string | null
           uplink_info?: Json | null
         }
         Update: {
           battery_info?: Json | null
-          decode_mode?: string | null
           decoded_fields?: Json | null
           description?: string | null
           display_name?: string | null
+          downlink_info?: Json | null
           f_ports?: Json | null
           frequency_bands?: string[] | null
           id?: string | null
@@ -4213,7 +4214,6 @@ export type Database = {
           model_variant?: string | null
           sensor_kind?: string | null
           tags?: string[] | null
-          temperature_unit?: string | null
           uplink_info?: Json | null
         }
         Relationships: []
