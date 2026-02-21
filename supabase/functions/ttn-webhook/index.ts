@@ -833,6 +833,56 @@ async function handleLoraSensor(
       console.log(`[TTN-WEBHOOK] ${requestId} | Unit updated: door_state=${unitUpdate.door_state || 'unchanged'}, temp=${unitUpdate.last_temp_reading || 'unchanged'}`);
     }
 
+    // ========================================
+    // FIRE-AND-FORGET: Evaluate alarms for this unit
+    // Non-blocking — errors are caught and logged, never block the uplink response.
+    // ========================================
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      if (supabaseUrl && serviceRoleKey) {
+        const evalPayload = {
+          unit_id: sensor.unit_id,
+          org_id: sensor.organization_id,
+          site_id: sensor.site_id ?? null,
+          dev_eui: devEui || null,
+          temperature: temperature ?? undefined,
+          humidity: decoded.humidity as number | undefined,
+          battery_level: battery,
+          battery_voltage: batteryVoltage ?? undefined,
+          signal_strength: rssi,
+          door_open: hasDoorCapability ? currentDoorOpen : undefined,
+          door_state: hasDoorCapability && currentDoorOpen !== undefined
+            ? (currentDoorOpen ? 'open' : 'closed')
+            : undefined,
+          recorded_at: receivedAt,
+          reading_id: insertedReading?.id,
+        };
+
+        // Fire-and-forget — do not await
+        fetch(`${supabaseUrl}/functions/v1/evaluate-alarms`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`,
+          },
+          body: JSON.stringify(evalPayload),
+        }).then((res) => {
+          if (!res.ok) {
+            res.text().then((t) =>
+              console.error(`[TTN-WEBHOOK] ${requestId} | evaluate-alarms HTTP ${res.status}: ${t.slice(0, 200)}`)
+            );
+          } else {
+            console.log(`[TTN-WEBHOOK] ${requestId} | evaluate-alarms dispatched OK`);
+          }
+        }).catch((err) => {
+          console.error(`[TTN-WEBHOOK] ${requestId} | evaluate-alarms dispatch error:`, err);
+        });
+      }
+    } catch (evalErr) {
+      console.error(`[TTN-WEBHOOK] ${requestId} | evaluate-alarms setup error:`, evalErr);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
