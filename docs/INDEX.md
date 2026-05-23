@@ -3,7 +3,7 @@
 > Complete navigation guide to all project documentation
 
 **Last Updated:** (auto-generated)
-**Total Documents:** 51
+**Total Documents:** 56
 
 ---
 
@@ -35,6 +35,7 @@ System design, components, and technical decisions.
 | Document | Description |
 |----------|-------------|
 | [FreshTrack Pro System Architecture](./architecture/ARCHITECTURE.md) | System architecture and design |
+| [Sensor Online/Offline Status Architecture](./architecture/SENSOR_STATUS_ARCHITECTURE.md) | Sensor Online/Offline Status Architecture |
 
 ## Product
 
@@ -55,6 +56,7 @@ API, data model, integrations, and technical details.
 | [FreshTrack Pro Data Model](./engineering/DATA_MODEL.md) | Database schema and relationships |
 | [FreshTrack Pro Integrations](./engineering/INTEGRATIONS.md) | External service integrations |
 | [FreshTrack Pro Observability](./engineering/OBSERVABILITY.md) | Logging and monitoring |
+| [SMS Notifications — Telnyx](./engineering/SMS_NOTIFICATIONS.md) | SMS Notifications — Telnyx |
 
 ## Onboarding
 
@@ -141,8 +143,11 @@ General documentation and guides.
 | Document | Description |
 |----------|-------------|
 | [FrostGuard Deprecations](./deprecations.md) | Deprecated features |
+| [FrostGuard Alarm Emulator Scenarios](./EMULATOR_ALARM_SCENARIOS.md) | FrostGuard Alarm Emulator Scenarios |
 | [Emulator Quick Start - TTN Integration](./EMULATOR_QUICK_START.md) | Emulator quick start |
 | [Emulator TTN Integration Guide](./EMULATOR_TTN_INTEGRATION.md) | TTN emulator integration |
+| [Frost Guard Performance + Cache Coherency Audit Report](./PERFORMANCE_AUDIT_2026-01-18.md) | Frost Guard Performance + Cache Coherency Audit Report |
+| [QA Walkthrough — Fix & Audit Task List](./QA_WALKTHROUGH_TASKS_2026-05-23.md) | QA Walkthrough — Fix & Audit Task List |
 | [FreshTrack Pro (FrostGuard)](./README.md) | Project overview |
 | [FrostGuard System Map](./system-map.md) | System component map |
 | [TTN Production Secrets Setup](./TTN_PRODUCTION_SETUP.md) | Production TTN setup |
