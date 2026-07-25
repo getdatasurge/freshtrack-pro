@@ -182,7 +182,7 @@ export function useEntityLayoutStorage(
 
       const { data, error } = await supabase
         .from("entity_dashboard_layouts")
-        .update(updates)
+        .update(updates as never)
         .eq("id", params.layoutId)
         .select()
         .single();
