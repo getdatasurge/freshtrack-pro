@@ -243,7 +243,7 @@ export function useUpdateGateway() {
       const { signal_quality, status, ...dbUpdates } = updates as Partial<Gateway>;
       const { data, error } = await supabase
         .from("gateways")
-        .update(dbUpdates as Record<string, unknown>)
+        .update(dbUpdates as never)
         .eq("id", id)
         .select()
         .single();

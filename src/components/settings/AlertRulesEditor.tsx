@@ -226,7 +226,7 @@ export function AlertRulesEditor({
       // Update the rule to set the field to null
       const { error } = await supabase
         .from("alert_rules")
-        .update({ [field]: null })
+        .update({ [field]: null } as never)
         .eq("id", existingRules.id);
 
       if (error) throw error;
