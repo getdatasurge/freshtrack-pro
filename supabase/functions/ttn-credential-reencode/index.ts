@@ -37,6 +37,22 @@ function looksPlausible(kind: Kind, decoded: string): boolean {
   return /^[a-f0-9]{32,64}$/i.test(decoded);
 }
 
+/**
+ * Non-secret shape report for a failed decode. Never includes the value —
+ * only lengths, character-class counts and whether known markers are present.
+ */
+function shapeOf(decoded: string) {
+  const printable = [...decoded].filter((c) => c >= " " && c <= "~").length;
+  return {
+    decoded_length: decoded.length,
+    printable_chars: printable,
+    printable_ratio: decoded.length ? +(printable / decoded.length).toFixed(2) : 0,
+    has_nnsxs_marker: /NNSXS/i.test(decoded),
+    contains_dot: decoded.includes("."),
+    last4_of_decode: decoded.length >= 4 ? decoded.slice(-4) : null,
+  };
+}
+
 function json(body: unknown) {
   return new Response(JSON.stringify(body), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -123,6 +139,8 @@ Deno.serve(async (req) => {
           action: "FAILED_decode_implausible",
           scheme: stored.startsWith("v2:") ? "v2" : "legacy",
           stored_last4: row[def.last4Column] ?? null,
+          stored_length: stored.length,
+          shape: shapeOf(decoded),
         });
         continue;
       }
