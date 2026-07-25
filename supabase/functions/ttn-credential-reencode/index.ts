@@ -33,7 +33,9 @@ const CREDENTIALS: Array<{ column: string; last4Column: string; kind: Kind }> = 
 
 function looksPlausible(kind: Kind, decoded: string): boolean {
   if (!decoded) return false;
-  if (kind === "api_key") return /^NNSXS\.[A-Z0-9]{20,}$/i.test(decoded);
+  // Real TTN keys look like NNSXS.<id>.<secret> — dots, dashes and underscores
+  // are all legal, so only require the marker plus a sane printable body.
+  if (kind === "api_key") return /^NNSXS\.[A-Z0-9._-]{20,}$/i.test(decoded);
   return /^[a-f0-9]{32,64}$/i.test(decoded);
 }
 
