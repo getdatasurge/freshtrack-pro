@@ -3,7 +3,7 @@
 > Terminology and definitions used throughout the documentation
 
 **Last Updated:** (auto-generated)
-**Total Terms:** 213
+**Total Terms:** 257
 
 ---
 
@@ -120,12 +120,15 @@
 |------|------------|
 | **Accept Uncertainty** | It's OK to note unknowns |
 | **Accountability** | Document who made decisions and when |
+| **Accuracy** | Uses most recent timestamp, respects uplink interval |
 | **Actions** | \| Action \| Description \| Side Effects \| |
 | **Actors** | - Primary: New User (Food Safety Manager) |
 | **Add Sensors** | Register your LoRaWAN sensors in the TTN Console |
 | **Alert Creation** | Only `process-unit-states` creates alerts in the database |
 | **Alert Resolution** | Only `process-unit-states` resolves alerts automatically |
+| **Alert Rules History** | Uses `["alert-rules-history", scope, limit]` without org prefix |
 | **Alert Types Created** | - `temp_excursion` - Temperature out of range |
+| **Alerts** | `src/hooks/useUnitAlerts |
 | **Alternatives** | Options that were considered |
 | **API Calls** | - `supabase |
 | **API key rotation UI** | Manual process currently |
@@ -138,9 +141,13 @@
 | **Authentication** | Per-organization webhook secret (`X-Webhook-Secret`) |
 | **Backend** | Zod validation in edge functions |
 | **Be Concise** | ADRs should be 1-2 pages maximum |
+| **Calculations** | `src/lib/missedCheckins |
 | **Cause** | API key is invalid or expired |
 | **Causes** | - Secrets may take a few seconds to propagate |
+| **Centralized Invalidation** | `invalidation |
 | **Check** | API key is valid |
+| **Check uplink interval source of truth** | TRUE source: `sensor_configurations |
+| **Clarity** | Clear data flow from source to UI |
 | **Communication** | Share architectural knowledge across the team |
 | **Compliance Documentation** | Immutable audit trails for health inspections |
 | **Component** | `AlertRulesEditor |
@@ -150,22 +157,28 @@
 | **Configuration** | Stored in `ttn_connections` table per organization |
 | **Configure Devices** | Add device EUIs and keys |
 | **Consequences** | Positive and negative impacts |
+| **Consistency** | All widgets show the same status |
 | **Context** | Problem or situation driving the decision |
 | **Continuous Monitoring** | Automated temperature readings every 5 minutes (configurable) |
 | **Copy the generated API key** | you won't be able to see it again! |
 | **Credential Stuffing Attack** | Large volume of failed logins detected |
+| **CRITICAL** | All sensor online/offline status calculations happen in **ONE place only** |
 | **Data Dependencies** | - None (creates new session) |
 | **Database** | Organization-specific settings (TTN credentials) |
 | **Decision** | What was decided |
 | **Dedicated API Key** | Application-scoped with minimal required permissions |
 | **Dedicated Webhook** | Points to FreshTrack with unique secret for authentication |
+| **Default Region** | New organizations are provisioned on **NAM1 (North America)** by default with the US915 frequency plan |
+| **Description** | Walk-in cooler temperature exceeds warning threshold (40°F / 4 |
 | **Diagram Reference** | [Landing Page Diagram]( |
+| **DO NOT calculate independently** | Don't check timestamps directly |
 | **Enable** | Settings → Debug toggle (or `localStorage |
 | **Enable Debug Mode** | Press `Ctrl+Shift+D` or toggle in settings |
 | **Enabled Messages** | - Uplink message |
 | **Encrypted Storage** | All API keys and secrets are encrypted in the database |
 | **Endpoint** | `https://<project> |
 | **Engine** | PostgreSQL 14 |
+| **Equipment** | walk_in_cooler |
 | **Equipment Health** | Battery forecasting, calibration tracking, and connectivity monitoring |
 | **Error States** | - Invalid credentials |
 | **Event Logging** | All significant state changes logged via `logEvent()` or edge function logging |
@@ -173,6 +186,7 @@
 | **Events** | Uplink messages, join accepts |
 | **Events Handled** | - `checkout |
 | **Excursion Detection** | Immediate alerts when temperatures exceed safe thresholds |
+| **Expected Alarm** | temp_excursion_warning |
 | **Export for Support** | Click "Support Snapshot" button |
 | **Failure Modes** | \| Failure \| Cause \| Recovery \| |
 | **Features** | - Route logging |
@@ -186,15 +200,17 @@
 | **Foreign Key Constraints** | Data relationships maintain org scope |
 | **FreshTrack Pro subscription** | A few hundred dollars per month |
 | **Frontend** | Zod schemas in `lib/validation |
-| **Function** | `health-check` |
+| **Function** | `computeUnitStatus()` |
 | **Goal** | New user creates account and sets up their organization |
 | **HACCP Compliance** | Audit trails, corrective action tracking, and compliance reporting |
 | **Hash chaining** | Events include `previous_hash` for tamper detection |
 | **Hashing** | bcrypt with cost factor (Supabase managed) |
 | **Headers** | \| Header \| Value \| |
+| **HELP** | Telnyx sends standard help message |
 | **Hierarchical Configuration** | Settings cascade: Organization → Site → Area → Unit |
 | **Historical Context** | Understand why past decisions were made |
 | **Immutable design** | Append-only logging tables |
+| **Impersonation Sync** | `ImpersonationCacheSync` properly clears all org-scoped data |
 | **Implication** | Always consider failure modes |
 | **Important** | `ready` must be `true`! |
 | **Include Alternatives** | Show what else was considered |
@@ -202,23 +218,33 @@
 | **Key Features** | - RLS policies for multi-tenancy |
 | **Layout** | - Hero section with value proposition |
 | **Location configuration** | 15-30 minutes per site |
+| **Maintainability** | Update logic in ONE place only |
 | **Manual Logging** | UI → Supabase direct → `manual_temperature_logs` table |
 | **Manual Temperature Logging** | Offline-capable manual entry with automatic sync |
 | **Masking pattern** | ```typescript |
 | **MFA not implemented** | Planned for future release |
 | **Migrations** | 100+ files in `supabase/migrations/` |
 | **Minimal Permissions** | Application API keys only have rights needed for sensor management |
+| **Module** | `src/hooks/useUnitStatus |
 | **Monitor** | Check FreshTrack's sensor data to see incoming readings |
 | **Name** | User Sign Up and Onboarding |
 | **Never log** | - Full phone numbers (mask: `+1555***4567`) |
-| **Notes** | - Returns 202 for unknown devices to prevent TTN retries |
+| **No realtime for unit status changes** | Unit UPDATE events not subscribed |
+| **Notes** | Requires 2+ sensors assigned to same unit or site |
+| **NotificationDropdown uses local state** | Should migrate to React Query |
 | **Notifications** | `process-unit-states` → `process-escalations` → email/SMS/push |
 | **Offline Behavior** | - Logs stored in IndexedDB |
 | **Onboarding** | Help new team members understand the codebase quickly |
+| **Optimistic updates** | Not currently used; cache invalidation is eventual |
+| **Org Queries** | Sites, nav tree, sensors, escalation contacts properly scoped |
 | **Outcome** | In less than an hour, FreshTrack Pro is monitoring all refrigeration units and the whole team has access |
+| **Output** | `ComputedUnitStatus` object |
+| **Payload Sequence** | \| Step \| Delay \| TempC_SHT \| Hum_SHT \| BatV \| Description \| |
 | **Plans** | \| Plan \| Price \| Sensors \| Features \| |
+| **Polling fallback** | 15s interval may miss rapid state changes |
 | **Preconditions** | User is not authenticated |
 | **Predictive Maintenance** | Battery forecasts and calibration reminders |
+| **Provide Use Case** | "Food safety temperature alerts" |
 | **Provisioning** | Registered in both our DB and TTN |
 | **Purpose** | LoRa sensor network connectivity |
 | **Query Keys** | Structured for cache invalidation |
@@ -238,55 +264,69 @@
 | **Retention** | Configurable per compliance requirements |
 | **Returns** | Merged alert rules with cascade priority (Unit > Site > Org) |
 | **Reversibility** | Know when and why to revisit decisions |
+| **Review alert rules** | Check `offline_warning_missed_checkins` (default: 1) |
 | **Rights** | Select the following: |
 | **RLS Policy Bypass** | Customer reports seeing another org's data |
 | **ROI Example** | One prevented incident = 12–24 months of subscription cost avoided |
 | **Route** | `/organization` |
 | **Salt** | Unique per password (bcrypt built-in) |
+| **Sample Messages** | Provide example alert text |
 | **Savings** | 5–10 hours per week in staff time across a typical multi-unit operation |
 | **Secrets** | Managed via Supabase dashboard |
+| **Secrets Required** | \| Secret \| Purpose \| |
+| **Sensor** | LHT65N (f_port: 2) |
 | **Sensor Data Ingestion** | TTN → `ttn-webhook` → `sensor_readings` table |
 | **Sensor installation** | 5-10 minutes per unit (just stick to wall) |
 | **Sequence Diagram** | [See SEQUENCES |
 | **Severity** | `warning` or `critical` |
 | **Shift Handoff** | Staff can acknowledge and hand off alerts with notes |
+| **SMS Alert History** | Uses non-org-scoped query key `["sms-alert-history", orgId]` instead of `qk |
 | **Solution** | Check `VITE_SUPABASE_URL` matches your running backend: |
+| **Some Local State Components** | `SensorSimulatorPanel`, `NotificationDropdown`, `TTNProvisioningLogs` use local state that could become stale |
 | **Source** | `src/lib/statusConfig |
+| **Source of Truth** | `src/hooks/useUnitStatus |
 | **Staff training** | 15-30 minutes |
 | **State Processing** | `ingest-readings` → `process-unit-states` → creates/resolves alerts |
 | **Status** | Current lifecycle state |
 | **Status Codes** | \| Code \| Meaning \| |
 | **Status Computation** | Frontend uses `computeUnitStatus()` for consistency with backend logic |
 | **Steps** | \| Step \| Actor \| Action \| System Response \| |
+| **STOP** | Telnyx automatically opts out the number |
 | **Stripe** | Check Settings → Billing tab loads plans |
+| **Submit Verification** | Complete in Telnyx Portal |
 | **Supabase Dashboard** | Go to Project Settings → API |
 | **Symptoms** | All sensors in an organization show offline status |
 | **System automatically** | - Validates API key permissions (`ttn-gateway-preflight`) |
 | **Table** | `event_logs` |
 | **TBD** | Configure Supabase cron jobs for: |
+| **Telnyx** | Check SMS delivery in Settings → Notification History |
+| **Telnyx Webhook Config** | Uses `["telnyx-webhook-config", orgId]` instead of centralized key |
 | **Tenant Isolation** | Each org's TTN traffic is isolated via unique webhook secrets |
 | **Test Data Flow** | Send test uplinks to verify webhook delivery |
+| **Testability** | Test `computeUnitStatus()` once, covers all widgets |
 | **Timeline of events** | Detection time |
 | **Timestamps** | `created_at`, `updated_at` on most tables |
 | **Title** | Clear, descriptive name |
 | **Trace Operations** | Click correlation ID link to filter related |
 | **Trigger** | Scheduled (cron) or manual |
 | **TTN User ID** | `frostguard` |
-| **Telnyx** | Check SMS delivery in Settings → Notification History |
-| **Types** | `temp_excursion`, `monitoring_interrupted`, `door_open`, `low_battery`, etc |
+| **Types** | `src/features/dashboard-layout/types |
 | **Unique** | `(user_id, organization_id)` |
 | **Unique Constraints** | Scoped to organization (e |
+| **Unit Queries** | All unit-scoped queries use `qk |
 | **URL** | `https://YOUR_PROJECT |
 | **URL Parameters** | `siteId` (UUID) |
-| **Usage** | Called by `process-escalations` for critical alerts |
+| **Usage** | Called by `process-escalations` → `send-sms-alert` for critical alerts |
 | **Use appropriate levels** | `debug`: Verbose, development only |
 | **UUID Primary Keys** | All tables use UUID `id` columns |
 | **Value** | (paste your TTN admin API key from Step 1) |
+| **Verify timestamp usage** | All widgets should use `derivedStatus` |
 | **Verify webhook** | - TTN Application → Webhooks → Should show `freshtrack-webhook` |
 | **Webhook Secret Exposure** | TTN webhook secret found in public log |
 | **Webhook secret rotation** | No automated rotation |
 | **What happened** | Freezer door was propped open for cleaning |
 | **Who responded** | Kitchen manager acknowledged within 8 minutes |
+| **Widgets** | `src/features/dashboard-layout/widgets/* |
 | **Write first critical path tests** | `process-unit-states` alert logic |
 
 ---
