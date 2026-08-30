@@ -1,5 +1,5 @@
 {
-  "totalFiles": 51,
+  "totalFiles": 56,
   "categories": {
     "executive": {
       "name": "Executive Summary",
@@ -34,6 +34,10 @@
         {
           "path": "architecture/ARCHITECTURE.md",
           "title": "FreshTrack Pro System Architecture"
+        },
+        {
+          "path": "architecture/SENSOR_STATUS_ARCHITECTURE.md",
+          "title": "Sensor Online/Offline Status Architecture"
         }
       ]
     },
@@ -70,6 +74,10 @@
         {
           "path": "engineering/OBSERVABILITY.md",
           "title": "FreshTrack Pro Observability"
+        },
+        {
+          "path": "engineering/SMS_NOTIFICATIONS.md",
+          "title": "SMS Notifications — Telnyx"
         }
       ]
     },
@@ -244,6 +252,10 @@
           "title": "FrostGuard Deprecations"
         },
         {
+          "path": "EMULATOR_ALARM_SCENARIOS.md",
+          "title": "FrostGuard Alarm Emulator Scenarios"
+        },
+        {
           "path": "EMULATOR_QUICK_START.md",
           "title": "Emulator Quick Start - TTN Integration"
         },
@@ -258,6 +270,14 @@
         {
           "path": "INDEX.md",
           "title": "FreshTrack Pro Documentation Index"
+        },
+        {
+          "path": "PERFORMANCE_AUDIT_2026-01-18.md",
+          "title": "Frost Guard Performance + Cache Coherency Audit Report"
+        },
+        {
+          "path": "QA_WALKTHROUGH_TASKS_2026-05-23.md",
+          "title": "QA Walkthrough — Fix & Audit Task List"
         },
         {
           "path": "README.md",
@@ -417,6 +437,57 @@
         {
           "text": "Related Documentation",
           "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "architecture/SENSOR_STATUS_ARCHITECTURE.md",
+      "title": "Sensor Online/Offline Status Architecture",
+      "category": "architecture",
+      "headings": [
+        {
+          "text": "Sensor Online/Offline Status Architecture",
+          "anchor": "sensor-onlineoffline-status-architecture"
+        },
+        {
+          "text": "🎯 Single Source of Truth",
+          "anchor": "-single-source-of-truth"
+        },
+        {
+          "text": "📊 Data Flow",
+          "anchor": "-data-flow"
+        },
+        {
+          "text": "✅ All Consumers (Verified)",
+          "anchor": "-all-consumers-verified"
+        },
+        {
+          "text": "🔧 Calculation Logic",
+          "anchor": "-calculation-logic"
+        },
+        {
+          "text": "🚫 Anti-Patterns (DON'T DO THIS)",
+          "anchor": "-anti-patterns-dont-do-this"
+        },
+        {
+          "text": "📝 Adding New Status Displays",
+          "anchor": "-adding-new-status-displays"
+        },
+        {
+          "text": "🔍 Debugging Status Issues",
+          "anchor": "-debugging-status-issues"
+        },
+        {
+          "text": "🎯 Key Benefits",
+          "anchor": "-key-benefits"
+        },
+        {
+          "text": "📚 Related Files",
+          "anchor": "-related-files"
+        },
+        {
+          "text": "🔄 Updates",
+          "anchor": "-updates"
         }
       ]
     },
@@ -936,6 +1007,53 @@
       ]
     },
     {
+      "path": "EMULATOR_ALARM_SCENARIOS.md",
+      "title": "FrostGuard Alarm Emulator Scenarios",
+      "category": "root",
+      "headings": [
+        {
+          "text": "FrostGuard Alarm Emulator Scenarios",
+          "anchor": "frostguard-alarm-emulator-scenarios"
+        },
+        {
+          "text": "How Scenarios Work",
+          "anchor": "how-scenarios-work"
+        },
+        {
+          "text": "T1 — Threshold Breach Scenarios",
+          "anchor": "t1-threshold-breach-scenarios"
+        },
+        {
+          "text": "T2 — Rate of Change Scenarios",
+          "anchor": "t2-rate-of-change-scenarios"
+        },
+        {
+          "text": "T3 — Duration / Persistence Scenarios",
+          "anchor": "t3-duration-persistence-scenarios"
+        },
+        {
+          "text": "T4 — Pattern / Correlation Scenarios",
+          "anchor": "t4-pattern-correlation-scenarios"
+        },
+        {
+          "text": "T5 — System / Infrastructure Scenarios",
+          "anchor": "t5-system-infrastructure-scenarios"
+        },
+        {
+          "text": "Scenario Summary",
+          "anchor": "scenario-summary"
+        },
+        {
+          "text": "Evaluator Implementation Status",
+          "anchor": "evaluator-implementation-status"
+        },
+        {
+          "text": "Prerequisites",
+          "anchor": "prerequisites"
+        }
+      ]
+    },
+    {
       "path": "EMULATOR_QUICK_START.md",
       "title": "Emulator Quick Start - TTN Integration",
       "category": "root",
@@ -1254,6 +1372,65 @@
         {
           "text": "Metrics to Track",
           "anchor": "metrics-to-track"
+        },
+        {
+          "text": "Related Documentation",
+          "anchor": "related-documentation"
+        }
+      ]
+    },
+    {
+      "path": "engineering/SMS_NOTIFICATIONS.md",
+      "title": "SMS Notifications — Telnyx",
+      "category": "engineering",
+      "headings": [
+        {
+          "text": "SMS Notifications — Telnyx",
+          "anchor": "sms-notifications-telnyx"
+        },
+        {
+          "text": "Table of Contents",
+          "anchor": "table-of-contents"
+        },
+        {
+          "text": "Overview",
+          "anchor": "overview"
+        },
+        {
+          "text": "Architecture",
+          "anchor": "architecture"
+        },
+        {
+          "text": "Configuration",
+          "anchor": "configuration"
+        },
+        {
+          "text": "Set via Supabase CLI",
+          "anchor": "set-via-supabase-cli"
+        },
+        {
+          "text": "Message Lifecycle",
+          "anchor": "message-lifecycle"
+        },
+        {
+          "text": "Webhook Integration",
+          "anchor": "webhook-integration"
+        },
+        {
+          "text": "Testing",
+          "anchor": "testing"
+        },
+        {
+          "text": "Check function logs",
+          "anchor": "check-function-logs"
+        },
+        {
+          "text": "Compliance",
+          "anchor": "compliance"
+        },
+        {
+          "text": "Troubleshooting",
+          "anchor": "troubleshooting"
         },
         {
           "text": "Related Documentation",
@@ -2495,6 +2672,18 @@
           "anchor": "check-escalation-function-logs"
         },
         {
+          "text": "Check SMS sending logs",
+          "anchor": "check-sms-sending-logs"
+        },
+        {
+          "text": "Check webhook logs for delivery status",
+          "anchor": "check-webhook-logs-for-delivery-status"
+        },
+        {
+          "text": "Send manual SMS via Telnyx API",
+          "anchor": "send-manual-sms-via-telnyx-api"
+        },
+        {
           "text": "Send manual email via Resend API",
           "anchor": "send-manual-email-via-resend-api"
         },
@@ -2553,6 +2742,53 @@
         {
           "text": "Related Documents",
           "anchor": "related-documents"
+        }
+      ]
+    },
+    {
+      "path": "PERFORMANCE_AUDIT_2026-01-18.md",
+      "title": "Frost Guard Performance + Cache Coherency Audit Report",
+      "category": "root",
+      "headings": [
+        {
+          "text": "Frost Guard Performance + Cache Coherency Audit Report",
+          "anchor": "frost-guard-performance-cache-coherency-audit-report"
+        },
+        {
+          "text": "Executive Summary",
+          "anchor": "executive-summary"
+        },
+        {
+          "text": "Section A: Cache Coherency Violations Found & Fixed",
+          "anchor": "section-a-cache-coherency-violations-found-fixed"
+        },
+        {
+          "text": "Section B: Performance Profiling",
+          "anchor": "section-b-performance-profiling"
+        },
+        {
+          "text": "Section C: RLS + Query Plan Recommendations",
+          "anchor": "section-c-rls-query-plan-recommendations"
+        },
+        {
+          "text": "Section D: Realtime / Invalidation Consistency",
+          "anchor": "section-d-realtime-invalidation-consistency"
+        },
+        {
+          "text": "Section E: Emulator / Pipeline Determinism",
+          "anchor": "section-e-emulator-pipeline-determinism"
+        },
+        {
+          "text": "Section F: Scale Hardening Roadmap",
+          "anchor": "section-f-scale-hardening-roadmap"
+        },
+        {
+          "text": "Appendix: Files Changed",
+          "anchor": "appendix-files-changed"
+        },
+        {
+          "text": "Conclusion",
+          "anchor": "conclusion"
         }
       ]
     },
@@ -2639,6 +2875,45 @@
         {
           "text": "Flow Diagrams Reference",
           "anchor": "flow-diagrams-reference"
+        }
+      ]
+    },
+    {
+      "path": "QA_WALKTHROUGH_TASKS_2026-05-23.md",
+      "title": "QA Walkthrough — Fix & Audit Task List",
+      "category": "root",
+      "headings": [
+        {
+          "text": "QA Walkthrough — Fix & Audit Task List",
+          "anchor": "qa-walkthrough-fix-audit-task-list"
+        },
+        {
+          "text": "Priority key",
+          "anchor": "priority-key"
+        },
+        {
+          "text": "P0 — Explicitly broken (from narration)",
+          "anchor": "p0-explicitly-broken-from-narration"
+        },
+        {
+          "text": "P1 — Verify-or-fix (status unknown)",
+          "anchor": "p1-verify-or-fix-status-unknown"
+        },
+        {
+          "text": "P2 — Tech debt surfaced during the audit",
+          "anchor": "p2-tech-debt-surfaced-during-the-audit"
+        },
+        {
+          "text": "P3 — Strategic (tracked, not actionable yet)",
+          "anchor": "p3-strategic-tracked-not-actionable-yet"
+        },
+        {
+          "text": "Things the user confirmed are working (do not touch)",
+          "anchor": "things-the-user-confirmed-are-working-do-not-touch"
+        },
+        {
+          "text": "Suggested execution order",
+          "anchor": "suggested-execution-order"
         }
       ]
     },

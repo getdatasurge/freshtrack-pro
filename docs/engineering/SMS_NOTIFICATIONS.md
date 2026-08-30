@@ -412,7 +412,6 @@ WHERE error_message LIKE '%opted out%'
 ## Related Documentation
 
 - [INTEGRATIONS.md](./INTEGRATIONS.md#telnyx) — Integration overview
-- [ARCHITECTURE.md](./ARCHITECTURE.md#telnyx) — System architecture
 - [RUNBOOKS.md](../operations/RUNBOOKS.md#rb-006-notification-delivery-failure) — Incident response
 
 ---
