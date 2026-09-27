@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <!-- Moved off Lovable (2026-09-27): send the old Lovable addresses to the self-hosted app, same path. -->
+    <script>
+      if (/\.(lovable\.app|lovableproject\.com)$/.test(location.hostname)) {
+        location.replace("https://frosttracker.nextstructatech.com" + location.pathname + location.search + location.hash);
+      }
+    </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
     <meta name="theme-color" content="#1e3a5f" />
